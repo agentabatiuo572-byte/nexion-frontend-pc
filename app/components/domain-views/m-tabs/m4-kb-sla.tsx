@@ -1,7 +1,7 @@
 "use client";
 
 /** M4 help center content. Retired ticket configuration remains stored on the server. */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BookOpenText, CheckCircle2, FilePen, Pencil, Plus, Trash2, Upload, Archive } from "lucide-react";
 import { buildM4FaqCommand, sendM4FaqCommand } from "@/lib/admin/m-client";
 import { mCommands, type MCommandRecord } from "@/lib/admin/m-pending-commands";
@@ -35,6 +35,7 @@ import {
   FaqPreview, FaqStatusTag, M4FaqDrawer, M4PendingWrites, M4StatusConfirm, M4_LANGUAGES, ReachList, audienceSub, languageName, reachesUsers, surfaceName,
 } from "./m4-kb-views";
 import type { MCtx } from "./types";
+import type { M4PendingRow } from "./m4-kb-views";
 import { usePendingReplayDeadline, type PendingConfirmRecovery } from "../design-kit";
 import { useMOperationReason } from "./m-operation-reason";
 
@@ -48,8 +49,11 @@ const DEFAULT_FAQ_LANGUAGE = "en-US";
 
 type FaqRecoveryBindings = PendingConfirmRecovery & { releaseRejectedReplay: () => boolean };
 /** 原框和行共用的一份：这条原操作现在怎样、问答还在不在列表里。 */
-export type FaqRecoveryInfo = { view: MRecoveryView; gone: boolean; audit: boolean; rejected: boolean; release: () => void };
+export type FaqRecoveryInfo = { view: MRecoveryView; currentFact?: string; gone: boolean; audit: boolean; rejected: boolean; release: () => void };
 const KIND_NAME = { create: "新建", edit: "编辑", publish: "发布", unpublish: "下架", delete: "删除" } as const;
+const DELETE_READ_BLOCK = "问答正在读取或没读到，读到后再删除。";
+const STATUS_CHANGED = "这条问答的状态刚变过，请关闭后看最新状态。";
+const REVIEW_LATEST = "这条问答刚被别人改过，已换成最新内容，核对后重新确认。";
 const GONE_TEXT = "这条问答已不在列表里。";
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
@@ -105,7 +109,7 @@ function rebaseFaqDraft(before: SupportFaq, proposed: SupportFaq, latest: Suppor
   };
 }
 
-export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: string; summary: string; loadError: string | null }) {
+export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onDeleteBlock: (reason?: string) => void; ctx: MCtx; title: string; summary: string; loadError: string | null }) {
   const { pget, toast, openActionConfirm } = ctx;
   const actorId = useAdminAuth((state) => state.session?.adminId);
   const [knowledgeRead, setKnowledgeRead] = useState<{ kind: "idle" | "reading" } | { kind: "failed"; reason: string }>({ kind: "idle" });
@@ -161,8 +165,20 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const releaseOpener = useRef<HTMLElement | null>(null);
   const liveDialog = useRef({ recovery, deleteRequest: ctx.actionConfirm });
   liveDialog.current = { recovery, deleteRequest: ctx.actionConfirm };
-  const liveKnowledge = useRef({ available: knowledgeAvailable, faqs, canEdit, needsRead });
-  liveKnowledge.current = { available: knowledgeAvailable, faqs, canEdit, needsRead };
+  useLayoutEffect(() => () => { liveDialog.current = { recovery: null, deleteRequest: null }; }, []);
+  const factsAvailable = knowledgeAvailable && !ctx.contentLoading;
+  const liveKnowledge = useRef({ available: factsAvailable, faqs, canEdit, needsRead });
+  liveKnowledge.current = { available: factsAvailable, faqs, canEdit, needsRead };
+  const deleteDialog = deleteConfirmation.current;
+  const ordinaryDelete = deleteDialog && deleteDialog.request === ctx.actionConfirm
+    && !pendingCommands.some(row => row.commandKey === deleteDialog.commandKey);
+  const deleteBlock = ordinaryDelete ? !factsAvailable ? DELETE_READ_BLOCK
+    : !faqs.some(row => row.id === deleteDialog.faq.id) ? GONE_TEXT : undefined : undefined;
+  useLayoutEffect(() => { onDeleteBlock(deleteBlock); }, [deleteBlock, onDeleteBlock]);
+  function closeDeleteDialog() {
+    const target = deleteConfirmation.current;
+    if (target) ctx.closeActionConfirm?.(target.request);
+  }
   const currentRecoveryInfo = useRef(recoveryInfo);
   currentRecoveryInfo.current = recoveryInfo;
   const currentRecoveryBindings = useRef(faqRecoveryBindings);
@@ -174,7 +190,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const openRelease = (record: MCommandRecord, fromDelete = false) => {
     releaseFromDelete.current = fromDelete ? deleteConfirmation.current : null;
     releaseOpener.current = fromDelete ? null : activeElement();
-    if (fromDelete) ctx.closeActionConfirm?.();
+    if (fromDelete && deleteConfirmation.current) ctx.closeActionConfirm?.(deleteConfirmation.current.request);
     setReleasing(record);
   };
   const cancelRelease = () => {
@@ -287,9 +303,12 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       m4FaqRecovery.settleAcknowledged(record);
       if (continued) setReconfirmations(rows => rows.filter(row => row.commandKey !== continued));
       syncPending();
-      closeWriteDialogs();
-      if (command.kind === "delete") ctx.closeActionConfirm?.();
-      toast(successMessage);
+      if (command.kind === "delete") {
+        if (isOpenCommand(record)) { closeDeleteDialog(); toast(successMessage); }
+      } else {
+        closeWriteDialogs();
+        toast(successMessage);
+      }
       await readCurrent(true);
       return true;
     } finally {
@@ -359,24 +378,32 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     if (recovery) return retryOriginal(recovery, onFailure);
     const before = faqs.find((faq) => faq.id === id);
     if (!actorId || !statusTarget) return false;
-    if (!before || before.status !== statusTarget.status) {
-      onFailure(new Error(before ? "这条问答的状态刚变过，请关闭后看最新状态。" : GONE_TEXT));
-      return false;
+    function reviewStatus(latest?: SupportFaq) {
+      if (!latest || latest.status === status) onFailure(new Error(latest ? STATUS_CHANGED : GONE_TEXT));
+      else {
+        setStatusTarget(latest);
+        onFailure(new Error(REVIEW_LATEST));
+      }
     }
-    if (before.version !== statusTarget.version) {
-      setStatusTarget(before);
-      onFailure(new Error("这条问答刚被别人改过，已换成最新内容，核对后重新确认。"));
+    if (!factsAvailable) return false;
+    if (!before || before.status !== statusTarget.status || before.version !== statusTarget.version) {
+      reviewStatus(before);
       return false;
     }
     const row = { ...before, status };
     return commitM4Write(buildM4FaqCommand(status === "published" ? "publish" : "unpublish", row, before,
       status === "published" ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档", actorId),
-      status === "published" ? `${id} 已发布` : `${id} 已下架为草稿`, onFailure);
+      status === "published" ? `${id} 已发布` : `${id} 已下架为草稿`, (error, rows) => {
+        if (rows && error.cause instanceof MContentReadError && error.cause.backendMessage === "SUPPORT_FAQ_CONCURRENT_MODIFICATION") {
+          reviewStatus(rows.find(row => row.id === id));
+        } else onFailure(error);
+      });
   };
   const requestDeleteFaq = (faq: SupportFaq, original?: MCommandRecord, continued?: string) => {
     const savedCommand = () => mCommands.list().find(record => record.faq?.kind === "delete"
       && record.faq.actorId === actorId && record.faq.row.id === faq.id);
     const currentFaq = () => liveKnowledge.current.available ? liveKnowledge.current.faqs.find(row => row.id === faq.id) : undefined;
+    const shownFaq = () => savedCommand()?.faq?.row ?? currentFaq() ?? faq;
     if (liveDialog.current.deleteRequest !== deleteConfirmation.current?.request) {
       deleteFailure.current = null;
       continuedCommand.current = continued ?? null;
@@ -393,18 +420,19 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       confirmLabel: "确认删除",
       briefKind: "faq-delete",
       statedBrief: () => ({
-        impact: (currentFaq() ?? faq).status === "published"
+        impact: shownFaq().status === "published"
           ? "删除后所有位置都不再读到这条问答，本页也找不回来；账号和资金不受影响。"
           : "这是草稿，用户本来就看不到；删除后本页找不回来，账号和资金不受影响。",
         check: "核对问题和回答，确认不再需要。只想先不让用户看到，用「下架」，以后还能重新发布。",
       }),
       facts: () => {
         const fresh = currentFaq();
-        const shown = fresh ?? faq;
-        return <>{deleteRecoveryNotice(savedCommand())}<Facts>
+        const saved = savedCommand();
+        const shown = shownFaq();
+        return <>{deleteRecoveryNotice(saved)}<Facts>
           <Fact k="问题"><span className="m4-fact-text">{shown.question}</span></Fact>
           <Fact k="给谁看">{surfaceName(shown.surface)} · {languageName(shown.language)}</Fact>
-          <Fact k="状态">{liveKnowledge.current.available && !fresh ? "这条问答已不在列表里"
+          <Fact k="状态">{!saved && liveKnowledge.current.available && !fresh ? GONE_TEXT
             : shown.status === "published" ? "已发布，删除后几分钟内从 App 消失" : "草稿"}</Fact>
         </Facts></>;
       },
@@ -429,11 +457,11 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         const fresh = currentFaq();
         if (!actorId || blocked(faq.id, mCommands.list())) return false;
         if (!fresh) {
-          onFailure(new Error(GONE_TEXT));
+          onFailure(new Error(liveKnowledge.current.available ? GONE_TEXT : DELETE_READ_BLOCK));
           return false;
         }
         if (fresh.version !== faq.version || fresh.status !== faq.status) {
-          onFailure(new Error("这条问答刚被别人改过，已换成最新内容，核对后重新确认。"));
+          onFailure(new Error(REVIEW_LATEST));
           requestDeleteFaq(fresh);
           return false;
         }
@@ -529,18 +557,18 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     const fresh = latest.find(row => row.id === command.row.id);
     if (conclusion === "succeeded") {
       if (opened) {
-        if (command.kind === "delete") ctx.closeActionConfirm?.();
+        if (command.kind === "delete") closeDeleteDialog();
         else closeWriteDialogs();
       }
       return false;
     }
 
-    const canContinue = command.kind === "create" || command.kind === "edit" || (fresh
-      && (command.kind === "delete" || fresh.status === command.before?.status));
-    if (canContinue) setReconfirmations(rows => [...rows, record]);
+    const canContinue = command.kind === "create" || (fresh
+      && (command.kind === "edit" || command.kind === "delete" || fresh.status === command.before?.status));
+    setReconfirmations(rows => [...rows, record]);
     if (opened) {
       if (canContinue) continueFaq(record, latest, true);
-      else if (command.kind === "delete") ctx.closeActionConfirm?.();
+      else if (command.kind === "delete") closeDeleteDialog();
       else closeWriteDialogs();
     }
     return command.kind !== "create" && !fresh;
@@ -582,7 +610,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         const session = faqSession(record.faq?.actorId);
         if (!session?.authorities.includes("service_m4_read") || !m4FaqRecovery.releaseRejectedReplay(record)) return false;
         if (isOpenCommand(record)) {
-          if (record.faq?.kind === "delete") ctx.closeActionConfirm?.();
+          if (record.faq?.kind === "delete") closeDeleteDialog();
           else closeWriteDialogs();
         }
         syncPending();
@@ -596,7 +624,12 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     const state = m4FaqRecovery.state(record);
     const outcome = outcomesNow.current[record.commandKey];
     const receipt = receiptOf(outcome);
-    const gone = Boolean(record.faq && record.faq.kind !== "create" && knowledgeAvailable && !faqs.some(row => row.id === record.faq!.row.id));
+    const original = record.faq?.row;
+    const fresh = original && factsAvailable ? faqs.find(row => row.id === original.id) : undefined;
+    const gone = Boolean(original && record.faq?.kind !== "create" && factsAvailable && !fresh);
+    const currentFact = record.faq?.kind !== "delete" ? undefined : gone ? "已不在列表里"
+      : fresh && original && (fresh.version !== original.version || fresh.status !== original.status)
+        ? `第 ${fresh.version} 版，${fresh.status === "published" ? "已发布" : "草稿"}，和提交时不同` : undefined;
     const shared = fundRecoveryStatus({ outcome, expired: state.expired, canQuery: canQueryM4, canClose: canInvestigateECommand("service_m4_read"), canRetry: false });
     const found: MRecoveryView & { more?: string } = ["succeeded", "not-executed", "rejected"].includes(state.conclusion)
       ? knowledgeRead.kind === "reading" ? { tone: "progress", label: "核对中", line: "后台已有结论，正在核对最新问答…" }
@@ -608,7 +641,7 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       ? { tone: "neutral", label: "不能查询", line: "升级前的记录查不了原结果，到操作记录与审批核对。" }
       : !state.busy && !state.replayRejection && (receipt || shared.label === "没有查询权限" || !outcome && !state.expired && state.conclusion === "unknown")
         ? state.expired && !found.line.includes("24 小时") ? { ...found, line: `${RETRY_EXPIRED_TEXT}${found.line}` } : found : mRecoveryView(state, { last });
-    return { view, more: view.more, gone, audit: gone || Boolean(state.replayRejection) || state.expired || !record.faq || view.line.includes("操作记录与审批"),
+    return { view, more: view.more, currentFact, gone, audit: gone || Boolean(state.replayRejection) || state.expired || !record.faq || view.line.includes("操作记录与审批"),
       rejected: Boolean(state.replayRejection) && !state.busy, release: () => openRelease(record) };
   }
   const goneText = (record: MCommandRecord) => record.faq?.kind === "delete" ? "这条问答已不在列表里，看不出是不是这次删的。" : GONE_TEXT;
@@ -626,6 +659,9 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   };
   const activeRecovery = recovery ? faqRecoveryBindings(recovery) : undefined;
   const activeInfo = recovery ? recoveryInfo(recovery) : undefined;
+  const currentStatusFaq = statusTarget && faqs.find(row => row.id === statusTarget.id);
+  const statusBlock = !canEdit ? "问答正在读取或没读到，读到后再操作。"
+    : !currentStatusFaq ? GONE_TEXT : currentStatusFaq.status !== statusTarget?.status ? STATUS_CHANGED : undefined;
   const pendingRows = pendingCommands.map((record) => {
     const state = m4FaqRecovery.state(record);
     const outcome = outcomes[record.commandKey];
@@ -644,17 +680,37 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       {state.replayRejection && canQueryM4 && <Button size="sm" variant="ghost" disabled={writePending || Boolean(state.busy)} onClick={() => openRelease(record)}>核实后解除</Button>}
     </> };
   });
-  const draftRows = reconfirmations.flatMap(record => {
+  const draftRows = reconfirmations.flatMap<M4PendingRow>(record => {
     const command = record.faq;
     if (!command) return [];
     const fresh = faqs.find(row => row.id === command.row.id);
-    const canContinue = canEdit && !writePending && !blocked(command.before?.id)
-      && (command.kind === "create" || command.kind === "edit" || Boolean(fresh && (command.kind === "delete" || fresh.status === command.before?.status)));
+    const draft = command.kind === "create" || command.kind === "edit";
+    const action = draft ? "继续修改" : "重新确认";
+    const occupied = blocked(command.before?.id);
+    const ended = factsAvailable && command.kind !== "create" && !fresh ? "这条问答已不在列表里，不能再继续。"
+      : factsAvailable && fresh && (command.kind === "publish" || command.kind === "unpublish") && fresh.status !== command.before?.status
+        ? `这条问答现在已是${fresh.status === "published" ? "已发布" : "草稿"}，不用再${KIND_NAME[command.kind]}。` : undefined;
+    const reason = occupied ? "这条问答有一个结果未知的操作，先处理它。" : ended;
+    const dismiss = !occupied && Boolean(ended) && !draft;
+    const editing = draft && continuedCommand.current === record.commandKey && Boolean(showAddFaq || editFaq);
+    const discard = {
+      label: draft ? "放弃这份草稿" : "不再处理",
+      requiresConfirmation: draft,
+      disabled: occupied || editing,
+      run: () => {
+        if (!occupied && !editing) setReconfirmations(rows => rows.filter(row => row.commandKey !== record.commandKey));
+      },
+    };
     return [{
+      discard,
       key: record.commandKey, question: command.row.question, change: KIND_NAME[command.kind], submittedAt: record.createdAt, expired: false,
-      status: { tone: "done" as const, label: "可继续修改" },
-      note: "原操作已有结论，核对最新问答后重新确认。",
-      actions: <Button size="sm" disabled={!canContinue} onClick={() => continueFaq(record, faqs)}>继续修改</Button>,
+      status: { tone: "done" as const, label: draft ? "可继续修改" : "可重新确认" },
+      note: reason ?? "原操作已有结论，核对最新问答后重新确认。",
+      actions: <Button size="sm" disabled={!dismiss && (!canEdit || writePending || Boolean(reason))}
+        disabledReason={dismiss ? undefined : reason} onClick={() => {
+          if (dismiss) discard.run();
+          else if (!reason && canEdit && !writePending) continueFaq(record, faqs);
+        }}>{dismiss ? discard.label : action}</Button>,
     }];
   });
 
@@ -813,8 +869,8 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       <M4FaqDrawer faq={current} author={current ? authorOf(current.id) : undefined} nav={drawerNav} busy={writePending} canWrite={canEdit && !blocked(current?.id)}
         onClose={() => setOpenId(null)} onEdit={() => current && openEdit(current)} onStatus={() => current && openStatus(current)} onDelete={() => current && requestDeleteFaq(current)} />
 
-      {statusTarget && !releasing && <M4StatusConfirm faq={statusTarget} returnFocus={() => returnToFaq(dialogOpener.current, statusTarget.id)} busy={writePending || Boolean(activeRecovery?.state?.busy)} disabled={activeRecovery ? Boolean(activeRecovery.blockedReason || activeRecovery.state?.replayBlock) : !canEdit}
-        disabledReason={activeRecovery ? activeRecovery.blockedReason : canEdit ? undefined : "问答正在读取或没读到，读到后再操作。"} failure={statusFailure} retry={activeRecovery} info={activeInfo} onQuery={activeRecovery?.query && (() => { setStatusFailure(null); void activeRecovery.query!(); })}
+      {statusTarget && !releasing && <M4StatusConfirm faq={statusTarget} returnFocus={() => returnToFaq(dialogOpener.current, statusTarget.id)} busy={writePending || Boolean(activeRecovery?.state?.busy)} disabled={activeRecovery ? Boolean(activeRecovery.blockedReason || activeRecovery.state?.replayBlock) : Boolean(statusBlock)}
+        disabledReason={activeRecovery ? activeRecovery.blockedReason : statusBlock} failure={statusFailure} retry={activeRecovery} info={activeInfo} onQuery={activeRecovery?.query && (() => { setStatusFailure(null); void activeRecovery.query!(); })}
         onCancel={() => { setRecovery(null); setStatusTarget(null); }}
         onConfirm={async () => {
           setStatusFailure(null);

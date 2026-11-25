@@ -93,16 +93,19 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       controller: welcomeRecovery,
       expiry: "load-latest",
       canLoadLatest, canRelease,
-      onLocalRelease: record => {
+      onLocalRelease: (record, rejection) => {
         const base = latest ?? current;
-        if (base && !readUnavailable) {
+        const needsLatest = rejection === "SUPPORT_WELCOME_VERSION_CONFLICT" && (!base || base.version <= record.payload.expectedVersion);
+        if (needsLatest) {
+          releasedRecord.current = record;
+        } else if (base && !readUnavailable) {
           setCurrent(base);
           applyReleasedWelcome(base, requiredLanguages, record);
         } else {
           releasedRecord.current = record;
           setDraft(null);
         }
-        setLatest(null); setConflict(false); setReason(""); setConfirm(false); setError("");
+        setLatest(null); setConflict(needsLatest); setReason(""); setConfirm(false); setError("");
       },
       readAfterExpiry: async record => {
         const [value, required] = await Promise.all([supportWelcomeMessageClient.read(), getRequiredContentLanguages()]);
@@ -204,7 +207,16 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
 
   async function refreshLatest() {
     const actor = actorStamp();
-    try { const value = await supportWelcomeMessageClient.read(); if (actor === actorStamp()) setLatest(value); } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
+    try {
+      const value = await supportWelcomeMessageClient.read();
+      if (actor !== actorStamp()) return;
+      const released = releasedRecord.current;
+      if (released) {
+        setCurrent(value);
+        applyReleasedWelcome(value, requiredLanguages, released);
+        setLatest(null); setConflict(false); setReason(""); setError("");
+      } else setLatest(value);
+    } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
   }
 
   const checkPending = () => command.run("query");
@@ -220,7 +232,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const loadExpired = retryExpired && canLoadLatest;
   useEffect(() => {
     onSummary?.({ state: loading ? "loading" : readUnavailable ? "failed" : current ? "ready" : "failed", updatedAt: current?.updatedAt ?? null, pending: Boolean(retry) });
-  }, [onSummary, current, loading, command.pending, readUnavailable]);
+  }, [onSummary, current, loading, retry, readUnavailable]);
   const shownTexts = draft ?? current?.texts;
   const langLabel = LANGUAGES.find((item) => item.key === lang)?.label ?? lang;
   const submittedAt = pending ? pending.expiresAt - PENDING_MUTATION_TTL_MS : 0;

@@ -121,6 +121,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [fromCustomers, setFromCustomers] = useState(false);
   useEffect(() => { setFromCustomers(tab === "M3" && new URLSearchParams(window.location.search).get("from") === "customers"); }, [tab]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
+  const [faqDeleteBlock, setFaqDeleteBlock] = useState<string>();
   const actionConfirmRunRef = useRef<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
@@ -641,7 +642,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     removeCustomerNote,
     toast: setToast,
     openActionConfirm: setActionConfirm,
-    closeActionConfirm: () => setActionConfirm(null),
+    closeActionConfirm: request => setActionConfirm(current => current === request ? null : current),
     openConfirm: setCf,
   };
 
@@ -717,7 +718,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       )}
 
       {tab === "M1" && <M1AnalyticsWorkbench key={authEpoch} permission={permission} ctx={ctx} />}
-      {tab === "M4" && <M4KbSla ctx={ctx} title={meta.l2Name} summary={meta.summary} loadError={mError} />}
+      {tab === "M4" && <M4KbSla onDeleteBlock={setFaqDeleteBlock} ctx={ctx} title={meta.l2Name} summary={meta.summary} loadError={mError} />}
       {tab === "M5" && <M5Page ctx={ctx} permission={permission} permissionUnknown={permissionUnknown} hasData={Boolean(safeMData)} loading={mLoading} loadError={mError} title={meta.l2Name} summary={meta.summary} authEpoch={authEpoch} />}
       {tab !== "M1" && tab !== "M4" && tab !== "M5" && !safeMData && !hasM3Recovery ? (
         <div className="card card-pad">
@@ -751,7 +752,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
           confirmTone={mc.confirmTone}
-          blockedReason={mc.blockedReason}
+          blockedReason={mc.blockedReason ?? (mc.briefKind === "faq-delete" ? faqDeleteBlock : undefined)}
           facts={mc.facts}
           statedBrief={mc.statedBrief}
           reasonPlaceholder={mc.reasonPlaceholder}

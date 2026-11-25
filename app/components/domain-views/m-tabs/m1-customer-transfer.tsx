@@ -1,7 +1,7 @@
 "use client";
 import { m1CustomerCode } from "./m1-customer-code";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { M_RECOVERY, M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mRejectedReason, mUnknownText } from "@/lib/admin/m-recovery-copy";
@@ -50,11 +50,9 @@ const subscribeToNotes = (listener: () => void) => {
   noteSubscribers.add(listener);
   return () => { noteSubscribers.delete(listener); };
 };
-function updateTransferNote(commandKey: string, note = "", submitting = false) {
+function updateTransferNote(commandKey: string, note = "") {
   if (note) transferNotes.set(commandKey, note);
   else transferNotes.delete(commandKey);
-  if (submitting) submittingTransfers.add(commandKey);
-  else submittingTransfers.delete(commandKey);
   noteRevision++;
   for (const listener of noteSubscribers) listener();
 }
@@ -152,16 +150,24 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   const [targets, setTargets] = useState<SupportAgentCandidate[] | null>(null);
   const [denied, setDenied] = useState(""), [loadError, setLoadError] = useState(""), [reload, setReload] = useState(0);
   const [target, setTarget] = useState<number | null>(null), [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false), [error, setError] = useState(""), [releasing, setReleasing] = useState(false);
-  const recoveryRevision = useSyncExternalStore(transferRecovery.subscribe, transferRecovery.getRevision, () => 0);
+  const [busy, setBusy] = useState(false), [error, setError] = useState(""), [releasing, setReleasing] = useState(false);
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const firstKey = useRef<string | undefined>(undefined);
+  useSyncExternalStore(transferRecovery.subscribe, transferRecovery.getRevision, () => 0);
   const [opener] = useState(() => typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const returnFocus = () => transferReturnFocus(opener, customerId);
   useSyncExternalStore(subscribeToNotes, noteSnapshot, () => 0);
+  const submittingKey = pending?.commandKey ?? firstKey.current;
+  const saving = busy || Boolean(submittingKey && submittingTransfers.has(submittingKey));
   const recoveryState = pending ? transferRecovery.state(pending) : undefined;
   usePendingReplayDeadline(pending?.expiresAt);
   useEffect(() => {
-    if (pending && transferRecovery.state(pending).replayBlock === "missing") onClose();
-  }, [pending, recoveryRevision, onClose]);
+    if (recoveryState?.replayBlock === "missing") setPending(null);
+  }, [recoveryState?.replayBlock]);
 
   useEffect(() => {
     if (pending) return;
@@ -179,7 +185,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     })().catch((cause: unknown) => {
       if (controller.signal.aborted) return;
       if (cause instanceof SupportClientError && [403, 404].includes(cause.status)) setDenied("当前无权办理该客户的转绑，归属可能已经变更。");
-      else setLoadError(displayAdminError(cause));
+      else setLoadError(displayAdminReadError(cause));
     });
     return () => controller.abort();
   }, [customerId, mode, reload, pending, canWrite]);
@@ -190,12 +196,26 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   const reasonRule = useMOperationReason(canWrite && !pending && Boolean(detail && targets), reason);
 
   async function send(record: TransferRecord, replay = false) {
-    if (!transferActor(record.actorId)?.authorities.includes("service_m1_write")
+    if (submittingTransfers.has(record.commandKey) || !transferActor(record.actorId)?.authorities.includes("service_m1_write")
       || replay && transferRecovery.state(record).replayBlock) return;
     const actor = actorStamp();
     let written = false;
-    setSaving(true); setError("");
-    updateTransferNote(record.commandKey, "", !replay);
+    let timedOut = false;
+    let deadline: number | undefined;
+    if (replay) setBusy(true);
+    else {
+      firstKey.current = record.commandKey;
+      submittingTransfers.add(record.commandKey);
+      // One deadline covers both the original POST and its ownership readback.
+      deadline = window.setTimeout(() => {
+        timedOut = true;
+        submittingTransfers.delete(record.commandKey);
+        if (mounted.current && actor === actorStamp()) setPending(record);
+        updateTransferNote(record.commandKey);
+      }, 30_000);
+    }
+    setError("");
+    updateTransferNote(record.commandKey);
     try {
       if (replay) await transferRecovery.replay(record, saved => supportClient.transfer(saved.payload, saved.commandKey));
       else await supportClient.transfer(record.payload, record.commandKey);
@@ -203,12 +223,13 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       if (actor !== actorStamp()) return;
       await verifySupportTransfer(record.payload, "SUCCEEDED");
       if (actor !== actorStamp()) return;
+      if (transferRecovery.state(record).replayBlock === "missing") return;
       transferRecovery.settleAcknowledged(record);
       updateTransferNote(record.commandKey);
       window.dispatchEvent(new Event("support-todo-changed"));
-      onDone(`已转给 ${record.targetName ?? "新的专属客服"}，并核对了最新归属。`);
+      if (mounted.current) onDone(`已转给 ${record.targetName ?? "新的专属客服"}，并核对了最新归属。`);
     } catch (cause) {
-      if (actor !== actorStamp()) { updateTransferNote(record.commandKey); return; }
+      if (actor !== actorStamp() || timedOut || transferRecovery.state(record).replayBlock === "missing") return;
       if (replay || written || !isDefiniteSupportRefusal(cause)) {
         setPending(record);
         updateTransferNote(record.commandKey, transferRecovery.state(record).replayRejection ? mRejectedReason(displayAdminError(cause)) : mUnknownText(displayAdminError(cause)));
@@ -218,8 +239,12 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
         setPending(null); setError(`转绑没有成功：${displayAdminError(cause)}`); setReload((value) => value + 1);
       }
     } finally {
-      if (submittingTransfers.has(record.commandKey)) updateTransferNote(record.commandKey);
-      setSaving(false);
+      window.clearTimeout(deadline);
+      if (!replay && submittingTransfers.delete(record.commandKey)) {
+        // A failure may already have supplied a reason. Only clear the in-flight flag.
+        updateTransferNote(record.commandKey, transferNotes.get(record.commandKey));
+      }
+      if (replay) setBusy(false);
     }
   }
   async function submit() {
@@ -233,9 +258,9 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     await send(transferCommands.list().find((row) => row.commandKey === commandKey)!);
   }
   async function check() {
-    if (!pending || saving || !canQuery || !transferActor(pending.actorId)) return;
+    if (!pending || saving || submittingTransfers.has(pending.commandKey) || !canQuery || !transferActor(pending.actorId)) return;
     const actor = actorStamp();
-    setSaving(true); setError("");
+    setBusy(true); setError("");
     updateTransferNote(pending.commandKey);
     try {
       const result = await transferRecovery.query(pending, async saved => {
@@ -255,14 +280,14 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       if (result.conclusion === "succeeded" && transferRecovery.settleFromQuery(pending, "succeeded")) {
         updateTransferNote(pending.commandKey);
         window.dispatchEvent(new Event("support-todo-changed"));
-        onDone("原转绑已完成，并核对了最新归属。");
+        if (mounted.current) onDone("原转绑已完成，并核对了最新归属。");
       } else if (result.conclusion === "not-found") {
         const state = transferRecovery.state(pending);
         updateTransferNote(pending.commandKey, state.expired || state.replayRejection ? M_RECOVERY.notFoundShort : "");
       } else updateTransferNote(pending.commandKey, M_RECOVERY.unsettled);
     } catch (cause) {
       if (actor === actorStamp()) updateTransferNote(pending.commandKey, mQueryFailedText(displayAdminReadError(cause)));
-    } finally { setSaving(false); }
+    } finally { setBusy(false); }
   }
 
   const querying = recoveryState?.busy === "query";
@@ -274,7 +299,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
         : <Button type="button" variant={recoveryState.replayBlock ? "secondary" : "primary"} loading={recoveryState.busy === "replay"} loadingText="提交中…" disabled={saving} disabledReason={saving ? undefined : pendingReplayReason(recoveryState, "当前账号没有办理转绑的权限，不能重试。")} onClick={() => void send(pending, true)}>按原请求重试</Button>}</>
     : <><Button type="button" disabled={saving} onClick={onClose}>取消</Button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <Button type="button" onClick={onOpenOwn}>查看我的客户资料</Button>}{targets && <Button type="button" variant="primary" disabled={saving} loading={saving} loadingText="提交中…" disabledReason={!chosen ? "请选择目标专属客服" : reasonRule.blocked} onClick={() => void submit()}>确认正式转绑</Button>}</>;
 
-  if (releasing && pending) return <TransferRelease record={pending} returnFocus={returnFocus} onCancel={() => setReleasing(false)} onReleased={() => setReleasing(false)} />;
+  if (releasing && pending) return <TransferRelease record={pending} returnFocus={returnFocus} onCancel={() => setReleasing(false)} onReleased={onClose} />;
   return <Modal title="正式转绑客户" icon="users" busy={saving} returnFocus={returnFocus} onClose={onClose} footer={footer}><div className="m1-transfer-form">
     {pending ? <>
       {view && <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={recoveryState?.replayRejection || recoveryState?.expired ? <MAuditLink /> : undefined}><p>{view.line}</p><p>原转绑已锁定，不能修改。</p></Notice>}

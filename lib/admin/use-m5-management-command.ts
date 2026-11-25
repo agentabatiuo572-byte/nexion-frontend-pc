@@ -6,7 +6,7 @@ import { displayAdminError, displayAdminReadError } from "./error-messages";
 import { M_RECOVERY, mQueryFailedText, mRejectedReason, mUnknownText } from "./m-recovery-copy";
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
-import { SupportClientError } from "./m-support-client";
+import { isSupportSessionExpired, SupportClientError } from "./m-support-client";
 import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
 
 export type M5ManagementRecord<T, B> = PendingMutationRecord & { actorId: number; payload: T; before?: B; denied?: boolean };
@@ -40,7 +40,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
     readAfterExpiry: (record: M5ManagementRecord<T, B>) => Promise<() => void>;
     canLoadLatest?: boolean;
     canRelease: boolean;
-    onLocalRelease: (record: M5ManagementRecord<T, B>) => void;
+    onLocalRelease: (record: M5ManagementRecord<T, B>, rejection: string) => void;
   };
   fingerprint: (payload: T) => string;
   write: (payload: T, key: string) => Promise<R>;
@@ -184,7 +184,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
             : state.replayRejection ? mRejectedReason(displayAdminError(error)) : mUnknownText(displayAdminError(error)));
         return;
       }
-      const rejected = action === "submit" && error instanceof SupportClientError
+      const rejected = action === "submit" && error instanceof SupportClientError && !isSupportSessionExpired(error)
           && !error.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(error.status, error.apiCode);
       if (rejected) {
         store.forget(record.fingerprint, record.commandKey); setPending(undefined);
@@ -209,10 +209,12 @@ export function useM5ManagementCommand<T, B, R>(options: {
   /** Call after the operator verifies the original outcome. The release itself is local. */
   function releaseRejectedReplay() {
     if (!pending || !recovery?.canRelease || running.current || epoch !== useAdminAuth.getState().authEpoch
-      || actorId !== useAdminAuth.getState().session?.adminId || !recovery.controller.releaseRejectedReplay(pending)) return false;
+      || actorId !== useAdminAuth.getState().session?.adminId) return false;
+    const rejection = recovery.controller.state(pending).replayRejection;
+    if (!rejection || !recovery.controller.releaseRejectedReplay(pending)) return false;
     setPending(undefined);
     setMessage("");
-    recovery.onLocalRelease(pending);
+    recovery.onLocalRelease(pending, rejection);
     return true;
   }
   return { pending, busy, submitting, message, canReplay, recoveryState, releaseRejectedReplay, run };

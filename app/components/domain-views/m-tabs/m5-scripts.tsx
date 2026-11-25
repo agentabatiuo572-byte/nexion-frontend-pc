@@ -168,7 +168,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const [needsRead, setNeedsRead] = useState(false);
   const [profileRecovery, setProfileRecovery] = useState<MCommandRecord>();
   const restoring = useRef<MCommandRecord | undefined>(undefined);
-  const activeConfirm = useRef<{ original?: MCommandRecord }>({});
+  const activeConfirm = useRef<{ original?: MCommandRecord; request?: ActionConfirmReq }>({});
   const inFlight = useRef(false);
   const currentWrite = useRef<((key: string, value: string, meta: { action: string; reason: string; commandKey?: string }, successMessage: string) => Promise<boolean>) | null>(null);
   const commitM5Write = (key: string, value: string, meta: { action: string; reason: string; commandKey?: string }, successMessage: string) => currentWrite.current!(key, value, meta, successMessage);
@@ -187,14 +187,16 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
   const openActionConfirm = (request: ActionConfirmReq) => {
     const state = { original: restoring.current };
     activeConfirm.current = state;
-    ctx.openActionConfirm({ ...request,
+    const confirmation: ActionConfirmReq = { ...request,
       initialReason: state.original?.m5?.reason,
       edit: request.edit && { ...request.edit, initialValue: state.original?.m5 ? recoveredEditValue(state.original.m5) : request.edit.initialValue },
       getPendingReason: () => state.original?.m5 && mCommands.list().some(row => row.commandKey === state.original?.commandKey) ? state.original.m5.reason : undefined,
       blockedReason: state.original && (isRetryExpired(state.original) ? RETRY_EXPIRED_TEXT : state.original.m5 && !canRetry(state.original.m5) ? "这个账号没有这项操作的权限，请联系超级管理员。" : undefined),
       run: async (reason, value, businessValue) => state.original?.m5
         ? commitOriginal(state.original, true) : request.run(reason, value, businessValue),
-    });
+    };
+    activeConfirm.current.request = confirmation;
+    ctx.openActionConfirm(confirmation);
   };
   const recoveredEditValue = (command: M5Command) => {
     const body = JSON.parse(command.request.body);
@@ -311,6 +313,11 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       if (!recovered) { mCommands.forget(record.fingerprint, record.commandKey); syncPending(); }
       toast(recovered ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。", "warn"); return false;
     }
+    const owner = activeConfirm.current;
+    const closeOwner = () => {
+      if (owner.request) ctx.closeActionConfirm?.(owner.request);
+      if (command.profile && owner === activeConfirm.current) { setProfileAgent(null); setProfileRecovery(undefined); }
+    };
     inFlight.current = true; setWritePending(true);
     const epoch = useAdminAuth.getState().authEpoch;
     const current = () => epoch === useAdminAuth.getState().authEpoch && command.actorId === useAdminAuth.getState().session?.adminId;
@@ -318,21 +325,21 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
       await sendM5Command(command, record.commandKey);
       if (!current()) return false;
       mCommands.forget(record.fingerprint, record.commandKey); syncPending();
-      activeConfirm.current.original = undefined;
-      ctx.closeActionConfirm?.(); setProfileAgent(null); setProfileRecovery(undefined);
+      owner.original = undefined;
+      closeOwner();
       await readCurrent(); if (!command.profile) toast(command.successMessage); return true;
     } catch (error) {
       if (!current()) return false;
       if (explicitMContentRejectionCode(error) !== undefined) {
         mCommands.forget(record.fingerprint, record.commandKey); syncPending();
-        activeConfirm.current.original = undefined;
-        if (recovered) { ctx.closeActionConfirm?.(); setProfileAgent(null); setProfileRecovery(undefined); }
+        owner.original = undefined;
+        if (recovered) closeOwner();
         await readCurrent();
         toast(displayAdminError(error), "error");
         throw new Error(displayAdminError(error));
       }
-      activeConfirm.current.original = record;
-      if (command.profile) setProfileRecovery(record);
+      owner.original = record;
+      if (command.profile && owner === activeConfirm.current) setProfileRecovery(record);
       syncPending(); toast(`结果未知 · ${displayAdminError(error)}`, "warn");
       throw new OutcomeUnknownError(displayAdminError(error));
     } finally { inFlight.current = false; if (current()) setWritePending(false); }
@@ -362,7 +369,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     if (!command) return;
     restoring.current = record;
     try {
-      if (command.profile) { setProfileRecovery(record); setProfileAgent(command.profile); }
+      if (command.profile) { activeConfirm.current = {}; setProfileRecovery(record); setProfileAgent(command.profile); }
       else if (command.key === CAT_KEY("advisor")) toggleCat({ type: "advisor", name: command.text, enabled: command.beforeValue === "on" });
       else if (command.key === "I.session.script.__create") newScript();
       else if (command.key === REPLY_TEMPLATE_LIST_KEY) newReplyTemplate();

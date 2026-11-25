@@ -211,6 +211,7 @@ export function M4StatusConfirm({ faq, busy, disabled, disabledReason, failure, 
 
 export type M4PendingRow = { key: string; question: string; change: ReactNode; submittedAt: number; expired: boolean;
   /** 这一行的标签和结论（共用 fundRecoveryStatus 的叫法）；note 是结论句和技术信息。 */
+  discard?: { label: string; requiresConfirmation: boolean; disabled: boolean; run: () => void };
   status: { tone: StateTone; label: string; more?: string }; note: ReactNode; actions: ReactNode };
 
 /**
@@ -223,10 +224,10 @@ export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
   if (rows.length === 0) return null;
   const open = rows.filter((row) => OPEN_RESULT_LABELS.includes(row.status.label)).length;
   const submitting = rows.filter(row => row.status.label === "提交中…").length;
-  const drafts = rows.filter(row => row.status.label === "可继续修改").length;
+  const drafts = rows.filter(row => row.status.label === "可继续修改" || row.status.label === "可重新确认").length;
   const unknown = rows.length - open - submitting - drafts;
   const title = [unknown > 0 && `${unknown} 个操作结果未知`, open > 0 && `${open} 个操作还没结案`,
-    submitting > 0 && "提交中…", drafts > 0 && `${drafts} 个操作可继续修改`].filter(Boolean).join("，");
+    submitting > 0 && "提交中…", drafts > 0 && `${drafts} 个操作可继续处理`].filter(Boolean).join("，");
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时还没结论的，由有调查权限的超级管理员核查结案。有结论前这条问答不能再改。</p></>} /></>}>
       <div ref={box}><ul className="m4-pending" aria-label="结果未知的操作">

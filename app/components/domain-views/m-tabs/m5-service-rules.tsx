@@ -127,16 +127,19 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       controller: ruleRecovery,
       expiry: "after-missing",
       canRelease,
-      onLocalRelease: record => {
+      onLocalRelease: (record, rejection) => {
         const base = latest ?? current;
-        if (base && !readUnavailable) {
+        const needsLatest = rejection === "SUPPORT_RULES_VERSION_CONFLICT" && (!base || base.version <= record.payload.expectedVersion);
+        if (needsLatest) {
+          releasedRecord.current = record;
+        } else if (base && !readUnavailable) {
           setCurrent(base);
           applyReleasedRules(base, record);
         } else {
           releasedRecord.current = record;
           setDraft(null);
         }
-        setLatest(null); setConflict(false); setReason(""); setConfirm(false); setError("");
+        setLatest(null); setConflict(needsLatest); setReason(""); setConfirm(false); setError("");
       },
       readAfterExpiry: async () => {
         const value = await supportClient.rules();
@@ -208,7 +211,16 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
 
   async function refreshLatest() {
     const actor = actorStamp();
-    try { const latestRules = await supportClient.rules(); if (actor === actorStamp()) setLatest(latestRules); } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
+    try {
+      const latestRules = await supportClient.rules();
+      if (actor !== actorStamp()) return;
+      const released = releasedRecord.current;
+      if (released) {
+        setCurrent(latestRules);
+        applyReleasedRules(latestRules, released);
+        setLatest(null); setConflict(false); setReason(""); setError("");
+      } else setLatest(latestRules);
+    } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
   }
 
   const checkPending = () => command.run("query");
@@ -226,7 +238,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const summaryMode = current?.unboundAssignmentMode ?? (current ? "SUPERVISOR" : undefined);
   useEffect(() => {
     onSummary?.({ state: loading ? "loading" : readUnavailable ? "failed" : current ? "ready" : "failed", mode: summaryMode, inheritance: current?.inheritanceMode, depth: current?.maxInheritanceDepth, pending: Boolean(retry) });
-  }, [onSummary, current, loading, summaryMode, command.pending, readUnavailable]);
+  }, [onSummary, current, loading, summaryMode, retry, readUnavailable]);
 
   if (permission === "agent") return <BlockState state="denied" title="当前账号不能查看服务规则" />;
   // 只显示用：每个框自己的问题写在框下；能不能保存仍只看 parsed（逻辑不变）。
