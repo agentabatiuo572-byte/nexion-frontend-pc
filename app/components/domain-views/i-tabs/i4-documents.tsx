@@ -21,7 +21,7 @@ import { timeText } from "./i4-parts";
 import { IConflictModal, useIConflictView, type IConflictRow } from "./i-conflict";
 import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, type queryI4DocumentCommand, i4DocumentPermission, i4DocumentRecovery, i4DocumentRetryBlocked, type I4DocumentCommand, type I4DocumentUploadDraft } from "@/lib/admin/i4-document-commands";
 import { useIConflictReview, isIConflictRejection } from "@/lib/admin/i-conflict-review";
-import { frozenNextStep } from "@/lib/admin/retry-rejected";
+import { frozenNextStep, frozenTitle } from "@/lib/admin/retry-rejected";
 
 // 原请求由 i4-document-commands 保存；编辑器仅持有输入，未知时冻结。
 export type I4DocumentEditor =
@@ -329,7 +329,7 @@ export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>
             : !alreadyDefault && <Notice tone="warn" title="恢复后立即生效">不走审批；App 下次读取时改显示随系统发布的默认文件。</Notice>}
           {editorError && (pendingKey
-            ? <Notice tone="warn" title={editor.mode === "upload" ? "上传结果未知" : "恢复结果未知"}
+            ? <Notice tone="warn" title={editor.mode === "upload" ? "上传结果未知" : frozenTitle(pendingDocument && i4DocumentRetryBlocked(pendingDocument), "恢复结果未知")}
               action={<Button size="sm" loading={loading} onClick={() => void readBack()}>查询原结果</Button>} actionBelow>
               <p>{editorError}</p>
               <p>{editor.mode === "upload" ? "这页不能重发这次上传。原上传成功的话后台留着结果，查到就解除记录；查不到就对照原文件和现在用的文件。"

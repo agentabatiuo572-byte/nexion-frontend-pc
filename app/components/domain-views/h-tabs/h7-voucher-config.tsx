@@ -504,7 +504,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         name: H7_VOUCHER_ACTIONS[record.op],
         object: `「${record.voucherName}」`,
         change: approvalChange(record),
-        note: rowNote(approvalQuery.errors[record.commandKey], rejected, expired),
+        note: rowNote(approvalQuery.errors[record.commandKey], rejected, expired && !record.ticket && !record.acknowledged),
         submittedAt: record.createdAt,
         tag: record.ticket ? pendingTag() : record.acknowledged ? acknowledgedTag() : rejected ? rejectedTag() : expired ? expiredTag() : unknownTag("approval"),
         ticket: record.ticket?.id,

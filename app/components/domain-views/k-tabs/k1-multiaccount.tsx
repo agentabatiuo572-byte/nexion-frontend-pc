@@ -1828,7 +1828,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {record.kind === "registration-param" && canReadAudit && <Link className="rd-link" href={auditLink(record.target)}>到操作记录与审批核对</Link>}
               {record.kind !== "registration-param" && !expired && !record.approval?.acknowledged && !record.clusterReceipt && !rejected && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
-              {rejected && <VerifiedReleaseButton disabled={Boolean(retrying || checking)} onClick={() => verifiedRelease.ask({ operation: title, createdAt: record.createdAt,
+              {rejected && <VerifiedReleaseButton disabled={Boolean(retrying || checking)} onClick={() => verifiedRelease.ask({ operation: title, target: record.kind === "entry" ? <>收益记录 <span data-mono>{record.target}</span></> : undefined, createdAt: record.createdAt,
                 release: () => { const released = k1Recovery.releaseRejectedReplay(record); syncPending(); return released; } })} />}
             </>,
             detail: approval ? <>

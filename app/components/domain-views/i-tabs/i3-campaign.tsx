@@ -31,7 +31,7 @@ import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-comma
 import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
-import { frozenNextStep, RETRY_REJECTED_NEXT, RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
+import { frozenNextStep, frozenTitle, RETRY_REJECTED_NEXT, RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
@@ -1531,7 +1531,7 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
-          {frozen && <Notice tone="warn" title="结果未知">原请求已锁定，不能再改。{frozenNextStep(blocked, "先在页面上方查询原结果")}</Notice>}
+          {frozen && <Notice tone="warn" title={frozenTitle(blocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(blocked, "先在页面上方查询原结果")}</Notice>}
           {saveError && <Notice tone="danger" title="草稿没有保存">{saveError}</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>

@@ -24,8 +24,8 @@ import { useReach } from "@/lib/nav/use-reach";
 import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, settleJ3LegacyCommand, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ3Command } from "@/lib/admin/j-client";
 import { checkFundCommand, fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
-import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
-import { frozenNextStep } from "@/lib/admin/retry-rejected";
+import { rejectedTag, replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { frozenNextStep, frozenTitle, RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
 import { SettledLine, receiptFact, receiptRejected } from "../recovery-panel";
 import { CommandClosureModal, } from "../e-tabs/e-command-check";
 import { PROCESSED_IN_DIALOG, REJECTED_IN_DIALOG, SETTLED_OTHER, SETTLED_TEXT, processedStatus } from "./j-recovery-copy";
@@ -810,7 +810,7 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, onClose, on
 
   return (
     <Modal title="修改告警设置" icon={SlidersHorizontal} busy={submitting} dirty={changed || reason.length > 0}
-      sub={unknownAt !== null ? <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>}
+      sub={unknownAt !== null ? blocked === RETRY_REJECTED_TEXT ? rejectedTag() : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : <StatusTag tone="progress" filled>立即生效</StatusTag>}
       onClose={() => { if (!submitting) onClose(); }}
       footer={unknownAt !== null ? <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>
@@ -822,7 +822,7 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, onClose, on
           onClick={() => { setTouched(true); void submit(); }}>确认修改</Button>
       </>}>
       {unknownAt !== null && (
-        <Notice tone="warn" title="这次修改结果未知">
+        <Notice tone="warn" title={frozenTitle(blocked, "这次修改结果未知")}>
           <p>{businessStamp(unknownAt)}（{businessZone().label}）提交后没收到确定结果，可能已经生效。下面是这次提交的内容，不能再改。</p>
           <p>{frozenNextStep(blocked)}</p>
           {readBack && <p>{readBack}</p>}

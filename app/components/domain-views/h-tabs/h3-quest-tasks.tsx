@@ -1008,7 +1008,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const rejected = releasable(original) && !original.ticket && !original.acknowledged;
     return {
       key: original.commandKey, name: original.change.action, change: changeOf(original.change),
-      note: mutations.queryErrors[original.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : undefined),
+      note: mutations.queryErrors[original.commandKey] ?? (rejected ? RETRY_REJECTED_NEXT : isRetryExpired(original) && !original.ticket && !original.acknowledged ? RETRY_EXPIRED_TEXT : undefined),
       submittedAt: original.createdAt,
       tag: original.ticket ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
         : rejected ? rejectedTag() : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
