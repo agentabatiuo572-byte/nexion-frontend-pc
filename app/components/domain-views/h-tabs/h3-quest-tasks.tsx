@@ -28,6 +28,8 @@ import { useHConflictDraft, type RejectedH4Draft } from "@/lib/admin/use-h-confl
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
+import type { H3WeeklyRegionMapping } from "@/lib/admin/h-client";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, ConfirmReq, HCtx } from "./types";
@@ -115,6 +117,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const canModuleWrite = shellCtx.can("growth_h3_write");
   const fresh = useRef(false);
   const recoveryDrafts = useRef(new Map<string, RejectedH4Draft>());
+  const missionDrafts = useTerminalDrafts<H3MissionForm>();
+  const regionDrafts = useTerminalDrafts<H3WeeklyRegionMapping[]>();
+  const operatorId = () => useAdminAuth.getState().session?.adminId;
+  const regionObject = "growth.h3.weekly-region-policy";
   const recoveryDraftKey = (target: string, action: string) => JSON.stringify([useAdminAuth.getState().session?.adminId, target, action]);
   const confirmation = useRef<{ action: string; title: string; target?: string; editValue?: string; businessValue?: Record<string, string>; commandKey?: string; finish: () => void } | null>(null);
   const openActionConfirm = (req: H3ActionConfirmReq | null) => {
@@ -202,6 +208,23 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       const { target, action, editValue, businessValue } = draft.change;
       recoveryDrafts.current.set(recoveryDraftKey(target, action), { value: editValue, business: businessValue });
     }
+    if (draft?.request.kind === "approval" && draft.adminId !== undefined) {
+      const { op, params } = draft.request.body.command;
+      if (op === "h3_mission_create") {
+        const value = params.values as Partial<Record<string, unknown>> | undefined;
+        if (value && typeof value.missionType === "string" && typeof value.missionCode === "string" && typeof value.missionName === "string"
+          && typeof value.rewardPoints === "number" && typeof value.category === "string" && typeof value.actionRoute === "string") {
+          missionDrafts.remember(draft.adminId, value.missionType, {
+            missionCode: value.missionCode, missionName: value.missionName, rewardPoints: String(value.rewardPoints),
+            category: value.category, actionRoute: value.actionRoute,
+          });
+        }
+      } else if (op === "h3_weekly_region_policy" && Array.isArray(params.mappings)
+        && params.mappings.every(row => row && typeof row.callingCode === "string" && typeof row.zoneId === "string")) {
+        regionDrafts.remember(draft.adminId, regionObject, params.mappings.map(({ callingCode, zoneId }) => ({ callingCode, zoneId })));
+        region.setDraft(null);
+      }
+    }
     await reload();
     await region.reload();
   }, () => fresh.current, model);
@@ -241,9 +264,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     }
   };
   const region = useH3RegionPolicy(ctx, async (params, reason, before, after) => {
-    await runWrite({ store: "region", path: "", method: "POST", body: {}, target: "growth.h3.weekly-region-policy",
+    const owner = operatorId();
+    await runWrite({ store: "region", path: "", method: "POST", body: {}, target: regionObject,
       before, after, regionParams: params, success: "已提交审批" }, reason);
-  }, () => ({ blocked: mutations.blocked("growth.h3.weekly-region-policy"), pending: mutations.pendingApprovals.some(t => t.obj === "growth.h3.weekly-region-policy" && t.status === "pending") }));
+    regionDrafts.forget(owner, regionObject);
+  }, () => ({ blocked: mutations.blocked(regionObject), pending: mutations.pendingApprovals.some(t => t.obj === regionObject && t.status === "pending") }),
+  () => regionDrafts.get(operatorId(), regionObject));
 
   region.submit = conflictDraft.register("weekly-region", region.submit);
 
@@ -385,10 +411,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const missionCode = String(bv.missionCode || "").trim();
         const missionName = String(bv.missionName || "").trim();
         if (!missionCode || !missionName) return;
+        const owner = operatorId();
         await runWrite({ store: "mission", path: "/quest-events/missions", method: "POST", target: missionCode,
           body: { missionCode, missionName, missionType, rewardPoints: Number(bv.rewardPoints), category: bv.category.trim(), actionRoute: bv.actionRoute.trim() },
           before: "任务不存在", after: `${missionName} · ${bv.rewardPoints} UVT · 已停用`,
           success: `任务「${missionName}」已新建（停用中，绑定完成条件后再启用）` }, reason);
+        missionDrafts.forget(owner, missionType);
         setCreating(current => current === editor ? null : current);
       },
     } as H3ActionConfirmReq);
@@ -1050,6 +1078,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Fragment>);
   // 新建任务抽屉同理：旧操作收尾后的重读失败时不卸掉，提示没读到、读到前不能进下一步。
   const missionDrawer = creating && <H3MissionFormDrawer key="h3-mission-drawer" missionType={creating.type} onClose={() => setCreating(null)}
+    initial={missionDrafts.get(operatorId(), creating.type)}
     readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) } : undefined}
     onReview={(bv) => runCreateMission(creating.type, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />;
 

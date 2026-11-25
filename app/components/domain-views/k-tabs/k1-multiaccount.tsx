@@ -30,6 +30,7 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, type PendingMutationExtra, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand } from "@/lib/admin/a3-command-query";
@@ -544,6 +545,20 @@ function futureIsoDate(value: string) {
 export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   useSyncExternalStore(k1Recovery.subscribe, k1Recovery.getRevision, k1Recovery.getRevision);
   const reach = useReach();
+  const ownerId = useAdminAuth((state) => state.session?.adminId);
+  const paramDrafts = useTerminalDrafts<string>();
+  const whitelistDrafts = useTerminalDrafts<Omit<WhitelistDraft, "reason">>();
+  const auditLink = (target?: string) => `/platform/audit?domain=K${target ? `&object=${encodeURIComponent(target)}` : ""}`;
+  const canReadAudit = reach("/platform/audit", "platform_a2_read");
+  const retainEditableDraft = (record: K1PendingCommand) => {
+    const owner = record.commandOwnerId;
+    if (owner === undefined) return;
+    if ((record.kind === "param" || record.kind === "release-param" || record.kind === "registration-param") && record.value !== undefined) {
+      paramDrafts.remember(owner, record.fingerprint, record.value);
+    } else if (record.kind === "whitelist-add" && record.note !== undefined && record.expireText !== undefined) {
+      whitelistDrafts.remember(owner, "new", { cidr: record.target, note: record.note, expireText: record.expireText });
+    }
+  };
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const operator = useAdminAuth((state) => state.session?.operator || state.session?.username || state.operator || "");
   const hasAuthority = (authority: string) => authorities.includes(authority);
@@ -860,7 +875,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         setPendingNotes(current => ({ ...current, [record.fingerprint]: "最新规则没读到，刷新后核对。" }));
       }
     } else {
-      k1Recovery.settleFromQuery(record, result.conclusion);
+      if (k1Recovery.settleFromQuery(record, result.conclusion) && result.conclusion === "not-executed") retainEditableDraft(record);
       syncPending();
       if (record.kind === "entry") {
         const entries = await refreshProtectedEntries();
@@ -1061,10 +1076,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           await queryReleaseApproval(acknowledged);
           return receipt;
         }
-        k1Recovery.settleFromQuery(record, result.conclusion);
+        if (k1Recovery.settleFromQuery(record, result.conclusion)
+          && (result.conclusion === "not-executed" || result.conclusion === "rejected")) retainEditableDraft(record);
         setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: record.label, status: receipt!.originalStatus, proposal: !!record.approval || record.kind === "cluster" }]);
         syncPending();
         await Promise.all([ctx.reloadKRisk({ multiAccount: pageQuery }), refreshProtectedEntries()]);
+      } else if (record.kind === "registration-param") {
+        await ctx.reloadKRisk({ multiAccount: pageQuery });
       }
       return receipt;
     } catch (cause) {
@@ -1300,21 +1318,22 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const adjParam = (p: KRiskParam) => {
     setDraftError(null);
+    const saved = paramDrafts.get(ownerId, `param|${p.key}`);
     if (p.key === "linkWeight") {
-      setWeightDraft({ param: p, ...parseLinkWeight(p.value), reason: "", bad: {} });
+      setWeightDraft({ param: p, ...parseLinkWeight(saved ?? p.value), reason: "", bad: {} });
       return;
     }
     if (!PARAM_LIMITS[p.key]) {
       ctx.toast(`这个参数不能在这里修改`, "warn");
       return;
     }
-    setParamDraft({ param: p, value: "", reason: "" });
+    setParamDraft({ param: p, value: saved ?? "", reason: "" });
   };
 
   // 数值新值留空，选项类默认选当前值（OP-19）。
   const adjReleaseParam = (p: KRiskParam) => {
     setDraftError(null);
-    setReleaseDraft({ param: p, value: K1_RELEASE_PARAM_LIMITS[p.key] ? "" : p.value, reason: "" });
+    setReleaseDraft({ param: p, value: paramDrafts.get(ownerId, `release-param|${p.key}`) ?? (K1_RELEASE_PARAM_LIMITS[p.key] ? "" : p.value), reason: "" });
   };
 
   const releaseProtectedEntry = async (selected: K1ProtectedEntry, approvalRequired = false, initialReason?: string) => {
@@ -1415,6 +1434,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setDraftError(null);
     try {
       await runRecord(record);
+      if (kind === "whitelist") whitelistDrafts.forget(ownerId, "new");
+      else paramDrafts.forget(ownerId, `${record.kind}|${record.target}`);
       close();
     } catch (error) {
       if (kind === "release" && !record.approval && error instanceof K1RequestError
@@ -1513,7 +1534,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const addWl = () => {
     setDraftError(null);
-    setWhitelistDraft({ cidr: "", note: "", expireText: "", reason: "" });
+    setWhitelistDraft({ ...(whitelistDrafts.get(ownerId, "new") ?? { cidr: "", note: "", expireText: "" }), reason: "" });
   };
 
   const rmWl = (cidr: string) => {
@@ -1719,7 +1740,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       )}
 
       <FundRecoveryPanel settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
-        link={reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href={`/platform/audit?domain=K${pending.length === 1 ? `&object=${encodeURIComponent(pending[0].target)}` : ""}`}>到操作记录与审批核对</Link>}
+        link={canReadAudit && <Link className="rd-link" href={auditLink(pending.length === 1 ? pending[0].target : undefined)}>到操作记录与审批核对</Link>}
         rows={pending.map((record): FundRecoveryRow => {
           const blocked = retryBlocked(record);
           const expired = record.expiresAt <= Date.now();
@@ -1743,7 +1764,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>{record.approval ? "查询原审批单" : "查询原结果"}</Button>
                 : <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
-              {!expired && !record.approval?.acknowledged && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+              {record.kind === "registration-param" && canReadAudit && <Link className="rd-link" href={auditLink(record.target)}>到操作记录与审批核对</Link>}
+              {record.kind !== "registration-param" && !expired && !record.approval?.acknowledged && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
               {k1Recovery.state(record).replayRejection && <Button size="sm" disabled={Boolean(retrying || checking)} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
             </>,
             detail: approval ? <>
@@ -1912,10 +1934,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                       briefKind: "config", action: `调整${param.name}`, title: `调整 ${param.name}`, detail: "",
                       statedBrief: { impact: `${h5ParamDesc(param.desc, param.unit)}。`, check: "核对参数、当前值和新值，理由写明调整依据。" },
                       edit: param.unit === "0/1"
-                        ? { kind: "select", current: param.value, options: ["1", "0"], optionLabels: H5_SWITCH_LABELS, disallowCurrent: true }
-                        : { kind: "number", current: param.value, unit: accountUnit(param.unit), min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true, hint: `${param.min}–${param.max} 的整数` },
+                        ? { kind: "select", current: param.value, initialValue: paramDrafts.get(ownerId, `registration-param|${param.key}`), options: ["1", "0"], optionLabels: H5_SWITCH_LABELS, disallowCurrent: true }
+                        : { kind: "number", current: param.value, initialValue: paramDrafts.get(ownerId, `registration-param|${param.key}`), unit: accountUnit(param.unit), min: param.min, max: param.max, step: 1, maxDecimals: 0, disallowCurrent: true, hint: `${param.min}–${param.max} 的整数` },
                       effect: IMMEDIATE_EFFECT, confirmLabel: "确认修改", reasonPlaceholder: "写清调整原因和依据", reasonMax: 200,
-                      run: (reason, value) => runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整 ${param.name}`, operator, reason, value, expectedValue: param.value }),
+                      run: async (reason, value) => {
+                        await runRecord({ kind: "registration-param", target: param.key, name: param.name, label: `调整 ${param.name}`, operator, reason, value, expectedValue: param.value });
+                        paramDrafts.forget(ownerId, `registration-param|${param.key}`);
+                      },
                     })) : undefined} />)}
                 </ConfigList> : <p className="rd-note">暂无已配置的注册参数。</p>}
               </Panel>

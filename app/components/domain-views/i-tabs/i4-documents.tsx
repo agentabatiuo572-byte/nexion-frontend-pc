@@ -19,7 +19,7 @@ import {
 } from "@/lib/admin/trust-documents-client";
 import { timeText } from "./i4-parts";
 import { IConflictModal, useIConflictView, type IConflictRow } from "./i-conflict";
-import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, i4DocumentRecovery, i4DocumentRetryBlocked, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
+import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, i4DocumentRecovery, i4DocumentRetryBlocked, type I4DocumentCommand, type I4DocumentUploadDraft } from "@/lib/admin/i4-document-commands";
 import { useIConflictReview, isIConflictRejection } from "@/lib/admin/i-conflict-review";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
@@ -34,7 +34,12 @@ const fingerprint = (sha256?: string) => sha256 ? <span title={sha256}>{`${sha25
 /** 读回的事实写成一句：哪份文件、指纹、谁什么时候换上的。 */
 const observedText = (document: TrustDocument) => `${document.source === "UPLOADED" ? "上传的" : "默认的"} ${document.fileName} · 指纹 ${document.sha256.slice(0, 12)}… · ${document.updatedAt ? `${timeText(document.updatedAt)} ${document.updatedBy ?? ""}`.trim() : "没有上传记录"}`;
 
-export function I4Documents({ onPendingChange, recovery }: { onPendingChange: () => void; recovery: I4DocumentCommand | null }) {
+export function I4Documents({ onPendingChange, recovery, getDraft, rememberDraft, forgetDraft }: {
+  onPendingChange: () => void; recovery: I4DocumentCommand | null;
+  getDraft: (slot: TrustDocumentSlot) => I4DocumentUploadDraft | undefined;
+  rememberDraft: (owner: number, slot: TrustDocumentSlot, draft: I4DocumentUploadDraft) => void;
+  forgetDraft: (owner: number | undefined, slot: TrustDocumentSlot) => void;
+}) {
   const session = useAdminAuth((state) => state.session);
   const canRead = !!session?.authorities?.includes("content_i4_read");
   // 公司登记资料属合规内容，需信任中心管理权限；白皮书标准发布权限即可。
@@ -44,6 +49,15 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editor, setEditor] = useState<I4DocumentEditor | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const upload = editor?.mode === "upload" ? editor.file : null;
+  useEffect(() => {
+    if (!upload || !fileInput.current || fileInput.current.files?.length) return;
+    // Use the existing file control so the operator can see and replace the recovered PDF.
+    const files = new DataTransfer();
+    files.items.add(upload);
+    fileInput.current.files = files.files;
+  }, [upload]);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [reasonMin, setReasonMin] = useState(8);
@@ -93,7 +107,8 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const openUpload = (document: TrustDocument) => {
     if (!fresh || loading || i4DocumentPermission(document.slot) || pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) return;
     setPendingKey(null); setEditorError(null); setEditorBaselineReady(true); setConflicted(false);
-    setEditor({ mode: "upload", document, file: null, fields: {
+    const saved = getDraft(document.slot);
+    setEditor({ mode: "upload", document, file: saved?.file ?? null, fields: saved ? { ...saved.fields, reason: "" } : {
       version: document.slot === "whitepaper" ? "" : document.version ?? "",
       language: document.language ?? "",
       referenceNo: document.referenceNo ?? "",
@@ -150,6 +165,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
     submitting.current = true; setSaving(true); setEditorError(null);
     try {
       await submitI4Document(editor.document, fields, editor.mode === "upload" ? editor.file! : undefined);
+      if (editor.mode === "upload") forgetDraft(session?.adminId, editor.document.slot);
       setEditor(null); setPendingKey(null); setFresh(false);
       await refresh();
     } catch (cause) {
@@ -184,6 +200,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         try {
           const result = await queryI4DocumentCommand(original);
           if (result.settled) {
+            if (result.draft) rememberDraft(original.owner, original.document.slot, result.draft);
             setEditor(null); setPendingKey(null); setFresh(false);
             onPendingChange(); await refresh(); return;
           }
@@ -337,7 +354,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
           </Facts>
           {editor.mode === "upload" ? <>
             {!pendingFile && <Field label="PDF 文件" required help="最大 20 MB、80 页">
-              <input aria-label="PDF 文件" className="rd-input rd-file-input" type="file" disabled={saving || !!pendingKey || conflicted} accept="application/pdf,.pdf"
+              <input ref={fileInput} aria-label="PDF 文件" className="rd-input rd-file-input" type="file" disabled={saving || !!pendingKey || conflicted} accept="application/pdf,.pdf"
                 onChange={(event) => { if (!saving && !pendingKey && !conflicted) setEditor({ ...editor, file: event.target.files?.[0] ?? null }); }} />
             </Field>}
             <div className="rd-form-grid" data-cols="2" data-dense="">

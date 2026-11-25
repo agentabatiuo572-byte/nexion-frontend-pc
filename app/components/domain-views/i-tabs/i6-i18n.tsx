@@ -34,9 +34,10 @@ import { OPEN_RESULT_LABELS, TechInfo, receiptFact, receiptOf } from "../recover
 import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { isConfirmedNonExecution, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import { useReach } from "@/lib/nav/use-reach";
 import { I6_COURSE_REWARD_DECIMALS, i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
-import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, courseFormMissing, mapCourseLanguages, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
+import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, courseFormMissing, courseFormState, mapCourseLanguages, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
 
 /** 查到原审批单时说结论：还在等批准，或已有结果、执行情况到操作记录看。 */
 const ticketText = (ticket: A2OperationRow) => ({
@@ -74,7 +75,7 @@ type Course = {
   rewardRaw: string | null;
 };
 type CopyEditor = { mode: "edit" | "fix"; issue?: IntegrityIssue; zh: string; vi: string; en: string; tried: boolean };
-type CourseEditorState = { courseId?: string; spec: CourseSpec; title: string; sub?: ReactNode; save: (form: CourseForm) => void };
+type CourseEditorState = { courseId?: string; spec: CourseSpec; initial?: CourseForm; title: string; sub?: ReactNode; save: (form: CourseForm) => void };
 
 const MSG_STATUS: Record<string, { text: string; tone: StateTone }> = {
   draft: { text: "草稿", tone: "neutral" }, published: { text: "已发布", tone: "ok" }, archived: { text: "已归档", tone: "done" },
@@ -248,6 +249,32 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   useSyncExternalStore(i6CourseRecovery.subscribe, i6CourseRecovery.getRevision, i6CourseRecovery.getRevision);
   const [releasing, setReleasing] = useState<HIRewardCommand | null>(null);
   const [ordinaryBusy, setOrdinaryBusy] = useState("");
+  const courseDrafts = useTerminalDrafts<CourseForm>();
+  const rewardDrafts = useTerminalDrafts<string>();
+  const retainCourseReward = (record: HIRewardCommand, ticket?: A2OperationRow | null) => {
+    if (!ticket || ticket.status === "pending" || ticket.status === "approved" || record.payload.kind !== "proposal") return;
+    const input = record.payload.input;
+    if (input.command.op !== "i7_course_reward_adjust") return;
+    const reward = i6Amount(input.command.params.rewardNex);
+    if (reward !== undefined) rewardDrafts.remember(record.owner, input.obj, reward);
+  };
+  const retainCourseDraft = (record: I6Command) => {
+    if (!record.original || !["course-create", "course-draft", "version-create", "version-draft"].includes(record.operation)) return;
+    // The wire payload has already passed the normal course schema.
+    const input = record.input;
+    const owner = record.original.owner;
+    const key = record.operation === "course-create" ? "new" : `${record.operation}:${record.target}${record.operation === "version-draft" ? ":" + record.version : ""}`;
+    const current = {
+      slug: record.target, version: record.version || undefined,
+      category: String(input.category), format: String(input.format), difficulty: String(input.difficulty),
+      duration: String(input.duration), reward: i6Amount(input.rewardNex) ?? null,
+      titleZh: String(input.titleZh ?? ""), titleVi: String(input.titleVi ?? ""), titleEn: String(input.titleEn ?? ""),
+      bodyZh: String(input.bodyZh ?? ""), bodyVi: String(input.bodyVi ?? ""), bodyEn: String(input.bodyEn ?? ""),
+      quizQuestions: input.quizQuestions as Course["quizQuestions"], passScore: Number(input.passScore),
+      retryLimit: Number(input.retryLimit), completionCondition: String(input.completionCondition ?? ""), rewardEvent: String(input.rewardEvent ?? ""),
+    };
+    courseDrafts.remember(owner, key, courseFormState({ ...courseSpec("edit"), current }));
+  };
   const [ordinaryOutcomes, setOrdinaryOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closingOrdinary, setClosingOrdinary] = useState<I6Command | null>(null);
   // 恢复列表多于三条时默认只露前三条（和 I3、I4 一样），首屏留给词条表和课程列表。
@@ -257,7 +284,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const reloadCourseApprovals = async () => {
     if (view !== "learn") return;
     const records = pendingHIRewardCommands().filter(record => record.scope.startsWith("I/"));
-    const results = await Promise.allSettled(records.map(queryI6CourseProposal));
+    const results = await Promise.allSettled(records.map(async record => {
+      const ticket = await queryI6CourseProposal(record);
+      retainCourseReward(record, ticket);
+      return ticket;
+    }));
     const mine = results.flatMap(result => result.status === "fulfilled" && result.value?.status === "pending" ? [result.value] : []);
     try {
       const overview = canReadA2 ? await fetchA2Overview() : undefined;
@@ -353,6 +384,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     setLookupKey(record.commandKey);
     try {
       const ticket = await queryI6CourseProposal(record);
+      retainCourseReward(record, ticket);
       toast(ticket ? ticketText(ticket) : "还没查到原审批单，记录继续保留。", "warn");
       if (ticket && ticket.status !== "pending") await finishRecovery(record.commandKey);
       else await reloadCourseApprovals();
@@ -828,7 +860,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       effect: <StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才改；批准前发奖按现在的数。`}>批准后生效</StatusTag>,
       confirmLabel: "提交审批",
       statedBrief: { impact: "批准后，还没发到账的奖励都按新数发；已经发出的不补也不扣。", check: "核对新数在范围内，理由写清为什么调。" },
-      edit: { kind: "number", current: c.rewardRaw ?? "", unit: "UVT/人", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, maxDecimals: I6_COURSE_REWARD_DECIMALS,
+      edit: { kind: "number", current: c.rewardRaw ?? "", initialValue: rewardDrafts.get(session?.adminId, c.id), unit: "UVT/人", min: TUTORIAL_REWARD_RANGE.min, max: TUTORIAL_REWARD_RANGE.max, maxDecimals: I6_COURSE_REWARD_DECIMALS,
         amplifiesWhen: (value) => (i6RewardChange(value, c.rewardRaw)?.direction ?? 0) > 0,
         hint: `${TUTORIAL_REWARD_RANGE.min}–${TUTORIAL_REWARD_RANGE.max} UVT/人`,
         preview: (value: string) => {
@@ -868,7 +900,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           sourceDomain: "I7",
           command: def.buildCommand({ courseId: c.id, rewardNex: i6Amount(v) }),
           target: def.buildTarget({ courseId: c.id }),
-        } }, undefined, v, { course: current }).then(() => toast("已提交，等待审批后执行"));
+        } }, undefined, v, { course: current }).then(() => {
+          rewardDrafts.forget(session.adminId, c.id);
+          toast("已提交，等待审批后执行");
+        });
       },
     });
   };
@@ -964,7 +999,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const newCrs = async () => {
     await readRequiredLanguages();
     const spec = courseSpec("create");
-    setCourseEditor({ spec, title: "新建课程", sub: "存成草稿，用户看不到",
+    setCourseEditor({ spec, initial: courseDrafts.get(session?.adminId, "new"), title: "新建课程", sub: "存成草稿，用户看不到",
       save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
         action: <>新建课程(存为草稿)</>,
         title: "保存新课程草稿",
@@ -980,7 +1015,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         amplifies: false,
         run: async (reason) => {
           const id = form.slug?.trim() || "new";
-          return runBackend(actions.createI6Course(id, await submittedCourse(spec, form), reason), "课程草稿已创建").then(() => setCourseEditor(null));
+          return runBackend(actions.createI6Course(id, await submittedCourse(spec, form), reason), "课程草稿已创建").then(() => finishCourseDraft("new"));
         },
       }),
     });
@@ -1001,9 +1036,16 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     statedBrief: { impact: "更新这门课的草稿，用户看不到。", check: "三种语言和测验核对过。" },
     facts: courseDraftFacts(form, <Fact k="版本">{c.v}</Fact>),
     amplifies: false,
-    run: async (reason) => runBackend(actions.updateI7CourseDraft(c.id, await submittedCourse(courseSpec("edit"), form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => setCourseEditor(null)),
+    run: async (reason) => runBackend(actions.updateI7CourseDraft(c.id, await submittedCourse(courseSpec("edit"), form, c.revision), reason), `${nexGridBrandText(c.title)} 草稿已更新`).then(() => finishCourseDraft(`course-draft:${c.id}`)),
   }) });
-  const editCrs = async (c: Course) => { await readRequiredLanguages(); setCourseEditor(editCrsState(c)); };
+  const finishCourseDraft = (key: string) => {
+    courseDrafts.forget(session?.adminId, key);
+    setCourseEditor(null);
+  };
+  const editCrs = async (c: Course) => {
+    await readRequiredLanguages();
+    setCourseEditor({ ...editCrsState(c), initial: courseDrafts.get(session?.adminId, `course-draft:${c.id}`) });
+  };
 
   const deleteCrs = (c: Course) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程草稿 · {nexGridBrandText(c.title)}</>,
@@ -1041,7 +1083,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
       ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
     await readRequiredLanguages();
-    setCourseEditor({ courseId: c.id, spec: courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`)), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
+    setCourseEditor({ courseId: c.id, spec: courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`)), initial: courseDrafts.get(session?.adminId, `version-create:${c.id}`), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
       save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
         action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
         title: "保存新版本草稿",
@@ -1052,7 +1094,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         facts: courseDraftFacts(form, <Fact k="版本"><Change from={`${c.v}（线上）`} to={`${form.version}（草稿）`} /></Fact>),
         amplifies: false,
         run: async (reason) => runBackend(
-          actions.createI7CourseVersion(c.id, await submittedCourse(courseSpec("version-create"), form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`).then(() => setCourseEditor(null)),
+          actions.createI7CourseVersion(c.id, await submittedCourse(courseSpec("version-create"), form), reason), `${nexGridBrandText(c.title)} ${form?.version} 草稿已创建`).then(() => finishCourseDraft(`version-create:${c.id}`)),
       }),
     });
   };
@@ -1069,10 +1111,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       facts: courseDraftFacts(form, <Fact k="版本">{row.version}（草稿）</Fact>),
       amplifies: false,
       run: async (reason) => runBackend(
-        actions.updateI7CourseVersion(c.id, row.version, await submittedCourse(courseSpec("version-edit"), form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => setCourseEditor(null)),
+        actions.updateI7CourseVersion(c.id, row.version, await submittedCourse(courseSpec("version-edit"), form, row.revision), reason), `${nexGridBrandText(c.title)} ${row.version} 草稿已更新`).then(() => finishCourseDraft(`version-draft:${c.id}:${row.version}`)),
     }),
   });
-  const editCourseVersion = async (c: Course, row: LearningCourseVersionView) => { await readRequiredLanguages(); setCourseEditor(editCourseVersionState(c, row)); };
+  const editCourseVersion = async (c: Course, row: LearningCourseVersionView) => {
+    await readRequiredLanguages();
+    setCourseEditor({ ...editCourseVersionState(c, row), initial: courseDrafts.get(session?.adminId, `version-draft:${c.id}:${row.version}`) });
+  };
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => confirmI6(`course:${c.id}`, { briefKind: "record",
     action: <>删除课程版本草稿 · {nexGridBrandText(c.title)} {row.version}</>,
@@ -1352,6 +1397,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
       const receipt = receiptOf(outcome);
       if (eCommandSettled(receipt)) {
+        if (isConfirmedNonExecution(receipt)) retainCourseDraft(record);
         const restoreCopy = record.operation === "message-draft" && (!copyEditor || selectedMessageKey === record.target)
           && (receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED" || receipt?.originalStatus === "CONFIRMED_REJECTED");
         toast(settledText({ status: receipt!.originalStatus }));
@@ -1417,7 +1463,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       const receipt = await queryI6Receipt(record, evidence);
       setOrdinaryOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
       setClosingOrdinary(null); updateRecovery(value => value + 1);
-      if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await finishRecovery(record.commandKey); }
+      if (eCommandSettled(receipt)) {
+        if (isConfirmedNonExecution(receipt)) retainCourseDraft(record);
+        toast(settledText({ status: receipt!.originalStatus }));
+        await finishRecovery(record.commandKey);
+      }
       else toast(CLOSURE_KEPT_TEXT, "warn");
     }} />;
   const ordinaryExplain = DIRECT_RECOVERY_INTRO;
@@ -2109,7 +2159,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       </section>}
     </Drawer>
 
-    <CourseEditor open={!!courseEditor} requiredLanguages={requiredLanguages} spec={courseEditor?.spec ?? null} title={courseEditor?.title ?? ""} sub={courseEditor?.sub}
+    <CourseEditor open={!!courseEditor} requiredLanguages={requiredLanguages} spec={courseEditor?.spec ?? null} initial={courseEditor?.initial} title={courseEditor?.title ?? ""} sub={courseEditor?.sub}
       onClose={() => setCourseEditor(null)} onSave={(form) => courseEditor?.save(form)} />
   </>;
 }

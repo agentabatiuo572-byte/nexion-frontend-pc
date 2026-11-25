@@ -18,6 +18,7 @@ import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
 import { pendingI3Commands, queryI3Command, retryI3Command, i3Recovery, i3RetryBlockedReason, i3DraftRetryBlockedReason, isI3DraftCommand, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { isConfirmedNonExecution, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import { canQueryI3Cap, i3CapPermission, i3CapRecovery, i3CapRetryBlockedReason, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { isIConflictRejection, useIConflictReview } from "@/lib/admin/i-conflict-review";
@@ -188,6 +189,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const { toast, actions, content, contentLoading } = ctx;
   const reach = useReach();
   const session = useAdminAuth((state) => state.session);
+  const scheduleDrafts = useTerminalDrafts<string>();
   const isSuperadmin = session?.role === "superadmin";
   const authorities = session?.authorities ?? [];
   const canWriteI3 = isSuperadmin || authorities.includes("content_i3_write");
@@ -464,11 +466,17 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
 
   /* ---------- actions ---------- */
 
+  const retainSchedule = (record: I3Command) => {
+    if (record.action !== "schedule" || !record.original) return;
+    const { schedule } = parseI3Json(record.original.body) as { schedule?: string };
+    if (typeof schedule === "string") scheduleDrafts.remember(record.original.owner, record.target, schedule);
+  };
+
   const sendCmp = (c: CampaignRow) => {
     if (lockReason(c.id) || !canSendCampaign(c)) return;
     setSchedulePendingKey(null);
     setScheduleRow(c);
-    setScheduledAt("");
+    setScheduledAt(scheduleDrafts.get(session?.adminId, c.id) ?? "");
     setScheduleReason("");
     setScheduleVerified(false);
   };
@@ -848,7 +856,10 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim(), { ...scheduleRow, status: scheduleRow.st }),
         `${scheduleRow.id} 已进入排期`,
       );
-      if (saved) setScheduleRow(null);
+      if (saved) {
+        scheduleDrafts.forget(session?.adminId, scheduleRow.id);
+        setScheduleRow(null);
+      }
     } catch (error) {
       if (isOutcomeUnknownError(error)) setSchedulePendingKey((error as { commandKey?: string }).commandKey ?? null);
       await reviewConflict(error, { reason: scheduleReason, scheduleRow, scheduledAt });
@@ -984,6 +995,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         }
         setOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
         if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
+          if (isConfirmedNonExecution(outcome.receipt)) retainSchedule(record);
           toast(settledText({ status: outcome.receipt!.originalStatus }));
           await refreshAfterMutation(record); return;
         }
@@ -1109,7 +1121,11 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           setOutcomes(all => ({ ...all, [record.commandKey]: { receipt } }));
           setClosing(null); syncPending();
           if (rejection) await recoverDraftRejection(record, rejection);
-          else if (fundCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await refreshAfterMutation(record); }
+          else if (fundCommandSettled(receipt)) {
+            if (isConfirmedNonExecution(receipt)) retainSchedule(record);
+            toast(settledText({ status: receipt!.originalStatus }));
+            await refreshAfterMutation(record);
+          }
           else toast(CLOSURE_KEPT_TEXT, "warn");
         }} />}
       {conflictUi}

@@ -7,6 +7,7 @@ import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } 
 import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 import { fetchTrustDocuments, normalizeTrustDocument, restoreTrustDocumentBody, uploadTrustDocument, type TrustDocument, type TrustDocumentUpload } from "./trust-documents-client";
+import { isConfirmedNonExecution } from "./use-terminal-drafts";
 
 export type I4DocumentCommand = PendingMutationRecord & {
   owner: number; mode: "upload" | "restore"; document: TrustDocument; fields: TrustDocumentUpload; body: string;
@@ -20,7 +21,8 @@ const pending = createPendingMutationStore<I4DocumentCommand>({ storageKey: "nex
 
 // PDFs can exceed sessionStorage's entire quota. Persist the actual File in IndexedDB
 // before sending; only its metadata/hash and complete form go into the shared record.
-async function uploadFile(commandKey: string, operation: "save" | "delete", file?: File): Promise<void> {
+export type I4DocumentUploadDraft = { file: File | undefined; fields: Omit<TrustDocumentUpload, "reason"> };
+async function uploadFile(commandKey: string, operation: "save" | "delete" | "read", file?: File): Promise<File | undefined> {
   const database = await new Promise<IDBDatabase>((resolve, reject) => {
     const open = indexedDB.open("nexion-admin-i4-upload-files-v1", 1);
     open.onupgradeneeded = () => open.result.createObjectStore("files");
@@ -28,11 +30,13 @@ async function uploadFile(commandKey: string, operation: "save" | "delete", file
     open.onerror = () => reject(open.error);
   });
   try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction("files", "readwrite");
+    return await new Promise<File | undefined>((resolve, reject) => {
+      const transaction = database.transaction("files", operation === "read" ? "readonly" : "readwrite");
       const store = transaction.objectStore("files");
-      if (operation === "save") store.put(file, commandKey); else store.delete(commandKey);
-      transaction.oncomplete = () => resolve();
+      const read = operation === "read" ? store.get(commandKey) : undefined;
+      if (operation === "save") store.put(file, commandKey);
+      if (operation === "delete") store.delete(commandKey);
+      transaction.oncomplete = () => resolve(read?.result instanceof File ? read.result : undefined);
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
@@ -161,8 +165,16 @@ export async function queryI4DocumentCommand(saved: I4DocumentCommand, evidence?
     if (result) {
       receipt = result.receipt;
       if (i4DocumentRecovery.settleFromQuery(command, result.conclusion)) {
-        if (command.file) await uploadFile(command.commandKey, "delete");
-        return { settled: true as const, receipt };
+        let draft: I4DocumentUploadDraft | undefined;
+        if (command.file) {
+          if (isConfirmedNonExecution(receipt)) {
+            const { version, language, referenceNo, verifyUrl } = command.fields;
+            const file = await uploadFile(command.commandKey, "read").catch(() => undefined);
+            draft = { file, fields: { version, language, referenceNo, verifyUrl } };
+          }
+          await uploadFile(command.commandKey, "delete").catch(() => undefined);
+        }
+        return { settled: true as const, receipt, draft };
       }
     }
   } catch { /* Auxiliary receipt failures must not disable the existing file readback. */ }

@@ -24,6 +24,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useReach } from "@/lib/nav/use-reach";
+import { isConfirmedNonExecution, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { unknownTag } from "../g-tabs/g-recovery";
 import { CountryDiff, CountryEditor, CountryLabel, STATUS_TEXT, countryName, type EditorResult, type EditorSpec, type GeoStatus } from "./j2-editor";
@@ -156,6 +157,7 @@ function sourceHits(metrics: { key: string; value: string }[]) {
 export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency, contentLoading, contentError } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const terminalDrafts = useTerminalDrafts<{ countries?: string[]; mode?: J2CommandBody["mode"]; triggerBasis?: string }>();
   const authorities = new Set(session?.authorities ?? []);
   const canCountry = authorities.has("emergency_j2_country_manage");
   const canEndpoint = authorities.has("emergency_j2_write");
@@ -267,6 +269,11 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const recordOutcome = (record: SlotAttemptRecord, outcome: FundInvestigationOutcome) => {
     setOutcomes((current) => ({ ...current, [record.commandKey]: outcome }));
     if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
+      const original = record as Partial<J2PendingCommand>;
+      if (original.geo && record.commandOwnerId !== undefined && isConfirmedNonExecution(outcome.receipt)) {
+        const { countries, mode, triggerBasis } = JSON.parse(original.geo.body) as J2CommandBody;
+        terminalDrafts.remember(record.commandOwnerId, record.fingerprint, { countries, mode, triggerBasis });
+      }
       setSettled((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: slotName(record.fingerprint), status: outcome.receipt!.originalStatus }]);
     }
   };
@@ -453,7 +460,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       },
       getPendingBusinessValue: () => {
         const saved = getJ2PendingCommand(slot);
-        return saved ? { triggerBasis: (JSON.parse(saved.geo.body) as J2CommandBody).triggerBasis ?? "" } : undefined;
+        const triggerBasis = saved ? (JSON.parse(saved.geo.body) as J2CommandBody).triggerBasis : terminalDrafts.get(session?.adminId, slot)?.triggerBasis;
+        return triggerBasis === undefined ? undefined : { triggerBasis };
       },
     };
   };
@@ -489,6 +497,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       }
       throw error;
     }
+    terminalDrafts.forget(session?.adminId, slot);
     syncPending();
     activeConfirmation.current = null;
     if (original) openActionConfirm(null);
@@ -574,6 +583,12 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       });
     };
 
+    const recoveredCountries = (slot: string, options: GeoBlockOverview["countryOptions"]): EditorResult | undefined => {
+      const saved = terminalDrafts.get(session?.adminId, slot);
+      if (!saved?.countries?.every(cc => options.some(option => option.value === cc))) return;
+      return { codes: saved.countries, mode: saved.mode };
+    };
+
     /** 第一步：选国家，随时看加了哪些、去了哪些。 */
     const openListEditor = (target: GeoStatus, draft?: EditorResult) => {
       const current = target === "blocked" ? banned : limited;
@@ -583,7 +598,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         title: target === "blocked" ? "编辑封锁名单" : "编辑受限名单",
         options: target === "limited" ? limitedCandidates : snapshot.countryOptions,
         initial: current.map((country) => country.cc).sort(),
-        draft,
+        draft: draft ?? recoveredCountries(`PUT /geo-block/country-lists/${target}`, target === "limited" ? limitedCandidates : snapshot.countryOptions),
         statusOf,
         names: countryNames,
         excludedNote: target === "limited" && banned.length > 0 ? `封锁名单里的 ${banned.length} 个不在这里：已封锁的不能直接改成受限，要先从封锁名单去掉。` : undefined,
@@ -644,7 +659,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         options: snapshot.countryOptions,
         initial: [...entry.countries].sort(),
         initialMode: entry.source === "explicit" ? "explicit" : "derived",
-        draft,
+        draft: draft ?? recoveredCountries(`PUT /geo-block/endpoints/${encodeURIComponent(entry.key)}`, snapshot.countryOptions),
         statusOf,
         names: countryNames,
         onNext: (result) => { if (!canStart(`PUT /geo-block/endpoints/${encodeURIComponent(entry.key)}`)) return; setEditor(null); confirmEndpoint(entry, result); },
@@ -720,7 +735,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         options: emergencyCandidates,
         initial: [],
         existingCount: banned.length,
-        draft,
+        draft: draft ?? recoveredCountries("POST /geo-block/emergency-blocks", emergencyCandidates),
         statusOf,
         names: countryNames,
         excludedNote: `${banned.length > 0 ? `已经封锁的 ${banned.length} 个不在这里。` : ""}只加不减；要撤销，到「封锁名单」去掉。`,

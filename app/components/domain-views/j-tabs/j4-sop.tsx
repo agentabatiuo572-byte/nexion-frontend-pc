@@ -32,6 +32,7 @@ import { processedStatus } from "./j-recovery-copy";
 import { receiptFact } from "../recovery-panel";
 import { eCommandCanRequestResumeRollback } from "@/lib/admin/e-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
+import { isConfirmedNonExecution, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   DOMAIN_PAGE, ExecutePrepare, PlaybookEditor, StepDots, StepTimeline, TraceDrawer, UndoTag,
@@ -81,6 +82,15 @@ function draftValue(draft: PlaybookDraft): Record<string, string> {
     notifyTemplate: draft.notifyTemplate,
     rollback: draft.rollback,
     drillRequired: draft.drillRequired,
+  };
+}
+
+function savedPlaybookDraft(fields: Record<string, string>): PlaybookDraft {
+  return {
+    name: fields.name, scene: fields.scene, owner: fields.owner, sla: fields.sla, slaLegacyValue: fields.sla,
+    emergencyTrack: fields.emergencyTrack, lines: fields.actionSeq.split("\n"),
+    notifyCampaignNo: fields.notifyCampaignNo, notifyTemplate: fields.notifyTemplate, notifySearch: fields.notifyTemplate,
+    rollback: fields.rollback, rollbackTemplate: "", rollbackSearch: "", drillRequired: fields.drillRequired,
   };
 }
 
@@ -142,6 +152,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const current = useRef({ data, contentLoading, contentError, authorities });
   current.current = { data, contentLoading, contentError, authorities };
   const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
+  const authoringDrafts = useTerminalDrafts<PlaybookDraft>();
   const executionDrafts = useRef(new Map<string, Pick<ExecuteDraft, "triggerBasis" | "triggerContext">>());
   const executeDraftKey = (code: string, emergency: boolean) => `${session?.adminId}:${code}:${emergency}`;
   const formSequence = useRef(0);
@@ -247,6 +258,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     if (activeConfirmation.current?.slot === saved.fingerprint) {
       activeConfirmation.current = null;
       openActionConfirm(null);
+    }
+    const command = saved as Partial<J4PendingCommand>;
+    const context = command.sop?.context;
+    if (saved.commandOwnerId !== undefined && isConfirmedNonExecution(receipt)
+      && (context?.kind === "create" || context?.kind === "update")) {
+      authoringDrafts.remember(saved.commandOwnerId, saved.fingerprint, savedPlaybookDraft(context.fields));
     }
     setEditor(null);
     setPrepare(null);
@@ -418,6 +435,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     if (!data || newBlockedReason("POST /sop/playbooks", { kind: "create", fields: {} })) return;
     setEditor({
       mode: "create",
+      draft: authoringDrafts.get(session?.adminId, "POST /sop/playbooks"),
       scenes: (data.scenes ?? []).filter((item) => item !== "全部"),
       nameHint: "例如：监管点名快速止血",
       notifyTemplates: emergency.notifyTemplates ?? [],
@@ -575,6 +593,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       }
       throw error;
     }
+    authoringDrafts.forget(session?.adminId, slot);
     syncPending();
     activeConfirmation.current = null;
     setEditor(null);
@@ -658,7 +677,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   });
   const editPb = (p: Playbook) => {
     if (!p.version || newBlockedReason(`PUT /sop/playbooks/${encodeURIComponent(p.code)}`, { kind: "update", playbook: p, fields: {} })) return;
-    setEditor(editSpec(p));
+    setEditor({ ...editSpec(p), draft: authoringDrafts.get(session?.adminId, `PUT /sop/playbooks/${encodeURIComponent(p.code)}`) });
   };
   const confirmEdit = (p: Playbook, draft: PlaybookDraft, retained?: J4PendingCommand) => {
     const bv = draftValue(draft);
@@ -915,13 +934,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     const context = record.sop.context;
     if (isRetryExpired(record) || !canRetry(context)) return;
     if (context.kind === "create" || context.kind === "update") {
-      const fields = context.fields;
-      const draft: PlaybookDraft = {
-        name: fields.name, scene: fields.scene, owner: fields.owner, sla: fields.sla, slaLegacyValue: fields.sla,
-        emergencyTrack: fields.emergencyTrack, lines: fields.actionSeq.split("\n"),
-        notifyCampaignNo: fields.notifyCampaignNo, notifyTemplate: fields.notifyTemplate, notifySearch: fields.notifyTemplate,
-        rollback: fields.rollback, rollbackTemplate: "", rollbackSearch: "", drillRequired: fields.drillRequired,
-      };
+      const draft = savedPlaybookDraft(context.fields);
       if (context.kind === "create") confirmCreate(draft, record);
       else confirmEdit(context.playbook, draft, record);
     } else if (context.kind === "drill") drillPb(context.playbook, record);

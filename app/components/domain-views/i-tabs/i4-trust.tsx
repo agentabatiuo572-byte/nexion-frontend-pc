@@ -43,7 +43,8 @@ import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictVie
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { I4Documents } from "./i4-documents";
-import { pendingI4DocumentCommands, queryI4DocumentCommand, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
+import { pendingI4DocumentCommands, queryI4DocumentCommand, type I4DocumentCommand, type I4DocumentUploadDraft } from "@/lib/admin/i4-document-commands";
+import { useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import {
   APP_FIELD_LIMIT, APP_SECTION_ORDER, DraftEditorBody, FieldList, I4RecoveryNotice, LegacyText, SECTION_INFO, SectionCard, SnapshotLine, snapshotBlanking, snapshotReasonText, type SnapshotState,
   VersionCompare, appBlanking, changedKeys, isArchivedStatus, previewFields, isPublished, localeItems, operatorText, sectionName, timeText, unpublishedEffect, TRUST_MISSING_ENGLISH, versionProblems,
@@ -101,6 +102,13 @@ const FINANCE_LABEL: Record<string, string> = { tvlOnChain: "链上资产总值"
 export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | null }) {
   const { toast, openActionConfirm, actions, content, contentLoading } = ctx;
   const session = useAdminAuth((state) => state.session);
+  const publicationDrafts = useTerminalDrafts<string>();
+  const materialDrafts = useTerminalDrafts<I4DocumentUploadDraft>();
+  const rememberPublication = (record: I4SectionCommand, status?: string) => {
+    if (!status || status === "pending" || status === "approved" || record.action !== "publish" || record.owner === undefined) return;
+    const statement = record.request?.command.params.dataSourceStatement;
+    if (typeof statement === "string") publicationDrafts.remember(record.owner, `${record.sectionKey}:${record.after}`, statement);
+  };
   const reach = useReach();
 
   const canDraftTrust = !!session?.authorities.includes("content_i4_write");
@@ -151,7 +159,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   useEffect(() => {
     let active = true;
     const originals = pendingI4SectionCommands().filter(row => row.receiptKnown);
-    void Promise.allSettled(originals.map(queryI4SectionCommand)).then(results => {
+    void Promise.allSettled(originals.map(async record => {
+      const ticket = await queryI4SectionCommand(record);
+      rememberPublication(record, ticket?.status);
+      return ticket;
+    })).then(results => {
       if (!active) return;
       syncCommands();
       const closedKeys = results.flatMap((result, index) => result.status === "fulfilled" && result.value && result.value.status !== "pending" ? [originals[index]] : []);
@@ -266,7 +278,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       },
       getPendingBusinessValue: () => {
         const command = saved();
-        if (!command && carried?.dataSource) return { dataSource: carried.dataSource, bilingualConfirmed: "false" };
+        if (!command) return carried?.dataSource ? { dataSource: carried.dataSource, bilingualConfirmed: "false" } : req.getPendingBusinessValue?.();
         if (!command || !("request" in command) || !command.request) return undefined;
         return { dataSource: String(command.request.command.params.dataSourceStatement ?? ""), bilingualConfirmed: String(command.request.command.params.bilingualConfirmed) };
       },
@@ -500,6 +512,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     const contentIssue = i4AppFieldIssue(draft.fields) ?? languageIssue;
     const reviewCheck = `逐项核对${reviewContent}和关键数字`;
     const problems = versionProblems(draft);
+    const publicationKey = `${s.key}:${draft.version}`;
+    const statement = original ? undefined : publicationDrafts.get(session?.adminId, publicationKey);
     return openTrustConfirm({ briefKind: "content",
       action: <>发布信任版块 · {s.key} {draft.version}</>,
       title: `发布${sectionName(s.key)}`,
@@ -521,6 +535,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         {otherIssueNotice(s.key, original?.snapshot?.otherIssues)}
       </div>,
       blockedReason: contentIssue,
+      getPendingBusinessValue: () => statement === undefined ? undefined : { dataSource: statement, bilingualConfirmed: "false" },
       businessForm: {
         kind: "multi-field",
         fields: [
@@ -541,7 +556,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           "publish", s.key, s.v, s.status, draft.version, draft.revision,
           dataSource, bilingualConfirmed, reason,
         ]);
-        return proposeTrustSection(`${s.key}:publish`, fingerprint, {
+        const result = await proposeTrustSection(`${s.key}:publish`, fingerprint, {
           action: `发布信任版块 · ${s.key}`,
           obj: s.key,
           before: s.v,
@@ -564,6 +579,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           }),
           target: def.buildTarget({ sectionKey: s.key }),
         });
+        publicationDrafts.forget(session?.adminId, publicationKey);
+        return result;
       },
     }, s.key, original);
   };
@@ -745,6 +762,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     inFlight.current = true; setRecovering(record.commandKey);
     try {
       const ticket = await queryI4SectionCommand(record);
+      rememberPublication(record, ticket?.status);
       toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${TICKET_STATUS[ticket.status]}`
         : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
       if (ticket && ticket.status !== "pending") await rereadAfterResolution([record.sectionKey], [record.commandKey]);
@@ -771,7 +789,11 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         note: upload ? "这页不能重发这次上传。原上传成功的话后台留着结果，点「查询原结果」查到就解除记录；查不到就对照现在用的文件指纹和上传时间。" : undefined,
         actions: <Button size="sm" onClick={() => {
           setDocumentRecovery({ ...record });
-          void queryI4DocumentCommand(record).then(result => { setDocumentRecovery({ ...record, observation: result.current }); syncCommands(); }, error => toast(displayAdminError(error)));
+          void queryI4DocumentCommand(record).then(result => {
+            if (result.draft) materialDrafts.remember(record.owner, record.document.slot, result.draft);
+            setDocumentRecovery({ ...record, observation: result.current });
+            syncCommands();
+          }, error => toast(displayAdminError(error)));
         }}>查询原结果</Button> };
     }),
     ...draftCommands.map(record => ({ key: record.commandKey, kind: OPEN_RESULT_LABELS.includes(draftStatus(record, draftOutcomes[record.commandKey]).label) ? "open" as const : "unknown" as const,
@@ -928,12 +950,17 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       </span>} />
   );
 
+  const materialDraftProps = {
+    getDraft: (slot: I4DocumentCommand["document"]["slot"]) => materialDrafts.get(session?.adminId, slot),
+    rememberDraft: materialDrafts.remember,
+    forgetDraft: materialDrafts.forget,
+  };
   // 公司资料在三种状态里带同一个 key、都是根片段的直接子元素：读取结束换分支时不重新挂载，抽屉里填到一半的内容、文件和理由留着。
   if (contentLoading && !data) {
-    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="loading" title="信任中心数据加载中…" /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} /></>;
+    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="loading" title="信任中心数据加载中…" /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
   }
   if (!data) {
-    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心读取失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} /></>;
+    return <>{header}<I4RecoveryNotice rows={recoveryRows} />{releaseModal}{conflictUi}<BlockState state="error" title="信任中心读取失败" detail={errorText ?? "暂无信任中心数据"} onRetry={refresh} retrying={refreshing} /><I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} /></>;
   }
 
   // ---------- 首屏结论 ----------
@@ -1115,7 +1142,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           : <div className="i4-cards">{cards.map((card) => <SectionCard key={card.key} card={card} />)}</div>}
       </Panel>
 
-      <I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} />
+      <I4Documents key="i4-documents" onPendingChange={syncCommands} recovery={documentRecovery} {...materialDraftProps} />
 
       <Fold title="全部版本" icon={History} tone="role-3" summary={`${TRUST_SECTION_VERSIONS.length} 个版本${drafts.length ? ` · ${drafts.length} 个草稿` : ""}`}
         explain="每块的历史版本和草稿。谁批准的在「操作记录与审批」里看。">

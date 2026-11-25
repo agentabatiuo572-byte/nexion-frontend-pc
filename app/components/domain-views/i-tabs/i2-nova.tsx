@@ -31,6 +31,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
 import { fetchI2NovaOverview, type NovaOverview, i2Recovery, i2RetryBlockedReason, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView, type NovaTemplateView } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { isConfirmedNonExecution, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useIConflictReview } from "@/lib/admin/i-conflict-review";
@@ -87,6 +88,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const { toast, actions, content, contentLoading, contentError } = ctx;
   const reach = useReach();
   const session = useAdminAuth((state) => state.session);
+  const templateDrafts = useTerminalDrafts<TemplateForm>();
+  const distributionDrafts = useTerminalDrafts<Record<string, string>>();
   const canWriteI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_write");
   const canReadI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_read");
   const data = content.nova;
@@ -154,6 +157,22 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [settledRows, setSettledRows] = useState<FundSettled[]>([]);
   const settle = (record: I2Command, receipt: NonNullable<Awaited<ReturnType<typeof queryI2Command>>>) =>
     setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: `${record.action} · ${unknownObject(record)}`, status: receipt.originalStatus }]);
+  const retainDraft = ({ original }: I2Command) => {
+    if (!original || !["PATCH", "POST"].includes(original.method)) return;
+    if (/^\/nova\/templates(?:\/[^/]+)?$/.test(original.path)) {
+      const input = JSON.parse(original.body);
+      const fields = Object.keys(EMPTY_TEMPLATE) as (keyof TemplateForm)[];
+      if (!fields.every(key => typeof input[key] === "string")) return;
+      const draft = Object.fromEntries(fields.map(key => [key, input[key]])) as TemplateForm;
+      if (original.method === "PATCH" && draft.channel !== decodeURIComponent(original.path.split("/").at(-1)!)) return;
+      templateDrafts.remember(original.owner, original.method === "POST" ? "new" : `edit:${draft.channel}`, draft);
+    } else if (original.path === "/nova/social-distribution") {
+      const { items } = JSON.parse(original.body);
+      if (Array.isArray(items) && items.every(row => row && typeof row.key === "string" && Number.isInteger(row.pct))) {
+        distributionDrafts.remember(original.owner, "distribution", Object.fromEntries(items.map(row => [row.key, String(row.pct)])));
+      }
+    }
+  };
   const queryOriginal = async (record: I2Command) => {
     let settled = false;
     let restoreChannel = false;
@@ -164,6 +183,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       settled = fundCommandSettled(receipt);
       if (settled) {
         settle(record, receipt!);
+        if (isConfirmedNonExecution(receipt)) retainDraft(record);
         restoreChannel = !!record.original && /^\/nova\/channels(?:\/[^/]+)?$/.test(record.original.path)
           && ["POST", "PATCH"].includes(record.original.method) && (receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED" || receipt?.originalStatus === "CONFIRMED_REJECTED")
           && (!novaDrawer || recoveryEditors.current.drawer === record.commandKey);
@@ -576,7 +596,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setRequiredLanguages(await getRequiredContentLanguages());
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
     setEditTplSnapshot(null);
-    setTplForm({ ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
+    const saved = templateDrafts.get(session?.adminId, "new");
+    const available = saved && novas.some(n => n.key === saved.channel) && !NOVA_TPLS.some(t => t.ch === saved.channel);
+    setTplForm(available ? saved : { ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
     setTplDrawer(true);
   };
   const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
@@ -585,7 +607,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const required = await getRequiredContentLanguages();
     setRequiredLanguages(required);
     setEditTplSnapshot(snapshot);
-    setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v, ...mapContentTitleBody(t, required, "edit") });
+    setTplForm(templateDrafts.get(session?.adminId, `edit:${t.ch}`)
+      ?? { channel: t.ch, name: t.name, cta: t.cta, version: t.v, ...mapContentTitleBody(t, required, "edit") });
     setTplDrawer(true);
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplSnapshot(null); setTplForm(EMPTY_TEMPLATE); };
@@ -627,7 +650,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         return runBackend(editTplSnapshot
           ? actions.updateI2Template(editTplSnapshot.channel, body, reason, editTplSnapshot)
           : actions.createI2Template(body, reason),
-        `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
+        `模板 ${tplForm.name} 已保存为草稿`, () => {
+          templateDrafts.forget(session?.adminId, editTplChannel ? `edit:${editTplChannel}` : "new");
+          closeTplDrawer();
+        });
       },
     });
   };
@@ -657,7 +683,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [distReason, setDistReason] = useState("");
   const openDistDrawer = () => {
     setDistReason("");
-    setDistDraft(Object.fromEntries(SOCIAL_DIST.map((item) => [item.key, String(item.pct)])));
+    const saved = distributionDrafts.get(session?.adminId, "distribution");
+    setDistDraft(Object.fromEntries(SOCIAL_DIST.map((item) => [item.key, saved?.[item.key] ?? String(item.pct)])));
     setDistDrawer(true);
   };
   const distDraftTotal = SOCIAL_DIST.reduce((sum, item) => sum + Number(distDraft[item.key] ?? 0), 0);
@@ -687,7 +714,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     run: (reason) => {
       const items = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(distDraft[item.key] ?? 0) }));
       const expectedItems = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(item.pct) }));
-      return runBackend(actions.updateI2Distribution(items, expectedItems, reason), "事件出现概率已更新", () => setDistDrawer(false));
+      return runBackend(actions.updateI2Distribution(items, expectedItems, reason), "事件出现概率已更新", () => {
+        distributionDrafts.forget(session?.adminId, "distribution");
+        setDistDrawer(false);
+      });
     },
   });
 
@@ -944,7 +974,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         const next = await queryI2Command(record, evidence);
         setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt: next } }));
         setClosing(null);
-        if (fundCommandSettled(next)) { settle(record, next!); await refreshAfterMutation(record); }
+        if (fundCommandSettled(next)) {
+          settle(record, next!);
+          if (isConfirmedNonExecution(next)) retainDraft(record);
+          await refreshAfterMutation(record);
+        }
       }} />}
   </>;
 

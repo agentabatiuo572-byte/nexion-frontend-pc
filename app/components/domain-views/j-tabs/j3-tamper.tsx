@@ -18,6 +18,7 @@ import {
   Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr,
 } from "@/app/components/rd";
 import type { JCtx } from "./types";
+import { isConfirmedNonExecution, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ3Command } from "@/lib/admin/j-client";
@@ -143,6 +144,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const alertUnavailable = alert?.threshold === null ? j3ErrorText(new Error(alert.unknownReason)) : undefined;
   const window = data?.window ?? "24h";
   const hasData = data?.hasData ?? false;
+  const configDrafts = useTerminalDrafts<Pick<J3PendingCommand["tamper"]["input"], "threshold" | "feedK4">>();
   const [configOpen, setConfigOpen] = useState<null | { original: SavedConfig | null }>(null);
   const [exporting, setExporting] = useState(false);
   const [pendingReport, setPendingReport] = useState<TamperReport | null>(null);
@@ -243,6 +245,10 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const recordOutcome = (command: J3PendingCommand, outcome: FundInvestigationOutcome, label: string) => {
     setOutcomes((current) => ({ ...current, [command.commandKey]: outcome }));
     if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
+      if (command.commandOwnerId !== undefined && isConfirmedNonExecution(outcome.receipt)) {
+        const { threshold, feedK4 } = command.tamper.input;
+        configDrafts.remember(command.commandOwnerId, ALERT_CONFIG_SLOT, { threshold, feedK4 });
+      }
       setSettled((current) => [...current.filter((item) => item.key !== command.commandKey), { key: command.commandKey, label, status: outcome.receipt!.originalStatus }]);
     }
   };
@@ -377,6 +383,8 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const configContext = configOpen?.original?.command?.tamper.context ?? (alert?.threshold != null ? alert : null);
   const modal = configOpen && configContext && (
     <J3ConfigModal ctx={ctx} original={configOpen.original} context={configContext} onClose={closeConfig}
+      draft={configOpen.original ? undefined : configDrafts.get(Number(adminId), ALERT_CONFIG_SLOT)}
+      onSaved={() => configDrafts.forget(Number(adminId), ALERT_CONFIG_SLOT)}
       onOutcome={(pending, result) => recordOutcome(pending, result, configOpen.original ? savedTitle(configOpen.original) : "修改告警设置")}
       onPending={() => { const next = readSavedConfig(); setSaved(next); if (next?.command) setConfigOpen({ original: next }); }} />
   );
@@ -658,13 +666,15 @@ function J3AccountRow({ account: a, feedK4, zone, userRef, pathName, canViewK1, 
 }
 
 /** Recovery facts and requests come only from the submission-time record, including after a failed overview read. */
-function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }: { ctx: JCtx; original: SavedConfig | null; context: TamperAlertConfig; onClose: () => void; onPending: () => void;
+function J3ConfigModal({ ctx, original, context, draft, onClose, onSaved, onPending, onOutcome }: {
+  ctx: JCtx; original: SavedConfig | null; context: TamperAlertConfig; draft?: Pick<J3PendingCommand["tamper"]["input"], "threshold" | "feedK4">;
+  onClose: () => void; onSaved: () => void; onPending: () => void;
   onOutcome: (pending: J3PendingCommand, outcome: FundInvestigationOutcome) => void }) {
   const [current] = useState(context);
   const sevenDayAlertAccounts = current.sevenDayAlertAccounts;
-  const [thresholdText, setThresholdText] = useState(String(original?.threshold ?? current.threshold));
+  const [thresholdText, setThresholdText] = useState(String(original?.threshold ?? draft?.threshold ?? current.threshold));
   const threshold = Number(thresholdText);
-  const [feedK4, setFeedK4] = useState(original?.feedK4 ?? current.feedK4);
+  const [feedK4, setFeedK4] = useState(original?.feedK4 ?? draft?.feedK4 ?? current.feedK4);
   const [reason, setReason] = useState(original?.reason ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState(false);
@@ -716,6 +726,7 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
       }
       return;
     }
+    onSaved();
     onClose();
     try {
       await ctx.actions.reloadJEmergency();
