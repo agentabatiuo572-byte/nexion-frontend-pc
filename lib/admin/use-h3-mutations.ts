@@ -361,7 +361,10 @@ export function useH3Mutations(
       // A later exact-key verdict supersedes the earlier overview observation.
       const outcomes = await Promise.allSettled(originals.map(record => query(record, true)));
       const approved = records().filter(record => record.ticketStatus === "approved");
-      if (approved.length) await settleApproved(approved, true);
+      // 任务和地区各读各的：地区挂起不拖住任务的结案。
+      const regional = approved.filter(record => record.store === "region"), tasks = approved.filter(record => record.store !== "region");
+      if (regional.length) void settleApproved(regional, true).catch(() => undefined);
+      if (tasks.length) await settleApproved(tasks, true);
       return [overview, ...outcomes];
     },
     async retry(r: H3PendingCommand) {

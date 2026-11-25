@@ -337,7 +337,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     openMc.current = null; setMc(null); shellCtx.closeConfirm?.();
     try {
       // 任务和地区先读，不等审批查询；查到有已批准的再按它们读一次。
-      const [, , results] = await Promise.all([reload(), region.reload(), mutations.refreshTickets()]);
+      const tasks = reload();
+      void region.reload();
+      const results = await mutations.refreshTickets();
+      await tasks;
+      // 查到原申请已被拒、撤回或过期：首读时的待批状态作废，再读一次任务。
+      if (results.some(result => result.status === "fulfilled" && result.value && ["rejected", "expired", "withdrawn"].includes(result.value.status))) await reload();
       for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
     } finally {
       refreshInFlight.current = false;
