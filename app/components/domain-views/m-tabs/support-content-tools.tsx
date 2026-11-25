@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
 import { createPortal } from "react-dom";
 import { supportEnhancements, type SupportLink } from "@/lib/admin/m-support-enhancements";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { supportPhraseClient, type SupportPersonalPhrase } from "@/lib/admin/m-support-client";
 import { scriptGroupLabel } from "@/lib/admin/m-client";
 import type { MCtx } from "./types";
@@ -12,9 +12,11 @@ import { Languages } from "lucide-react";
 import "./support-content-tools.css";
 import { amountDisplay } from "@/lib/format";
 export type SelectedSupportContent = { kind: "SKU"; skuId: string; name: string } | { kind: "LINK"; linkTarget: SupportLink; name: string };
-export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false, faqLanguage, inline = false, onPanelChange }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean; faqLanguage?: string;
+export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false, faqLanguage, inline = false, onPanelChange, closeRef }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean; faqLanguage?: string;
   /** 在宿主弹窗里（群发）：选内容换成同一个框里的面板，不另开弹窗（PG-38）。onPanelChange 告诉宿主面板开没开，好把编写区收起来。 */
-  inline?: boolean; onPanelChange?: (open: boolean) => void }) {
+  inline?: boolean; onPanelChange?: (open: boolean) => void;
+  /** 宿主的 ×、「取消」先收起面板：这里放进收起面板的函数，宿主调用。 */
+  closeRef?: MutableRefObject<(() => void) | null> }) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<CSSProperties>();
   const [templateType, setTemplateType] = useState("reply"), [keyword, setKeyword] = useState(""), [group, setGroup] = useState("");
@@ -29,6 +31,13 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
   const report = useRef(onPanelChange);
   report.current = onPanelChange;
   const show = (next: typeof picker) => { setPicker(next); if (inline) report.current?.(next !== null); };
+  // 宿主的 ×、「取消」收起面板时焦点还在宿主按钮上：也交回点开面板的入口。
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!closeRef) return;
+    closeRef.current = () => { refocus.current = true; show(null); };
+    return () => { closeRef.current = null; };
+  });
   // 换到下一步、关掉群发框时面板跟着卸下，宿主别留着「在选内容」。
   useEffect(() => () => { if (inline) report.current?.(false); }, [inline]);
   // 打开时焦点进面板（知识库的搜索框自己取焦）；返回时回到点开它的按钮（OP-46、ST-56）。插入内容后输入框下一帧自己接焦点，这里只接住随面板一起摘掉的焦点。
@@ -36,7 +45,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
     if (!inline) return;
     const panel = panelRef.current;
     if (picker && !wasOpen.current && panel && !panel.contains(document.activeElement)) (panel.querySelector<HTMLElement>("[data-search]:not(:disabled)") ?? panel).focus();
-    if (!picker && wasOpen.current) { const active = document.activeElement; if ((!active || active === document.body) && opener.current?.isConnected) opener.current.focus(); }
+    if (!picker && wasOpen.current) { const active = document.activeElement; if ((refocus.current || !active || active === document.body) && opener.current?.isConnected) opener.current.focus(); }
+    refocus.current = false;
     wasOpen.current = picker !== null;
   }, [inline, picker]);
   // 群发框填过内容时 Esc 不关框；面板里的 Esc 只回到编写内容，不交给群发框（它在 document 捕获阶段听 Esc，所以这里在 window 捕获阶段先接）。
@@ -44,6 +54,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
     if (!inline || !picker) return;
     const back = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || !(event.target instanceof Node) || !panelRef.current?.contains(event.target)) return;
+      // 面板上还开着气泡、下拉或按钮提示（悬停打开的不接焦点）：这次 Esc 交给最上面那一层，面板留着（CP-66）。
+      if (document.querySelector('[data-radix-popper-content-wrapper] > :not([data-state="closed"])')) return;
       event.preventDefault(); event.stopPropagation(); show(null);
     };
     window.addEventListener("keydown", back, true);
@@ -84,7 +96,7 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
   const faqMatches = faqs.filter(f => !faqQuery.trim() || `${f.question}${f.answer}`.includes(faqQuery.trim()));
   const faqAvailable = ctx.pget("I.support.knowledgeAvailable") === "1";
   const [faqBusy, setFaqBusy] = useState(false), [faqError, setFaqError] = useState("");
-  async function retryFaqs() { setFaqBusy(true); setFaqError(""); try { await ctx.refreshKnowledge(); } catch (e) { setFaqError(displayAdminError(e)); } finally { setFaqBusy(false); } }
+  async function retryFaqs() { setFaqBusy(true); setFaqError(""); try { await ctx.refreshKnowledge(); } catch (e) { setFaqError(displayAdminReadError(e)); } finally { setFaqBusy(false); } }
   const source = templateType === "reply" ? "I.session.replyTemplates" : "I.session.scripts";
   const available = ctx.pget("I.session.templatesAvailable") === "1";
   async function retryTemplates(){setTemplateBusy(true);setTemplateError("");try{await ctx.refreshTemplates();}catch(e){setTemplateError(displayAdminError(e));}finally{setTemplateBusy(false);}}
@@ -142,7 +154,8 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
         <div className="support-content-search"><Field label="搜索常见问题">{control=><Input {...control} data-search placeholder="输入问题或答案里的词" value={faqQuery} autoFocus disabled={disabled} onChange={e=>setFaqQuery(e.target.value)}/>}</Field></div>
         {/* 群发框里知识库没读到时不写条数，下面一行说正在加载或加载失败（TX-31、ST-31）。 */}
         {(faqAvailable || !inline) && <p className="support-content-meta">{faqAvailable ? faqMatches.length : "-"} 条已发布问答{faqAvailable && faqLanguageText} <Explain label="怎么用问答" content="点一下把答案插入输入框，不会直接发送。"/></p>}
-        {!faqAvailable ? (ctx.contentLoading ? <p className="support-content-state" role="status">正在加载知识库…</p> : <div className="support-content-state" role="alert">知识库加载失败。<Button size="sm" disabled={faqBusy||disabled} onClick={()=>void retryFaqs()}>{faqBusy?"正在加载知识库…":"重试"}</Button>{faqError&&<span>{faqError}</span>}</div>) : !faqMatches.length ? <p className="support-content-state">{faqs.length ? "没有匹配的问答。" : `${faqEmptyText}，发布后会显示在这里。`}</p> : <div className="sku-pop-list" data-short="">{faqMatches.map(f=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={f.id} title="插入输入框，不会直接发送" disabled={disabled} onClick={()=>{onInsert(f.answer);show(null);}}><span className="sku-pop-info"><span className="sku-pop-title">{f.question}</span><span className="sku-pop-sub">{f.answer}</span></span>{faqLanguage===undefined&&<span className="support-faq-lang"><StatusTag tone="neutral" icon={Languages}>{languageName(f.language)}</StatusTag></span>}<Icon name="arrow" size={15}/></button>)}</div>}
+        {/* 一块只显示一种状态：重试中只写加载，失败才写原因和「重试」；原因先用这次重试的，没有就用打开页面时那次的（ST-30、ST-31、ST-34）。 */}
+        {!faqAvailable ? (ctx.contentLoading && !faqBusy ? <BlockState state="loading" title="正在加载知识库…"/> : <BlockState state="error" title="知识库加载失败" detail={faqError || ctx.pget("I.support.knowledgeError") || undefined} onRetry={()=>void retryFaqs()} retrying={faqBusy}/>) : !faqMatches.length ? <p className="support-content-state">{faqs.length ? "没有匹配的问答。" : `${faqEmptyText}，发布后会显示在这里。`}</p> : <div className="sku-pop-list" data-short="">{faqMatches.map(f=><button type="button" className="l-btn sm sku-pop-item support-content-result" key={f.id} title="插入输入框，不会直接发送" disabled={disabled} onClick={()=>{onInsert(f.answer);show(null);}}><span className="sku-pop-info"><span className="sku-pop-title">{f.question}</span><span className="sku-pop-sub">{f.answer}</span></span>{faqLanguage===undefined&&<span className="support-faq-lang"><StatusTag tone="neutral" icon={Languages}>{languageName(f.language)}</StatusTag></span>}<Icon name="arrow" size={15}/></button>)}</div>}
       </div> : picker==="sku" ? <div className="support-content-body">
         <Field label="搜索商品名称或编号">{control=><Input {...control} data-search placeholder="输入商品名称或编号" value={skuQuery} disabled={disabled} onChange={e=>{setSkuQuery(e.target.value);setSkuPage(1);}}/>}</Field>
         {disabled&&!skus?<p className="support-content-state" role="status">现在不能推荐商品：当前不能发消息，或上一个操作还没结束。</p>:error?<div className="support-content-state" role="alert">{error}<Button size="sm" disabled={disabled} onClick={()=>setSkuRetry(n=>n+1)}>重试</Button></div>:!skus?<p className="support-content-state" role="status">{skuBusy?"正在加载在售商品…":"在售商品还没加载。"}</p>:<>

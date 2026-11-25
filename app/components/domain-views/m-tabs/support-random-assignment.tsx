@@ -96,7 +96,8 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
   }
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   const selected = pending?.customers ?? customers, expired = pending && !canReplayGroupCommand(pending), reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  return <Modal title={result ? "逐客随机分配结果" : "随机分配客户"} wide busy={busy} onClose={onClose} footer={<>
+  // 从本标签页恢复的理由这次没有打字，弹窗看不出填过：按实际有没有理由算，Esc 和点空白都不关（OP-46）。结果页和原操作待确认时理由已锁定，不算。
+  return <Modal title={result ? "逐客随机分配结果" : "随机分配客户"} wide busy={busy} dirty={!result && !pending && reason.trim() !== ""} onClose={onClose} footer={<>
     <Button disabled={busy} onClick={onClose}>{result ? "关闭结果" : "返回客户池"}</Button>
     {pending ? <>{notReceived && !expired && <Button disabled={busy} onClick={() => void send(pending, true)}>按原操作重试</Button>}<Button variant="primary" loading={busy} onClick={() => void query()}>查询原操作</Button></> : !result && <Button variant="primary" disabled={!preview?.count || !ack || !reasonOk || busy || Date.parse(preview.expiresAt) <= Date.now()} onClick={() => void confirm()}>确认随机分配 {preview?.count ?? "—"} 位</Button>}
   </>}>
