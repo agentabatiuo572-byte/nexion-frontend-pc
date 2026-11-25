@@ -35,6 +35,9 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { EditSpec } from "../design-kit";
 import type { HCtx } from "./types";
 
+/** 整页读取失败后按「重试」读到了：焦点落在第一块的标题，不落到整页外框（BUG-710）。 */
+const H2_FIRST_SECTION = { get current() { return document.querySelector<HTMLElement>("[data-section-focus]"); } };
+
 type TrialParam = {
   key: string;
   name: string;
@@ -757,11 +760,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     }} />;
 
   if (loading && !model) {
-    return <>{header()}{pendingNotices}<BlockState state="loading" title="试用数据加载中…" />{releaseModal}{retiredChargeModal}</>;
+    return <>{header()}{pendingNotices}<BlockState state="loading" title="正在加载试用数据…" />{releaseModal}{retiredChargeModal}</>;
   }
 
   if (error || !model) {
-    return <>{header()}{pendingNotices}<BlockState state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} />{releaseModal}{retiredChargeModal}</>;
+    return <>{header()}{pendingNotices}<BlockState state="error" title="试用数据加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班人员。"} onRetry={() => void reload()} retrying={loading} afterRetryFocus={H2_FIRST_SECTION} />{releaseModal}{retiredChargeModal}</>;
   }
 
   const phaseHref = "/growth/phase";

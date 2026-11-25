@@ -89,9 +89,9 @@ function ownerLinkAccessibleName(row: A5RegistryRow) {
 const ERROR_COPY: Record<A5LoadErrorKind, { title: string; detail: string }> = {
   auth: { title: "登录已失效", detail: "请重新登录后查看。" },
   forbidden: { title: "没有查看平台参数的权限", detail: "请联系管理员开通「平台参数目录」的查看权限；系统要求先改密码时，改完再打开。" },
-  integrity: { title: "数据有误，已停止显示", detail: "读到的参数数据有误，为避免误判已暂停显示，请联系技术人员。" },
-  server: { title: "平台参数加载失败", detail: "暂时无法显示参数，请重新加载；持续失败请联系技术人员。" },
-  unavailable: { title: "平台参数暂时无法加载", detail: "参数设置没有被修改，请稍后重新加载。" },
+  integrity: { title: "平台参数加载失败", detail: "收到的数据不完整，已停止显示；请重试，持续失败请联系值班人员。" },
+  server: { title: "平台参数加载失败", detail: "服务暂时不可用，请稍后重试；持续失败请联系值班人员。" },
+  unavailable: { title: "平台参数加载失败", detail: "服务暂时不可用，请稍后重试；持续失败请联系值班人员。" },
 };
 
 const SOURCE_STATUS: Record<string, { label: string; tone: "ok" | "warn" | "neutral" }> = {
@@ -167,18 +167,21 @@ export function PlatformParamsRegistry() {
     <PageHeader pageId="A5" title="平台参数目录" summary="查一个参数现在的值，再去它所在的页面修改。"
       readOnly="这页只能查看，修改要去参数所在的页面"
       meta={overview ? <>读取于 {stamp(overview.observedAt)}（{zone}）<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : undefined}
-      actions={<Button icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>重新加载</Button>} />
+      actions={<Button icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>刷新</Button>} />
   );
 
   if (loading) {
     return (
       <RdPage className="a5-page">
         {header}
-        <div className="a5-loading" aria-label="正在加载平台参数">
-          <div className="rd-skeleton a5-skel-line" />
-          <div className="rd-skeleton a5-skel-bar" />
-          <div className="rd-skeleton a5-skel-block" />
-          <div className="rd-skeleton a5-skel-block" />
+        {/* 参数区容器在加载、失败、读到三种状态下都在同一位置：重试时焦点落在这里，不落到整页（BUG-710）。 */}
+        <div className="a5-body">
+          <div className="a5-loading" aria-label="正在加载平台参数">
+            <div className="rd-skeleton a5-skel-line" />
+            <div className="rd-skeleton a5-skel-bar" />
+            <div className="rd-skeleton a5-skel-block" />
+            <div className="rd-skeleton a5-skel-block" />
+          </div>
         </div>
       </RdPage>
     );
@@ -189,11 +192,13 @@ export function PlatformParamsRegistry() {
     return (
       <RdPage className="a5-page">
         {header}
-        <Conclusion state="unknown" icon={SlidersHorizontal}>平台参数没读到，这页没有判断</Conclusion>
-        <Panel title="平台参数">
-          <BlockState state={errorKind === "forbidden" ? "denied" : "error"} title={copy.title} detail={copy.detail}
-            retryLabel="重新加载" onRetry={errorKind === "auth" ? undefined : () => void load()} />
-        </Panel>
+        <div className="a5-body">
+          <Conclusion state="unknown" icon={SlidersHorizontal}>平台参数没读到，这页没有判断</Conclusion>
+          <Panel title="平台参数">
+            <BlockState state={errorKind === "forbidden" ? "denied" : "error"} title={copy.title} detail={copy.detail}
+              onRetry={errorKind === "auth" ? undefined : () => void load()} />
+          </Panel>
+        </div>
       </RdPage>
     );
   }
@@ -301,6 +306,7 @@ export function PlatformParamsRegistry() {
   return (
     <RdPage className="a5-page">
       {header}
+      <div className="a5-body">
       {conclusion}
 
       {partialSources.length > 0 && (
@@ -311,7 +317,7 @@ export function PlatformParamsRegistry() {
 
       {rows.length === 0 ? (
         <Panel title="平台参数">
-          <BlockState state="empty" title="暂无平台参数" detail="当前没有启用中的参数。" retryLabel="重新加载" onRetry={() => void load()} />
+          <BlockState state="empty" title="暂无平台参数" detail="当前没有启用中的参数。" retryLabel="刷新" onRetry={() => void load()} />
         </Panel>
       ) : (
         <>
@@ -417,6 +423,7 @@ export function PlatformParamsRegistry() {
           </tbody>
         </Table>
       </Fold>
+      </div>
     </RdPage>
   );
 }

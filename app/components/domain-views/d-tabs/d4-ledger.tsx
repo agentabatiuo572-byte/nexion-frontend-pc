@@ -759,7 +759,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       : userError?.notFound ? <BlockState state="empty" title={`没有找到用户 ${userCode(selectedUserId)}`} detail="检查用户编码或系统编号，改好后点「加载账户」。" />
       : userError ? (
         <div data-proof="d4-fail-closed">
-          <BlockState state="error" title="用户账单读取失败，不显示旧数据" detail={userError.message} onRetry={() => setUserReload((value) => value + 1)} />
+          <BlockState state="error" title="用户账单加载失败，不显示旧数据" detail={userError.message} onRetry={() => setUserReload((value) => value + 1)} />
         </div>
       )
         : !userData || !running ? <>

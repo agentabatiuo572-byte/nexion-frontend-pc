@@ -35,6 +35,9 @@ import {
   type CheckInRule, type EarnMilestone, type H5Model, type H5RecoveryRow, type PowerUp, type StreakMilestone, type StripMilestone,
 } from "./h5-parts";
 
+/** 读取失败后按「重试」读到了：焦点落在第一块的标题（外层 .h5-page 是 display: contents，接不到焦点，BUG-710）。 */
+const H5_FIRST_TITLE = { get current() { return document.querySelector<HTMLElement>(".h5-page .rd-panel-title"); } };
+
 function text(value: unknown, fallback = "-") {
   if (value == null || value === "") return fallback;
   return String(value);
@@ -659,7 +662,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         {header}
         {recovery}
         {staleNotice}
-        <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} />
+        <BlockState state="error" title="签到数据加载失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} afterRetryFocus={H5_FIRST_TITLE} />
         {confirmModal}
       </div>
     );

@@ -599,7 +599,8 @@ function Block({ id, title, sub, explain, section, actions, failure, sectionRetr
             {!reloading && <><div className="rd-block-state-title">{`${title}加载失败`}</div><div className="rd-block-state-detail">{sectionRetry.detail}</div></>}
             <CountsRetryButton onRetry={sectionRetry.onRetry} retrying={sectionRetry.retrying} rereading={reloading} />
           </div>
-        : <BlockState state="error" compact title={`${title}加载失败`} onRetry={() => window.location.reload()} />
+        // 这几块和整页同一次读取，没有单独重读这一块的入口：按钮写实「刷新整页」，不叫「重试」（ST-35、OP-09、BUG-710）。
+        : <BlockState state="error" compact title={`${title}加载失败`} onRetry={() => window.location.reload()} retryLabel="刷新整页" />
       : <div className="rd-detail-block">{children}</div>;
   return (
     <div id={id} className="rd-detail-block" aria-busy={reloading || undefined}>
