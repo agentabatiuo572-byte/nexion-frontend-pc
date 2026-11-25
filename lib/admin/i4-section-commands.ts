@@ -2,9 +2,9 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, fetchA2ProposalByKey, type createA2OperationProposal, type A2OperationRow } from "./a2-client";
 import { formatAdminApiError, guardedFetch } from "./error-messages";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "./outcome-classification";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "./pending-mutation-store";
 import type { ProposeSpec } from "./propose-or-execute";
 import type { TrustSectionVersionView, TrustSectionView } from "./i-client";
 import { parseI4SectionVersion } from "./i4-trust-contract";
@@ -67,36 +67,42 @@ export function pendingI4SectionCommands(): I4SectionCommand[] {
   });
 }
 
+export const i4SectionRecovery = createPendingRecovery({ ...pending, list: pendingI4SectionCommands }, {
+  capability: () => "receipt",
+  canReplay: (record: I4SectionCommand) => {
+    try { return !!record.request && !!record.snapshot && !record.receiptKnown && !i4SectionPermission(record.sectionKey, record.snapshot.section.highSensitivity); } catch { return false; }
+  },
+  explicitRejectionCode,
+});
+
 export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2OperationRow | null> {
   const original = pendingI4SectionCommands().find(row => row.commandKey === saved.commandKey);
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
-  const ticket = await fetchA2ProposalByKey(original.commandKey, true);
-  if (!ticket) {
-    if (original.receiptKnown || original.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
-    pending.remember(original.fingerprint, original.commandKey, { ...original, ticketStatus: undefined });
-    return null;
-  }
-  // 24972948 OpsAuditCenterService.createProposalOnce preserves I4's action/values;
-  // ticketMetadata:1516 returns the persisted command op, and lookup sets mine=true.
-  if (!ticket.mine || ticket.obj !== original.sectionKey || ticket.operationCode !== "i4_trust_section_manage"
-    || ticket.action !== `${{ publish: "发布", rollback: "回滚", archive: "下架" }[original.action]}信任版块 · ${original.sectionKey}`
-    || original.before && ticket.before !== original.before || original.after && ticket.after !== original.after
-    || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
-    throw new Error("返回的审批单与原操作不符，请保留原记录并查询原结果。");
-  }
-  if (ticket.status === "pending") pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true, ticketStatus: "pending" });
-  else pending.forget(original.fingerprint, original.commandKey);
-  return ticket;
+  const result = await i4SectionRecovery.query(original, async () => {
+    const ticket = await fetchA2ProposalByKey(original.commandKey, true);
+    if (!ticket) {
+      if (original.receiptKnown || original.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+      return { conclusion: "not-found", ticket } as const;
+    }
+    // 24972948 OpsAuditCenterService.createProposalOnce preserves I4's action/values;
+    // ticketMetadata:1516 returns the persisted command op, and lookup sets mine=true.
+    if (!ticket.mine || ticket.obj !== original.sectionKey || ticket.operationCode !== "i4_trust_section_manage"
+      || ticket.action !== `${{ publish: "发布", rollback: "回滚", archive: "下架" }[original.action]}信任版块 · ${original.sectionKey}`
+      || original.before && ticket.before !== original.before || original.after && ticket.after !== original.after
+      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
+      throw new Error("返回的审批单与原操作不符，请保留原记录并查询原结果。");
+    }
+    return { conclusion: ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed", ticket } as const;
+  });
+  if (!result) return null;
+  if (result.ticket?.status === "pending") pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true, ticketStatus: "pending" });
+  else if (result.ticket) i4SectionRecovery.settleFromQuery(original, result.conclusion);
+  return result.ticket;
 }
 
-async function send(original: I4SectionCommand, retry: boolean): Promise<A2OperationRow> {
+async function send(original: I4SectionCommand, retry: boolean) {
   if (!original.request) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
   if (original.owner !== useAdminAuth.getState().session?.adminId) throw new Error("登录身份已变更，请重新打开页面。");
-  if (original.receiptKnown) {
-    const ticket = await queryI4SectionCommand(original);
-    if (ticket) return ticket;
-    throw new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
-  }
   if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
   const permission = i4SectionPermission(original.sectionKey, original.snapshot?.section.highSensitivity);
   if (permission) throw new Error(permission);
@@ -115,11 +121,15 @@ async function send(original: I4SectionCommand, retry: boolean): Promise<A2Opera
     const failure = Object.assign(new Error(formatAdminApiError(envelope.message, "A2_REQUEST_FAILED")), { status, backendMessage: envelope.message });
     const rejected = retry ? isExplicitRejection(failure)
       : isDeterministicRejection(response.status, envelope.code) && envelope.code < 500;
-    if (rejected && !unknown) { pending.forget(original.fingerprint, original.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : original }); }
+    if (rejected && !unknown) { if (!retry) pending.forget(original.fingerprint, original.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : original }); }
     throw new OutcomeUnknownError(failure.message);
   }
   if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true });
+}
+
+async function readSubmittedI4Section(original: I4SectionCommand): Promise<A2OperationRow> {
+
   try {
     const ticket = await queryI4SectionCommand(original);
     if (ticket) return ticket;
@@ -129,10 +139,13 @@ async function send(original: I4SectionCommand, retry: boolean): Promise<A2Opera
   throw new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
 }
 
-export function retryI4SectionCommand(saved: I4SectionCommand) {
-  const original = pendingI4SectionCommands().find(row => row.commandKey === saved.commandKey);
-  if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
-  return send(original, true);
+export async function retryI4SectionCommand(original: I4SectionCommand) {
+  await i4SectionRecovery.replay(original, record => send(record, true));
+  return readSubmittedI4Section(original);
+}
+
+export function releaseRejectedI4Section(original: I4SectionCommand) {
+  if (!i4SectionRecovery.releaseRejectedReplay(original)) throw new Error("原操作记录继续保留，请查询原结果。");
 }
 
 export async function proposeI4Section(spec: ProposeSpec, inputFingerprint: string, snapshot: I4ProposalSnapshot): Promise<A2OperationRow> {
@@ -151,15 +164,6 @@ export async function proposeI4Section(spec: ProposeSpec, inputFingerprint: stri
     throw new Error("浏览器无法保存原操作，尚未提交。请允许会话存储后再试。");
   }
   const original = pendingI4SectionCommands().find(row => row.commandKey === commandKey)!;
-  return send(original, false);
-}
-
-/** Only call after an operator confirmation; direct writes never use this release rule. */
-export async function releaseExpiredI4SectionCommand(saved: I4SectionCommand): Promise<void> {
-  const record = pendingI4SectionCommands().find(row => row.commandKey === saved.commandKey);
-  if (!record) throw new Error("原操作已处理，请重新读取后再操作。");
-  if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
-  if (!isRetryExpired(record)) throw new Error("原操作仍在重试期限内，请先查询原结果。");
-  if (await queryI4SectionCommand(record)) throw new Error("已经查到原审批单，请按当前审批单处理。");
-  pending.forget(record.fingerprint, record.commandKey);
+  await send(original, false);
+  return readSubmittedI4Section(original);
 }

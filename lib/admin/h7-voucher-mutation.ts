@@ -2,9 +2,9 @@ import { createA2CommandKey } from "./a2-client";
 import { growthRequest, parseH7Voucher, validateH7VoucherWrite, type H7Voucher } from "./h-client";
 import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
 import { isH7VoucherExpired } from "./h7-voucher-time";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
-import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 
 type Form = Record<string, string>;
@@ -44,9 +44,17 @@ const commands = createPendingMutationStore<H7DirectMutation>({
 
 export const pendingH7VoucherMutations = (adminId: number) => commands.list().filter(r => r.adminId === adminId);
 
+export const h7DirectRecovery = createPendingRecovery(commands, {
+  capability: () => "replay",
+  canReplay: record => {
+    try { requireH7Actor(record.adminId, true); return true; } catch { return false; }
+  },
+  explicitRejectionCode,
+});
+
 export function requireH7Actor(adminId: number, write: boolean): AdminSession {
   const auth = useAdminAuth.getState(), actor = auth.session;
-  if (!auth.isAuthenticated || auth.logoutPending || !actor || actor.adminId !== adminId) throw new Error("ADMIN_AUTH_REQUIRED");
+  if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !actor || actor.passwordChangeRequired || actor.adminId !== adminId) throw new Error("ADMIN_AUTH_REQUIRED");
   if (write && !actor.authorities.includes("growth_h7_write")) throw new Error("H7_MAKER_FORBIDDEN");
   return actor;
 }
@@ -79,7 +87,11 @@ export function createH7VoucherMutation(session: AdminSession, context: H7Direct
   };
 }
 
-export async function sendH7VoucherMutation(record: H7DirectMutation, recovering: boolean) {
+export function sendH7VoucherMutation(record: H7DirectMutation, recovering: boolean) {
+  return recovering ? h7DirectRecovery.replay(record, original => send(original, true)) : send(record, false);
+}
+
+async function send(record: H7DirectMutation, recovering: boolean) {
   requireH7Actor(record.adminId, true);
   if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
   if (recovering && !commands.list().some(r => r.commandKey === record.commandKey)) throw new Error("H7_ORIGINAL_RESOLVED");
@@ -106,7 +118,7 @@ export async function sendH7VoucherMutation(record: H7DirectMutation, recovering
     const rejected = !isOutcomeUnknownError(error) && !e.unknownOutcome && !e.bodyUnreadable && !(e.apiCode && e.apiCode >= 500)
       && !(e.reasonCode ?? "").startsWith("IDEMPOTENCY_")
       && (recovering ? isExplicitRejection(verdict) : isDeterministicRejection(e.status ?? 0, e.apiCode));
-    if (rejected) { commands.forget(record.fingerprint, record.commandKey); throw error; }
+    if (rejected) { if (!recovering) commands.forget(record.fingerprint, record.commandKey); throw error; }
     throw new OutcomeUnknownError(error instanceof Error ? error.message : "H7_RESULT_UNKNOWN");
   }
   commands.forget(record.fingerprint, record.commandKey);

@@ -4,16 +4,16 @@ import { h3QuestConfigWriteRefusal, type H3Model } from "./h3-contract";
 import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { growthRequest, h3CommandStorage, type H3CommandStore } from "./h-client";
 import { h3ConfigNeedsApproval } from "./h3-contract";
 import { findHighOp } from "./high-ops-registry";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
-import { isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingRecovery, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Direct = { kind: "direct"; path: string; method: "POST" | "PATCH" | "DELETE"; body: string };
@@ -87,21 +87,59 @@ function savedCommands(adminId: number | undefined, operator: string): H3Pending
   });
 }
 
+function currentH3Commands() {
+  const actor = useAdminAuth.getState().session;
+  return actor ? savedCommands(actor.adminId, actor.operator || actor.username || "") : [];
+}
+
+const h3Recovery = createPendingRecovery({
+  list: currentH3Commands,
+  isDurablyStored: (fingerprint, commandKey) => currentH3Commands().some(record => record.commandKey === commandKey
+    && record.fingerprint === fingerprint && h3CommandStorage.durable(record.store, record)),
+  forget: (fingerprint, commandKey) => {
+    const record = currentH3Commands().find(row => row.commandKey === commandKey && row.fingerprint === fingerprint);
+    if (record) h3CommandStorage.forget(record.store, record);
+  },
+  markReplayRejected: (fingerprint, commandKey, code) => {
+    const record = currentH3Commands().find(row => row.commandKey === commandKey && row.fingerprint === fingerprint);
+    if (record) h3CommandStorage.markReplayRejected(record.store, fingerprint, commandKey, code);
+  },
+}, {
+  capability: record => record.request.kind === "legacy-region" ? "readback" : record.request.kind === "approval" ? "receipt" : "replay",
+  canReplay: record => !record.acknowledged && canWriteH3(record.request.kind === "approval"),
+  explicitRejectionCode,
+});
+
+function canWriteH3(approval: boolean) {
+  const auth = useAdminAuth.getState(), session = auth.session;
+  if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !session || session.passwordChangeRequired) return false;
+  const grants = session.authorities;
+  return grants.includes("growth_h3_read") && grants.includes("growth_h3_write") && (!approval || grants.some(code => code === "platform_a2_write" || code === "platform_a2_proposal_create"));
+}
+
+function retryBlocked(record: H3PendingCommand) {
+  const state = h3Recovery.state(record);
+  if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+  if (state.expired) return RETRY_EXPIRED_TEXT;
+  return state.replayBlock ? "请查询原结果" : undefined;
+}
+
 /** H3-only transport and recovery. The page owns all existing form markup. */
 export function useH3Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean, model: H3Model | null) {
   const session = useAdminAuth(s => s.session);
   const adminId = session?.adminId;
   const operator = session?.operator || session?.username || "";
+  useSyncExternalStore(h3Recovery.subscribe, h3Recovery.getRevision, h3Recovery.getRevision);
   const [, update] = useReducer(n => n + 1, 0);
   const auditRows = useRef<A2OperationRow[] | null>(null);
   const confirmedTickets = useRef(new Map<string, A2OperationRow>());
   useEffect(() => { update(); auditRows.current = null; confirmedTickets.current.clear(); }, [adminId]);
   const records = () => savedCommands(adminId, operator).map(r => ({ ...r, ticket: confirmedTickets.current.get(r.commandKey) }));
   const record = (target: string) => records().find(r => r.change.target === target);
-  const requireActor = (write: boolean, region = false) => {
+  const requireActor = (write: boolean, approval = false) => {
     const auth = useAdminAuth.getState(), actor = auth.session;
-    if (!auth.isAuthenticated || auth.logoutPending || !actor || actor.adminId !== adminId) throw new Error("ADMIN_AUTH_REQUIRED");
-    if (write && (!actor.authorities.includes("growth_h3_write") || region && !actor.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create"))) throw new Error("H3_MAKER_FORBIDDEN");
+    if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !actor || actor.passwordChangeRequired || actor.adminId !== adminId) throw new Error("ADMIN_AUTH_REQUIRED");
+    if (write && !canWriteH3(approval)) throw new Error("H3_MAKER_FORBIDDEN");
     return actor;
   };
   const forget = (r: H3PendingCommand) => { h3CommandStorage.forget(r.store, r); confirmedTickets.current.delete(r.commandKey); update(); };
@@ -118,7 +156,10 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   const query = async (r: H3PendingCommand, quiet = false) => {
     requireActor(false);
     if (r.request.kind === "direct") {
-      await settled(r.commandKey);
+      await h3Recovery.query(r, async record => {
+        await settled(record.commandKey);
+        return { conclusion: "unknown" };
+      });
       if (!quiet) toast("已重新读取；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
       return undefined;
     }
@@ -126,11 +167,17 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     confirmedTickets.current.delete(r.commandKey);
     if (auditRows.current) auditRows.current = auditRows.current.filter(t => t.obj !== r.change.target);
     update();
-    const ticket = await fetchA2ProposalByKey(r.commandKey, true);
+    const result = await h3Recovery.query(r, async record => {
+      const ticket = await fetchA2ProposalByKey(record.commandKey, true);
+      if (!ticket) return { conclusion: record.acknowledged ? "unknown" : "not-found", ticket } as const;
+      checkTicket(record, ticket);
+      return { conclusion: ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed", ticket } as const;
+    });
+    if (!result) return undefined;
+    const { ticket } = result;
     if (!ticket) { if (!quiet) toast("暂未查到原审批单，原请求继续保留。"); return null; }
-    checkTicket(r, ticket);
     if (ticket.status === "pending") { retain({ ...r, acknowledged: true, ticket: undefined }); confirmedTickets.current.set(r.commandKey, ticket); update(); }
-    else { forget(r); await settled(r.commandKey); }
+    else { h3Recovery.settleFromQuery(r, result.conclusion); await settled(r.commandKey); }
     if (!quiet) toast(`审批单${({ pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}：${ticket.before} → ${ticket.after}`);
     return ticket;
   };
@@ -148,7 +195,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   const blocked = (target: string) => !!record(target) || model?.pendingApprovals?.[target] != null
     || model?.pendingMissionCreations?.some(approval => approval.missionCode === target) === true || pendingTargets().includes(target);
   const send = async (r: H3PendingCommand, recovering: boolean) => {
-    requireActor(true, r.store === "region");
+    requireActor(true, r.request.kind === "approval");
     if (isRetryExpired(r)) throw new Error(RETRY_EXPIRED_TEXT);
     if (r.request.kind === "legacy-region" || r.acknowledged) throw new Error("申请已建单或缺少完整原申请，请查询原结果。");
     try { retain(r); } catch (error) { if (!recovering) forget(r); throw error; }
@@ -172,9 +219,9 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     } catch (error) {
       const e = error as { status?: number; apiCode?: number };
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
-      if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
-        forget(r);
-        if (recovering || isHGrowthReadConflict(error)) await settled(r.commandKey);
+      if (recovering ? explicitRejectionCode(error) : firstRejection(error)) {
+        if (!recovering) forget(r);
+        if (!recovering && isHGrowthReadConflict(error)) await settled(r.commandKey);
         throw error;
       }
       // Keep the key in storage, not in the shared A2 error renderer's operator copy.
@@ -184,14 +231,18 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     if (r.request.kind === "approval") {
       const acknowledged = { ...r, acknowledged: true, ticket: undefined };
       retain(acknowledged);
-      const current = await query(acknowledged);
-      if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。");
-      if (current.status === "pending") await settled(r.commandKey);
+      if (!recovering) await readSubmitted(acknowledged);
       return;
     }
     forget(r);
     await settled(r.commandKey);
     toast(r.change.success);
+  };
+  const readSubmitted = async (record: H3PendingCommand) => {
+    const saved = currentH3Commands().find(row => row.commandKey === record.commandKey);
+    const current = saved && await query(saved);
+    if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。");
+    if (current.status === "pending") await settled(record.commandKey);
   };
   const run = async (write: H3Write, reason: string, approvalConfirmed = false, onCommand?: (commandKey: string) => void) => {
     const actor = requireActor(true, write.store === "region");
@@ -227,10 +278,8 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
 
   return {
     records: records(), record, blocked, query, pendingApprovals: pendingApprovals(), pendingTargets: pendingTargets(), auditKnown: auditRows.current !== null,
-    canRetry(r: H3PendingCommand) {
-      if (isRetryExpired(r) || r.acknowledged || r.request.kind === "legacy-region") return false;
-      try { requireActor(true, r.store === "region"); return true; } catch { return false; }
-    },
+    recovery: h3Recovery,
+    retryBlocked,
     async refreshTickets() {
       requireActor(false);
       // No A2 read authority is fabricated. By-key reads remain available separately.
@@ -248,17 +297,14 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
       return [overview, ...originals];
     },
     async retry(r: H3PendingCommand) {
-      const current = records().find(item => item.commandKey === r.commandKey);
-      if (!current) throw new Error("原操作已处理，请刷新后重新操作。");
-      if (current.request.kind !== "direct") {
-        const ticket = await query(current);
-        if (ticket) { if (ticket.status === "pending") await settled(current.commandKey); return; }
-      }
-      await send(current, true);
+      const blocked = retryBlocked(r);
+      if (blocked) throw new Error(blocked);
+      await h3Recovery.replay(r, record => send(record, true));
+      if (r.request.kind === "approval") await readSubmitted(r);
     },
-    async releaseExpired(r: H3PendingCommand) {
-      if (r.request.kind === "direct" || !isRetryExpired(r) || await query(r, true) !== null) throw new Error("原申请不能解除，请查询原结果。");
-      forget(r); await settled(r.commandKey);
+    releaseRejected(r: H3PendingCommand) {
+      if (!h3Recovery.releaseRejectedReplay(r)) throw new Error("原操作记录继续保留，请查询原结果。");
+      update();
     },
     run,
   };

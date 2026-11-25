@@ -10,15 +10,15 @@
  */
 import { englishCopyHint, isEnglishCopy, mapContentTitleBody, type LocalizedTitleBody } from "@/lib/admin/content-language-rules";
 import { getRequiredContentLanguages, OPERATING_LANGUAGE_CODES, type OperatingLanguageCode } from "@/lib/admin/platform-experience-client";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, CalendarClock, FilePen, Layers, Plus, RefreshCw, Route, Send, Trash2, Users } from "lucide-react";
 import { BlockState, Button, Change, Check, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterBar, Fold, Input, IrreversibleTag, LocaleTabs, Modal, Notice, NumberInput, PageHeader, Panel, Segments, Select, Stat, StatBand, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
 import type { ActionConfirmReq, ConfirmReq, ICtx } from "./types";
-import { pendingI3Commands, queryI3Command, retryI3Command, i3RetryPermission, i3DraftRetryBlockedReason, isI3DraftCommand, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
+import { pendingI3Commands, queryI3Command, retryI3Command, i3Recovery, i3RetryBlockedReason, i3DraftRetryBlockedReason, isI3DraftCommand, parseI3Json, fetchI3CampaignOverview, I3_WALLET_CTA, I3_RETIRED_WALLET_CTA, type NotificationCampaignOverview, type I3Command, type NotificationAudienceTarget, type NotificationCampaignRow } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
-import { canQueryI3Cap, i3CapPermission, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
+import { canQueryI3Cap, i3CapPermission, i3CapRecovery, i3CapRetryBlockedReason, pendingI3CapCommands, proposeI3Cap, queryI3CapCommand, retryI3CapCommand, type I3CapCommand } from "@/lib/admin/i3-cap-commands";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { isIConflictRejection, useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
@@ -174,7 +174,6 @@ const blockedSchedule = (row: CampaignRow) => row.st === "scheduled" && !!retire
 /** 一组里默认显示几张卡，多的点「显示全部」切到这个状态。 */
 const GROUP_PREVIEW = 6;
 const AUDIT_HREF = "/platform/audit?domain=I";
-const RETRY_EXPIRED = "已超过 24 小时，不能再重试，只能查询。";
 /**
  * 预算对照（F01、RF04）：有没有改按原文「数 USD」比，和原来一样；两边只读文字里的金额按全站写法显示。
  * 原文判为不同、格式化后却一样时，两边都照原文写，看得出差在哪（同 A2 的 a2Pair）。输入和提交值不经过这里。
@@ -226,8 +225,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const [recovering, setRecovering] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState<I3Command | null>(null);
-  /** 保留上限申请已查询，但暂未找到对应审批单。 */
-  const [absentCaps, setAbsentCaps] = useState<Record<string, true>>({});
+  useSyncExternalStore(i3Recovery.subscribe, i3Recovery.getRevision, i3Recovery.getRevision);
+  useSyncExternalStore(i3CapRecovery.subscribe, i3CapRecovery.getRevision, i3CapRecovery.getRevision);
   const [requiresReload, setRequiresReload] = useState(false);
   const recoveryInFlight = useRef(false);
   const active = useRef(true);
@@ -353,10 +352,21 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const carried = restored ? null : prefill.current;
     prefill.current = null;
     const confirmation: ActionConfirmReq = { ...req, getPendingReason: () => original()?.reason, initialReason: carried?.reason,
-      getPendingRecovery: draftAttempt ? () => {
+      getPendingRecovery: cap ? () => {
+        const record = pendingI3CapCommands().find(row => row.commandKey === key);
+        if (!record) return;
+        const state = i3CapRecovery.state(record);
+        return { state, expiresAt: state.expiresAt, blockedReason: i3CapRetryBlockedReason(record),
+          subscribe: i3CapRecovery.subscribe, getRevision: i3CapRecovery.getRevision,
+          query: canQueryI3Cap() ? () => query(record, true) : undefined };
+      } : () => {
         const record = pendingI3Commands().find(row => row.commandKey === key);
-        return record && { expiresAt: record.expiresAt, blockedReason: i3DraftRetryBlockedReason(record), query: canReadI3 ? () => query(record, true) : undefined };
-      } : req.getPendingRecovery,
+        if (!record) return req.getPendingRecovery?.();
+        const state = i3Recovery.state(record);
+        return { state, expiresAt: state.expiresAt, blockedReason: i3RetryBlockedReason(record),
+          subscribe: i3Recovery.subscribe, getRevision: i3Recovery.getRevision,
+          query: canReadI3 ? () => query(record, true) : undefined };
+      },
       edit: req.edit && restored && "after" in restored ? { ...req.edit, initialValue: restored.after } : req.edit && carried?.value ? { ...req.edit, initialValue: carried.value } : req.edit,
       run: async (reason, value, business) => {
         if (key) {
@@ -389,6 +399,14 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     const carried = restored ? null : prefill.current;
     prefill.current = null;
     const confirmation: ConfirmReq = { ...req, initialReason: carried?.reason, initialInputValue: carried?.value, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
+      getPendingRecovery: () => {
+        const record = original();
+        if (!record) return;
+        const state = i3Recovery.state(record);
+        return { state, expiresAt: state.expiresAt, blockedReason: i3RetryBlockedReason(record),
+          subscribe: i3Recovery.subscribe, getRevision: i3Recovery.getRevision,
+          query: canReadI3 ? () => query(record, true) : undefined };
+      },
       run: async (reason, value) => {
         if (key) {
           const record = original();
@@ -925,7 +943,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   /** 查过原结果的直接操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。 */
   const i3Status = (record: I3Command, outcome: FundInvestigationOutcome | undefined) => {
     const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("content_i3_read"),
-      canRetry: !!record.original && (record.action === "create" || !!record.snapshot) && !i3RetryPermission(record) && !i3DraftRetryBlockedReason(record) });
+      canRetry: !i3RetryBlockedReason(record) });
     return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
   };
   const query = async (record: I3Command | I3CapCommand, fromConfirm = false) => {
@@ -937,8 +955,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         if (ticket) {
           toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
           if (ticket.status !== "pending") await refreshAfterMutation(record);
-        } else {
-          setAbsentCaps((prev) => ({ ...prev, [record.commandKey]: true }));
+        } else if (ticket === null) {
           toast("没有查到原审批单，原操作记录继续保留。");
         }
       } else {
@@ -981,17 +998,16 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
         {canInvestigateECommand("content_i3_read") && eCommandClosureOffer(outcomes[row.commandKey], isRetryExpired(row)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(row)}>核查结案</Button>}
-        {!isRetryExpired(row) && <Button size="sm" disabledReason={isI3DraftCommand(row) ? i3DraftRetryBlockedReason(row)
-          : !row.original || !row.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(row)} onClick={() => restore(row)}>按原请求重试</Button>}
+        {!isRetryExpired(row) && <Button size="sm" disabledReason={i3RetryBlockedReason(row)} onClick={() => restore(row)}>按原请求重试</Button>}
       </> })),
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
       note: isRetryExpired(row) ? RETRY_EXPIRED_TEXT
         : row.receiptKnown ? "审批单已建，批没批准还没查到；点「查询原结果」看当前状态。"
-          : absentCaps[row.commandKey] ? "按原请求查不到这张审批单，24 小时内可以按原请求重试。" : undefined,
+          : i3CapRecovery.state(row).conclusion === "not-found" ? "按原请求查不到这张审批单，24 小时内可以按原请求重试。" : undefined,
       actions: <>
         <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
-        {!isRetryExpired(row) && !row.receiptKnown && <Button size="sm" disabledReason={!row.request ? "原操作记录不完整，只能查询核对，不能重试。" : capPermission} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
+        {!isRetryExpired(row) && !row.receiptKnown && <Button size="sm" disabledReason={i3CapRetryBlockedReason(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
       </> })),
   ];
   const pendingCapRows = pendingCaps.filter((row) => row.ticketStatus === "pending").map((row) => ({ key: row.commandKey, tier: `${TIER[row.tier as TierK].label}优先级`,
@@ -1002,7 +1018,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     : lockReason(editing?.id ?? "create") ?? (!AUDIENCE_CATALOG ? "受众目录没读到，不能保存；刷新页面后再试"
       : estimating ? "正在估算人数，估完再保存" : editing && sameDraft(form, formBase, requiredLanguages) ? "没有改动" : undefined);
   const scheduleOriginal = pending.find((row) => row.commandKey === schedulePendingKey);
-  const scheduleRetryReason = scheduleOriginal && isRetryExpired(scheduleOriginal) ? RETRY_EXPIRED : scheduleOriginal ? i3RetryPermission(scheduleOriginal) : undefined;
+  const scheduleRetryReason = scheduleOriginal ? i3RetryBlockedReason(scheduleOriginal) : undefined;
 
   const readStamp = readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : "";
   const header = (

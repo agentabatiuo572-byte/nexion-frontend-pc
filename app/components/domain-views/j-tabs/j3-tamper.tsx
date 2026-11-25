@@ -7,7 +7,7 @@ import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-com
  * C2 账户操作和 K1 多账户风险排查。本页的写入口是导出脱敏报表（带审计的只读导出）和修改告警设置（直接生效）。
  * 配置恢复使用提交前保存的完整原请求；报表按只读导出的既定例外处理。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import {
   ArrowDown, ArrowUp, CalendarDays, ChartColumn, Check, CircleHelp, CircleSlash, Download, FileDown, Gauge, ListChecks,
@@ -20,7 +20,7 @@ import {
 import type { JCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, releaseExpiredJLegacyCommand, retryJ3Command } from "@/lib/admin/j-client";
+import { finishJ3ReportAttempt, getJ3LegacyCommand, getJ3PendingCommand, isEmergencyOutcomeUncertain, queryJ3Command, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ3Command } from "@/lib/admin/j-client";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine, receiptFact, receiptRejected } from "../recovery-panel";
@@ -147,8 +147,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const [exporting, setExporting] = useState(false);
   const [pendingReport, setPendingReport] = useState<TamperReport | null>(null);
   const [accountLoading, setAccountLoading] = useState(false);
+  useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   const [saved, setSaved] = useState<SavedConfig | null>(null);
-  const [releasing, setReleasing] = useState<SavedConfig["legacy"] | null>(null);
+  const [releasing, setReleasing] = useState<J3PendingCommand | null>(null);
   const adminId = useAdminAuth((state) => String(state.session?.adminId ?? ""));
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [settled, setSettled] = useState<J3Settled[]>([]);
@@ -319,17 +320,17 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     outcome,
     createdAt: saved.createdAt,
     expired,
-    canRetry: canConfigure && !expired && !!command,
+    canRetry: canConfigure && !expired && !!command && !jEmergencyRetryBlocked(command),
     canQuery: true,
     status: saved.legacy ? expired
-      ? { tone: "neutral", label: "已过期", line: "改版前的旧记录查不了原结果；到操作记录与审批核对后，可以确认解除。" }
+      ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
       : { tone: "warn", label: "结果未知", line: "改版前的旧记录不能重试，查询只能看到现在的设置。" }
       : processed ? processedStatus({ expired, canRetry: canConfigure, canClose: canSubmit, receipt }) : undefined,
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
-      {canConfigure && !expired && !!command && <Button size="sm" disabled={checking} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
-      {saved.legacy && expired && <Button size="sm" onClick={() => setReleasing(saved.legacy)}>确认解除</Button>}
+      {canConfigure && !expired && !!command && <Button size="sm" disabled={checking} disabledReason={jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+      {command && jEmergencyRecovery.state(command).replayRejection && <Button size="sm" onClick={() => setReleasing(command)}>确认解除</Button>}
     </>,
     detail: <p>{savedChange(saved)}。</p>,
   }] : [];
@@ -354,13 +355,10 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
           await actions.reloadJEmergency().catch(() => undefined);
         }
       }} />}
-    {releasing && <ReleaseModal label="告警设置 · 改版前的旧记录"
-      explain={<><p>改版前的旧记录没存原修改的内容，不能重试，也不能核查结案。</p><p>先到「操作记录与审批」核对原修改有没有生效。</p></>}
+    {releasing && <ReleaseModal label="告警设置"
+      explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
       onCancel={() => setReleasing(null)} onConfirm={() => {
-        if (releasing.store === "emergency") releaseExpiredJLegacyCommand(releasing.record);
-        // The old page and client saved the same operation in both stores.
-        const record = commandAttempt.list().find((row) => row.fingerprint === ALERT_CONFIG_SLOT && row.commandKey === releasing.record.commandKey);
-        if (record && isRetryExpired(record)) commandAttempt.forget(record.fingerprint, record.commandKey);
+        jEmergencyRecovery.releaseRejectedReplay(releasing);
         setReleasing(null);
         syncSaved();
       }} />}
@@ -671,6 +669,7 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
   const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState(false);
   const [pending, setPending] = useState(original?.command ?? null);
+  useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   const unknownAt = pending?.createdAt ?? null;
   const [readBack, setReadBack] = useState<ReactNode>(null);
   const changed = threshold !== current.threshold || feedK4 !== current.feedK4;
@@ -755,7 +754,7 @@ function J3ConfigModal({ ctx, original, context, onClose, onPending, onOutcome }
   };
 
   const canRetry = useAdminAuth((state) => state.session?.authorities.includes("emergency_j3_alert_config") ?? false);
-  const blocked = pending ? !canRetry ? j3ErrorText(new Error("ACCESS_DENIED")) : isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : undefined
+  const blocked = pending ? !canRetry ? j3ErrorText(new Error("ACCESS_DENIED")) : jEmergencyRetryBlocked(pending)
     : !changed ? "告警阈值和风险评分都没改"
     : !thresholdValid ? "告警阈值要填 1–100 的整数"
       : !previewAvailable ? "暂时算不出这个阈值的影响，不能提交。"

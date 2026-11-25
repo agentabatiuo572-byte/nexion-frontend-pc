@@ -5,7 +5,7 @@
  * 沿用既有画面；上传原文件和完整表单在发送前持久化，未知只读回；恢复默认可以按原请求原号恢复。
  * 上传和恢复默认直接生效，不走审批；和版块的「提交审批」是两类。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ExternalLink, FileBadge2, FileText, RefreshCw, RotateCcw, Upload } from "lucide-react";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, IconTile, Input, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
@@ -19,9 +19,9 @@ import {
 } from "@/lib/admin/trust-documents-client";
 import { timeText } from "./i4-parts";
 import { IConflictModal, useIConflictView, type IConflictRow } from "./i-conflict";
-import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
+import { pendingI4DocumentCommands, submitI4Document, retryI4DocumentRestore, queryI4DocumentCommand, i4DocumentPermission, i4DocumentRecovery, i4DocumentRetryBlocked, type I4DocumentCommand } from "@/lib/admin/i4-document-commands";
 import { useIConflictReview, isIConflictRejection } from "@/lib/admin/i-conflict-review";
-import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
 // 原请求由 i4-document-commands 保存；编辑器仅持有输入，未知时冻结。
 export type I4DocumentEditor =
@@ -48,6 +48,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   const [saving, setSaving] = useState(false);
   const [reasonMin, setReasonMin] = useState(8);
   const [reasonPolicyReady, setReasonPolicyReady] = useState(false);
+  useSyncExternalStore(i4DocumentRecovery.subscribe, i4DocumentRecovery.getRevision, i4DocumentRecovery.getRevision);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [fresh, setFresh] = useState(false);
   const [editorBaselineReady, setEditorBaselineReady] = useState(true);
@@ -123,7 +124,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
     if (!editor || submitting.current) return;
     if (pendingKey) {
       const original = pendingI4DocumentCommands().find(row => row.commandKey === pendingKey);
-      if (!original || original.mode !== "restore") return;
+      if (!original || original.mode !== "restore" || i4DocumentRetryBlocked(original)) return;
       submitting.current = true; setSaving(true);
       try { await retryI4DocumentRestore(original); setEditor(null); setPendingKey(null); setFresh(false); await refresh(); }
       catch (cause) {
@@ -207,6 +208,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
   };
 
   const name = editor ? TRUST_DOCUMENT_NAMES[editor.document.slot] : "";
+  const pendingDocument = pendingKey ? pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) : undefined;
   const pendingFile = pendingKey && editor?.mode === "upload" ? pendingI4DocumentCommands().find(row => row.commandKey === pendingKey)?.file : undefined;
   const setField = (key: keyof TrustDocumentUpload, value: string) =>
     !saving && !pendingKey && !conflicted && editor?.mode === "upload" && setEditor({ ...editor, fields: { ...editor.fields, [key]: value } });
@@ -308,7 +310,7 @@ export function I4Documents({ onPendingChange, recovery }: { onPendingChange: ()
         title={editor?.mode === "restore" ? "恢复默认文件" : "上传新版本"} sub={name} icon={editor?.mode === "restore" ? RotateCcw : Upload} tone="role-1"
         footer={editor && <Decision
           others={<Button onClick={close} disabled={saving}>取消</Button>}
-          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，先点「重新读取核对」。" : isRetryExpired(pendingI4DocumentCommands().find(row => row.commandKey === pendingKey) ?? { expiresAt: 0 }) ? RETRY_EXPIRED_TEXT : i4DocumentPermission(editor.document.slot)) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
+          primary={<Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={pendingKey ? (editor.mode === "upload" ? "上传结果未知，先点「重新读取核对」。" : pendingDocument ? i4DocumentRetryBlocked(pendingDocument) : RETRY_EXPIRED_TEXT) : !reasonPolicyReady ? "理由规则加载失败，暂时无法提交。" : conflicted ? "先核对别人刚换上的文件" : !fresh || !editorBaselineReady ? "请先成功重新读取最新资料后再修改。" : editor.mode === "restore" && editor.document.source === "DEFAULT" ? "现在已经是默认文件了，不用再恢复。" : undefined} onClick={() => void submit()}>{editor.mode === "upload" ? "上传并公开" : pendingKey ? "按原请求重试" : "恢复默认文件"}</Button>} />}>
         {editor && <div className="rd-stack i4-doc-editor">
           {editor.mode === "upload"
             ? <Notice tone="warn" title={UPLOAD_PUBLIC}>不走审批；App 下次读取时换成这份，之后可以恢复成默认文件。</Notice>

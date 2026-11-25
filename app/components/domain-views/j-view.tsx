@@ -126,6 +126,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       reasonPlaceholder={mc.reasonPlaceholder}
       reasonPolicyOptional={mc.reasonPolicyOptional}
       getPendingReason={mc.getPendingReason}
+      getPendingRecovery={mc.getPendingRecovery}
       getPendingBusinessValue={mc.getPendingBusinessValue}
       blockedReason={mc.blockedReason}
       onClose={() => setActionConfirm(null)}

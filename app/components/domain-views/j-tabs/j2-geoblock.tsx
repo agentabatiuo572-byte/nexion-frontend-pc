@@ -9,12 +9,12 @@ import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-com
  * 改名单、改入口规则、应急批量封锁先在选择框里选国家，随时看到加了哪些、去了哪些，再进共用确认框写理由提交；
  * 完整原请求由 j-client 共用存储保存，结果未知后冻结并按 R1 恢复。
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Ban, Globe2, Replace, Unplug, History, ListOrdered, Plus, Radar, RefreshCw, ShieldMinus, Siren, Waypoints } from "lucide-react";
 import { BarList, BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, FilterBar, FilterField, Fold, Input, KeepText, KeyValues, Notice, PageHeader, Pager, Panel, ReleaseModal, SearchSelect, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { fetchJ2GeoHitDetails, fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, releaseExpiredJLegacyCommand, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitDetailPage, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
+import { fetchJ2GeoHitDetails, fetchJ2GeoHitSummary, getJ2PendingCommand, isEmergencyOutcomeUncertain, listJ2PendingCommands, listJ2LegacyCommands, queryJ2Command, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ2Command, type GeoBlockOverview, type GeoCountry, type GeoEndpoint, type GeoHitDetailPage, type GeoHitSummary, type GeoRecentChange, type J2PendingCommand, type J2CommandBody } from "@/lib/admin/j-client";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundRecoveryPanel, type FundRecoveryRow } from "../fund-command-check";
 import { SettledLine, receiptFact } from "../recovery-panel";
@@ -219,9 +219,10 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       .map((option) => ({ value: option.value, label: `${option.label}（${option.value}）`, extra: status.has(option.value) ? `现在${STATUS_TEXT[status.get(option.value)!]}` : undefined }));
   }, [data, lookupText]);
 
+  useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   const [pending, setPending] = useState<J2PendingCommand[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof listJ2LegacyCommands>>([]);
-  const [releasing, setReleasing] = useState<ReturnType<typeof listJ2LegacyCommands>[number] | null>(null);
+  const [releasing, setReleasing] = useState<J2PendingCommand | null>(null);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [settled, setSettled] = useState<{ key: string; label: string; status: string }[]>([]);
@@ -337,11 +338,12 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     return {
       key: record.commandKey, title: <span title={typeof change === "string" ? `${slotLabel} · ${change}` : undefined}>{slotLabel} · {change}</span>,
       record: investigationRecord(record, adminId), outcome: outcomes[record.commandKey],
-      createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record), canQuery: true,
+      createdAt: record.createdAt, expired, canRetry: !expired && canRetry(record) && !jEmergencyRetryBlocked(record), canQuery: true,
       status: processedOf(record, expired, canRetry(record)),
       actions: <>
         {queryButtons(record, slotLabel, change)}
-        {!expired && canRetry(record) && <Button size="sm" disabled={!!checking} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {!expired && canRetry(record) && <Button size="sm" disabled={!!checking} disabledReason={jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {jEmergencyRecovery.state(record).replayRejection && <Button size="sm" disabled={!!checking} onClick={() => setReleasing(record)}>确认解除</Button>}
       </>,
       detail: pendingNotes[record.commandKey] ? <p><KeepText text={pendingNotes[record.commandKey]} /></p> : undefined,
     };
@@ -354,11 +356,10 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       key: record.commandKey, title: `${label} · 改版前的旧记录`, record: investigationRecord(record, adminId), outcome,
       createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
       status: outcome ? processedOf(record, expired, false, true) : expired
-        ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
+        ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
         : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原修改的内容，不能重试，先查询原结果。" },
       actions: <>
         {queryButtons(record, label, "改版前的旧记录，没存原修改的内容")}
-        {expired && <Button size="sm" disabled={!!checking} onClick={() => setReleasing(record)}>确认解除</Button>}
       </>,
       detail: pendingNotes[record.commandKey] ? <p><KeepText text={pendingNotes[record.commandKey]} /></p> : undefined,
     };
@@ -395,10 +396,10 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           await actions.reloadJEmergency().catch(() => undefined);
         }
       }} />}
-    {releasing && <ReleaseModal label={`${slotName(releasing.fingerprint)} · 改版前的旧记录`}
-      explain={<><p>改版前的旧记录没存原修改的内容，不能重试；核查结案是另一回事，要按证据。</p><p>先到「操作记录与审批」核对原修改有没有生效。</p></>}
+    {releasing && <ReleaseModal label={slotName(releasing.fingerprint)}
+      explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
       onCancel={() => setReleasing(null)} onConfirm={() => {
-        releaseExpiredJLegacyCommand(releasing);
+        jEmergencyRecovery.releaseRejectedReplay(releasing);
         setReleasing(null);
         syncPending();
       }} />}
@@ -442,6 +443,13 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       getPendingReason: () => {
         const saved = getJ2PendingCommand(slot);
         return saved ? (JSON.parse(saved.geo.body) as J2CommandBody).reason : undefined;
+      },
+      getPendingRecovery: () => {
+        const record = getJ2PendingCommand(slot);
+        if (!record) return;
+        const state = jEmergencyRecovery.state(record);
+        return { state, expiresAt: state.expiresAt, blockedReason: jEmergencyRetryBlocked(record),
+          subscribe: jEmergencyRecovery.subscribe, getRevision: jEmergencyRecovery.getRevision, query: () => queryOriginal(record) };
       },
       getPendingBusinessValue: () => {
         const saved = getJ2PendingCommand(slot);

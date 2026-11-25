@@ -151,7 +151,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
       getPendingBlockReason: () => {
         const saved = attempt.target ? mutations.record(attempt.target) : undefined;
-        return saved && !mutations.canRetry(saved) ? isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : "请查询原结果" : undefined;
+        return saved ? mutations.retryBlocked(saved) : undefined;
       },
       run: async (reason) => { confirmation.current = attempt; await req.run(reason); },
     };
@@ -903,7 +903,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       inlineApproval: { pending: true, initialRecovery: "retry", expired: isRetryExpired(original), resolve: () => undefined,
         expiredRequestRecovery: isRetryExpired(original)
           ? original.request.kind === "direct" ? "reload" : "query" : undefined,
-        disabledReason: mutations.canRetry(original) ? undefined : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "请查询原结果",
+        disabledReason: mutations.retryBlocked(original),
         recover: async () => { await mutations.query(original); return true; }, retry: () => mutations.retry(original) },
       run: async () => { await mutations.retry(original); },
     };
@@ -931,18 +931,18 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <Change from={changeValue(c.target, c.before, c.rewardCurrency)} to={changeValue(c.target, c.after, c.rewardCurrency)} />
     {/^monthly\.[^.]+\.reward$/.test(c.target) && !monthlyUnit(c.target, c.rewardCurrency) && <span className="rd-weak"> · 币种没读到</span>}
   </>;
-  const releasable = (original: H3PendingCommand) => original.request.kind !== "direct" && isRetryExpired(original) && !original.acknowledged && !original.ticket;
+  const releasable = (original: H3PendingCommand) => !!mutations.recovery.state(original).replayRejection;
   const recoveryRows: H3RecoveryRow[] = mutations.records.map(original => {
     const approval = original.request.kind !== "direct";
     return {
       key: original.commandKey, name: original.change.action, change: changeOf(original.change),
       submittedAt: original.createdAt,
       tag: original.ticket ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
-        : isRetryExpired(original) ? expiredTag(approval ? "approval" : "direct") : unknownTag(approval ? "approval" : "direct"),
+        : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
       actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>查询原结果</Button>
         {!original.ticket && !original.acknowledged && !isRetryExpired(original)
-          && <Button size="sm" disabledReason={mutations.canRetry(original) ? undefined : "请查询原结果"} onClick={() => openRecovery(original)}>按原请求重试</Button>}
-        {releasable(original) && <Button size="sm" variant="ghost" onClick={() => setReleasing(original)}>查无此单时解除</Button>}</>,
+          && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
+        {releasable(original) && <Button size="sm" variant="ghost" onClick={() => setReleasing(original)}>解除原操作记录</Button>}</>,
     };
   });
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
@@ -951,7 +951,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
-      <p>结果未知：提交时没收到确定结果，可能已经生效。先「查询原结果」；没过 24 小时可以「按原请求重试」，不会重复执行。过了 24 小时只能查询。</p>
+      <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>
       <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
       <p>结果确认之前，这页不能再改同一项。</p>
     </>} /></>}>
@@ -960,19 +960,24 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   );
   const releasingRow = releasing && recoveryRows.find(row => row.key === releasing.commandKey);
   const releaseModal = releasing && <ReleaseModal label={<>{releasing.change.action}{releasingRow && <> · {releasingRow.change}</>}</>}
-    explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
+    explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
     onCancel={() => setReleasing(null)} onConfirm={() => {
       const record = releasing;
       setReleasing(null);
-      void mutations.releaseExpired(record)
-        .then(() => toast("已解除这条记录，可以重新提交。"))
-        .catch(cause => toast(displayAdminError(cause)));
+      try { mutations.releaseRejected(record); toast("已解除这条记录，可以重新提交。"); }
+      catch (cause) { toast(displayAdminError(cause)); }
     }} />;
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.title}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
     你打开时是 {shownValue(stale.before)}，要改成 {shownValue(stale.after)}。{error || !model ? "最新值没读到；重试读取成功后，会带着你填的内容重新打开。" : "已读到最新值，你填的还在，核对后再提交。"}
   </Notice>;
 
+  const recoveryFor = (record: H3PendingCommand) => {
+    const state = mutations.recovery.state(record);
+    return { state, expiresAt: state.expiresAt, blockedReason: mutations.retryBlocked(record),
+      subscribe: mutations.recovery.subscribe, getRevision: mutations.recovery.getRevision,
+      query: async () => { await mutations.query(record); } };
+  };
   const savedForConfirm = confirmation.current?.target ? mutations.record(confirmation.current.target) : undefined;
   // 固定 key：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
   const confirmModal = mc && (<Fragment key="h3-confirm">
@@ -999,7 +1004,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             expired: savedForConfirm ? isRetryExpired(savedForConfirm) : false,
             expiredRequestRecovery: savedForConfirm && isRetryExpired(savedForConfirm)
               ? savedForConfirm.request.kind === "direct" ? "reload" : "query" : undefined,
-            disabledReason: savedForConfirm && !mutations.canRetry(savedForConfirm) ? isRetryExpired(savedForConfirm) ? RETRY_EXPIRED_TEXT : "请查询原结果" : undefined,
+            disabledReason: savedForConfirm ? mutations.retryBlocked(savedForConfirm) : undefined,
             recover: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.query(saved); return true; },
             retry: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.retry(saved); },
           }}
@@ -1007,6 +1012,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           reasonMax={mc.reasonMax}
           initialReason={mc.initialReason}
           getPendingReason={mc.getPendingReason}
+          getPendingRecovery={() => savedForConfirm && recoveryFor(savedForConfirm)}
           getPendingBusinessValue={mc.getPendingBusinessValue}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setMc(current => current === mc ? null : current)}
@@ -1019,7 +1025,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               if (error instanceof HApprovalRequired) {
                 const { write, reason: kept } = error.input as { write: H3Write; reason: string };
                 setMc(null);
-                shellCtx.openConfirm(hApprovalReconfirm(error, { hasPending: () => !!mutations.record(write.change.target), onUnknown: () => shellCtx.closeConfirm?.(), action: write.change.action, title: write.change.title, reason: kept,
+                shellCtx.openConfirm(hApprovalReconfirm(error, { hasPending: () => !!mutations.record(write.change.target),
+                  pendingRecovery: () => { const record = mutations.record(write.change.target); return record && recoveryFor(record); },
+                  retryPending: () => { const record = mutations.record(write.change.target); if (!record) throw new Error("请查询原结果"); return mutations.retry(record); },
+                  onUnknown: () => shellCtx.closeConfirm?.(), action: write.change.action, title: write.change.title, reason: kept,
                   change: <Change from={`${shownValue(write.change.before)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} to={`${shownValue(write.change.after)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} />, approver: FUND_APPROVER, holds: "这一项" }));
                 return;
               }

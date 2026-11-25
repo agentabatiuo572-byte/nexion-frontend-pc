@@ -1,4 +1,5 @@
 "use client";
+import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 
 /**
  * H7 代金券的展示件：金额和时间的写法、券面、券卡、使用情况条、结果未知提醒。
@@ -203,10 +204,8 @@ export function acknowledgedTag() {
   return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
 }
 
-export function expiredTag(kind: "direct" | "approval") {
-  return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
-    ? "原请求超过 24 小时，不能再重试，只能查询；查询读到的是现在的券，不能据此认定原操作成没成，记录继续保留。"
-    : "原申请超过 24 小时，不能再重试，只能查询原审批单。明确查不到这张单时可以解除。"}>已过期</StatusTag>;
+export function expiredTag() {
+  return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
 }
 
 export function H7RecoveryNotice({ title, explain, rows, link }: { title: ReactNode; explain: ReactNode; rows: H7RecoveryRow[]; link?: ReactNode }) {

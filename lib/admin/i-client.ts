@@ -3,8 +3,8 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { I2_RETIRED_TEMPLATE_CTAS, I_DATA_UNREADABLE, parseIOverview, parseNotificationCampaign, parseNovaSocialEventPage, parseNovaSocialSample } from "@/lib/admin/i-overview-contract";
-import { createPendingMutationStore, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { i4DraftReceiptFieldsMatch, parseI4PublishedSnapshot, parseI4SectionVersion } from "./i4-trust-contract";
 import { parseI6Course, parseI6CourseVersion, parseI6Issue, parseI6Json, parseI6Message, parseI6Overview, validateI6CourseOptions } from "./i6-learning-contract";
@@ -41,7 +41,7 @@ function readICommandOrigin(original: I1Original | undefined, method: string, pa
 
 /** Original server bindings settle the saved command; reading today's content never does. */
 async function queryIContentCommand(command: PendingMutationRecord & { original?: I1Original }, authority: FundCommandOrigin["readAuthority"],
-  evidence?: FundCommandEvidence, verifyReceipt?: (receipt: FundCommandInvestigation) => void) {
+  evidence?: FundCommandEvidence, verifyReceipt?: (receipt: FundCommandInvestigation) => void, settle = true) {
   const original = command.original;
   if (!original) return null;
   if (original.owner !== useAdminAuth.getState().session?.adminId) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
@@ -50,7 +50,7 @@ async function queryIContentCommand(command: PendingMutationRecord & { original?
   const receipt = original.commandOrigin ? await checkFundCommand({ ...command, commandOrigin: original.commandOrigin }, evidence)
     : evidence ? await investigateECommand(command, locator, evidence, authority) : await discoverECommand(locator);
   if (receipt) verifyReceipt?.(receipt);
-  if (fundCommandSettled(receipt)) uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+  if (settle && fundCommandSettled(receipt)) uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
   return receipt;
 }
 export type I3FormSnapshot = {
@@ -85,6 +85,43 @@ const uncertainCommandKeys = createPendingMutationStore<IContentPending>({
   storageKey: "nexion-admin-i-content-uncertain-commands-v1",
   retainExpiredRecords: (row) => /^(POST|PUT|PATCH|DELETE):\/(copy-ab\/|nova\/|campaigns(?::|\/)|trust-disclosure\/trust-sections\/|i18n-learning\/)/.test(row.fingerprint),
 });
+
+type RecoverableContent = PendingMutationRecord & { original?: I1Original };
+
+function contentRecovery<T extends RecoverableContent>(list: () => T[], canReplay: (record: T) => boolean) {
+  return createPendingRecovery({ ...uncertainCommandKeys, list }, {
+    capability: record => record.original ? "receipt" : "readback",
+    canReplay: record => {
+      const auth = useAdminAuth.getState(), session = auth.session;
+      return auth.isAuthenticated && !auth.logoutPending && !auth.logoutUnknown && !!session && !session.passwordChangeRequired
+        && record.original?.owner === session.adminId && canReplay(record);
+    },
+    explicitRejectionCode,
+  });
+}
+
+function contentRetryBlocked(state: PendingRecoveryState, permission?: string) {
+  if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+  if (state.expired) return RETRY_EXPIRED_TEXT;
+  if (permission) return permission;
+  if (state.replayBlock === "readback-only") return "原操作记录不完整，只能查询核对，不能重试。";
+  return state.replayBlock ? "先查询原结果，明确查不到后才能重试。" : undefined;
+}
+
+async function readContentRecovery(record: RecoverableContent, authority: FundCommandOrigin["readAuthority"], scope: string | undefined,
+  evidence?: FundCommandEvidence, verifyReceipt?: (receipt: FundCommandInvestigation) => void) {
+  const receipt = await queryIContentCommand(record, authority, evidence, verifyReceipt, false);
+  if (fundCommandSettled(receipt)) {
+    const conclusion = receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED" ? "not-executed"
+      : receipt?.originalStatus === "CONFIRMED_REJECTED" ? "rejected" : "succeeded";
+    return { conclusion, receipt } as const;
+  }
+  // Discovery can return an empty list for an unbound legacy receipt. Only the
+  // server's status for the exact scope and key can establish absence.
+  const status = !evidence && !receipt && scope && record.original
+    ? await fetchDirectCommandReceiptDetails(scope.toUpperCase().replace(/[^A-Z0-9_.:-]/g, "_"), record.commandKey, record.original.owner) : undefined;
+  return { conclusion: status?.state === "NOT_FOUND" ? "not-found" : "unknown", receipt } as const;
+}
 
 function rememberContentReadback(command: ContentWriteRecord, data: unknown) {
   const record = uncertainCommandKeys.list().find(row => row.commandKey === command.commandKey && row.fingerprint === command.fingerprint);
@@ -188,6 +225,27 @@ export function pendingI6Commands(): I6Command[] {
   return uncertainCommandKeys.list().flatMap(row => { const command = readI6Command(row); return command ? [command] : []; });
 }
 
+export const i6Recovery = contentRecovery(pendingI6Commands, command => !command.readbackReceipt && !i6RetryPermission(command));
+export const i6RetryBlockedReason = (command: I6Command) => contentRetryBlocked(i6Recovery.state(command), i6RetryPermission(command));
+
+function i6ReceiptScope(command: I6Command) {
+  const scopes: Record<string, string> = {
+    rescan: "I6_I18N_RESCAN", "message-draft": `I6_I18N_DRAFT:${command.target}`,
+    "message-publish": `I6_I18N_PUBLISH:${command.target}`, "message-archive": `I6_I18N_ARCHIVE:${command.target}`,
+    "message-rollback": `I6_I18N_ROLLBACK:${command.target}:${command.version}`,
+    "integrity-fix": `I6_I18N_INTEGRITY_FIX:${decodeURIComponent(command.original?.path.split("/")[3] ?? "")}`,
+    "course-create": `I7_COURSE_CREATE:${command.target}`, "course-draft": `I7_COURSE_DRAFT_UPDATE:${command.target}`,
+    "course-delete": `I7_COURSE_DELETE:${command.target}`, "course-publish": `I7_COURSE_PUBLISH:${command.target}`,
+    "course-archive": `I7_COURSE_ARCHIVE:${command.target}`, featured: "I7_COURSE_FEATURED",
+    "version-create": `I7_COURSE_VERSION_CREATE:${command.target}`,
+    "version-draft": `I7_COURSE_VERSION_UPDATE:${command.target}:${command.version}`,
+    "version-delete": `I7_COURSE_VERSION_DELETE:${command.target}:${command.version}`,
+    "version-publish": `I7_COURSE_VERSION_PUBLISH:${command.target}:${command.version}`,
+    "version-rollback": `I7_COURSE_VERSION_ROLLBACK:${command.target}:${command.version}`,
+  };
+  return scopes[command.operation];
+}
+
 export function i6RetryPermission(command: I6Command): string | undefined {
   const auth = useAdminAuth.getState(), session = auth.session;
   const permissions = command.operation.startsWith("message-") || ["rescan", "integrity-fix"].includes(command.operation)
@@ -261,7 +319,7 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
     const status = response.ok && payload.code! >= 400 && payload.code! < 500 ? payload.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
     const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code! < 500;
-    if (rejected && !unknown) { uncertainCommandKeys.forget(command.fingerprint, command.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : command }); }
+    if (rejected && !unknown) { if (!retry) uncertainCommandKeys.forget(command.fingerprint, command.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : command }); }
     throw uncertain(failure.message);
   }
   let valid = false;
@@ -311,7 +369,7 @@ async function sendI6Command(command: I6Command, retry: boolean): Promise<unknow
 export async function retryI6Command(saved: I6Command): Promise<unknown> {
   const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
-  return sendI6Command(command, true);
+  return i6Recovery.replay(command, record => sendI6Command(record, true));
 }
 
 async function prepareI6Command(path: string, init: RequestInit, snapshot?: I6CommandSnapshot): Promise<unknown> {
@@ -346,9 +404,12 @@ export async function queryI6Receipt(saved: I6Command, evidence?: FundCommandEvi
   const command = pendingI6Commands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
   const authority = command.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read";
-  return queryIContentCommand(command, authority, evidence, receipt => {
-    if (receipt.integrityRepair && !matchesI6Repair(command, receipt.integrityRepair)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
-  });
+  const result = await i6Recovery.query(command, record => readContentRecovery(record, authority, i6ReceiptScope(record), evidence, receipt => {
+    if (receipt.integrityRepair && !matchesI6Repair(record, receipt.integrityRepair)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
+  }));
+  if (!result) return null;
+  i6Recovery.settleFromQuery(command, result.conclusion);
+  return result.receipt;
 }
 
 export async function queryI6Command(saved: I6Command, evidence?: FundCommandEvidence) {
@@ -409,10 +470,17 @@ export function pendingI4DraftCommands(): I4DraftCommand[] {
   return uncertainCommandKeys.list().flatMap(row => { const value = readI4DraftCommand(row); return value ? [value] : []; });
 }
 
+export const i4DraftRecovery = contentRecovery(pendingI4DraftCommands, command => !command.readbackReceipt && !i4DraftPermission());
+export const i4DraftRetryBlockedReason = (command: I4DraftCommand) => contentRetryBlocked(i4DraftRecovery.state(command), i4DraftPermission());
+
 export async function queryI4DraftReceipt(saved: I4DraftCommand, evidence?: FundCommandEvidence) {
   const command = pendingI4DraftCommands().find(row => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
-  return queryIContentCommand(command, "content_i4_read", evidence);
+  const scope = { create: "CREATE", edit: "UPDATE", delete: "DELETE" }[command.action];
+  const result = await i4DraftRecovery.query(command, record => readContentRecovery(record, "content_i4_read", `I4_TRUST_SECTION_DRAFT_${scope}`, evidence));
+  if (!result) return null;
+  i4DraftRecovery.settleFromQuery(command, result.conclusion);
+  return result.receipt;
 }
 
 export async function queryI4DraftCommand(saved: I4DraftCommand, evidence?: FundCommandEvidence) {
@@ -464,7 +532,7 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
     const rejected = retry ? isExplicitRejection(failure)
       : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
     if (rejected && response.headers.get("X-Nexion-Upstream-Outcome") !== "unknown") {
-      uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+      if (!retry) uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
     throw new OutcomeUnknownError(failure.message);
@@ -489,7 +557,7 @@ async function sendI4DraftCommand(command: I4DraftCommand, retry: boolean): Prom
 export async function retryI4DraftCommand(saved: I4DraftCommand): Promise<void> {
   const original = pendingI4DraftCommands().find(row => row.commandKey === saved.commandKey);
   if (!original) throw new Error("原操作已处理，请重新读取后再操作。");
-  return sendI4DraftCommand(original, true);
+  return i4DraftRecovery.replay(original, record => sendI4DraftCommand(record, true));
 }
 
 async function prepareI4DraftCommand(path: string, init: RequestInit, snapshot?: TrustSectionVersionView): Promise<void> {
@@ -683,7 +751,7 @@ async function sendI3Command(command: I3Command, retry: boolean): Promise<void> 
     const rejected = retry ? isExplicitRejection(failure)
       : isDeterministicRejection(response.status, payload.code) && payload.code! < 500 && !isIdempotencyOutcomeOpen(payload.message);
     if (rejected && response.headers.get("X-Nexion-Upstream-Outcome") !== "unknown") {
-      uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+      if (!retry) uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
     throw Object.assign(new OutcomeUnknownError(I3_RESULT_UNKNOWN), { commandKey: command.commandKey });
@@ -723,33 +791,31 @@ export async function fetchI3CampaignOverview(): Promise<NotificationCampaignOve
   } };
 }
 
-const i3DraftReceiptState = new Map<string, "missing" | "processing">();
 export const isI3DraftCommand = (command: I3Command) => command.action === "create" || command.action === "draft";
+export const i3Recovery = contentRecovery(pendingI3Commands,
+  command => (command.action === "create" || !!command.snapshot) && !i3RetryPermission(command));
 
-export function i3DraftRetryBlockedReason(command: I3Command): string | undefined {
-  if (!isI3DraftCommand(command)) return;
-  if (isRetryExpired(command)) return RETRY_EXPIRED_TEXT;
-  if (!command.original || command.action === "draft" && !command.snapshot) return "原操作记录不完整，只能查询核对，不能重试。";
-  const permission = i3RetryPermission(command);
-  if (permission) return permission;
-  const state = i3DraftReceiptState.get(command.commandKey);
-  return state === "missing" ? undefined : state === "processing" ? "原操作还在处理，请稍后再查。" : "先查询原结果，明确查不到后才能重试。";
+export function i3RetryBlockedReason(command: I3Command) {
+  return contentRetryBlocked(i3Recovery.state(command),
+    !command.original || command.action !== "create" && !command.snapshot ? "原操作记录不完整，只能查询核对，不能重试。" : i3RetryPermission(command));
 }
+
+export const i3DraftRetryBlockedReason = i3RetryBlockedReason;
 
 export async function retryI3Command(saved: I3Command): Promise<void> {
   const command = pendingI3Commands().find((row) => row.commandKey === saved.commandKey);
   if (!command) throw new Error("原操作已处理，请重新读取后再操作。");
-  const blocked = i3DraftRetryBlockedReason(command);
+  const blocked = i3RetryBlockedReason(command);
   if (blocked) throw new Error(blocked);
-  i3DraftReceiptState.delete(command.commandKey);
-  return sendI3Command(command, true);
+  return i3Recovery.replay(command, record => sendI3Command(record, true));
 }
 
-export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvidence) {
-  const command = pendingI3Commands().find(row => row.commandKey === saved.commandKey);
-  if (!command) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  i3DraftReceiptState.delete(command.commandKey);
-  const receipt = await queryIContentCommand(command, "content_i3_read", evidence);
+export async function queryI3Command(command: I3Command, evidence?: FundCommandEvidence) {
+  const suffix = { create: "CREATE", draft: "DRAFT_UPDATE", schedule: "SCHEDULE", "send-now": "SEND_NOW", cancel: "CANCEL", delete: "DELETE" }[command.action];
+  const result = await i3Recovery.query(command, record => readContentRecovery(record, "content_i3_read", `I3_NOTIFICATION_CAMPAIGN_${suffix}`, evidence));
+  if (!result) return { receipt: null };
+  const { receipt } = result;
+  i3Recovery.settleFromQuery(command, result.conclusion);
   if (!command.original || !isI3DraftCommand(command)) return { receipt };
   if (receipt && !receipt.locked && (fundCommandCanConcludeRejected(receipt) || receipt.originalStatus === "CONFIRMED_REJECTED"
     || receipt.originalStatus === "CONFIRMED_NOT_EXECUTED" && receipt.newOperationAllowed
@@ -761,10 +827,6 @@ export async function queryI3Command(saved: I3Command, evidence?: FundCommandEvi
     const reason = reasonCode ? formatAdminApiError(reasonCode, "") : "原操作没有保存草稿，你填的内容已保留。";
     uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
     return { receipt, rejection: new PendingConfirmRejected(reason, reasonCode, receipt.businessCode ?? 0) };
-  }
-  if (!evidence && !isRetryExpired(command)) {
-    if (receipt === null) i3DraftReceiptState.set(command.commandKey, "missing");
-    else if (receipt.originalStatus === "PROCESSING") i3DraftReceiptState.set(command.commandKey, "processing");
   }
   return { receipt };
 }
@@ -931,7 +993,7 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
     const status = response.ok && payload.code >= 400 && payload.code < 500 ? payload.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(payload.message, `CONTENT_API_${response.status}`)), { status, reasonCode: payload.message });
     if (!unknown && (retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, payload.code) && payload.code < 500)) {
-      uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
+      if (!retry) uncertainCommandKeys.forget(command.fingerprint, command.commandKey);
       throw Object.assign(failure, { rejectedCommand: retry ? undefined : command });
     }
     throw Object.assign(new OutcomeUnknownError(failure.message), { commandKey: command.commandKey, status: response.status, reasonCode: payload.message });
@@ -941,16 +1003,34 @@ async function sendI2Command(command: I2Command, retry: boolean): Promise<unknow
   return payload.data;
 }
 
-export async function retryI2Command(saved: I2Command): Promise<void> {
-  const command = pendingI2Commands().find((row) => row.commandKey === saved.commandKey);
-  if (!command?.original) throw new Error("原操作记录不完整，只能查询核对，不能重试。");
-  await sendI2Command(command, true);
+export const i2Recovery = contentRecovery(pendingI2Commands, () => !!useAdminAuth.getState().session?.authorities.includes("content_i2_write"));
+export function i2RetryBlockedReason(command: I2Command) {
+  return contentRetryBlocked(i2Recovery.state(command),
+    i1CanWrite("content_i2_write") ? undefined : "当前账号没有这项操作权限，请查询原结果。");
 }
 
-export async function queryI2Command(saved: I2Command, evidence?: FundCommandEvidence) {
-  const command = pendingI2Commands().find(row => row.commandKey === saved.commandKey);
-  if (!command) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  return queryIContentCommand(command, "content_i2_read", evidence);
+function i2ReceiptScope({ path, method }: I1Original) {
+  const [, , family, target, operation] = path.split("/").map(decodeURIComponent);
+  if (family === "social-distribution") return "I2_NOVA_SOCIAL_DISTRIBUTION";
+  if (family === "social-events") return target === "sync" ? "I2_NOVA_SOCIAL_SYNC"
+    : `I2_NOVA_SOCIAL_EVENT_${method === "DELETE" ? "DELETE" : "STATUS"}:${target}`;
+  const scope = family === "channels" ? "I2_NOVA_CHANNEL" : "I2_NOVA_TEMPLATE";
+  if (method === "POST") return `${scope}_CREATE`;
+  return `${scope}_${method === "DELETE" ? "DELETE" : operation === "status" ? "STATUS" : "UPDATE"}:${target}`;
+}
+
+export async function retryI2Command(command: I2Command): Promise<void> {
+  const blocked = i2RetryBlockedReason(command);
+  if (blocked) throw new Error(blocked);
+  await i2Recovery.replay(command, record => sendI2Command(record, true));
+}
+
+export async function queryI2Command(command: I2Command, evidence?: FundCommandEvidence) {
+  const result = await i2Recovery.query(command, record => readContentRecovery(record, "content_i2_read",
+    record.original && i2ReceiptScope(record.original), evidence));
+  if (!result) return null;
+  i2Recovery.settleFromQuery(command, result.conclusion);
+  return result.receipt;
 }
 
 async function prepareI2Command(path: string, init: RequestInit) {

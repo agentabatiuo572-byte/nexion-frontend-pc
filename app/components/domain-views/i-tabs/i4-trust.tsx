@@ -16,7 +16,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
  * amplifies 全为 false —— I4 不碰 B1。原请求合同保持，原操作恢复按 R1 独立于新修改。
  */
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { CircleSlash, EyeOff, FilePen, History, Hourglass, LayoutList, Plus, RefreshCw, RotateCcw, Send, ShieldAlert, ShieldCheck, Undo2 } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints, LocaleTabs, MoreMenu, Notice, PageHeader, Panel, ReleaseModal, StatusTag, Table, TableMessage, Td, Th, Tr, type JudgmentRow, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { PaginationExemptionList } from "../design-kit";
@@ -26,8 +26,8 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField } from "@/lib/admin/trust-section-validation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { pendingI4DraftCommands, queryI4DraftReceipt, retryI4DraftCommand, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
-import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseExpiredI4SectionCommand, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
+import { pendingI4DraftCommands, queryI4DraftReceipt, retryI4DraftCommand, i4DraftRecovery, i4DraftRetryBlockedReason, i4DraftPermission, fetchI4PublishedSnapshot, fetchI4TrustOverview, type I4DraftCommand, type TrustDisclosureOverview } from "@/lib/admin/i-client";
+import { pendingI4SectionCommands, proposeI4Section, queryI4SectionCommand, releaseRejectedI4Section, i4SectionRecovery, retryI4SectionCommand, i4SectionPermission, type I4SectionCommand } from "@/lib/admin/i4-section-commands";
 import { TRUST_DOCUMENT_NAMES } from "@/lib/admin/trust-documents-client";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
 import { i4AppFieldIssue, i4DraftMatchesPublishedFields, i4DraftOmittedTranslations, i4FieldValueIssue, i4HasEnglishFields, i4OmittedTranslations } from "@/lib/admin/i4-trust-contract";
@@ -132,7 +132,8 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   const [documentCommands, setDocumentCommands] = useState<I4DocumentCommand[]>([]);
   const [documentRecovery, setDocumentRecovery] = useState<I4DocumentCommand | null>(null);
   const [recovering, setRecovering] = useState<string | null>(null);
-  const [sectionNotFound, setSectionNotFound] = useState<string[]>([]);
+  useSyncExternalStore(i4SectionRecovery.subscribe, i4SectionRecovery.getRevision, i4SectionRecovery.getRevision);
+  useSyncExternalStore(i4DraftRecovery.subscribe, i4DraftRecovery.getRevision, i4DraftRecovery.getRevision);
   const [releasingSection, setReleasingSection] = useState<I4SectionCommand | null>(null);
   const sectionConfirm = useRef<{ key: string; request: ActionConfirmReq; commandKey: () => string | undefined } | null>(null);
   const inFlight = useRef(false);
@@ -235,6 +236,13 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     await rereadAfterResolution([spec.obj], []);
     return true;
   };
+  const sectionRetryBlocked = (record: I4SectionCommand) => {
+    const state = i4SectionRecovery.state(record);
+    if (state.replayRejection) return "重试已被拒绝，请核对原操作。";
+    if (state.expired) return RETRY_EXPIRED_TEXT;
+    if (!record.request || !record.snapshot) return "原操作记录不完整，只能查询核对，不能重试。";
+    return i4SectionPermission(record.sectionKey, record.snapshot.section.highSensitivity) ?? (state.replayBlock ? "请查询原结果" : undefined);
+  };
   const openTrustConfirm = (req: ActionConfirmReq, key: string, original?: I4SectionCommand | I4DraftCommand) => {
     let originalKey = original?.commandKey;
     const saved = () => [...pendingI4DraftCommands(), ...pendingI4SectionCommands()].find(row => originalKey ? row.commandKey === originalKey : row.sectionKey === key);
@@ -246,6 +254,16 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       edit: req.edit && carried?.value ? { ...req.edit, initialValue: carried.value } : req.edit,
       blockedReason: original ? undefined : req.blockedReason ?? newSectionReason(key, proposing),
       getPendingReason: () => saved()?.reason,
+      getPendingRecovery: () => {
+        const record = saved();
+        if (!record) return;
+        const draft = "version" in record;
+        const recovery = draft ? i4DraftRecovery : i4SectionRecovery;
+        const state = draft ? i4DraftRecovery.state(record) : i4SectionRecovery.state(record);
+        return { state, expiresAt: state.expiresAt, blockedReason: draft ? i4DraftRetryBlockedReason(record) : sectionRetryBlocked(record),
+          subscribe: recovery.subscribe, getRevision: recovery.getRevision,
+          query: () => draft ? recoverDraft(record, false) : recoverSection(record) };
+      },
       getPendingBusinessValue: () => {
         const command = saved();
         if (!command && carried?.dataSource) return { dataSource: carried.dataSource, bilingualConfirmed: "false" };
@@ -675,7 +693,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
   /** 草稿操作这一行怎么说：共用面板的标签和句子（查询失败的原因放标签问号里）。草稿直接生效，不建审批单。 */
   const draftStatus = (record: I4DraftCommand, outcome: FundInvestigationOutcome | undefined) => {
     const shown = fundRecoveryStatus({ outcome, expired: isRetryExpired(record), canQuery: true, canClose: canInvestigateECommand("content_i4_read"),
-      canRetry: !isRetryExpired(record) && !!record.original && !i4DraftPermission() });
+      canRetry: !i4DraftRetryBlockedReason(record) });
     return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
   };
   const recoverDraft = async (record: I4DraftCommand, retry: boolean) => {
@@ -693,7 +711,25 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         }
         setDraftOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
         const receipt = receiptOf(outcome);
-        if (eCommandSettled(receipt)) { toast(settledText({ status: receipt!.originalStatus })); await rereadAfterResolution([record.sectionKey], [record.commandKey]); return; }
+        if (eCommandSettled(receipt)) {
+          const restore = receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED" || receipt?.originalStatus === "CONFIRMED_REJECTED";
+          const previousEditor = latest.current.draftEditor;
+          const mayRestore = restore && record.input && (!previousEditor || latest.current.editorCommandKey === record.commandKey);
+          toast(settledText({ status: receipt!.originalStatus }));
+          await rereadAfterResolution([record.sectionKey], [record.commandKey]);
+          if (mayRestore) {
+            const overview = await fetchI4TrustOverview();
+            const section = overview.trustSections.find(row => row.key === record.sectionKey);
+            const currentDraft = overview.trustSectionVersions.find(row => row.sectionKey === record.sectionKey && row.version === record.version && row.status.toLowerCase() === "draft");
+            if (section && (record.action === "create" || currentDraft)) {
+              setDraftEditor({ ...record.input!, mode: record.action === "create" ? "create" : "edit",
+                sectionKey: record.sectionKey, revision: currentDraft?.revision, reason: "",
+                expectedSectionVersion: section.version, expectedSectionStatus: section.status,
+                published: overview.trustSectionVersions.find(row => row.sectionKey === record.sectionKey && row.version === section.version) });
+            }
+          }
+          return;
+        }
         await fetchI4TrustOverview();
         const shown = draftStatus(record, outcome);
         toast(`${shown.label}：${shown.line}`);
@@ -709,7 +745,6 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     inFlight.current = true; setRecovering(record.commandKey);
     try {
       const ticket = await queryI4SectionCommand(record);
-      if (!ticket && !record.receiptKnown && isRetryExpired(record)) setSectionNotFound(keys => keys.includes(record.commandKey) ? keys : [...keys, record.commandKey]);
       toast(ticket ? ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${TICKET_STATUS[ticket.status]}`
         : !record.receiptKnown && isRetryExpired(record) ? "没查到这张审批单。" : "还没查到原审批单，记录继续保留。");
       if (ticket && ticket.status !== "pending") await rereadAfterResolution([record.sectionKey], [record.commandKey]);
@@ -746,7 +781,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       note: <>{draftStatus(record, draftOutcomes[record.commandKey]).line} <TechInfo commandKey={record.commandKey} receipt={receiptOf(draftOutcomes[record.commandKey])} /></>,
       actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverDraft(record, false)}>查询原结果</Button>
         {canInvestigateECommand("content_i4_read") && eCommandClosureOffer(draftOutcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosingDraft(record)}>核查结案</Button>}
-        <Button size="sm" disabledReason={isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !record.original ? "原操作记录不完整，只能查询核对，不能重试。" : i4DraftPermission()}
+        <Button size="sm" disabledReason={i4DraftRetryBlockedReason(record)}
           onClick={() => {
             if (record.action === "delete" && record.snapshot) deleteSectionDraft(record.snapshot, record);
             else if (record.input) { setEditorCommandKey(record.commandKey); setDraftEditor({ ...record.input, mode: record.action === "create" ? "create" : "edit", sectionKey: record.sectionKey, revision: record.input.expectedRevision, reason: record.reason, published: record.snapshot }); }
@@ -754,24 +789,24 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           }}>按原请求重试</Button></> })),
     ...sectionCommands.map(record => {
       const pending = record.ticketStatus === "pending";
-      const releasable = !record.receiptKnown && !pending && isRetryExpired(record) && sectionNotFound.includes(record.commandKey);
+      const releasable = !!i4SectionRecovery.state(record).replayRejection;
       return { key: record.commandKey, kind: pending ? "pending" as const : record.receiptKnown ? "submitted" as const : "unknown" as const,
         name: `${sectionName(record.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[record.action]}`,
         change: `${record.before} → ${record.after === "archived" ? "已下架" : record.after}`, submittedAt: timeText(new Date(record.createdAt).toISOString()),
         tag: pending ? <StatusTag tone="progress" icon={Hourglass}>等另一位批准</StatusTag> : record.receiptKnown ? <StatusTag tone="neutral" icon={Hourglass}>已提交，状态未查到</StatusTag> : unknownTag(),
-        note: releasable ? "按原请求查不到这张审批单，说明没建成；核对后可以确认解除。"
+        note: releasable ? "重试已被拒绝，请核对原操作。" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT
           : !pending && record.receiptKnown ? "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" : undefined,
         actions: <><Button size="sm" loading={recovering === record.commandKey} onClick={() => void recoverSection(record)}>查询原结果</Button>
           {releasable && <Button size="sm" variant="primary" onClick={() => setReleasingSection(record)}>确认解除</Button>}
-          {!record.receiptKnown && !pending && <Button size="sm" disabledReason={isRetryExpired(record) ? RETRY_EXPIRED_TEXT : !record.request ? "原操作记录不完整，只能查询核对，不能重试。" : i4SectionPermission(record.sectionKey, record.snapshot?.section.highSensitivity)}
+          {!record.receiptKnown && !pending && <Button size="sm" disabledReason={sectionRetryBlocked(record)}
             onClick={() => restoreSection(record)}>按原请求重试</Button>}</> };
     }),
   ];
   const releaseSection = async (record: I4SectionCommand) => {
     setReleasingSection(null);
-    try { await releaseExpiredI4SectionCommand(record); toast("已解除，这一块可以重新提交"); await rereadAfterResolution([record.sectionKey], [record.commandKey]); }
+    try { releaseRejectedI4Section(record); toast("已解除，这一块可以重新提交"); }
     catch (error) { toast(displayAdminError(error)); }
-    finally { setSectionNotFound(keys => keys.filter(key => key !== record.commandKey)); syncCommands(); }
+    finally { syncCommands(); }
   };
   const releaseModal = <>{closingDraft && <FundClosureModal label={`${sectionName(closingDraft.sectionKey)} · ${closingDraft.version}`} createdAt={closingDraft.createdAt}
     offer={eCommandClosureOffer(draftOutcomes[closingDraft.commandKey], isRetryExpired(closingDraft))}
@@ -785,7 +820,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       else toast(CLOSURE_KEPT_TEXT);
     }} />}
     {releasingSection && <ReleaseModal label={`${sectionName(releasingSection.sectionKey)} · ${{ publish: "提交发布", rollback: "回滚历史版", archive: "下架" }[releasingSection.action]} · ${releasingSection.before} → ${releasingSection.after === "archived" ? "已下架" : releasingSection.after}`}
-    explain="原申请超过 24 小时，按原请求查不到这张审批单，说明它没建成。确认时会再查一次，仍查不到才解除。"
+    explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
     onCancel={() => setReleasingSection(null)} onConfirm={() => void releaseSection(releasingSection)} />}</>;
 
   /* ---------- 刚被别人改过：看最新的和自己填的，确认后按最新的重建编辑器或确认框 ---------- */
@@ -1196,7 +1231,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
         footer={draftEditor && <Decision
           note={editorMissing.length ? `还缺：${editorMissing.join("、")}` : undefined}
           others={<Button disabled={savingDraft} onClick={() => { setDraftEditor(null); setEditorCommandKey(null); }}>取消</Button>}
-          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (draftCommands.find(row => row.commandKey === editorCommandKey && isRetryExpired(row)) ? RETRY_EXPIRED_TEXT : i4DraftPermission()) : draftEditor ? newSectionReason(draftEditor.sectionKey) : undefined} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原请求重试" : "保存草稿"}</Button>} />}>
+          primary={<Button variant="primary" data-trust-draft-editor="direct-save" loading={savingDraft} disabledReason={editorCommandKey ? (() => { const record = draftCommands.find(row => row.commandKey === editorCommandKey); return record ? i4DraftRetryBlockedReason(record) : "请查询原结果"; })() : draftEditor ? newSectionReason(draftEditor.sectionKey) : undefined} onClick={() => void saveSectionDraft()}>{editorCommandKey ? "按原请求重试" : "保存草稿"}</Button>} />}>
         {draftEditor && <>
           <div className="i4-doc-effect"><StatusTag tone="neutral" filled explain="保存草稿直接写，不走审批；用户看到的内容不变，提交发布并批准后才公开。">不改公开内容</StatusTag></div>
           <DraftEditorBody editor={draftEditor} requiredLanguages={requiredLanguages} frozen={savingDraft || !!editorCommandKey} onChange={setDraftEditor}

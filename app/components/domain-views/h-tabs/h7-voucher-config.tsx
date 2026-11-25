@@ -9,7 +9,7 @@
  * 代金券是促销折扣、非 NEX 负债 → 不挂 amplifies / B1 红线(与 H2 试用折扣同口径)。
  */
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Ban, BellOff, CircleSlash, LayoutGrid, List, Pencil, Play, Pause, Plus, ReceiptText, RefreshCw, Send, Ticket, TicketCheck, Trash2 } from "lucide-react";
 import {
@@ -22,7 +22,7 @@ import {
 import {
   H7_VOUCHER_ACTIONS, canRetryH7VoucherApproval,
   pendingH7VoucherApprovals,
-  releaseExpiredH7VoucherApproval,
+  releaseRejectedH7VoucherApproval, h7ApprovalRecovery,
   submitH7VoucherApproval,
   type H7VoucherApprovalInput,
   type H7VoucherApprovalMode,
@@ -33,7 +33,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { h7DateInput as toDateInput, h7DateMs as toMs, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
-import { createH7VoucherMutation, pendingH7VoucherMutations, requireH7Actor, sendH7VoucherMutation, type H7DirectContext, type H7DirectMutation } from "@/lib/admin/h7-voucher-mutation";
+import { createH7VoucherMutation, h7DirectRecovery, pendingH7VoucherMutations, requireH7Actor, sendH7VoucherMutation, type H7DirectContext, type H7DirectMutation } from "@/lib/admin/h7-voucher-mutation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import {
   AUDIENCE_LABEL, H7RecoveryNotice, UNIT, UsageBar, VoucherCard, VoucherFace, VoucherTags, acknowledgedTag, amountText, conditionLines, countText, expiredTag,
@@ -94,6 +94,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const session = useAdminAuth((state) => state.session);
   const adminId = session?.adminId;
   const reach = useReach();
+  useSyncExternalStore(h7ApprovalRecovery.subscribe, h7ApprovalRecovery.getRevision, h7ApprovalRecovery.getRevision);
+  useSyncExternalStore(h7DirectRecovery.subscribe, h7DirectRecovery.getRevision, h7DirectRecovery.getRevision);
   const [pendingApprovals, setPendingApprovals] = useState<ReturnType<typeof pendingH7VoucherApprovals>>([]);
   const [directUnknown, setDirectUnknown] = useState<H7DirectMutation[]>([]);
   const fresh = useRef(false);
@@ -204,7 +206,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const openEdit = (v: OpsVoucher) => { if (blockNew(v.id)) return; setForm({ voucher: v, initial: initialForm(v, toDateInput), key: Date.now() }); };
   const queryDirect = async (record: H7DirectMutation) => {
     requireH7Actor(record.adminId, false);
-    await reload();
+    await h7DirectRecovery.query(record, async () => { await reload(); return { conclusion: "unknown" }; });
   };
   const executeDirect = async (record: H7DirectMutation, recovering: boolean) => {
     try {
@@ -236,11 +238,21 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     resolve: () => undefined,
     get disabledReason() {
       const saved = directRecord(id);
-      return !useAdminAuth.getState().session?.authorities.includes("growth_h7_write") ? "请查询原结果" : saved && isRetryExpired(saved) ? RETRY_EXPIRED_TEXT : undefined;
+      if (!saved) return;
+      const state = h7DirectRecovery.state(saved);
+      return state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? "重试已被拒绝，请核对原操作。" : state.replayBlock ? "请查询原结果" : undefined;
     },
     recover: async () => { const saved = directRecord(id); if (saved) await queryDirect(saved); return true; },
     retry: async () => { const saved = directRecord(id); if (!saved) throw new Error("H7_ORIGINAL_RESOLVED"); await executeDirect(saved, true); },
   });
+
+  const directPendingRecovery = (id: string) => {
+    const original = directRecord(id);
+    if (!original) return;
+    const state = h7DirectRecovery.state(original);
+    return { state, expiresAt: state.expiresAt, blockedReason: directRecovery(id).disabledReason,
+      subscribe: h7DirectRecovery.subscribe, getRevision: h7DirectRecovery.getRevision };
+  };
 
   /** 新增：填写抽屉的「下一步」进确认框；提交内容和改版前一样由 parseVoucher 生成。 */
   const reviewAdd = (bv: H7FormValue, restored?: H7DirectMutation, initialRecovery?: "lookup" | "retry") => {
@@ -271,6 +283,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：活动方案或工单号",
       initialReason: restored?.reason,
       getPendingReason: () => directRecord(id)?.reason,
+      getPendingRecovery: () => directPendingRecovery(id),
       inlineApproval: directRecovery(id, restored, initialRecovery),
       run: (reason) => runDirect({ kind: "create", values: bv, skuLabels: labels }, preview, reason),
     });
@@ -310,6 +323,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       reasonPlaceholder: "例如：活动调整依据或工单号",
       initialReason: restored?.reason,
       getPendingReason: () => directRecord(v.id)?.reason,
+      getPendingRecovery: () => directPendingRecovery(v.id),
       inlineApproval: directRecovery(v.id, restored, initialRecovery),
       run: (reason) => runDirect({ kind: "update", voucher: v, before, values: bv, skuLabels: labels }, parseVoucher(bv, v.id, v.version, v), reason),
     });
@@ -348,6 +362,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       confirmLabel: `确认${label}`,
       initialReason: restored?.reason,
       getPendingReason: () => directRecord(v.id)?.reason,
+      getPendingRecovery: () => directPendingRecovery(v.id),
       inlineApproval: directRecovery(v.id, restored, initialRecovery),
       run: (reason) => runDirect({ kind: "status", voucher: v, skuLabels: restored?.context.skuLabels ?? skuLabels }, v, reason),
     });
@@ -417,6 +432,13 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       ),
       initialReason: pending?.reason,
       getPendingReason: () => original()?.reason,
+      getPendingRecovery: () => {
+        const saved = original();
+        if (!saved) return;
+        const state = h7ApprovalRecovery.state(saved);
+        return { state, expiresAt: state.expiresAt, blockedReason: state.expired ? RETRY_EXPIRED_TEXT : state.replayRejection ? "重试已被拒绝，请核对原操作。" : state.replayBlock ? "请查询原结果" : undefined,
+          subscribe: h7ApprovalRecovery.subscribe, getRevision: h7ApprovalRecovery.getRevision };
+      },
       inlineApproval: {
         pending: !!pending,
         get expired() { const saved = original(); return !!saved && isRetryExpired(saved); },
@@ -456,7 +478,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     if (rows.length === 0) return "没有改动的项";
     return <>{rows.slice(0, 2).map((row, i) => <span key={row.key}>{i > 0 && "；"}{row.label} <Change from={row.before} to={row.after} /></span>)}{rows.length > 2 && `；另 ${rows.length - 2} 项`}</>;
   };
-  const releasable = (record: (typeof pendingApprovals)[number]) => isRetryExpired(record) && !record.acknowledged && !record.ticket;
+  const releasable = (record: (typeof pendingApprovals)[number]) => !!h7ApprovalRecovery.state(record).replayRejection;
   const recoveryRows: H7RecoveryRow[] = [
     ...pendingApprovals.map((record) => {
       const expired = isRetryExpired(record);
@@ -467,31 +489,31 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         change: record.op === "h7_voucher_delete" ? "删除券模板，已发出的券不收回"
           : `作废还没用的券${record.voucher ? `（提交时 ${countText(record.voucher.availableCount)} 张）` : ""}`,
         submittedAt: record.createdAt,
-        tag: record.ticket ? pendingTag() : record.acknowledged ? acknowledgedTag() : expired ? expiredTag("approval") : unknownTag("approval"),
+        tag: record.ticket ? pendingTag() : record.acknowledged ? acknowledgedTag() : expired ? expiredTag() : unknownTag("approval"),
         ticket: record.ticket?.id,
         actions: <>
           <Button size="sm" onClick={() => openDisposition(record, "lookup")}>查询原结果</Button>
           {!expired && !record.ticket && !record.acknowledged && <Button size="sm" disabledReason={!canWrite || !canRetryH7VoucherApproval(record) ? "请查询原结果" : undefined} onClick={() => openDisposition(record, "retry")}>按原请求重试</Button>}
-          {releasable(record) && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>查无此单时解除</Button>}
+          {releasable(record) && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
       };
     }),
     ...directUnknown.map((record) => ({ key: record.commandKey, name: record.action, object: `「${record.voucherName}」`, change: directChange(record), submittedAt: record.createdAt,
-      tag: isRetryExpired(record) ? expiredTag("direct") : unknownTag("direct"), actions: <>
+      tag: isRetryExpired(record) ? expiredTag() : unknownTag("direct"), actions: <>
         <Button size="sm" onClick={() => openDirectRecovery(record, "lookup")}>查询原结果</Button>
-        {!isRetryExpired(record) && <Button size="sm" disabledReason={!canWrite ? "请查询原结果" : undefined} onClick={() => openDirectRecovery(record)}>按原请求重试</Button>}
+        {!isRetryExpired(record) && <Button size="sm" disabledReason={directRecovery(record.voucherId).disabledReason} onClick={() => openDirectRecovery(record)}>按原请求重试</Button>}
       </> })),
   ];
   const pendingCount = pendingApprovals.filter(r => r.ticket).length;
   const builtCount = pendingApprovals.filter(r => !r.ticket && r.acknowledged).length;
   const unknownCount = recoveryRows.length - pendingCount - builtCount;
   const releaseModal = releasing && session && <ReleaseModal label={<>{H7_VOUCHER_ACTIONS[releasing.op]} · 「{releasing.voucherName}」</>}
-    explain={<><p>原申请已超过 24 小时，不会再重发。</p><p>确认时先按原申请再查一次：明确查不到这张审批单才解除，说明申请没建成；查到了就按它现在的状态显示，不解除。</p></>}
+    explain="重试被拒后，请先到操作记录与审批核对原操作。解除只清除本页的待确认记录，不发请求，不写操作记录。"
     onCancel={() => setReleasing(null)} onConfirm={() => {
       const record = releasing;
       setReleasing(null);
-      void releaseExpiredH7VoucherApproval(session, record)
-        .then(() => { toast("已解除这条记录，可以重新提交。"); return reload(true); })
+      void Promise.resolve().then(() => releaseRejectedH7VoucherApproval(record))
+        .then(() => toast("已解除这条记录，可以重新提交。"))
         .catch(cause => toast(displayAdminError(cause)))
         .finally(syncPending);
     }} />;
@@ -499,7 +521,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <H7RecoveryNotice title={[unknownCount && `${unknownCount} 个操作结果未知`, pendingCount && `${pendingCount} 个申请在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
         <p>原操作（哪张券、做了什么、理由）保存在这个浏览器标签页里。</p>
-        <p>结果未知：提交时没收到确定结果。没过 24 小时可以「按原请求重试」，不会重复执行或建第二张审批单；过了 24 小时只能查询。</p>
+        <p>结果未知：提交时没收到确定结果。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>
         <p>新增、编辑、暂停、投放的「查询原结果」只是重读现在的券，证明不了原操作成没成。删除和作废查的是原审批单。</p>
         <p>结果确认之前，这张券不能再改。</p>
       </>}

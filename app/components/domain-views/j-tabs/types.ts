@@ -3,7 +3,7 @@
  * shell 只负责渲染 OperationConfirmModal 并回调 run(真写落点仍集中于各视图内的 ctx.setParam)。
  */
 import type { ReactNode } from "react";
-import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, CoverageSnapshot } from "../design-kit";
+import type { OperatorBriefKind, EditSpec, BusinessFormSpec, BusinessFormValue, CoverageSnapshot, PendingConfirmRecovery } from "../design-kit";
 import type { JEmergencyActions, JEmergencyData } from "@/lib/admin/j-client";
 import type { ToastKind } from "@/lib/store/ui";
 
@@ -27,6 +27,7 @@ export type ActionConfirmReq = {
   facts?: ReactNode | ((value?: string) => ReactNode);
   reasonPlaceholder?: string;
   reasonPolicyOptional?: boolean;
+  getPendingRecovery?: () => PendingConfirmRecovery | undefined;
   getPendingReason?: () => string | undefined;
   getPendingBusinessValue?: () => BusinessFormValue | undefined;
   /** 框里写这项为什么现在不能提交，确认按钮禁用。 */

@@ -10,7 +10,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
  * 请求、校验、命令号和结果处理照改版前的写法（runBackend、两类共用确认框），这里只换界面。
  * amplifies = false：只动推送节奏与文案，不动费率、奖励、价格。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Ban, Database, Eye, FileText, History, Pencil, Percent, Plus, Power, PowerOff, Radio, RefreshCw, RotateCcw, Send, Shuffle, Timer, Trash2 } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IrreversibleTag, MoreMenu, Notice,
@@ -29,7 +29,7 @@ import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/ad
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useReach } from "@/lib/nav/use-reach";
-import { fetchI2NovaOverview, type NovaOverview, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView, type NovaTemplateView } from "@/lib/admin/i-client";
+import { fetchI2NovaOverview, type NovaOverview, i2Recovery, i2RetryBlockedReason, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView, type NovaTemplateView } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
@@ -147,6 +147,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   /** 结果未知不是失败，不加「操作失败」。 */
   const failText = (error: unknown) => isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
   /** 按原请求查到的结论只用来给运营看；解除与否由 queryI2Command 按后端结论决定。 */
+  useSyncExternalStore(i2Recovery.subscribe, i2Recovery.getRevision, i2Recovery.getRevision);
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [checking, setChecking] = useState<string | null>(null);
   const [closing, setClosing] = useState<I2Command | null>(null);
@@ -155,17 +156,36 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setSettledRows((current) => [...current.filter((item) => item.key !== record.commandKey), { key: record.commandKey, label: `${record.action} · ${unknownObject(record)}`, status: receipt.originalStatus }]);
   const queryOriginal = async (record: I2Command) => {
     let settled = false;
+    let restoreChannel = false;
     setChecking(record.commandKey);
     try {
       const receipt = await queryI2Command(record);
       if (record.original) setOutcomes((current) => ({ ...current, [record.commandKey]: { receipt } }));
       settled = fundCommandSettled(receipt);
-      if (settled) settle(record, receipt!);
+      if (settled) {
+        settle(record, receipt!);
+        restoreChannel = !!record.original && /^\/nova\/channels(?:\/[^/]+)?$/.test(record.original.path)
+          && ["POST", "PATCH"].includes(record.original.method) && (receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED" || receipt?.originalStatus === "CONFIRMED_REJECTED")
+          && (!novaDrawer || recoveryEditors.current.drawer === record.commandKey);
+      }
     } catch (error) {
       /* Receipt failure must not prevent the existing content read. */
       setOutcomes((current) => ({ ...current, [record.commandKey]: { error: displayAdminError(error) } }));
     } finally { setChecking(null); }
-    if (settled) { await refreshAfterMutation(record); return; }
+    if (settled) {
+      await refreshAfterMutation(record);
+      if (restoreChannel && record.original) {
+        const input = JSON.parse(record.original.body);
+        const tick = parseNovaDuration(input.tick, "minutes"), cooldown = parseNovaDuration(input.cooldown, "hours");
+        drawerRecoveryBaseline.current = true;
+        setEditNovaKey(record.original.method === "PATCH" ? decodeURIComponent(record.original.path.split("/").at(-1)!) : null);
+        setForm({ name: input.name, runtimeSource: input.trigger?.startsWith("a4:") ? input.trigger : "",
+          tickValue: tick.value, tickUnit: tick.unit, cooldownValue: cooldown.value, cooldownUnit: cooldown.unit });
+        setDrawerError(null);
+        setNovaDrawer(true);
+      }
+      return;
+    }
     await actions.reloadIContent();
     toast("已重新读取；现在的状态不能证明原操作的结果，记录继续保留。");
   };
@@ -184,12 +204,19 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     await refreshAfterMutation(record);
     toast(`${record.action} · ${record.object}`);
   };
+  const pendingRecovery = (record?: I2Command) => {
+    if (!record) return;
+    const state = i2Recovery.state(record);
+    return { state, expiresAt: state.expiresAt, blockedReason: i2RetryBlockedReason(record),
+      subscribe: i2Recovery.subscribe, getRevision: i2Recovery.getRevision,
+      query: canReadI2 ? () => queryOriginal(record) : undefined };
+  };
   const openActionConfirm = (req: ActionConfirmReq) => {
     if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
     const openedData = data;
     let pendingKey: string | undefined;
     const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
-    const confirmation: ActionConfirmReq = { ...req, getPendingReason: () => original()?.reason,
+    const confirmation: ActionConfirmReq = { ...req, getPendingReason: () => original()?.reason, getPendingRecovery: () => pendingRecovery(original()),
       run: async (reason, value, businessForm) => {
         if (pendingKey) {
           const record = original();
@@ -220,7 +247,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     let pendingKey: string | undefined;
     const original = () => pendingI2Commands().find((row) => row.commandKey === pendingKey);
     // 结果未知后框里冻结的是原请求，主按钮和别处一样叫「按原请求重试」（全站-结果未知叫法）。
-    const confirmation: ConfirmReq = { ...req, get okLabel() { return pendingKey ? "按原请求重试" : req.okLabel; }, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason,
+    const confirmation: ConfirmReq = { ...req, get okLabel() { return pendingKey ? "按原请求重试" : req.okLabel; }, errorHandled: false, freezePendingInput: true, replayPendingInput: true, getPendingBlockReason: () => req.blockedReason, getPendingReason: () => original()?.reason, getPendingRecovery: () => pendingRecovery(original()),
       run: async (reason, value) => {
         if (pendingKey) {
           const record = original();
@@ -307,6 +334,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const drawerInFlight = useRef(false);
   const drawerSource = useRef(data);
+  const drawerRecoveryBaseline = useRef(false);
+  useEffect(() => {
+    if (drawerRecoveryBaseline.current && data && !contentLoading && !contentError) {
+      drawerSource.current = data;
+      drawerRecoveryBaseline.current = false;
+    }
+  }, [data, contentLoading, contentError, novaDrawer]);
 
   const openNewNova = () => {
     const blocked = lockReason("channel-create");
@@ -887,10 +921,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const label = `${row.action} · ${unknownObject(row)}`;
     const target = investigationRecord(row);
     const query = () => { void queryOriginal(row).catch((error) => toast(displayAdminError(error))); };
-    const retryBlocked = recovering ? "等当前操作完成" : !row.original ? "原操作记录不完整，只能查询核对，不能重试。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined;
+    const retryBlocked = recovering ? "等当前操作完成" : i2RetryBlockedReason(row);
     return {
       key: row.commandKey, title: <span title={label}>{label}</span>, record: target, outcome: outcomes[row.commandKey], createdAt: row.createdAt, expired,
-      canRetry: !expired && !!row.original && canWriteI2, canQuery: canReadI2,
+      canRetry: !retryBlocked, canQuery: canReadI2,
       status: target ? undefined : { tone: "warn", label: expired ? "已过期" : "结果未知", line: "这条记录不完整，查不了原结果，只能重读现在的状态核对。" },
       actions: <>
         {target ? <FundCheckButtons record={target} outcome={outcomes[row.commandKey]} expired={expired} busy={!!checking || !!recovering} checking={checking === row.commandKey}
@@ -1304,7 +1338,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       {novaDrawer && (
         <ChannelDrawer editing={!!editNovaKey} form={form} setForm={setForm} cadenceError={cadenceError} sources={RUNTIME_SOURCE_OPTIONS}
           locked={drawerSubmitting || !!drawerPendingKey} saving={drawerSubmitting} retry={!!drawerPendingKey} error={drawerPendingKey ? null : drawerError}
-          blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row && isRetryExpired(row) ? "已超过 24 小时，不能再重试，只能查询。" : !canWriteI2 ? "当前账号没有这项操作权限，请查询原结果。" : undefined; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
+          blocked={drawerPendingKey ? (() => { const row = pending.find((item) => item.commandKey === drawerPendingKey); return row ? i2RetryBlockedReason(row) : "请查询原结果"; })() : lockReason(editNovaKey ? `channel:${editNovaKey}` : `channel-name:${form.name.trim()}`)}
           fixedSource={editNovaKey && !form.runtimeSource ? (() => {
             const prev = drawerSource.current?.channels.find((x) => x.key === editNovaKey);
             if (!prev) return "";
