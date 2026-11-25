@@ -5,15 +5,23 @@
  * 这页管三件事：团队激励池、购机名额与大使申请、排行榜。首屏三张卡回答「现在有什么在等我」，也是三块内容的页签。
  * 读取、提交和原请求恢复由 f-view 接线；保留已搭建的界面和确认内容。
  */
+import { F4QuotaCreate } from "./f4-quota-create";
+import { FReleaseButton } from "./f-release";
+import { canRetryF4Proposal, f4ProposalAuthority } from "@/lib/admin/f4-approval";
+import { canRetryF4Policy } from "@/lib/admin/f4-policy-write";
+import { rebaseFValues, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { AlertTriangle, ArrowRight, CircleHelp, Clock3, Hourglass, ListChecks, RefreshCw } from "lucide-react";
 import { BlockState, Button, Conclusion, PageHeader, RatioBar, Stat, StatBand, StatusTag, useTabIds } from "@/app/components/rd";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
-import type { F4AmbassadorApplication } from "@/lib/admin/f1-client";
+import { fetchF4AmbassadorMaterials, type F4AmbassadorApplication } from "@/lib/admin/f1-client";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { equalF4PolicyValue, f4PolicyValues } from "./f4-policy-confirm";
 import { f4Confirmation } from "./f4-confirmations";
 import { F4AmbassadorMaterials, materialReviewAttempts } from "./f4-ambassador-materials";
 import { applicationStage } from "./f4-quota";
@@ -52,6 +60,11 @@ function legacyF4(spec: ProposeSpec, nameOf: (key: string) => string | undefined
 
 export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommissions: () => void }) {
   const [section, setSection] = useState<Section>("pool");
+  const [quotaOriginal, setQuotaOriginal] = useState<FDomainAttempt>();
+  const [quotaDraft, setQuotaDraft] = useState<FDomainAttempt>();
+  const proposalDrafts = useFReconfirmations("F4");
+  const policyDrafts = useFReconfirmations("f4-policy");
+  const materialDrafts = useFReconfirmations("f4-material");
   const [materialApplication, setMaterialApplication] = useState<F4AmbassadorApplication | null>(null);
   const actorId = useAdminAuth((state) => state.session?.adminId);
   const ids = useTabIds();
@@ -77,7 +90,9 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
   const recoveryRows: F4RecoveryRow[] = recoveries.map(record => {
     const original = record.original;
     const spec = record.kind === "proposal" ? record.original.spec : undefined;
-    const confirm = original.f4Snapshot ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
+    const quota = spec?.command.op === "f4_quota_tier_create";
+    const confirm = original.f4Snapshot && !quota ? f4Confirmation(ctx, original.f4Snapshot) : undefined;
+    const retryable = record.kind === "proposal" ? canRetryF4Proposal(record.original) : canRetryF4Policy(record.original);
     const legacy = spec && legacyF4(spec, legacyName);
     const snapshot = original.f4Snapshot;
     const form = confirm?.businessForm;
@@ -95,7 +110,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         const expired = isRetryExpired(original) ? { tone: "warn" as const, text: RETRY_EXPIRED_TEXT } : undefined;
         return note && expired && !note.text.includes(expired.text) ? { tone: note.tone, text: `${note.text} ${expired.text}` } : note ?? expired;
       })(),
-      name: confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
+      name: quota ? "新建购机名额档位" : confirm?.name ?? legacy?.name ?? "调整区域大使申请规则",
       change,
       submittedAt: original.createdAt,
       pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
@@ -106,10 +121,17 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
             : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
       actions: <>
         <Button size="sm" onClick={() => {
-          if (confirm && original.f4Snapshot) {
+          if (quota && record.kind === "proposal" && record.original.request) setQuotaOriginal(record.original);
+          else if (confirm && original.f4Snapshot) {
             ctx.openActionConfirm({ ...confirm, edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
           } else void ctx.recoverF4(record, "query").catch(() => undefined); // 查询失败的原因已写在这一行
         }}>查询原结果</Button>
+        {retryable && (quota || confirm) && <Button size="sm" onClick={() => {
+          if (quota && record.kind === "proposal") setQuotaOriginal(record.original);
+          else if (confirm && original.f4Snapshot) ctx.openActionConfirm({ ...confirm,
+            edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
+        }}>按原请求重试</Button>}
+        {original.replayRejection && <FReleaseButton label={confirm?.name ?? legacy?.name ?? "原操作"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
       </>,
     };
   });
@@ -121,14 +143,95 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change: `材料第 ${record.input.expectedMaterialRevision} 版 · ${record.input.decision === "PASSED" ? "通过" : "需补材料"}`,
       submittedAt: record.createdAt,
       expired: isRetryExpired(record),
-      line: isRetryExpired(record) ? { tone: "warn" as const, text: "原请求超过 24 小时，只能查询，不能再重试。" } : undefined,
+      line: isRetryExpired(record) ? { tone: "warn" as const, text: RETRY_EXPIRED_TEXT } : undefined,
       tag: isRetryExpired(record) ? <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag> : unknownTag("direct"),
       actions: application
         ? <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>
         : <span className="f4-muted">申请不在最近 30 份里</span>,
     };
   }));
-  const recoveryNotice = <F4RecoveryNotice rows={recoveryRows} />;
+  for (const { original } of [...proposalDrafts, ...policyDrafts]) {
+    const snapshot = original.f4Snapshot;
+    const proposal = "spec" in original ? original.spec : undefined;
+    const quota = proposal?.command.op === "f4_quota_tier_create";
+    const materialAction = snapshot?.action === "approve" || snapshot?.action === "reject";
+    const application = snapshot?.application && data?.ambassadorApplications.find(row => row.id === snapshot.application!.id);
+    const authority = proposal ? f4ProposalAuthority(proposal) : "network_f4_pool_fund";
+    const allowed = ctx.can(authority) && (!proposal || quota || proposal.command.op === "f4_ambassador_policy_change"
+      || ctx.can("platform_a2_proposal_create") || ctx.can("platform_a2_write"));
+    const getSpec = () => {
+      if (!snapshot || !data || ctx.f4Loading || ctx.f4Error || !allowed
+        || snapshot.action === "policy" && (ctx.f4PolicyLoading || !ctx.f4AmbassadorPolicy)
+        || materialAction && application?.status.toUpperCase() !== "PENDING") return;
+      const value = snapshot.action === "F.leaderboard.paused" ? proposal?.command.params.value : undefined;
+      if (snapshot.action === "F.leaderboard.paused" && value !== "on" && value !== "off") return;
+      const latest = { ...snapshot, overview: data, policy: ctx.f4AmbassadorPolicy, application, material: snapshot.material,
+        businessValue: undefined, value: typeof value === "string" ? value : undefined };
+      if (snapshot.action === "policy" && snapshot.policy && latest.policy) {
+        const before = f4PolicyValues(snapshot.policy), now = f4PolicyValues(latest.policy);
+        latest.policyConflict = Object.keys(before).some(key => key in now && !equalF4PolicyValue(before[key], now[key], key)) ? before : undefined;
+      }
+      try { return f4Confirmation(ctx, latest, snapshot); } catch { return undefined; }
+    };
+    const current = quota ? undefined : getSpec();
+    const quotaReady = quota && allowed && !!data && !ctx.f4Loading && !ctx.f4Error;
+    recoveryRows.push({
+      key: original.commandKey,
+      name: quota ? "新建购机名额档位" : current?.name ?? proposal?.action ?? "调整区域大使申请规则",
+      change: proposal ? `${proposal.before} → ${proposal.after}` : "大使申请规则",
+      submittedAt: original.createdAt,
+      settled: true,
+      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      actions: quotaReady || current ? <Button size="sm" onClick={async () => {
+        if (quotaReady) { setQuotaDraft(original as FDomainAttempt); return; }
+        if (!current || !snapshot || !current.f4Snapshot) return;
+        const fresh = current.f4Snapshot;
+        if (materialAction && application) {
+          try { fresh.material = await fetchF4AmbassadorMaterials(application.id); }
+          catch { ctx.toast("材料加载失败，请重新读取。"); return; }
+          if (snapshot.action === "approve" && (fresh.material.materialRevision !== snapshot.material?.materialRevision || !fresh.material.canProposeApproval)) {
+            ctx.toast("材料版本已变化，请打开申请核对。"); return;
+          }
+        }
+        const spec = materialAction ? f4Confirmation(ctx, fresh) : current;
+        const frozen = f4Confirmation(ctx, snapshot);
+        const fields = (form: typeof spec.businessForm) => form?.kind === "multi-field"
+          ? Object.fromEntries(form.fields.map(field => [field.key, field.current ?? ""])) : undefined;
+        const before = fields(frozen.businessForm), latest = fields(spec.businessForm);
+        if (before && latest && snapshot.businessValue) {
+          fresh.businessValue = rebaseFValues(before, snapshot.businessValue, latest, (a, b, key) =>
+            a.trim() === b.trim() || (key === "defaultBudgetUsdt" || /\.(min|max)$/.test(key) || snapshot.action === "F.pool.periodPrize")
+              && compareDecimal(a, b) === 0);
+        }
+        const frozenCurrent = frozen.edit?.current;
+        const intended = snapshot.value;
+        const unchanged = intended !== undefined && frozenCurrent !== undefined && (intended === frozenCurrent
+          || !!spec.edit?.unit && compareDecimal(intended.replace(/%$/, ""), frozenCurrent.replace(/%$/, "")) === 0);
+        const edit = spec.edit && { ...spec.edit, initialValue: unchanged ? spec.edit.current : intended };
+        ctx.openActionConfirm({ ...spec, edit, f4Snapshot: fresh, draft: original });
+      }}>继续修改</Button> : <span className="f4-muted">请核对当前对象和操作权限</span>,
+    });
+  }
+  for (const { original } of materialDrafts) {
+    const application = data?.ambassadorApplications.find(item => item.id === original.applicationId) ?? original.application;
+    recoveryRows.push({
+      key: original.commandKey,
+      name: `${original.input.stage === "BUSINESS" ? "业务" : "财务"}核验 · 申请 #${original.applicationId}`,
+      change: `材料第 ${original.input.expectedMaterialRevision} 版 · ${original.input.decision === "PASSED" ? "通过" : "需补材料"}`,
+      submittedAt: original.createdAt,
+      settled: true,
+      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      actions: application && <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>,
+    });
+  }
+  const recoveryNotice = <>
+    <F4RecoveryNotice rows={recoveryRows} />
+    {ctx.f4PolicyAppliedUnread && <BlockState state="error" title="大使规则已写入，最新规则暂时读不到"
+      detail="这不是没有规则：规则暂时没加载出来，调整入口也先收起。" onRetry={() => void ctx.retryF4AmbassadorPolicy()} retrying={ctx.f4PolicyLoading} />}
+  </>;
+  const activeQuota = quotaOriginal ?? quotaDraft;
+  const quotaModal = activeQuota && <F4QuotaCreate key={activeQuota.commandKey} data={data ?? undefined} ctx={ctx}
+    original={quotaOriginal} draft={quotaDraft} onClose={() => { setQuotaOriginal(undefined); setQuotaDraft(undefined); }} />;
   const materialDrawer = materialApplication && <F4AmbassadorMaterials application={materialApplication} ctx={ctx} onClose={() => setMaterialApplication(null)} />;
 
   const header = (
@@ -160,7 +263,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         {recoveryNotice}
         <BlockState state="empty" title="暂无团队激励池数据" />
       </>}
-      {materialDrawer}
+      {materialDrawer}{quotaModal}
     </div>;
   }
 
@@ -269,7 +372,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         {section === "quota" && <F4Quota ctx={ctx} data={data} onOpenMaterials={setMaterialApplication} />}
         {section === "board" && <F4Leaderboard ctx={ctx} data={data} />}
       </div>
-      {materialDrawer}
+      {materialDrawer}{quotaModal}
     </div>
   );
 }

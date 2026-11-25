@@ -1,8 +1,9 @@
 import type { A2OperationRow, createA2OperationProposal } from "./a2-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 import type { ProposeSpec } from "./propose-or-execute";
+import type { FReconfirmationLink } from "./f-reconfirmation";
 
-export interface F2ActivationAttempt extends PendingMutationRecord {
+export interface F2ActivationAttempt extends PendingMutationRecord, FReconfirmationLink {
   spec: ProposeSpec;
   request?: Parameters<typeof createA2OperationProposal>[0];
   adminId?: number;

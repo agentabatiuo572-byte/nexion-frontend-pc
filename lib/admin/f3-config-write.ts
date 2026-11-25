@@ -1,13 +1,19 @@
+import { acknowledgeFReconfirmation, settleFReconfirmation } from "./f-reconfirmation";
+import { activeRecoveryActor } from "./f-proposal-recovery";
+import { createFDirectRecovery } from "./f-direct-recovery";
 import { useAdminAuth } from "../store/admin-auth";
 import { createA2CommandKey } from "./a2-client";
 import { formatAdminApiError } from "./error-messages";
 import { isExplicitRejection } from "./explicit-rejection";
 import { patchF3PayoutControl } from "./f1-client";
-import { f3DirectRoute, f3DirectSlot, fDirectCommands, F1OutcomeUncertainError } from "./f1-stable-write";
+import { f3DirectRoute, f3DirectSlot, fDirectCommands, F1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
 import { f3PayoutControlAuthority, type F3PayoutControlKey } from "./f3-policy";
 import { fundCommandOrigin, fundCommandResult } from "./fund-command-investigation";
 import { queryOriginalCommand } from "./original-command-query";
-import { isRetryExpired } from "./pending-mutation-store";
+
+// The shared F_TEAM_CONFIG_UPDATE scope has no standalone receipt-status read grant.
+export const f3DirectRecovery = createFDirectRecovery(fDirectCommands, () => undefined, original =>
+  !!original.f3Request && !!activeRecoveryActor(original.adminId, "network_f3_read")?.authorities.includes(f3PayoutControlAuthority(original.f3Request.key)));
 
 export function listF3ConfigWrites(adminId: number) {
   return fDirectCommands.list().filter(row => row.adminId === adminId && row.f3Request);
@@ -24,7 +30,7 @@ function activeActor(adminId: number) {
   return auth.session;
 }
 
-export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey, input?: { value: string; reason: string }) {
+export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey, input?: { value: string; reason: string }, continuedFrom?: string) {
   const actor = activeActor(adminId);
   if (!actor.authorities.includes(f3PayoutControlAuthority(key))) throw new Error("ADMIN_PERMISSION_DENIED");
   const slot = f3DirectSlot(adminId, key);
@@ -34,7 +40,7 @@ export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey
     const request = { key, ...input, operator: actor.operator || actor.username };
     const commandKey = createA2CommandKey("f3-config");
     const route = f3DirectRoute(key);
-    fDirectCommands.remember(slot, commandKey, { adminId, f3Request: request, inputFingerprint: JSON.stringify(request),
+    fDirectCommands.remember(slot, commandKey, { adminId, f3Request: request, inputFingerprint: JSON.stringify(request), continuedFrom,
       commandOrigin: fundCommandOrigin(route.originalMethod, route.originalPath, route.readAuthority) });
     if (!fDirectCommands.isDurablyStored(slot, commandKey)) {
       fDirectCommands.forget(slot, commandKey);
@@ -45,14 +51,17 @@ export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey
   if (!original?.f3Request || !fDirectCommands.isDurablyStored(slot, original.commandKey)) {
     throw new Error("F3_PROPOSAL_ORIGINAL_INCOMPLETE");
   }
-  if (isRetryExpired(original)) throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_REQUEST_OUTCOME_UNKNOWN"), original.commandKey);
-  const { value, reason, operator } = original.f3Request;
+  const send = (record: FDirectAttempt) => {
+    const { value, reason, operator } = record.f3Request!;
+    return patchF3PayoutControl(key, { value, reason, operator }, record.commandKey);
+  };
   try {
-    const updated = await patchF3PayoutControl(key, { value, reason, operator }, original.commandKey);
-    fDirectCommands.forget(slot, original.commandKey);
+    const updated = input ? await send(original) : await f3DirectRecovery.replay(original, send);
+    f3DirectRecovery.settleAcknowledged(original);
+  acknowledgeFReconfirmation(original);
     return updated;
   } catch (error) {
-    if (isExplicitRejection(error)) fDirectCommands.forget(slot, original.commandKey);
+    if (input && isExplicitRejection(error)) fDirectCommands.forget(slot, original.commandKey);
     throw error;
   }
 }
@@ -60,10 +69,14 @@ export async function sendF3ConfigWrite(adminId: number, key: F3PayoutControlKey
 export async function queryF3ConfigWrite(adminId: number, key: F3PayoutControlKey) {
   activeActor(adminId);
   const original = pendingF3ConfigWrite(adminId, key);
-  const receipt = original ? await queryOriginalCommand(original, f3DirectRoute(key), String(adminId)) : null;
-  const result = fundCommandResult(receipt);
-  if (original && (result === "SUCCEEDED" || result === "REJECTED" || result === "NOT_EXECUTED")) {
-    fDirectCommands.forget(original.fingerprint, original.commandKey);
-  }
-  return { receipt, result };
+  if (!original) return { receipt: null, result: "UNRESOLVED" as const };
+  const observation = await f3DirectRecovery.query(original, async record => {
+    const receipt = await queryOriginalCommand(record, f3DirectRoute(key), String(adminId));
+    const result = fundCommandResult(receipt);
+    return { receipt, result, conclusion: result === "SUCCEEDED" ? "succeeded" as const
+      : result === "REJECTED" ? "rejected" as const : result === "NOT_EXECUTED" ? "not-executed" as const : "unknown" as const };
+  });
+  if (!observation) throw new Error("PENDING_QUERY_UNAVAILABLE");
+  settleFReconfirmation(f3DirectRecovery, original, observation.conclusion, "f3-write");
+  return observation;
 }

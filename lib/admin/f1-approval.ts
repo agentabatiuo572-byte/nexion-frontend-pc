@@ -1,3 +1,5 @@
+import { activeRecoveryActor, createFProposalRecovery } from "./f-proposal-recovery";
+import { acknowledgeFReconfirmation } from "./f-reconfirmation";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { fCommands, type FDomainAttempt } from "./f2-approval";
 import { isExplicitRejection } from "./explicit-rejection";
@@ -57,24 +59,27 @@ function checkTicket(original: FDomainAttempt, ticket: A2OperationRow) {
   }
 }
 
+export const f1ProposalRecovery = createFProposalRecovery<FDomainAttempt>(fCommands, row => {
+  const session = activeRecoveryActor(row.adminId, "network_f1_read");
+  return !!session && !!row.spec && canSendF1Proposal(row.spec, session.authorities);
+});
+
+export const canRetryF1Proposal = (original: FDomainAttempt) => !f1ProposalRecovery.state(original).replayBlock;
+
 export async function queryF1Proposal(adminId: number, original: FDomainAttempt) {
-  actor(adminId); // Read permission is adjudicated independently by the lookup endpoint.
-  if (original.adminId !== undefined && original.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
-  fCommands.remember(original.fingerprint, original.commandKey, { ...original, absent: false });
-  const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
-  if (!ticket) {
-    if (original.received || original.ticket) throw f1ProposalLookupError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-    fCommands.remember(original.fingerprint, original.commandKey, { ...original, ticket: undefined, absent: true });
-    return null;
-  }
-  checkTicket(original, ticket);
-  if (ticket.status === "pending") fCommands.remember(original.fingerprint, original.commandKey, { ...original, received: true, ticket, absent: false });
-  else fCommands.forget(original.fingerprint, original.commandKey);
-  return ticket;
+  actor(adminId);
+  return f1ProposalRecovery.queryTicket("F1", original, async record => {
+    if (record.adminId !== undefined && record.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
+    const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
+    if (!activeRecoveryActor(adminId, "network_f1_read")) throw new Error("ADMIN_PERMISSION_DENIED");
+    if (!ticket && (record.received || record.ticket)) throw new A2OutcomeUncertainError("原申请建过单，批没批准还没查到，请继续查询。", record.commandKey);
+    if (ticket) await checkTicket(record, ticket);
+    return ticket;
+  }, (record, ticket) => fCommands.remember(record.fingerprint, record.commandKey, { ...record, received: true, ticket, absent: false }));
 }
 
 /** All eight ordinary F1 proposals share the existing F-domain store. */
-export async function sendF1Proposal(adminId: number, slot: string, spec?: ProposeSpec) {
+export async function sendF1Proposal(adminId: number, slot: string, spec?: ProposeSpec, continuedFrom?: string) {
   const current = actor(adminId);
   let original = listF1Proposals(adminId).find(row => row.fingerprint === slot);
   const recovering = !spec;
@@ -90,15 +95,12 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
       reason: intent.reason, sourceDomain: intent.sourceDomain, command: intent.command, target: intent.target, targets: intent.targets,
     };
     const key = createA2CommandKey(slot.split(":")[0]);
-    fCommands.remember(slot, key, { adminId, spec: intent, request, inputFingerprint: JSON.stringify(request) });
+    fCommands.remember(slot, key, { adminId, spec: intent, request, inputFingerprint: JSON.stringify(request), continuedFrom });
     original = listF1Proposals(adminId).find(row => row.commandKey === key)!;
     if (!fCommands.isDurablyStored(slot, key)) {
       fCommands.forget(slot, key);
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
-  }
-  if (recovering && !original.received && !original.ticket && original.absent !== true) {
-    throw new Error("请先查询原操作，确认查不到后再按原请求重试。");
   }
   if (original.received || original.ticket) {
     const latest = await queryF1Proposal(adminId, original);
@@ -107,14 +109,15 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
   }
   if (isRetryExpired(original)) throw f1ProposalLookupError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
   if (!original.request || !fCommands.isDurablyStored(slot, original.commandKey)) throw new Error("原操作没有完整的持久记录，请到操作记录核对。");
-  original.absent = false;
-  fCommands.remember(slot, original.commandKey, original);
   let ticket: A2OperationRow;
-  try { ticket = await createA2OperationProposal(original.request, original.commandKey, "proposal"); }
+  try {
+    const send = (record: FDomainAttempt) => createA2OperationProposal(record.request!, record.commandKey, "proposal");
+    ticket = recovering ? await f1ProposalRecovery.replay(original, send) : await send(original);
+  }
   catch (error) {
     const failure = error as { httpStatus?: number; apiCode?: number };
-    if (recovering || isF1PayoutSlot(slot) ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
-        && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode)) fCommands.forget(slot, original.commandKey);
+    if (!recovering && (isF1PayoutSlot(slot) ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error)
+        && failure.httpStatus !== undefined && isDeterministicRejection(failure.httpStatus, failure.apiCode))) fCommands.forget(slot, original.commandKey);
     throw isA2OutcomeUncertainError(error) ? withF1ProposalLookupCopy(error) : error;
   }
   fCommands.remember(slot, original.commandKey, { ...original, received: true, ticket: undefined, absent: false });
@@ -126,14 +129,11 @@ export async function sendF1Proposal(adminId: number, slot: string, spec?: Propo
     return latest;
   }
   fCommands.remember(slot, original.commandKey, { ...original, received: true, ticket, absent: false });
+  acknowledgeFReconfirmation(original);
   return ticket;
 }
 
-/** Call only from an explicit confirmation surface (R1-提案过期). */
 export async function releaseF1Proposal(adminId: number, original: FDomainAttempt) {
-  if (original.received || original.ticket) throw f1ProposalLookupError("原申请建过单，批没批准还没查到，请继续查询。", original.commandKey);
-  if (!isRetryExpired(original)) throw new Error("原操作尚未过期，请先查询原结果。");
-  const ticket = await queryF1Proposal(adminId, original);
-  if (ticket?.status === "pending") throw new Error("这张申请仍在等待审批。");
-  if (!ticket) fCommands.forget(original.fingerprint, original.commandKey);
+  actor(adminId);
+  if (!f1ProposalRecovery.releaseRejectedReplay(original)) throw new Error("PENDING_RELEASE_BLOCKED");
 }

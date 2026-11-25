@@ -5,48 +5,41 @@
  * 只显示，不改提交内容；读不到写「读不到」，不写 0，也不挡提交。
  */
 import { useEffect, useState } from "react";
-import { Cell, Explain, Fact, Facts, Fold, Notice, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Cell, Explain, Fact, Facts, Fold, Notice, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { fetchF4LeaderboardDisqualificationReadiness, fetchF4LeaderboardPayoutPreview, fetchF4LeadershipPoolOverview, type F4LeaderboardDisqualificationReadiness, type F4LeaderboardPayoutPreview } from "@/lib/admin/f1-client";
-import { f4Decimal } from "@/lib/admin/f4-money";
 import { count, decimalText, usdt, moneyText } from "./f4-shared";
 
-type Read<T> = { state: "loading" } | { state: "failed" } | { state: "ok"; data: T; at: number };
+type Read<T> = { state: "loading" } | { state: "failed"; error: string } | { state: "ok"; data: T; at: number };
 
-function useRead<T>(read: () => Promise<T | null>): Read<T> {
+function useRead<T>(read: () => Promise<T | null>) {
   const [result, setResult] = useState<Read<T>>({ state: "loading" });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
     read().then(
-      (data) => { if (alive) setResult(data === null ? { state: "failed" } : { state: "ok", data, at: Date.now() }); },
-      () => { if (alive) setResult({ state: "failed" }); },
+      data => { if (alive) setResult(data === null ? { state: "failed", error: "这次没有读到预览结果。" } : { state: "ok", data, at: Date.now() }); },
+      error => { if (alive) setResult({ state: "failed", error: displayAdminReadError(error) }); },
     );
     return () => { alive = false; };
-    // 打开确认框时读一次。
+    // Each mounted preview reads independently.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return result;
+  }, [attempt]);
+  return { ...result, retry: () => { setResult({ state: "loading" }); setAttempt(previous => previous + 1); } };
 }
 
-/** 同一处并排比较的几个金额：按全站金额写法各写各的位数，不为对齐补零（PRD §5A）。 */
-function alignedAmounts(values: readonly string[]): string[] {
-  return values.map((value) => moneyText(value));
-}
-
-const CAP_LABEL = { top1MaxPct: "第 1 名上限", top5MaxPct: "前 5 名上限" } as const;
+const WARNING_LABEL = { top1MaxPct: "第 1 名占比", top5MaxPct: "前 5 名合计占比" } as const;
 
 const NOT_PAYING: Record<string, string> = {
-  F4_LEADERBOARD_POOL_NOT_CONFIGURED: "总榜奖池是 0，这次不会发钱。",
   F4_LEADERBOARD_PAUSED: "排行榜在暂停中，这次不会发钱。",
   F4_LEADERBOARD_ALREADY_SETTLED: "总榜已经派过，这次批准不会再发。",
   F4_LEADERBOARD_NO_CANDIDATES: "现在没有人上榜，这次不会发钱。",
-  F4_LEADERBOARD_NOTHING_PAYABLE: "按头部上限算下来每个人都是 0，这次不会发钱。",
+  F4_LEADERBOARD_NOTHING_PAYABLE: "按名次算出的金额都是 0，这次不会发钱。",
 };
 
 /** 预览里的百分比是十进制文本，写成「25」「60.5」，不舍入。 */
-const percentText = (value: string) => decimalText(value).replace(/\.?0+$/, "");
-
-const isZero = (value: string) => /^-?0*(\.0*)?$/.test(f4Decimal(value) ?? "x");
+const percentText = (value: string) => value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
 
 /**
  * 总榜派奖确认框：配置的奖池之后，放这一次的人数、合计和名单。
@@ -55,24 +48,28 @@ const isZero = (value: string) => /^-?0*(\.0*)?$/.test(f4Decimal(value) ?? "x");
 export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }: { pool?: string; approving?: boolean; rules?: boolean }) {
   const read = useRead<F4LeaderboardPayoutPreview>(() => fetchF4LeaderboardPayoutPreview("allTime"));
   const preview = read.state === "ok" ? read.data : undefined;
-  const poolShown = pool ?? (preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : "读不到");
-  const totals = preview?.payableAmount !== undefined && preview.amountBeforeCaps !== undefined && preview.reducedByCaps !== undefined
-    ? alignedAmounts([preview.payableAmount, preview.amountBeforeCaps, preview.reducedByCaps]) : undefined;
+  const unconfigured = preview?.reason === "F4_LEADERBOARD_POOL_NOT_CONFIGURED";
+  const poolShown = pool ?? (unconfigured ? "没有可发放的奖池" : preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : "读不到");
   const pending = read.state === "loading" ? "正在加载…" : read.state === "failed" ? "读不到" : undefined;
-  const notPaying = preview && !preview.available ? NOT_PAYING[preview.reason] ?? "这次不会发钱。" : undefined;
+  const notPaying = unconfigured
+    ? pool === "0" ? "总榜奖池为 0，这次不会发钱。" : "系统确认这次没有可发放的奖池。"
+    : preview && !preview.available ? NOT_PAYING[preview.reason] ?? "这次不会发钱。" : undefined;
   return (
     <div className="f4-payout">
       <Facts>
         {/* 批准框里奖池也取自预览：读不到时只留「这次实发」一行，不连写三个「读不到」。 */}
         {poolShown !== "读不到" && <Fact k="总榜奖池" lead tone="role-1" unit={/\d/.test(poolShown) ? "USDT" : undefined}>{poolShown}</Fact>}
-        <Fact k="这次实发" tone={pending === "读不到" ? "warn" : undefined}>{pending ?? (totals
-          ? <><span className="f4-payout-num">{totals[0]}</span> USDT<span className="f4-payout-sub">{isZero(preview!.reducedByCaps!) ? "头部上限没有削减" : <>算出 <span className="f4-payout-num">{totals[1]}</span>，头部上限削掉 <span className="f4-payout-num">{totals[2]}</span></>}</span></>
+        <Fact k="这次实发" tone={pending === "读不到" ? "warn" : undefined}>{pending ?? (preview?.payableAmount !== undefined
+          ? <><span className="f4-payout-num">{moneyText(preview.payableAmount)}</span> USDT</>
           : "—")}</Fact>
         {poolShown !== "读不到" && <Fact k="人数">{pending ?? (preview?.paidCount !== undefined && preview.rankedCount !== undefined
           ? `${count(preview.paidCount)} 人拿到钱，上榜 ${count(preview.rankedCount)} 人` : "—")}</Fact>}
       </Facts>
+      {!!preview?.concentrationWarnings.length && <Notice tone="warn">{preview.concentrationWarnings.map(key => `${WARNING_LABEL[key]}超过 ${percentText(preview[key])}%`).join("；")}。奖金按名次权重计算。</Notice>}
       {notPaying && <Notice tone="warn">{notPaying}</Notice>}
-      {read.state === "failed" && <p className="f4-payout-note">{approving ? "这次的名单和金额读不到，不影响批准；批准时按那一刻的总榜计算。" : "这次的名单和金额读不到，不影响提交；批准时按那时的总榜计算。"}</p>}
+      {read.state === "failed" && <BlockState state="error" title="派奖预览加载失败"
+        detail={<>{read.error}{approving ? " 批准时按那一刻的总榜重新计算。" : " 批准时按当时的总榜重新计算。"}</>}
+        onRetry={read.retry} />}
       {preview && preview.rows.length > 0 && (
         <div className="f4-payout-list" data-long={preview.rows.length > 6 ? "" : undefined}>
           <Table label="这次派奖名单" className="f4-payout-table">
@@ -83,8 +80,7 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
                   <Td><Cell main={`第 ${row.rank} 名`} /></Td>
                   <Td><Cell mono main={row.userNo} /></Td>
                   <Td align="right"><Cell num main={decimalText(row.computePoints).replace(/\.00$/, "")} /></Td>
-                  <Td align="right"><Cell num main={moneyText(row.amount)}
-                    sub={row.limitedBy.length ? <span className="f4-payout-cap"><span>算出 {moneyText(row.amountBeforeCaps)}</span><span>{row.limitedBy.map((cap) => CAP_LABEL[cap]).join("、")}</span></span> : undefined} /></Td>
+                  <Td align="right"><Cell num main={moneyText(row.amount)} /></Td>
                 </Tr>
               ))}
             </tbody>
@@ -97,13 +93,13 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
   );
 }
 
-/** 头部上限、分份方法：规则放在结果后面，收起。 */
+/** 占比告警、分份方法：规则放在结果后面，收起。 */
 export function F4PayoutRules({ top1MaxPct, top5MaxPct }: { top1MaxPct: string; top5MaxPct: string }) {
   return (
-    <Fold inset title="怎么分" summary={`第 1 名最多 ${top1MaxPct}%，前 5 名合计最多 ${top5MaxPct}%`}>
+    <Fold inset title="怎么分" summary={`占比告警：第 1 名 ${top1MaxPct}%，前 5 名合计 ${top5MaxPct}%`}>
       <Facts>
         <Fact k="每个名次发多少">按名次分份数：第 1 名 N 份，往后每名少 1 份，最后一名 1 份；N 是上榜人数</Fact>
-        <Fact k="头部上限"><span className="rd-keep">第 1 名最多 {top1MaxPct}%，</span><span className="rd-keep">前 5 名合计最多 {top5MaxPct}%，</span><span className="rd-keep">超出的不再分给别人</span></Fact>
+        <Fact k="占比告警"><span className="rd-keep">第 1 名超过 {top1MaxPct}%，</span><span className="rd-keep">前 5 名合计超过 {top5MaxPct}%，</span><span className="rd-keep">超过阈值时记录告警</span></Fact>
       </Facts>
     </Fold>
   );

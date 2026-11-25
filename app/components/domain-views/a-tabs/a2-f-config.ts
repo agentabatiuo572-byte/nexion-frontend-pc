@@ -102,8 +102,8 @@ export function fConfigSpec(key: string, after?: string): FConfigSpec | undefine
     case "F.pool.unlockVRank": return spec(F4, "团队激励池参与等级", { values: RANKS, impact: "批准后，之后的结算只分给达到新等级的人；已经发出的不追溯。" });
     case "F.pool.periodPrize": return spec(F4, "各榜奖池", { unit: "USDT", loosen: "调高", json: { today: "日榜", week: "周榜", month: "月榜", allTime: "总榜" },
       impact: "批准后，日周月榜从下个未结算周期起用新金额；已派的不改。", detail: "总榜在人工派奖时读这个金额。" });
-    case "F.pool.top1MaxPct": return spec(F4, "第 1 名最高占比", { unit: "%", loosen: "调高", impact: "批准后，之后排行榜派奖第 1 名最多拿奖池的这个比例。", detail: "超出的部分不再分给别人；不影响团队激励池。" });
-    case "F.pool.top5MaxPct": return spec(F4, "前 5 名最高占比", { unit: "%", loosen: "调高", impact: "批准后，之后排行榜派奖前 5 名合计最多拿奖池的这个比例。", detail: "超出的部分不再分给别人；不影响团队激励池。" });
+    case "F.pool.top1MaxPct": return spec(F4, "第 1 名占比告警阈值", { unit: "%", impact: "之后派奖时，第 1 名占比超过这个阈值会记录告警。", detail: "奖金仍按名次权重计算；只改告警阈值，不触发兑付覆盖率检查。" });
+    case "F.pool.top5MaxPct": return spec(F4, "前 5 名合计占比告警阈值", { unit: "%", impact: "之后派奖时，前 5 名合计占比超过这个阈值会记录告警。", detail: "奖金仍按名次权重计算；只改告警阈值，不触发兑付覆盖率检查。" });
     case "F.leaderboard.paused": return spec(F4, "排行榜", { action: next === "on" ? "暂停排行榜" : next === "off" ? "恢复排行榜" : "调整排行榜",
       values: { on: "已暂停", off: "实时运行" },
       impact: next === "on" ? "批准后四个榜停在这一刻的名次，到期的榜单派奖不发、也不补。" : "批准后四个榜重新实时更新，之后到期的照常派奖；暂停期间的不补。",

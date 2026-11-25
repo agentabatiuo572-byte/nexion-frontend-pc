@@ -5,12 +5,12 @@
  * 只多了标题、生效标签、事实块和执行摘要这些样子；提交调用 ctx 上和旧页面相同的函数、相同的参数，
  * 成功、失败、结果未知的提示照 F 域外壳的写法。人工结算仍走外壳的确认框（它带原申请的查询和重试）。
  */
-import type { ReactNode } from "react";
+import { type ReactNode } from "react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import type { FViewCtx } from "./types";
-import { canRetryF3Proposal, listF3Proposals } from "@/lib/admin/f3-approval";
+import { f3ProposalRecovery, listF3Proposals } from "@/lib/admin/f3-approval";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
-import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
+import { fConfirmRecovery } from "./f-recovery-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** 审批人叫法照「全站-审批人叫法」：F3 单项配置批准要另一位有这项业务权限和审批批准权限的管理员，不要求超级管理员。 */
@@ -21,6 +21,8 @@ export const SETTLE_APPROVER = "另一位超级管理员";
 export type F3Confirm = {
   slot?: string;
   original?: FDomainAttempt;
+  draft?: FDomainAttempt;
+  initial?: BusinessFormValue;
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   title: ReactNode;
@@ -42,11 +44,11 @@ export type F3Confirm = {
 
 export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; ctx: FViewCtx; onClose: () => void }) {
   const owner = useAdminAuth(state => state.session?.adminId);
-  const saved = () => owner === undefined ? undefined : listF3Proposals(owner).find(row => row.fingerprint === confirm.slot);
+  const saved = () => owner === undefined ? undefined : listF3Proposals(owner).find(row => confirm.original ? row.commandKey === confirm.original.commandKey : row.fingerprint === confirm.slot);
   const original = saved() ?? confirm.original;
   const fields = original?.spec?.command.params.changes as Array<{ key: string; value: string }> | undefined;
-  const businessValue = fields ? { period: fields.find(row => row.key === "F.binary.settlePeriod")!.value,
-    residual: fields.find(row => row.key === "F.binary.residualPolicy")!.value } : undefined;
+  const businessValue = fields ? { period: fields.find(row => row.key === "F.binary.settlePeriod")?.value ?? "",
+    residual: fields.find(row => row.key === "F.binary.residualPolicy")?.value ?? "" } : confirm.initial;
   const edit = confirm.edit && original?.spec ? { ...confirm.edit, initialValue: String(original.spec.command.params.value ?? "") } : confirm.edit;
   return (
     <OperationConfirmModal
@@ -69,33 +71,27 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
       initialReason={original?.spec?.reason}
       getPendingReason={() => saved()?.spec?.reason}
       getPendingBusinessValue={() => businessValue}
-      inlineApproval={{
-        resolve: () => undefined,
-        pending: !!original,
-        initialRecovery: "retry",
-        expired: !!original && !canRetryF3Proposal(original),
-        expiredRequestRecovery: original && isRetryExpired(original) ? "query" : undefined,
-        recover: async () => {
-          const record = saved();
-          if (!record) { onClose(); return true; }
+      getPendingRecovery={() => {
+        const record = saved();
+        return record && fConfirmRecovery(f3ProposalRecovery, record, async () => {
           const ticket = await ctx.recoverF3(record);
-          if (ticket) { onClose(); return true; }
-          return false;
-        },
-        retry: async () => {
-          const record = saved();
-          if (!record) { onClose(); return; }
-          try { await ctx.recoverF3(record, "retry"); onClose(); }
-          catch (error) { if (!saved()) onClose(); throw error; }
-        },
+          if (!ticket) return;
+          onClose();
+        });
       }}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
         try {
           const record = saved();
-          if (record) await ctx.recoverF3(record, "retry");
-          else if (confirm.original) { onClose(); return; }
-          else await confirm.submit(reason, businessValue, newValue);
+          if (record) {
+            await ctx.recoverF3(record, "retry");
+            onClose();
+            return;
+          }
+          if (confirm.original) { onClose(); return; }
+          const issue = newValue !== undefined && confirm.edit?.validate?.(newValue);
+          if (issue) throw new Error(issue);
+          await ctx.runFContinuation(confirm.draft?.commandKey, () => confirm.submit(reason, businessValue, newValue));
           if (confirm.done) ctx.toast(confirm.done);
           onClose();
         } catch (error) {

@@ -5,7 +5,8 @@
  * 奖励流水（筛选、勾选补发、点行看详情）、等价格、异常样本、暂停名单、处置历史。
  * 读取、筛选、翻批、导出和七个处置都调用 F 域外壳原有的函数，请求和改版前一样；这里只管排版和文字。
  */
-import { useEffect, useMemo, useState } from "react";
+import type { BusinessFormValue } from "../design-kit";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, ListChecks, RotateCcw } from "lucide-react";
 import {
@@ -14,11 +15,13 @@ import {
 } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client";
+import { fetchF5CommissionByBusinessId, type F5CommissionEvent, type F5CommissionQuery } from "@/lib/admin/f1-client";
 import type { F5Recovery, FViewCtx } from "./types";
 import { FReleaseButton } from "./f-release";
-import { canRetryF5Proposal, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
-import { canRetryF5Anomaly } from "@/lib/admin/f5-anomaly-write";
+import { rebaseFValues, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { canRetryF5Proposal, f5ProposalAuthority, type F5ConfirmationSnapshot } from "@/lib/admin/f5-approval";
+import { canRetryF5Anomaly, f5AnomalyChanged, F5_ANOMALY_UNCHANGED } from "@/lib/admin/f5-anomaly-write";
+import { f5ExportRecovery, pendingF5Export } from "@/lib/admin/f5-export-operation";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { readF5Filters, readF5Tab, replaceTeamFilterParams, type F5Tab } from "@/lib/admin/team-filter-url";
 import { teamUserId } from "@/lib/admin/f-overview-contract";
@@ -89,14 +92,20 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   // 九类奖励折叠组开着没有放在这里：筛选后重读数据时卡片会重新挂载，不能因此自己收起。
   const [kindsOpen, setKindsOpen] = useState(false);
   const [confirm, setConfirm] = useState<F5Confirm | null>(null);
+  const [draftReadNotes, setDraftReadNotes] = useState<Record<string, string[]>>({});
+  const [draftReading, setDraftReading] = useState<string>();
+  const proposalDrafts = useFReconfirmations("F5");
+  const anomalyDrafts = useFReconfirmations("f5-anomaly");
+  const [, refreshExport] = useState(0);
+  const originalExport = pendingF5Export();
   const tabIds = useTabIds();
   const { f5Overview: data, f5AppliedQuery, f5NextQuery, f5AppendError, f5Loading: loading, f5Error: error } = ctx;
+  const draftReadContext = useRef({ confirm, data });
+  draftReadContext.current = { confirm, data };
   const suspendableKinds = data?.suspendableKinds ?? [];
   const reissueAvailable = canReissue && !error && !!data;
   const busyText = "奖励记录正在更新";
-  const exportBlockedReason = loading ? "奖励记录正在更新，暂不能导出"
-    : !f5AppliedQuery || !data || error ? "奖励记录未成功读取，重试后才能导出"
-      : data.total === 0 ? "当前结果没有可导出的奖励记录" : undefined;
+  const exportBlockedReason = ctx.f5ExportBlocked(f5AppliedQuery ?? {});
   const events = useMemo(() => data?.commissionEvents ?? [], [data]);
   const selectedRows = useMemo(
     () => events.filter((row) => selected.includes(row.id)),
@@ -108,11 +117,15 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     // Refresh invalidates new confirmations; retained originals stay independently recoverable.
     setConfirm(current => {
       if (!current) return null;
+      if (current.recovery && [...proposalDrafts, ...anomalyDrafts].some(row => row.commandKey === current.recovery!.original.commandKey)) return null;
       const saved = current.snapshot ? ctx.getF5Operation(current.snapshot) : undefined;
       if (saved) return current.recovery ? current : { ...current, recovery: saved };
-      return current.recovery || loading ? null : current;
+      return current;
     });
-  }, [ctx.f5ReadEpoch, loading, ctx.f5Proposals, ctx.f5AnomalyWrites]);
+  }, [ctx.f5Proposals, ctx.f5AnomalyWrites]);
+  useEffect(() => {
+    setConfirm(current => current?.recovery || current?.exportFilters ? current : null);
+  }, [ctx.f5ReadEpoch]);
 
   const query = (): F5CommissionQuery => ({
     kind: kind || undefined,
@@ -426,7 +439,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const editThreshold = (snapshot?: F5ConfirmationSnapshot, recovery?: F5Recovery) => {
+  const editThreshold = (snapshot?: F5ConfirmationSnapshot, recovery?: F5Recovery, previous?: F5ConfirmationSnapshot) => {
     const sigma = snapshot?.sigma ?? data?.configValues.commissionAnomalySigma ?? "3";
     const ratio = snapshot?.ratio ?? data?.configValues.layerRatioAnomalyPct ?? "20";
     setConfirm({
@@ -437,12 +450,14 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       statedBrief: { impact: "保存后马上按新标准重新挑异常样本，以前的样本也按新标准重算", check: "核对两个数，理由写清为什么调整。" },
       detail: "数字越小，挑出的异常越多。",
       facts: <Facts>
-        <Fact k="金额偏离">{sigma} 倍标准差</Fact>
-        <Fact k="层比例偏离">{ratio}%</Fact>
+        <Fact k="金额偏离">{previous?.sigma !== undefined && compareDecimal(previous.sigma, sigma) !== 0 && `他人修改：${previous.sigma} → `}{sigma} 倍标准差</Fact>
+        <Fact k="层比例偏离">{previous?.ratio !== undefined && compareDecimal(previous.ratio, ratio) !== 0 && `他人修改：${previous.ratio}% → `}{ratio}%</Fact>
         <Fact k="保存后">马上按新标准重新挑异常样本，不改奖励金额和状态</Fact>
       </Facts>,
       businessForm: {
         kind: "multi-field",
+        feedback: values => f5AnomalyChanged(Number(values.sigma), Number(values.ratio), sigma, ratio)
+          ? { invalid: false, message: "" } : { invalid: true, field: "sigma", live: true, message: F5_ANOMALY_UNCHANGED },
         fields: [
           { key: "sigma", label: "金额偏离（倍标准差 σ）", current: sigma, inputKind: "number", min: 2, max: 5, step: 0.5, required: true, help: "2–5，步长 0.5；越小异常越多" },
           { key: "ratio", label: "L1–L7 比例偏离（%）", current: ratio, inputKind: "number", min: 10, max: 50, step: 1, required: true, help: "这里填 10–50 的整数；越小异常越多" },
@@ -457,9 +472,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
-  const exportAllFiltered = () => {
-    if (exportBlockedReason || !f5AppliedQuery) return;
-    const filters = f5AppliedQuery;
+  const exportAllFiltered = (original = pendingF5Export()) => {
+    const filters = original ? original.f5ExportRequest?.filters : f5AppliedQuery;
+    if (!filters || !original && exportBlockedReason) return;
     const scope = [
       filters.kind ? kindName(filters.kind) : "",
       filters.currency ?? "",
@@ -467,8 +482,14 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       filters.cohort ? `${filters.cohort} 注册` : "",
       filters.status ? statusName(filters.status) : "",
     ].filter(Boolean);
+    let commandKey = original?.commandKey;
     setConfirm({
-      action: "导出当前筛选的全部奖励", title: "导出筛选结果", briefKind: "export", confirmLabel: "导出 CSV",
+      action: "导出当前筛选的全部奖励", title: "导出筛选结果", briefKind: "export", confirmLabel: "导出 CSV", exportFilters: filters, exportKey: () => commandKey,
+      reloadExport: () => {
+        setKind(filters.kind ?? ""); setCurrency(filters.currency ?? ""); setUserId(filters.userId ?? "");
+        setCohort(filters.cohort ?? ""); setStatus(filters.status ?? "");
+        load({ ...filters, cursor: undefined, limit: "20" });
+      },
       effect: <StatusTag tone="neutral">只生成文件，不改数据</StatusTag>,
       completionCopy: "不改奖励和余额，提交后直接生成文件。",
       statedBrief: { impact: "按已应用且读取成功的筛选条件导出全部匹配的记录，敏感信息已隐藏", check: "核对筛选条件，理由写清导出用途。" },
@@ -483,8 +504,10 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         <Fact k="留痕">每生成一次记一条审计</Fact>
       </Facts>,
       submit: async (reason) => {
-        const receipt = await ctx.exportF5Commissions(filters, reason);
-        ctx.toast(`已下载 ${receipt.filename} · 共 ${receipt.rowCount} 行`);
+        try {
+          const receipt = await ctx.exportF5Commissions(filters, reason, commandKey, key => { commandKey = key; });
+          ctx.toast(`已下载 ${receipt.filename} · 共 ${receipt.rowCount} 行`);
+        } finally { refreshExport(value => value + 1); }
       },
     });
   };
@@ -521,12 +544,24 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       state: ticket?.status === "pending" ? "pending" : isRetryExpired(original) ? "expired" : "unknown",
       direct: record.kind === "anomaly",
       actions: <>
-        <Button size="sm" onClick={() => { void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
+        <Button size="sm" onClick={() => { if (saved && !ticket) openOriginal(record); else void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
         {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原请求重试</Button>}
-        {record.kind === "proposal" && isRetryExpired(original) && record.original.absent && !ticket && !record.original.received && !record.original.f5TicketId
+        {original.replayRejection
           && <FReleaseButton label={saved?.name ?? spec?.action ?? "奖励处置"} toast={ctx.toast} onRelease={() => ctx.recoverF5(record, "release")} />}
       </>,
     };
+  });
+  if (originalExport) recoveryRows.push({
+    key: originalExport.commandKey, name: "导出筛选结果", submittedAt: originalExport.createdAt, exportOperation: true,
+    state: isRetryExpired(originalExport) ? "expired" : "unknown",
+    change: originalExport.f5ExportRequest ? "原筛选条件和理由已保留。" : "原请求不完整，请在操作记录与审批核对。",
+    actions: <>
+      {originalExport.f5ExportRequest && <Button size="sm" onClick={() => exportAllFiltered(originalExport)}>查看原操作</Button>}
+      {originalExport.replayRejection && <FReleaseButton label="导出筛选结果" toast={ctx.toast} onRelease={async () => {
+        if (!f5ExportRecovery.releaseRejectedReplay(originalExport)) throw new Error("PENDING_REPLAY_BLOCKED");
+        refreshExport(value => value + 1);
+      }} />}
+    </>,
   });
   const ownTicketIds = new Set(ctx.f5Proposals.flatMap(row => row.ticket ? [row.ticket.id] : row.f5TicketId ? [row.f5TicketId] : []));
   const pendingTickets = ctx.f5ApprovalRows.filter((ticket, index, rows) => ticket.mine && ticket.status === "pending"
@@ -554,6 +589,81 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     if (canReverse && (row.canReverse === true || !SETTLED.includes(row.status))) list.push({ key: "reverse", label: "冲正", danger: true, disabledReason: knownRejection(row, "reverse"), onSelect: () => reverse(row) });
     return list.map(item => ({ ...item, disabledReason: blockedRecord(row) ?? item.disabledReason }));
   };
+
+  for (const { original } of anomalyDrafts) {
+    const snapshot = original.f5Snapshot, request = original.f5Request;
+    const sigma = data?.configValues.commissionAnomalySigma, ratio = data?.configValues.layerRatioAnomalyPct;
+    const writable = canWrite && !loading && !error && sigma !== undefined && ratio !== undefined
+      && snapshot?.sigma !== undefined && snapshot.ratio !== undefined && !!request && !ctx.f5AnomalyWrites.length;
+    recoveryRows.push({
+      key: original.commandKey, name: "调整异常预警标准", state: "settled", submittedAt: original.createdAt,
+      change: request ? `金额偏离 ${request.commissionAnomalySigma}；层比例偏离 ${request.layerRatioAnomalyPct}%` : "请核对现行设置",
+      actions: writable ? <Button size="sm" onClick={() => {
+        const before = { sigma: snapshot.sigma!, ratio: snapshot.ratio! };
+        const wanted = { sigma: String(request.commissionAnomalySigma), ratio: String(request.layerRatioAnomalyPct) };
+        const initial = rebaseFValues(before, wanted, { sigma, ratio }, (a, b) => a === b || compareDecimal(a, b) === 0);
+        editThreshold(undefined, undefined, snapshot);
+        setConfirm(current => current && { ...current, draft: original, initial });
+      }}>继续修改</Button> : <span>请核对当前设置和操作权限</span>,
+    });
+  }
+  for (const { original } of proposalDrafts) {
+    const snapshot = original.f5Snapshot, spec = original.spec;
+    const params = original.request?.command.params;
+    const writable = snapshot && spec && data && !loading && !error && ctx.can(f5ProposalAuthority(spec))
+      && !ctx.getF5Operation(snapshot);
+    const continueDraft = async () => {
+      if (!snapshot || !data || !spec || draftReadContext.current.confirm || draftReading) return;
+      const { action } = snapshot;
+      if (action === "resume") {
+        const item = data.activeSuspensions.find(row => row.userId === snapshot.suspension?.userId && row.kind === snapshot.suspension.kind);
+        if (!item) { ctx.toast("当前暂停记录不在已读名单中，请核对。"); return; }
+        resume(item);
+      } else {
+        const ids = snapshot.rows?.map(row => row.id) ?? (snapshot.row ? [snapshot.row.id] : []);
+        if (!ids.length) { ctx.toast("原操作的奖励编号不完整，请核对。"); return; }
+        const actor = useAdminAuth.getState().session?.adminId;
+        setDraftReading(original.commandKey);
+        const reads = await Promise.allSettled(ids.map(fetchF5CommissionByBusinessId));
+        setDraftReading(undefined);
+        if (actor !== useAdminAuth.getState().session?.adminId || data !== draftReadContext.current.data || draftReadContext.current.confirm) return;
+        const rows: F5CommissionEvent[] = [];
+        const notes: string[] = [];
+        reads.forEach((read, index) => {
+          const id = ids[index];
+          if (read.status === "rejected") notes.push(`${id} · 读取失败：${displayAdminError(read.reason)}`);
+          else if (read.value.status === "not-found") notes.push(`${id} · 找不到原奖励记录`);
+          else rows.push(read.value.event);
+        });
+        if (action === "reissue") {
+          for (const row of rows) {
+            const blocked = blockedRecord(row) ?? (isFriend(row) || row.reversalRecorded || row.status !== "reversed" ? "当前不能补发" : undefined);
+            if (blocked) notes.push(`${row.id} · ${blocked}`);
+          }
+          if (!notes.length) reissue(rows, data.coolingPolicy);
+        } else {
+          const row = rows[0];
+          if (row) {
+            const option = rowActions(row).find(item => item.key === action);
+            if (!option || option.disabledReason) notes.push(`${row.id} · ${option?.disabledReason ?? "当前不能执行原处置"}`);
+            else option.onSelect();
+          }
+        }
+        setDraftReadNotes(current => ({ ...current, [original.commandKey]: notes }));
+        if (notes.length) return;
+      }
+      const initial: BusinessFormValue | undefined = typeof params?.refundRef === "string" ? { refundRef: params.refundRef }
+        : Array.isArray(params?.kinds) && action === "suspend" ? { kinds: params.kinds.filter(kind => suspendableKinds.includes(kind)).join(",") } : undefined;
+      setConfirm(current => current && { ...current, draft: original, initial });
+    };
+    recoveryRows.push({
+      key: original.commandKey, name: snapshot?.name ?? spec?.action ?? "奖励处置",
+      change: <>{spec ? `${spec.before} → ${spec.after}` : "请核对原奖励记录"}{draftReadNotes[original.commandKey]?.map(note => <span key={note}> · {note}</span>)}</>,
+      state: "settled", submittedAt: original.createdAt,
+      actions: writable ? <Button size="sm" disabled={!!draftReading} onClick={() => void continueDraft()}>{draftReading === original.commandKey ? "正在核对原奖励" : "继续修改"}</Button>
+        : <span>请核对当前奖励记录和操作权限</span>,
+    });
+  }
 
   // 同一个结算组的两笔挨着时，用左边的竖线连起来。
   const groupPos = (index: number) => {
@@ -646,7 +756,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <p>导出使用已应用且读取成功的筛选条件，包含全部匹配记录。</p>
           {canReissue && <p>行首勾选已冲正的记录，可以一起补发；好友奖励、来源已经退款的不能勾。</p>}
         </>}
-        actions={canExport ? <Button size="sm" icon={<Download size={14} aria-hidden />} disabled={!!exportBlockedReason} onClick={exportAllFiltered}>导出筛选结果</Button> : undefined}>
+        actions={canExport ? <Button size="sm" icon={<Download size={14} aria-hidden />} disabled={!!exportBlockedReason || !!originalExport} onClick={() => exportAllFiltered()}>导出筛选结果</Button> : undefined}>
         {reissueAvailable && selectedRows.length > 0 && (
           <BatchBar summary={`已勾选 ${selectedRows.length} 笔已冲正的记录`} hint="只能勾选这一批里已冲正、不是好友奖励、来源没有退款的记录；改筛选会清掉勾选。">
             <Button size="sm" onClick={() => setSelected([])}>取消勾选</Button>
@@ -719,6 +829,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
         readOnly={anyWrite ? undefined : "你只能查看；处置奖励需要对应的处置权限"} />
       {conclusion()}
       <F5RecoveryNotice rows={recoveryRows} />
+      {ctx.f5AnomalyAppliedUnread && <Notice tone="warn" title="异常标准已写入，最新状态暂时读不到"
+        action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重试读取</Button>} />}
       {/* 审批进度没读全：和 F2 的审批读取警示一个样子，一行，不挡下面的业务概览。 */}
       {ctx.f5ApprovalReadError && <Notice tone="warn" title="审批进度没读到"
         action={<Button size="sm" disabled={loading} onClick={() => void ctx.refreshF5(applied)}>重试</Button>}>
@@ -752,7 +864,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       </fieldset>
       <F5Drawer row={openRow} rows={events} history={data?.operationHistory ?? []} ledgerAllowed={canReadD4} coverageAllowed={canReadB1} l4Allowed={canReadL4} a2Allowed={canReadA2}
         actions={rowActions} readOnly={!rowWrite} busyReason={loading ? busyText : undefined} onOpen={(row) => setOpenId(row.id)} onClose={() => setOpenId(null)} />
-      {confirm && <F5ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
+      {confirm && <F5ConfirmHost key={confirm.draft?.commandKey ?? confirm.recovery?.original.commandKey ?? "fresh"} confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
     </div>
   );
 }

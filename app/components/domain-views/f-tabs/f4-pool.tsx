@@ -160,7 +160,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       </Panel>
 
       <Panel title="池的设置" icon={Settings2} tone="role-4" sub="批准后生效"
-        explain="这几项一起决定池能不能结算、每周放多少钱。任一项没设或格式不对，池就不能结算。头部占比两项只限制排行榜派奖，放在「排行榜」。">
+        explain="这几项一起决定池能不能结算、每周放多少钱。任一项没设或格式不对，池就不能结算。头部占比两项是排行榜派奖的告警阈值，超过只提示、不扣减，放在「排行榜」。">
         <ConfigList label="团队激励池设置">
           {paramRow({ name: "奖池比例", value: ratioEff, allowed: canFund,
             what: "每周已付款成交额里放进团队激励池的百分比，可填 0–30%。",
