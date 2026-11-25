@@ -7,8 +7,10 @@
 import { useState, type ReactNode } from "react";
 import { Bot, BookOpenText, CheckCircle2, CircleHelp, EyeOff, FilePen, Headset, Pencil, Smartphone, Trash2, Upload, Archive } from "lucide-react";
 import { Button, Change, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Modal, Notice, StatusTag, type DrawerNav, type StateTone } from "@/app/components/rd";
-import { OPEN_RESULT_LABELS } from "../recovery-panel";
-import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
+import { OPEN_RESULT_LABELS, useFreshFirst } from "../recovery-panel";
+import { M_RECOVERY_INTRO, mNoticeTone } from "@/lib/admin/m-recovery-copy";
+import { MAuditLink } from "./m-release";
+import type { FaqRecoveryInfo } from "./m4-kb-sla";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { SupportFaq } from "./data";
@@ -158,25 +160,33 @@ export function M4FaqDrawer({ faq, author, nav, busy, canWrite, onClose, onEdit,
 }
 
 /** 发布、下架的确认框。确认后发出的请求和改版前一样（理由固定，见下面的「操作记录」一行）。 */
-export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel, onConfirm }: {
+export function M4StatusConfirm({ faq, busy, disabled, disabledReason, failure, retry, info, onQuery, onCancel, onConfirm, returnFocus }: {
   faq: M4Faq;
   busy: boolean;
   failure: Error | null;
   disabled?: boolean;
-  /** 从结果未知恢复：确认就是按原请求重试。expired 时只能读回核对。 */
-  retry?: { expired: boolean };
+  disabledReason?: ReactNode;
+  /** 从结果未知恢复：确认就是按原请求重试。 */
+  retry?: import("../design-kit").PendingConfirmRecovery;
+  /** 恢复原操作时：和行同一份结论。 */
+  info?: FaqRecoveryInfo;
+  onQuery?: () => void;
   onCancel: () => void;
   onConfirm: () => void;
+  returnFocus: () => HTMLElement | null;
 }) {
   const publish = faq.status === "draft";
   const unknown = isOutcomeUnknownError(failure);
+  const querying = retry?.state?.busy === "query";
   const action = publish ? "发布" : "下架";
   return (
     <Modal title={publish ? "发布这条问答" : "下架这条问答"} icon={publish ? Upload : Archive}
-      sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={busy} onClose={onCancel}
+      sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={busy} onClose={onCancel} returnFocus={returnFocus}
       footer={<>
         <Button disabled={busy} onClick={onCancel}>取消</Button>
-        <Button variant="primary" loading={busy} disabled={disabled} onClick={onConfirm}>{retry || unknown ? "按原请求重试" : `确认${action}`}</Button>
+        {retry && <Button variant={retry.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={busy} disabledReason={onQuery ? undefined : "当前账号没有知识库查看权限"} onClick={onQuery}>查询原结果</Button>}
+        {info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
+          : <Button variant={retry?.state?.replayBlock ? "secondary" : "primary"} loading={busy && !querying} loadingText="提交中…" disabled={disabled} disabledReason={busy ? undefined : disabledReason} onClick={onConfirm}>{retry || unknown ? "按原请求重试" : `确认${action}`}</Button>}
       </>}>
       <Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>
@@ -191,8 +201,9 @@ export function M4StatusConfirm({ faq, busy, disabled, failure, retry, onCancel,
       {!publish && <p className="m4-confirm-note">问答留在列表里，随时可以重新发布。已经发给客户的回答不会撤回；App 里已打开的帮助页可能过几分钟才更新。</p>}
       <p className="m4-confirm-note">操作记录会记下这次{publish ? "发布" : "下架"}，理由固定写「{publish ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档"}」。</p>
       {failure && !unknown && <Notice tone="danger" title="没有成功"><p>{failure?.message}</p></Notice>}
-      {(unknown || retry) && <Notice tone="warn" title="结果未知">
-        <p>{retry?.expired ? `原请求超过 24 小时，不能再重试，只能查询原结果。` : `可能已经${action}。按原请求重试不会重复执行。`}</p>
+      {info && <Notice tone={mNoticeTone(info.view)} title={info.view.label} actionBelow action={info.audit ? <MAuditLink /> : undefined}>
+        <p>{info.gone && "这条问答已不在列表里。"}{info.view.line}</p>
+        {unknown && failure?.message && <p>{failure.message}</p>}
       </Notice>}
     </Modal>
   );
@@ -208,13 +219,19 @@ export type M4PendingRow = { key: string; question: string; change: ReactNode; s
  */
 export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
   const [all, setAll] = useState(false);
+  const { ordered, box } = useFreshFirst(rows.map((row) => ({ ...row, createdAt: row.submittedAt })));
   if (rows.length === 0) return null;
   const open = rows.filter((row) => OPEN_RESULT_LABELS.includes(row.status.label)).length;
-  const title = [rows.length - open > 0 && `${rows.length - open} 个操作结果未知`, open > 0 && `${open} 个操作还没结案`].filter(Boolean).join("，");
+  const submitting = rows.filter(row => row.status.label === "提交中…").length;
+  const drafts = rows.filter(row => row.status.label === "可继续修改" || row.status.label === "可重新确认").length;
+  const stopped = rows.filter(row => row.status.label === "不能继续").length;
+  const unknown = rows.length - open - submitting - drafts - stopped;
+  const title = [unknown > 0 && `${unknown} 个操作结果未知`, open > 0 && `${open} 个操作还没结案`,
+    submitting > 0 && "提交中…", drafts > 0 && `${drafts} 个操作可继续处理`, stopped > 0 && `${stopped} 个操作不能继续`].filter(Boolean).join("，");
   return (
-    <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<><p>{DIRECT_RECOVERY_INTRO}</p><p>有结论前这条问答不能再改。</p></>} /></>}>
-      <ul className="m4-pending" aria-label="结果未知的操作">
-        {(all ? rows : rows.slice(0, 3)).map((row) => (
+    <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时还没结论的，由有调查权限的超级管理员核查结案。有结论前这条问答不能再改。</p></>} /></>}>
+      <div ref={box}><ul className="m4-pending" aria-label="待处理的操作">
+        {(all ? ordered : ordered.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="m4-pending-name">{row.question}</span>
             <span className="m4-pending-change">{row.change}</span>
@@ -224,7 +241,7 @@ export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
             <span className="m4-pending-note" role="status">{row.note}</span>
           </li>
         ))}
-      </ul>
+      </ul></div>
       {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll((value) => !value)}>{all ? "只看前 3 条" : `显示全部 ${rows.length} 条`}</Button>}
       <p className="m4-pending-zone">提交时间为{businessZone().label}</p>
     </Notice>

@@ -134,6 +134,7 @@
 .rd-page .m3-service-profile .cvp-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); justify-content: start; gap: var(--rd-space-3); padding: var(--rd-space-1) 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }
 .rd-page .m3-service-profile .cvp-row .k { color: var(--rd-text-3); white-space: nowrap; }
 .rd-page .m3-service-profile .m-admin-muted { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.rd-page .m3-service-profile .m3-account-note { color: var(--rd-text-2); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }  /* 谁能办账户操作：给人读的句子，用正文（VS-51） */
 
 /* 「首充与邀请」这一组的名称列按最长的「团队奖励范围内（人）」连问号一行放下定宽（DESIGN.md 名称列按组定宽，PR2 只放宽这一组）；其余组仍是 120。 */
 .rd-page :is(.m3-service-profile, .m3-customer-sidebar) .m3-invite-group .cvp-row { grid-template-columns: 160px minmax(0, 1fr); }

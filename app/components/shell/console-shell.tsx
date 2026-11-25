@@ -19,7 +19,7 @@ import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, installAdminAuthFe
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
-import { ADMIN_SESSION_EXPIRED_EVENT } from "@/lib/admin/auth-session";
+import { ADMIN_SESSION_EXPIRED_EVENT, resetAdminSession } from "@/lib/admin/auth-session";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
 import { ALL_L2, canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminTheme } from "@/app/components/rd/theme-switch";
@@ -38,7 +38,7 @@ import { businessZone, subscribeBusinessZone } from "@/lib/admin/business-time";
 const SESSION_REFRESH_MS = 60_000;
 type AdminBootstrapState = "checking" | "authenticated" | "anonymous" | "error";
 
-installAdminAuthFetchLifecycle();
+installAdminAuthFetchLifecycle(resetAdminSession);
 
 function AdminLogoutGate() {
   return (

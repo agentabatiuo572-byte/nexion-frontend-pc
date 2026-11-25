@@ -3,7 +3,7 @@
  * （AuditReplayBusinessPermissionGuard，b72c1c26）：「L1: usdtPct=10, nexPerUsd=0.5; L2: …」。
  * F2 待审批和 A2 列表、详情、批准框都从这里拆成七行，不在前端重算；格式对不上返回 undefined，页面照原文显示。
  */
-import { Cell, Table, Td, Th } from "@/app/components/rd";
+import { Cell, Notice, Table, Td, Th } from "@/app/components/rd";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { LAYERS, LAYER_WHO, SAMPLE_ORDER, num, pctAdd, pctSample, rangeText } from "./f2-shared";
 
@@ -54,17 +54,24 @@ export function f2PctSum(values: readonly string[]) {
 /** 示例订单里这一层分到的 USDT（订单 × 比例 ÷ 100）。 */
 export const f2SampleUsdt = (pct: string) => f2DecimalTimes(pct, String(SAMPLE_ORDER / 100));
 
-/** App 和 Lite 现在只接受七层合计不超过 25% 的配置（proto-app commission-config-api.ts:146、159–160）。 */
+/** App 对七层原始配置的读取上限（commission-config-api.ts）。 */
 export const F2_APP_TOTAL_LIMIT = 25;
-export const F2_APP_LIMIT_COPY = "App 目前只接受合计不超过 25% 的配置，超过会导致 App 读不出团队奖励配置。";
+export const F2_APP_LIMIT_COPY = "App 最多读到合计 25%，会读不到团队奖励配置。核对后仍可以提交。";
+/** 七层原始比例合计超过 App 读取上限时的提示标题，合计数和上限数在正文或图上，不重复；partial = 还没填齐。 */
+export function f2AppLimitIssue(pcts: readonly string[], partial = false) {
+  return pcts.reduce((sum, pct) => sum + Number(pct), 0) > F2_APP_TOTAL_LIMIT + 0.000001
+    ? `${partial ? "已填的" : "七层"}原始比例合计超过 App 读取上限` : undefined;
+}
 
 /** 七层逐行核对：确认框、A2 详情和批准框共用。只用 rd 组件，A2 页没有 F2 的样式表。 */
-export function F2BootstrapReview({ rows, label = "七层规则", ranked }: { rows: readonly F2BootstrapRow[]; label?: string; ranked?: F2RankedRange }) {
+export function F2BootstrapReview({ rows, label = "七层规则", ranked, limitCopy = F2_APP_LIMIT_COPY }: { rows: readonly F2BootstrapRow[]; label?: string; ranked?: F2RankedRange; /** 合计超过 App 读取上限时的说明，发起和审批各自的说法。 */ limitCopy?: string }) {
   const byRank = ranked !== undefined;
+  const limitIssue = f2AppLimitIssue(rows.map((row) => row.usdtPct));
   const others = f2PctSum(rows.filter((_, index) => !byRank || index > 1).map((row) => row.usdtPct));
   const total = byRank ? null : f2PctSum(rows.map((row) => row.usdtPct));
   const span = byRank && ranked ? { low: pctAdd(pctAdd(others, ranked.l1.min), ranked.l2.min), high: pctAdd(pctAdd(others, ranked.l1.max), ranked.l2.max) } : null;
-  return (
+  return <>
+    {limitIssue && <Notice tone="warn" title={limitIssue}>{limitCopy}</Notice>}
     <Table label={label}>
       <thead><tr>
         <Th>哪一层</Th>
@@ -100,5 +107,5 @@ export function F2BootstrapReview({ rows, label = "七层规则", ranked }: { ro
         </tr>
       </tbody>
     </Table>
-  );
+  </>;
 }

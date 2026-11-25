@@ -1,4 +1,5 @@
 export const A2_APPROVE_PERMISSION = "A2 执行/放行(高敏工单)";
+export const H8_SETTLEMENT_APPROVAL_PERMISSION = "H8 真实钱包与资金台账发奖";
 
 export const F_APPROVAL_PERMISSION_NAMES: Readonly<Record<string, string>> = {
   network_f2_royalty_rate: "L1-L7 团队购买奖励比例放宽",
@@ -13,8 +14,12 @@ export const F_APPROVAL_PERMISSION_NAMES: Readonly<Record<string, string>> = {
   network_f4_ambassador_approve: "区域大使审批",
 };
 
-export function fApprovalPermissionText(...names: string[]) {
-  const text = [A2_APPROVE_PERMISSION, ...names].map(name => `「${name}」权限`).join("和");
-  // 末尾几个字用不可见的连接符粘住，折行时最后一行不会只剩「权限」两个字（TL-01）。
+/** 「「名字」权限和「名字」权限」；末尾几个字用不可见的连接符粘住，折行时最后一行不会只剩「权限」两个字（TL-01）。 */
+export function approvalPermissionText(names: string[]) {
+  const text = names.map(name => `「${name}」权限`).join("和");
   return text.slice(0, -6) + text.slice(-6).split("").join("\u2060");
+}
+
+export function fApprovalPermissionText(...names: string[]) {
+  return approvalPermissionText([A2_APPROVE_PERMISSION, ...names]);
 }

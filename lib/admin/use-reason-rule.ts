@@ -8,9 +8,9 @@ export function useReasonRule(enabled = true, minimum = 8, maximum = 200) {
   const [policy, setPolicy] = useState<{ min: number; max: number } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
+    setPolicy(null); setError("");
     if (!enabled) return;
     let active = true;
-    setPolicy(null); setError("");
     void fetchA2ReasonPolicy().then(next => { if (active) setPolicy({ min: Math.max(minimum, next.minChars), max: Math.min(maximum, next.maxChars) }); })
       .catch(() => { if (active) setError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。"); });
     return () => { active = false; };

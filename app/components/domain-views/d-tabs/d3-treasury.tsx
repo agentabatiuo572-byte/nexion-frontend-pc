@@ -417,7 +417,7 @@ export function D3Treasury() {
     });
   };
 
-  const submitForecast = (values: ForecastValues, version: number, reason: string, operator: string, commandKey: string, inputFingerprint: string, retained: boolean) => sendCommand({
+  const submitForecast = (values: ForecastValues, version: number, reason: string, operator: string, commandKey: string, inputFingerprint: string, retained: boolean, saved?: () => void) => sendCommand({
     retained,
     stored: () => forecastCommand.isDurablyStored(FORECAST_SLOT, inputFingerprint, commandKey),
     forget: () => forecastCommand.forget(FORECAST_SLOT, commandKey),
@@ -425,7 +425,7 @@ export function D3Treasury() {
     done: async () => {
       toast(`已保存，${effectiveText()}`, "success");
       await load();
-      leave.saved();
+      saved?.();
     },
   });
 
@@ -473,7 +473,9 @@ export function D3Treasury() {
     setConfirm(forecastRequest(latest, merged, impact, forecastDiffRows(before, after).filter((row) => row.before !== row.after), revision + 1));
   };
 
-  const forecastRequest = (latest: D3Main, values: ForecastValues, impact: ForecastConfigPreview, others: ReturnType<typeof forecastDiffRows> = [], revision = 0): ConfirmRequest => {
+  const forecastRequest = (latest: D3Main, values: ForecastValues, impact: ForecastConfigPreview, others: ReturnType<typeof forecastDiffRows> = [], revision = 0, saved?: () => void): ConfirmRequest => {
+    // 要去的地方只属于这一次保存，被拒就作废。
+    let after = saved;
     const base = forecastValues(latest.config);
     const version = latest.config.version;
     const dropped = latest.liabilities.breakdown.filter((row) => base.liabilityCategories[row.category] && !values.liabilityCategories[row.category]);
@@ -505,8 +507,9 @@ export function D3Treasury() {
           commandOrigin: fundCommandOrigin("PUT", "/api/admin/treasury/forecast-config", "finance_d3_read") });
         const commandKey = forecastCommand.resolve(FORECAST_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`);
         try {
-          await submitForecast(values, version, reason, operator, commandKey, fingerprint, false);
+          await submitForecast(values, version, reason, operator, commandKey, fingerprint, false, after);
         } catch (err) {
+          after = undefined;
           if (err instanceof DRequestError && err.reasonCode === "D3_FORECAST_CONFIG_VERSION_CONFLICT") {
             setConfirm((current) => current && { ...current, blocked: forecastConflict(() => void readLatestForecast(latest, values, revision)) });
           }
@@ -517,7 +520,7 @@ export function D3Treasury() {
   };
 
   /** 保存前先看系统算的影响：失败和改后无法估值都不开确认框，写在按钮旁，再点重试（D3-MD1）。 */
-  const saveConfig = async () => {
+  const saveConfig = async (saved?: () => void) => {
     if (!main || !draft || !canConfig || loading || previewLoading || draft.forecastWindow === "90d") return;
     const generation = ++previewGeneration.current;
     const sent = main;
@@ -548,7 +551,7 @@ export function D3Treasury() {
       setPreview({ key: previewKey, value: impact });
       return;
     }
-    setConfirm(forecastRequest(sent, values, impact));
+    setConfirm(forecastRequest(sent, values, impact, [], 0, saved));
   };
 
   const submitExport = async (kind: ExportKind, reason: string, operator = OPERATOR(), originalKey?: string) => {
@@ -952,7 +955,7 @@ export function D3Treasury() {
       {closing && <FundClosureModal label={closing.label} createdAt={closing.investigationRecord.createdAt} offer={eCommandClosureOffer(investigationResults[closing.commandKey], isRetryExpired(closing.investigationRecord))} facts={closing.rows.filter(row => row.key !== "reason").map(row => <Fact key={row.key} k={row.label}>{row.value}{row.unit ? ` ${row.unit}` : ""}</Fact>)}
         onClose={() => setClosing(null)} onSubmit={async evidence => { await checkInvestigation(closing, evidence); setClosing(null); }} />}
 
-      <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={() => void saveConfig()} />
+      <LeaveDialog guard={leave} saveLabel="保存预测设置" saveBlocked={loading ? "正在刷新，稍等" : previewLoading ? "正在核对影响，稍等" : draft?.forecastWindow === "90d" ? FORECAST_90D_BLOCK : undefined} onSave={(saved) => void saveConfig(saved)} />
 
       {refreshAsk && (
         <Modal

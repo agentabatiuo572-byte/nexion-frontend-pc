@@ -140,7 +140,7 @@ export interface FViewCtx {
   f1PayoutError: string | null;
   queryPromotions: (filters?: F1PromotionFilters, append?: boolean) => Promise<void>;
   queryPayouts: (filters?: F1PayoutFilters, append?: boolean) => Promise<void>;
-  proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string) => Promise<void>;
+  proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string, currentRank: string | undefined) => Promise<void>;
   // F1 B83 / B87 / B88
   /** V8 审核名单（B88）。不传 = 这个后端没有名单接口，「V8 审核」页签不出现。 */
   v8Review?: F1V8ReviewState;

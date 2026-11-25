@@ -1,3 +1,4 @@
+import { canReadOwnRecoveryProposal } from "./abe-recovery-access";
 import type { DirectReferralPolicy } from "./direct-referral-policy";
 import { fConfigAuthority, fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
@@ -106,7 +107,7 @@ export function listF2Proposals(adminId: number): F2Recovery[] {
       spec: row.spec ?? { action: "团队奖励参数调整", obj: row.fingerprint === F2_BOOTSTRAP_SLOT ? "unilevel_bootstrap/current" : row.fingerprint === F2_POLICY_SLOT ? "current" : row.fingerprint === F2_BATCH_SLOT ? Array.from({ length: 7 }, (_, i) => `F.unilevel.L${i + 1}.paused`).join(",") : row.fingerprint.replace(/^f-config:/, ""),
         before: "—", after: "—", reason: "—", sourceDomain: "F2", type: "param", gate: { roles: [] }, gateLabel: "",
         command: { domain: "F", op: row.fingerprint === F2_BOOTSTRAP_SLOT ? "f_unilevel_bootstrap" : row.fingerprint === F2_POLICY_SLOT ? "f_direct_referral_policy" : row.fingerprint === F2_BATCH_SLOT ? "f_config_batch" : /^f-config:F\.unilevel\.(?:nex\.)?L[1-7]$/.test(row.fingerprint) ? "f_unilevel_rule" : "f_ui_config", params: {} } },
-      canQuery: !!session && session.adminId === adminId && session.authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create"),
+      canQuery: !!session && session.adminId === adminId && canReadOwnRecoveryProposal(session.authorities),
       canRetry: !f2Recovery.state(row).replayBlock,
       canRelease: !!row.replayRejection,
     }));

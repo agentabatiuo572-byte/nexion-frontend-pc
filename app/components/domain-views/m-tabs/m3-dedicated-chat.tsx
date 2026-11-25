@@ -7,10 +7,10 @@ import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRe
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useSearchParams } from "next/navigation";
 import { Bell, BellOff, Check as CheckIcon, Clock3, Image as ImageIcon, Lock, Megaphone, Plus, Search, SendHorizontal, Square, TimerOff } from "lucide-react";
-import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, Fold, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Check, Checkbox, Conclusion, Explain, Fact, Facts, Field, Fold, IconButton, Input, Modal as RdModal, MoreMenu, Notice, PageHeader, Panel, RecordList, ReleaseModal, Segments, Select, StatusTag, Textarea, type MoreMenuItem, type StateTone } from "@/app/components/rd";
 import { subscribeAdminRealtime, getAdminRealtimeSnapshot, watchAdminConversation, sendAdminTyping } from "@/lib/admin/admin-conversation-realtime";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
@@ -279,7 +279,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     if (adminId) void supportClient.overview({ signal: controller.signal }).then(({ scope }) => {
       if (controller.signal.aborted || generation !== reviewGeneration.current || scope.actorId !== adminId) return;
       setReviewScope({ identity: scopeIdentity, mode: scope.mode });
-    }).catch((cause: unknown) => { if (!controller.signal.aborted && generation === reviewGeneration.current) { setReviewScope(null); if (cause instanceof SupportClientError && cause.status === 403) setScopeDenied(true); else setReviewScopeError("暂时读不到你能看的客户范围，请重试。"); } });
+    }).catch((cause: unknown) => { if (!controller.signal.aborted && generation === reviewGeneration.current) { setReviewScope(null); if (cause instanceof SupportClientError && cause.status === 403) setScopeDenied(true); else setReviewScopeError(displayAdminReadError(cause)); } });
     const invalidate = () => { controller.abort(); reviewGeneration.current++; setReviewScope(null); setScopeRetry(value => value + 1); };
     window.addEventListener("support-scope-invalidated", invalidate);
     return () => { controller.abort(); reviewGeneration.current++; window.removeEventListener("support-scope-invalidated", invalidate); };
@@ -1651,7 +1651,17 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     } finally { if (uploadControllerRef.current === controller) uploadControllerRef.current = null; }
   };
 
-  const serviceStatus = !conversationsAvailable ? "会话服务暂不可用。请检查连接后重试。" : lostAccess ? "当前会话权限已变化，请刷新列表。" : "";
+  const [convRetrying, setConvRetrying] = useState(false), [convError, setConvError] = useState(""), [convDenied, setConvDenied] = useState(false);
+  const retryConversations = async () => {
+    setConvRetrying(true); setConvError(""); setConvDenied(false);
+    try { await ctx.refreshConversations(); }
+    catch (cause) { setConvError(displayAdminReadError(cause)); setConvDenied((cause as { status?: number }).status === 403); }
+    finally { setConvRetrying(false); }
+  };
+  useEffect(() => { if (conversationsAvailable) { setConvError(""); setConvDenied(false); } }, [conversationsAvailable]);
+  // 会话列表自己被拒（读权被收回）也是没有权限，不是加载失败（ST-38、ST-39）。
+  const readDenied = scopeDenied || !conversationsAvailable && (convDenied || ctx.pget("I.session.conversationsDenied") === "1");
+  const serviceStatus = !conversationsAvailable ? "会话服务暂不可用，请检查连接后重试。" : lostAccess ? "当前会话权限已变化，请刷新列表。" : "";
   const title = userNicknameText(selected?.customer || selected?.profile?.nickname || (selected?.customerId ? `客户 ${selected.customerId}` : firstDetail?.displayName || (requestedCustomerIdValid && requestedCustomerId ? `客户 ${requestedCustomerId}` : "会话消息")), selected?.profile?.phone);
   const checkActionReady = async (conversation: SessionConvo) => {
     if (!conversation.customerId || actionChecking) return false;
@@ -2023,7 +2033,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   };
   const sendTech = (key: string) => <Fold inset title="技术信息" summary="原请求编号"><Facts><Fact k="原请求编号"><span data-mono>{key}</span></Fact></Facts></Fold>;
   const isRedacted = (entry: SavedSend) => entry.dock?.readOnlyRecovery || entry.row.fingerprint === recoveryKey(adminId, entry.row.commandKey);
-  const lookupReason = scopeDenied ? "当前账号看不到客户会话。" : qualificationUnknown ? "暂时读不到你能看的客户范围，请重试。" : "读不到会话。";
+  const lookupReason = scopeDenied ? "当前账号看不到客户会话。" : qualificationUnknown ? "当前可见范围没读到，请重试。" : "读不到会话。";
   const pendingHelp = [
     "发出后没收到明确结果的消息，查清前不能再给同一位客户发。",
     recoveries.some(entry => entry.first || entry.reply) && `「只能查询结果」：${lookupReason}`,
@@ -2048,10 +2058,12 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const failedNotice = keptReason ? "" : sendError.startsWith(MESSAGE_FAILED_UNCHECKED) && !failedCopy && !activeEntry && draft.trim()
     ? MESSAGE_FAILED + sendError.slice(MESSAGE_FAILED_UNCHECKED.length) : sendError;
   // 分段一行放两个，其余进「更多」（DP-14）：待回复、待分配这类要处理的排在前面。
+  // 范围或会话没读到时数字写「—」，不写 0（ST-34、ST-31）。
+  const countsRead = conversationsAvailable && !qualificationUnknown;
   const tabItems = [...tabs].sort(([a], [b]) => TAB_ORDER.indexOf(a) - TAB_ORDER.indexOf(b)).map(([value, label]) => {
     const count = customerRows.filter(row => tabMatch(row, value, adminId)).length;
     const overdue = value === "unassigned" ? customerRows.some(row => tabMatch(row, value, adminId) && row.pendingReplySince != null && timeoutNow - row.pendingReplySince >= (ctx.unboundAlertMinutes ?? 5) * 60000) : value === "pending" && customerRows.some(row => tabMatch(row, value, adminId) && Boolean(late(row)));
-    return { value, label: <>{label}{overdue && <span className="sr-only">（有客户已超时待处理）</span>}{!conversationsAvailable && " —"}</>, count: conversationsAvailable ? count : undefined, tone: overdue ? "warn" as const : undefined };
+    return { value, label: <>{label}{overdue && <span className="sr-only">（有客户已超时待处理）</span>}{!countsRead && " —"}</>, count: countsRead ? count : undefined, tone: overdue ? "warn" as const : undefined };
   });
   const frontTabs = tabItems.slice(0, 2), moreTabs = tabItems.slice(2);
   const moreOn = moreTabs.some(item => item.value === listTab);
@@ -2070,7 +2082,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     { key: "archive", label: "批量归档", disabledReason: !canWriteM3 ? "当前账号只能查看会话" : !filtered.some(row => row.ownerAdminId === adminId && !row.archived && !row.pendingReplyCount) ? "这个列表里没有能归档的客户：只能归档本人客户，有待回复的要先回复" : undefined, onSelect: () => setArchiveMode(true) },
   ];
   const alertsOn = alertPrefs.sound || alertPrefs.desktop;
-  const baseBlocked = !canWriteM3 ? "当前账号只能查看会话" : qualificationUnknown ? "正在确认你的专属客服身份" : undefined;
+  const baseBlocked = !canWriteM3 ? "当前账号只能查看会话" : readDenied ? "当前账号看不到客户会话" : qualificationUnknown ? reviewScopeError ? "当前可见范围没读到，重试后再操作" : "正在确认你的专属客服身份" : undefined;
   const noOwnCustomers = hasOwn ? undefined : !myAgent ? "当前账号不是专属客服，没有本人客户" : ownCustomers === 0 ? "你名下还没有客户。客户分配给你之后才能用，分配情况看「客服工作台」" : undefined;
   // 新建要有本人客户；已有批次和待确认的原操作照样能进去查（OP-93）。
   const bulkBlocked = hasBulkPending(adminId) || (bulkBatches ?? 0) > 0 ? undefined : baseBlocked ?? (bulkBatches === 0 ? noOwnCustomers : undefined);
@@ -2102,11 +2114,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       guideExtra={<p>{guideRole}</p>} />
     {banner}
     {streamLost && !reconnectExhausted && <Notice tone="warn">连接已断开，正在重连；下面是最近一次的数据</Notice>}
-    {!conversationsAvailable
-      ? ctx.contentLoading ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Conclusion state="danger" action={<Button size="sm" onClick={() => void ctx.refreshConversations()}>重新连接</Button>}>{serviceStatus}</Conclusion>
-      : scopeDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
+    {readDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
+      : !conversationsAvailable
+      ? ctx.contentLoading && !convRetrying ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Panel><BlockState state="error" title="会话加载失败" detail={convError || ctx.pget("I.session.conversationsError") || serviceStatus} onRetry={() => void retryConversations()} retrying={convRetrying} /></Panel>
       : reviewScopeError
-        ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => setScopeRetry(value => value + 1)}>重新核对范围</Button>}>{reviewScopeError}</Conclusion>
+        ? <Panel><BlockState state="error" title="当前可见范围加载失败" detail={reviewScopeError} onRetry={() => { setReviewScopeError(""); setScopeRetry(value => value + 1); }} /></Panel>
         : qualificationUnknown
           ? <Conclusion state="unknown">正在确认你的专属客服身份，稍后显示可查看的会话。</Conclusion>
           : waitingRows.length
@@ -2144,7 +2156,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             explain={pendingHelp} items={pendingItems} /></div>}
         {recoveryError && <div className="m3s-pending"><Notice tone={recoveryError.startsWith("查到了") ? "neutral" : "warn"} action={<Button size="sm" onClick={() => setRecoveryError("")}>知道了</Button>}>{recoveryError}</Notice></div>}
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
-          {!conversationsAvailable && <div className="m3s-empty"><p>读不到会话。</p></div>}
+          {!conversationsAvailable && <div className="m3s-empty"><p>{readDenied ? "看不到会话。" : ctx.contentLoading || convRetrying ? "正在加载会话…" : "读不到会话。"}</p></div>}
           {/* 一行写完：名字长就在名字里省略，悬停看 title、键盘聚焦「看全部」看气泡（ST-04）；名字是客户填的，标 data-user-content。 */}
           {openElsewhere && <p className="m3s-row-note" title={`打开的${title}不符合当前筛选`}>打开的<span className="m3s-row-note-name" data-user-content="">{title}</span>不符合当前筛选<FocusFullText text={`打开的${title}不符合当前筛选`} clipped={button => button.parentElement?.querySelector(".m3s-row-note-name")}><button type="button" className="rd-link rd-link-button" onClick={() => { setQuery(""); changeTab(selected?.archived ? "archived" : "all"); }}>{selected?.archived ? "看归档" : "看全部"}</button></FocusFullText></p>}
           {conversationsAvailable && !qualificationUnknown && filtered.length === 0 && <div className="m3s-empty">
@@ -2184,7 +2196,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             </div>;
           })}
         </div>
-        {(query.trim() || listLimit < filtered.length) && <div className="m3s-inbox-foot"><span>{query.trim() ? `搜到 ${filtered.length} 位` : ""}</span>{listLimit < filtered.length && <Button size="sm" variant="ghost" onClick={() => setListLimit(n => n + LIST_CHUNK)}>加载更多</Button>}</div>}
+        {(query.trim() || listLimit < filtered.length) && <div className="m3s-inbox-foot"><span>{query.trim() ? `搜到 ${countsRead ? filtered.length : "—"} 位` : ""}</span>{listLimit < filtered.length && <Button size="sm" variant="ghost" onClick={() => setListLimit(n => n + LIST_CHUNK)}>加载更多</Button>}</div>}
       </div>
 
       <div ref={chatColumnRef} className="m3s-chat">

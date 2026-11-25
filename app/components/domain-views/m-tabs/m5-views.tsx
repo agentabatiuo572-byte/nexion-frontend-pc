@@ -3,7 +3,7 @@
 /** M5 服务规则与话术：页内共用的小块（摘要类型、新客户流程图、结果未知提醒、状态标签）。不发请求、不改数据。 */
 import type { ReactNode } from "react";
 import { Archive, BellRing, CheckCircle2, CircleHelp, FilePen, MessageSquareText, UserPlus, UsersRound, Timer } from "lucide-react";
-import { Explain, Notice, StatusTag } from "@/app/components/rd";
+import { Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
 export type M5Tab = "rules" | "roster" | "welcome" | "content" | "channels";
@@ -67,23 +67,26 @@ export function M5Flow({ rules, policy }: { rules: M5RulesSummary; policy: M5Pol
   );
 }
 
-export type M5PendingRow = { key: string; name: ReactNode; change: ReactNode; submittedAt: number; expired: boolean; actions: ReactNode };
+export type M5PendingRow = { key: string; name: ReactNode; change: ReactNode; submittedAt: number; expired: boolean; actions: ReactNode;
+  /** 这一行的标签和结论句；不传时按有没有过期写。 */
+  status?: { tone: StateTone; label: string }; note?: ReactNode };
 
 /** 结果未知的写操作逐条列出（和 G 域、M4 同一个排法）：改的是什么、从什么改成什么、什么时候提交、查询原结果、按原请求重试。 */
-export function M5PendingWrites({ rows }: { rows: readonly M5PendingRow[] }) {
+export function M5PendingWrites({ rows, explain, submitting = false }: { rows: readonly M5PendingRow[]; explain?: ReactNode; submitting?: boolean }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。页面上的现状证明不了原操作有没有执行。有结论前同一项不能再改。" /></>}>
-      <ul className="m5-pending" aria-label="结果未知的操作">
+    <Notice tone="warn" title={submitting ? "提交中…" : <>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content={explain ?? "提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。页面上的现状证明不了原操作有没有执行。有结论前同一项不能再改。"} /></>}>
+      <ul className="m5-pending" aria-label={submitting ? "正在提交的操作" : "结果未知的操作"}>
         {rows.map((row) => (
           <li key={row.key}>
             <span className="m5-pending-name">{row.name}</span>
             <span className="m5-pending-change">{row.change}</span>
             <span className="m5-pending-time">{businessStamp(row.submittedAt)} 提交</span>
-            <span>{row.expired
+            <span>{row.status ? <StatusTag tone={row.status.tone}>{row.status.label}</StatusTag> : row.expired
               ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
               : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
             <span className="m5-pending-actions">{row.actions}</span>
+            {row.note && <span className="m5-pending-note" role="status">{row.note}</span>}
           </li>
         ))}
       </ul>

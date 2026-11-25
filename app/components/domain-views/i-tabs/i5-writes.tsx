@@ -228,6 +228,8 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
         afterRelease?.();
       } else if (phase === "restoring") {
         phase = "armed";
+        // 上面还开着确认框（填理由、提交中）或离开框：后退先留在这里，由那个框处理完再走。
+        if (document.querySelector('.rd-modal[data-state="open"]')) return;
         nextAction.current = () => window.history.back();
         setAsking(true);
       } else {
@@ -255,40 +257,56 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
       release();
     };
   }, [dirty, router]);
-  const proceed = () => {
-    const next = nextAction.current;
+  const leave = (next: (() => void) | null, discard: boolean) => {
     nextAction.current = null;
-    next?.();
-  };
-  const finish = (discard: boolean) => {
     setAsking(false);
-    const next = () => { if (discard) close(); proceed(); };
-    if (releaseHistory.current) releaseHistory.current(next);
-    else next();
+    const go = () => { if (discard) close(); next?.(); };
+    if (releaseHistory.current) releaseHistory.current(go);
+    else go();
   };
   return {
     asking,
-    askClose: () => { if (dirty) setAsking(true); else close(); },
+    /** 普通关闭：只关这个编辑器，不带上次要去的地方。 */
+    askClose: () => { nextAction.current = null; if (dirty) setAsking(true); else close(); },
     stay: () => { setAsking(false); nextAction.current = null; },
-    /** 去确认框保存：这个框先收起，取消保存时回到编辑。 */
-    hide: () => setAsking(false),
-    discard: () => finish(true),
-    /** 保存成功后接着去原来要去的地方。 */
-    saved: () => finish(false),
+    discard: () => leave(nextAction.current, true),
+    /**
+     * 去确认框保存：这个框先收起。要去的地方只属于这一次保存，返回的函数在这次保存成功后调，接着去那里；
+     * 理由框取消、被拒、结果未知都不调，去处作废。
+     */
+    startSave: () => {
+      const next = nextAction.current;
+      nextAction.current = null;
+      setAsking(false);
+      return () => leave(next, false);
+    },
   };
 }
 
-export function LeaveDialog({ guard, saveLabel, discardLabel = "放弃改动", saveBlocked, onSave }: {
-  guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "hide">;
-  saveLabel: string; discardLabel?: string; saveBlocked?: string; onSave: () => void;
+/** saveName 是保存按钮的完整名字（「保存并立即生效」这类不带「后继续」的，OP-29）；不传时是「{saveLabel}后继续」。 */
+export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, saveBlocked, onSave }: {
+  guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "startSave">;
+  saveLabel?: string; saveName?: string; saveBlocked?: string; onSave: (saved: () => void) => void;
 }) {
+  const stayButton = useRef<HTMLButtonElement>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
+  // 弹窗先聚焦外框，等它聚焦完再落到保存按钮；现在不能保存时落到「继续编辑」（CP-69）。
+  useEffect(() => {
+    if (!guard.asking) return;
+    const timer = window.setTimeout(() => (saveBlocked ? stayButton : saveButton).current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+    // 只在打开时定一次，之后焦点归操作人。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guard.asking]);
   if (!guard.asking) return null;
   return (
     <Modal title="有未保存的修改" icon={ShieldCheck} onClose={guard.stay} footer={<>
-      <Button onClick={guard.stay}>继续编辑</Button>
-      <Button variant="danger-outline" onClick={guard.discard}>{discardLabel}</Button>
-      <Button variant="primary" disabledReason={saveBlocked} onClick={() => { guard.hide(); onSave(); }}>{saveLabel}后继续</Button>
-    </>}><p>离开后这次的修改不会保留。</p></Modal>
+      <Button ref={stayButton} onClick={guard.stay}>继续编辑</Button>
+      <Button variant="danger-outline" onClick={guard.discard}>放弃改动并返回</Button>
+      <Button ref={saveButton} variant="primary" disabledReason={saveBlocked} onClick={() => onSave(guard.startSave())}>{saveName}</Button>
+    </>}><p>离开后这次的修改不会保留。</p>
+      {/* 保存按钮不能点时原因常显，不只放在悬停提示里（OP-126）。 */}
+      {saveBlocked && <Notice tone="warn">现在不能保存：{saveBlocked.replace(/[。.]$/, "")}。</Notice>}</Modal>
   );
 }
 

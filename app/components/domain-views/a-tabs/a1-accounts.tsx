@@ -34,11 +34,12 @@ import { pendingReplayReason } from "../recovery-panel";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryConclusion } from "@/lib/admin/pending-mutation-store";
 import { a1AvatarCancellation, a1AvatarCancellationRecovery, a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, findNewAccountAvatar, linkNewAccountAvatar, queryAvatarCancellation, replayAvatarCancellation } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS } from "@/lib/admin/account-avatar-contract";
+import { A_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/a-approval-names";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
 import {
   A1RecoveryNotice, AccountDetailDrawer, AvatarRecoveryModal, EditAccountDrawer, NewAccountDrawer, PasswordResetDrawer, RoleChangeModal,
-  approvalTag, approverFact, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName,
+  approvalTag, approverFacts, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName,
   permSummary, roleName, unknownTag, zoneNote, isHighRiskCode, HIGH_RISK_EXPLAIN, PermGroups, type A1AccountAction, type A1RecoveryRow,
 } from "./a1-account-views";
 
@@ -650,7 +651,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <Fact k="账号">{displayLabel}</Fact>
           <Fact k="角色"><Change from={roleName(viewRoles, op.role)} to={roleName(viewRoles, picked)} /></Fact>
           <Fact k="权限变化" tone={diff.gained > 0 ? "warn" : undefined}>多出 {diff.gained} 项 · 少掉 {diff.lost} 项{riskyGained > 0 ? `，其中 ${riskyGained} 项高风险` : ""}</Fact>
-          {approverFact()}
+          {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a1_account_role_change)}
         </Facts>
       ),
       content: (
@@ -715,7 +716,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
         <Fact k="两步验证"><Change from="已绑定" to="待重新绑定" /></Fact>
         <Fact k="在线设备">{op.sessions} 台，批准后全部下线</Fact>
-        {approverFact()}
+        {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a1_account_2fa_reset)}
       </Facts>
     ),
     statedBrief: {
@@ -809,7 +810,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           {(form.email ?? "") !== (op.email || "") && <Fact k="工作邮箱"><Change from={op.email || "未填写"} to={form.email || "未填写"} /></Fact>}
           {form.avatarAssetId && form.avatarAssetId !== op.avatarAssetId && <Fact k="头像">换成新头像</Fact>}
           {genderFrom !== genderTo && <Fact k="头像分类"><Change from={genderFrom} to={genderTo} /></Fact>}
-          {approverFact()}
+          {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a1_write)}
         </Facts>
       ),
       statedBrief: {
@@ -873,7 +874,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <Fact k="状态"><Change from="启用" to="已停用" /></Fact>
           <Fact k="在线设备">{op.sessions} 台，批准后全部下线</Fact>
           {countsAsEffective && <Fact k="有效的超级管理员"><Change from={`${savedEffectiveSupers} 人`} to={`${savedEffectiveSupers - 1} 人`} /></Fact>}
-          {approverFact()}
+          {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a1_account_disable)}
         </Facts>
       ),
       statedBrief: {
@@ -923,7 +924,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <Fact k="状态"><Change from="已停用" to="启用" /></Fact>
         <Fact k="角色">{roleName(restoring.current?.snapshot.roles ?? roles, op.role)}，不变</Fact>
         <Fact k="两步验证">{op.tfa ? "已绑定，不变" : "未绑定，登录时先绑定"}</Fact>
-        {approverFact()}
+        {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a1_account_disable)}
       </Facts>
     ),
     statedBrief: {
@@ -969,7 +970,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <Fact k="账号">{operatorDisplayLabel(op)}</Fact>
           <Fact k="在线设备">现在 {op.sessions} 台，批准时在线的全部下线</Fact>
           <Fact k="密码和两步验证">不变，可以马上重新登录</Fact>
-          {approverFact()}
+          {approverFacts()}
         </Facts>
       ),
       statedBrief: {
@@ -1093,7 +1094,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         amplifies: false,
         effect: approvalTag("批准前账号不会建好。"),
         confirmLabel: "提交审批",
-        facts: <>{createFacts(form, true)}<Facts>{approverFact()}</Facts></>,
+        facts: <>{createFacts(form, true)}<Facts>{approverFacts(...(form.useDefaultAvatar || form.avatarAssetId ? [A_APPROVAL_PERMISSION_NAMES.platform_a1_write] : []))}</Facts></>,
         statedBrief: {
           impact: "另一位超级管理员批准后才创建账号；本页拿不到临时密码，批准后到账号列表点「重置密码」，把临时密码交给本人。",
           check: "批准时登录名或邮箱已被占用会被拒绝；恢复期只能新建超级管理员。",

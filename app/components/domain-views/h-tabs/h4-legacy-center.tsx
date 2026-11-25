@@ -55,6 +55,7 @@ import { fetchAdminRaffle, RAFFLE_SAVE_PENDING } from "@/lib/admin/genesis-raffl
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
 import H4GenesisRaffle, { useH4RaffleReadback } from "./h4-genesis-raffle";
+import { useH4EditGuard } from "./h4-edit-guard";
 import { amountText, formatTime } from "./h4-promotion-ui";
 import {
   ApprovalFact, EventCard, EventPreview, GuardCard, contentFieldsText, contentGaps, gapWeight, languageNames, KIND_LABEL, KIND_OPTIONS, LOCALE_NAME, FIELD_NAME, LegacyNameTag, ProbabilityCompare,
@@ -249,8 +250,9 @@ function wheelDraftFields(body: Record<string, unknown>, tier?: string): Busines
     && (!(key === "rewardAmount" || key === "dailyStock") || Number(value) !== Number(before[key]))));
 }
 
-export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection) => void }) {
+export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: HCtx; section: LegacySection; onSection: (section: LegacySection, after?: () => void) => void }) {
   const { toast } = ctx;
+  const leaveGuard = useH4EditGuard();
   const adminId = useAdminAuth(state => state.session?.adminId);
   const activeRecovery = useRef<string | null>(null);
   const reopenRule = useRef<H4ReopenRejected | null>(null);
@@ -1279,7 +1281,14 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     } }));
     return overview;
   };
+  /** 原操作被拒会打开它的抽屉：别的抽屉有没保存的改动时先处理那边。 */
+  const recoveryBlocked = (record: H4Command) => {
+    if (!/^H\/h4_(?:event_rule|genesis_raffle)\//.test(record.scope) || !leaveGuard.otherDirty(record.scope)) return false;
+    toast("先保存或放弃正在改的内容，再核对这条原操作。", "warn");
+    return true;
+  };
   const lookupH4Command = async (record: H4Command) => {
+    if (recoveryBlocked(record)) return;
     setLookupKey(record.commandKey);
     try {
       const result = await queryH4Command(record, true);
@@ -1357,7 +1366,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     if (!opened) throw await unavailableAfterRead();
   };
   const openResumeHICommand = (record: H4Command, subject: string) => {
-    if (h4RetryBlockedReason(record)) return;
+    if (h4RetryBlockedReason(record) || recoveryBlocked(record)) return;
     activeRecovery.current = record.commandKey;
     const expired = isRetryExpired(record);
     const approval = "proposal" in record.request;
@@ -1500,10 +1509,9 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const cap = guards.find((guard) => guard.key === "cap");
   const killState = kill ? killOn(text(kill.value, "")) : null;
 
-  const go = (next: LegacySection, anchor?: string) => {
-    onSection(next);
+  const go = (next: LegacySection, anchor?: string) => onSection(next, () => {
     if (anchor) requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView({ block: "start" }));
-  };
+  });
   const todos: Array<{ key: string; tag: ReactNode; title: string; sub: string; onOpen: () => void }> = [
     ...(wheelBroken ? [{ key: "wheel", tag: <StatusTag tone="danger" icon={CircleAlert}>转盘抽不了</StatusTag>, title: "转盘奖池",
       sub: [pointsTiers.length ? `${pointsTiers.length} 档积分奖型要退役` : "", probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要正好 100%`].filter(Boolean).join("；"),

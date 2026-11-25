@@ -6,14 +6,20 @@ import { Route, Save, Tags } from "lucide-react";
 import { BlockState, Button, DiffList, Fact, Facts, Field, Modal, Notice, NumberInput, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
 import { supportClient, m5ManagementClient, SupportClientError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { businessStamp, businessZone } from "../../../../lib/admin/business-time";
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
+import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
 import "./m-support-admin.css";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
+import { createM5ManagementRecovery, useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
 import { M5PendingWrites, type M5RulesSummary } from "./m5-views";
+import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView } from "@/lib/admin/m-recovery-copy";
+import { pendingReplayReason } from "../recovery-panel";
+import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
+import { useToast } from "../design-kit";
+import { useMOperationReason } from "./m-operation-reason";
+import { useH4EditGuard, useH4Editor } from "../h-tabs/h4-edit-guard";
 
 export type MSupportPermission = "superadmin" | "supervisor" | "agent";
 type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string; unboundAssignmentMode?: SupportRules["unboundAssignmentMode"] };
@@ -21,12 +27,12 @@ type Field = keyof RuleDraft;
 type RulePayload = Parameters<typeof supportClient.updateRules>[0];
 type RulePendingRecord = M5ManagementRecord<RulePayload, SupportRules>;
 const ruleCommands = createPendingMutationStore<RulePendingRecord>({ storageKey: "nexion-admin-m-support-rules-v1", retainExpiredRecords: true, isValidRecord: (row) => Number.isSafeInteger(row.actorId) && isM5ManagementPayload("rules", row.payload) && (row.before === undefined || isM5ManagementPayload("rules", row.before, true)) });
+const ruleRecovery = createM5ManagementRecovery(ruleCommands);
 const LABELS: Record<Field, string> = {
   unboundAssignmentMode: "无专属客服客户分配方式",
   dormantDays: "沉睡判定天数", maintenanceDays: "主动维护间隔天数", activityWindowDays: "活跃统计窗口天数", inheritanceMode: "自动继承方式", maxInheritanceDepth: "自动继承的邀请次数上限",
 };
 const dayFields = ["dormantDays", "maintenanceDays", "activityWindowDays"] as const;
-const RETRY_EXPIRED = "原请求已超过 24 小时，不能再重试，只能查询原结果；请核对最新规则。";
 const isIndeterminateText = (text: string) => /结果未知|还在处理|查不到|读不到最新|24 小时/.test(text);
 const actorStamp = () => { const auth = useAdminAuth.getState(); return adminShellSessionKey(auth.session, auth.authEpoch); };
 
@@ -59,7 +65,17 @@ export function parseRuleDraft(draft: RuleDraft): Omit<SupportRules, "version"> 
 }
 
 function changedFields(before: SupportRules, after: Omit<SupportRules, "version">): Field[] {
-  return (Object.keys(LABELS) as Field[]).filter((key) => before[key] !== after[key]);
+  const left = toDraft(before), right = toDraft({ ...after, version: before.version });
+  return (Object.keys(LABELS) as Field[]).filter((key) => left[key] !== right[key]);
+}
+
+function rebaseRuleDraft(latest: SupportRules, before: SupportRules | undefined, intended: Omit<SupportRules, "version">) {
+  const draft = toDraft(latest);
+  if (before) {
+    const edited = toDraft({ ...intended, version: before.version });
+    for (const field of changedFields(before, intended)) draft[field] = edited[field] as never;
+  }
+  return draft;
 }
 
 function labelValue(key: Field, value: SupportRules[Field]): string {
@@ -69,12 +85,16 @@ function labelValue(key: Field, value: SupportRules[Field]): string {
 }
 
 const errorText = displayAdminError;
+/** OP-153：过了 24 小时，查不到原操作并读到最新规则才解除。 */
+const EXPIRED_LINE = "已超过 24 小时，不能再重试。再查询一次：查不到、并读到最新规则，这条记录就解除。";
 
 export function M5ServiceRules({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5RulesSummary) => void }) {
   const reach = useReach();
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const authorities = useAdminAuth((state) => state.session?.authorities);
-  const canWrite = permission === "superadmin" && Boolean(authorities?.includes("service_m1_write"));
+  const canQuery = permission !== "agent" && Boolean(authorities?.includes("service_m1_read"));
+  const canRelease = Boolean(authorities?.includes("service_m1_read"));
+  const canWrite = permission === "superadmin" && canRelease && Boolean(authorities?.includes("service_m1_write"));
   const [current, setCurrent] = useState<SupportRules | null>(null);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [latest, setLatest] = useState<SupportRules | null>(null);
@@ -86,12 +106,67 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const [confirm, setConfirm] = useState(false);
   const [reason, setReason] = useState("");
   const [reload, setReload] = useState(0);
+  const [releasing, setReleasing] = useState(false);
+  const [, toast] = useToast();
   const preserveDraft = useRef(false);
+  const releasedRecord = useRef<RulePendingRecord | null>(null);
+  /** 解除后的拟改内容还没合到最新规则上：离开会丢，算没保存。 */
+  const [awaiting, setAwaiting] = useState(false);
+  /** 从离开框去保存时，保存成功后接着去的地方；取消、被拒、结果未知都作废。 */
+  const afterSave = useRef<(() => void) | undefined>(undefined);
+  const editGuard = useH4EditGuard();
+  const rereading = useRef(false);
+  const [rereadBusy, setRereadBusy] = useState(false);
+  const [releasedFrom, setReleasedFrom] = useState<SupportRules>();
+  const formAction = useRef<HTMLButtonElement>(null);
+  const releaseOpener = useRef<HTMLElement | null>(null);
+  const returnFocus = () => mFocusTarget(releaseOpener.current, formAction.current, document.querySelector<HTMLElement>("#m-rule-dormantDays"));
+  const openRelease = (opener: HTMLElement) => { releaseOpener.current = opener; setReleasing(true); };
+  function applyReleasedRules(value: SupportRules, record: RulePendingRecord) {
+    setDraft(rebaseRuleDraft(value, record.before, record.payload));
+    setReleasedFrom(record.before);
+    releasedRecord.current = null;
+    setAwaiting(false);
+  }
   const command = useM5ManagementCommand({
-    store: ruleCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
+    store: ruleCommands, canQuery, canWrite,
     fingerprint: (payload: RulePayload) => `support-rules:${payload.expectedVersion}`,
     write: m5ManagementClient.rules, query: m5ManagementClient.rulesCommand,
-    onSuccess: () => { preserveDraft.current = false; setConfirm(false); setSaved(true); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); setReason(""); },
+    receiptRecovery: {
+      controller: ruleRecovery,
+      expiry: "after-missing",
+      canRelease,
+      onLocalRelease: (record, rejection) => {
+        const base = latest ?? current;
+        const needsLatest = rejection === "SUPPORT_RULES_VERSION_CONFLICT" && (!base || base.version <= record.payload.expectedVersion);
+        if (needsLatest) {
+          releasedRecord.current = record;
+          setAwaiting(true);
+        } else if (base && !readUnavailable) {
+          setCurrent(base);
+          applyReleasedRules(base, record);
+        } else {
+          releasedRecord.current = record;
+          setAwaiting(true);
+          setDraft(null);
+        }
+        setLatest(null); setConflict(needsLatest); setReason(""); setConfirm(false); setError("");
+      },
+      readAfterExpiry: async () => {
+        const value = await supportClient.rules();
+        return () => {
+          preserveDraft.current = false; setReleasedFrom(undefined);
+          setCurrent(value); setDraft(toDraft(value)); setReason(""); setLatest(null);
+          setSaved(false); setConflict(false); setReadUnavailable(false); setConfirm(false); setError("");
+        };
+      },
+    },
+    onSuccess: () => {
+      const next = afterSave.current;
+      afterSave.current = undefined;
+      preserveDraft.current = false; setReleasedFrom(undefined); setConfirm(false); setSaved(true); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); setReason("");
+      next?.();
+    },
     onRefusal: (cause, recovered, payload) => {
       setError(errorText(cause));
       if (recovered) { preserveDraft.current = true; setDraft(toDraft({ ...payload, version: payload.expectedVersion })); setConfirm(false); setLoading(true); setReadUnavailable(true); setReload(n => n + 1); }
@@ -101,7 +176,8 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     },
   });
   const saving = command.busy;
-  const retry = command.pending ? { ...command.pending, key: command.pending.commandKey } : null;
+  const pending = command.pending;
+  const retry = pending && !command.submitting ? pending : null;
 
 
   useEffect(() => {
@@ -111,7 +187,11 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     supportClient.rules(controller.signal).then((value) => {
       if (controller.signal.aborted) return;
       const pending = ruleCommands.list().find(row => row.actorId === adminId);
-      setCurrent(value); setDraft(old => pending ? toDraft({ ...value, ...pending.payload }) : preserveDraft.current && old ? old : toDraft(value)); setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
+      setCurrent(value);
+      const released = releasedRecord.current;
+      if (released && released.actorId === adminId) applyReleasedRules(value, released);
+      else setDraft(old => pending ? toDraft({ ...value, ...pending.payload }) : preserveDraft.current && old ? old : toDraft(value));
+      setError(""); setLatest(null); setReadUnavailable(false); setConflict(false);
       setReason(old => pending?.payload.reason ?? (preserveDraft.current ? old : ""));
     }).catch((cause: unknown) => { if (!controller.signal.aborted) { setReadUnavailable(true); setError(displayAdminReadError(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -121,9 +201,9 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const parsed = useMemo(() => draft ? parseRuleDraft(draft) : null, [draft]);
   const changed = current && parsed ? changedFields(current, parsed) : [];
   const editable = canWrite && Boolean(current) && !loading && !readUnavailable && !saving && !conflict && !retry;
-  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canConfirm = editable && parsed && changed.length > 0 && reasonOk;
-  const retryExpired = Boolean(retry && Date.now() >= retry.expiresAt);
+  const reasonRule = useMOperationReason(confirm && canWrite && !retry, retry?.payload.reason ?? reason);
+  const canConfirm = editable && parsed && changed.length > 0 && reasonRule.ok;
+  const retryExpired = Boolean(retry && command.recoveryState?.expired);
   const setField = (field: Field, value: string) => setDraft((old) => old ? { ...old, [field]: value } : old);
 
   async function save() {
@@ -135,26 +215,53 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     }
     setSaved(false);
     await command.run("submit", { ...parsed, expectedVersion: current.version, reason: reason.trim() }, current);
+    afterSave.current = undefined;
   }
 
   function reviewLatest() {
     if (!latest || !current || !draft) return;
     const previous = parseRuleDraft(draft);
     if (!previous) return;
-    const edited = changedFields(current, previous);
-    const updated = toDraft(latest);
-    for (const field of edited) updated[field] = draft[field] as never;
-    setCurrent(latest); setDraft(updated); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
+    setReleasedFrom(current);
+    setCurrent(latest); setDraft(rebaseRuleDraft(latest, current, previous)); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
   }
 
   async function refreshLatest() {
+    if (rereading.current) return;
+    rereading.current = true; setRereadBusy(true);
     const actor = actorStamp();
-    try { const latestRules = await supportClient.rules(); if (actor === actorStamp()) setLatest(latestRules); } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
+    try {
+      const latestRules = await supportClient.rules();
+      if (actor !== actorStamp()) return;
+      const released = releasedRecord.current;
+      if (released) {
+        setCurrent(latestRules);
+        applyReleasedRules(latestRules, released);
+        setLatest(null); setConflict(false); setReason(""); setError("");
+      } else setLatest(latestRules);
+    } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
+    finally { rereading.current = false; setRereadBusy(false); }
   }
+
+  const closeConfirm = () => { afterSave.current = undefined; setConfirm(false); };
+  useH4Editor(permission === "agent" ? null : {
+    scope: "M5/service-rules",
+    // 提交等待中也算没保存：确认框还开着，后退由它管（OP-33、OP-34）。
+    dirty: canWrite && !retry && (awaiting || Boolean(current && draft) && JSON.stringify(draft) !== JSON.stringify(toDraft(current!))),
+    saveName: "保存并立即生效",
+    saveReason: editGuard.otherDirty("M5/service-rules") ? "欢迎语也有没保存的改动，先分别保存" : !editable ? "先读取最新规则再保存" : !parsed ? "有填写不对的项，先改正" : changed.length === 0 ? "没有能保存的改动" : undefined,
+    close: () => {
+      releasedRecord.current = null;
+      setAwaiting(false); setReleasedFrom(undefined); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
+      setDraft(current ? toDraft(current) : null);
+    },
+    save: after => { afterSave.current = after; releaseOpener.current = null; setConfirm(true); },
+  });
 
   const checkPending = () => command.run("query");
   const restore = () => {
     if (!retry) return;
+    releaseOpener.current = null;
     setDraft(toDraft({ ...retry.payload, version: retry.payload.expectedVersion }));
     setReason(retry.payload.reason); setError(""); setConfirm(true);
   };
@@ -166,7 +273,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const summaryMode = current?.unboundAssignmentMode ?? (current ? "SUPERVISOR" : undefined);
   useEffect(() => {
     onSummary?.({ state: loading ? "loading" : readUnavailable ? "failed" : current ? "ready" : "failed", mode: summaryMode, inheritance: current?.inheritanceMode, depth: current?.maxInheritanceDepth, pending: Boolean(retry) });
-  }, [onSummary, current, loading, summaryMode, command.pending, readUnavailable]);
+  }, [onSummary, current, loading, summaryMode, retry, readUnavailable]);
 
   if (permission === "agent") return <BlockState state="denied" title="当前账号不能查看服务规则" />;
   // 只显示用：每个框自己的问题写在框下；能不能保存仍只看 parsed（逻辑不变）。
@@ -183,30 +290,46 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     // F01：已经配置过的规则后端不让退回「未配置」，只给原本就是未配置的保留这一项。
     ...(current?.inheritanceMode === "UNCONFIGURED" ? [{ value: "UNCONFIGURED" as const, label: "未配置", disabled: !editable }] : []),
   ];
-  const submittedAt = retry ? retry.expiresAt - PENDING_MUTATION_TTL_MS : 0;
+  const submittedAt = pending ? pending.expiresAt - PENDING_MUTATION_TTL_MS : 0;
   const DAY_HELP: Record<(typeof dayFields)[number], string> = {
     dormantDays: "最近一次有效账户活动距今超过这么多天，客户算沉睡；活动记录不全的不算。留空表示不判定沉睡。",
     maintenanceDays: "距上次维护满这么多天，客户进专属客服的主动维护待办。改天数不会补记维护。",
     activityWindowDays: "统计活跃客户时往回看几天，和沉睡分开算，不能大于沉睡天数。",
   };
+  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canQuery ? EXPIRED_LINE : RETRY_EXPIRED_TEXT });
+  const replayRefused = Boolean(command.recoveryState?.replayRejection);
+  const querying = command.recoveryState?.busy === "query";
+  const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改服务规则" : retryExpired ? EXPIRED_LINE : pendingReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
+  const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原结果的权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
+  const comparisonBefore = conflict ? current : releasedFrom;
+  const comparisonAfter = conflict ? latest : current;
+  const externalChanges = comparisonBefore && comparisonAfter ? changedFields(comparisonBefore, comparisonAfter) : [];
   const changeText = retry && original ? confirmedChanges.map((field) => `${LABELS[field]} ${beforeLabel(field)} → ${labelValue(field, retry.payload[field as keyof typeof retry.payload] as SupportRules[Field])}`).join("；") : "";
 
   return (
     <section className="m5-rules" aria-label="服务规则">
-      {retry && <M5PendingWrites rows={[{
-        key: retry.key, name: "服务规则", change: changeText || "规则保存", submittedAt, expired: retryExpired,
-        actions: <>
-          <Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>
-          {!retryExpired && <Button size="sm" variant="primary" disabled={saving || !canWrite} onClick={restore}>按原请求重试</Button>}
+      {pending && view && <M5PendingWrites submitting={command.submitting} explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：查不到原操作、并读到最新规则，这条记录就解除。有结论前服务规则不能再改。</p></>} rows={[{
+        key: pending.commandKey, name: "服务规则", change: changeText || "规则保存", submittedAt, expired: retryExpired,
+        status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
+        actions: retry && <>
+          {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
+          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原请求重试</Button>}
+          {replayRefused && canRelease && <Button size="sm" variant="ghost" disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
         </>,
       }]} />}
+      {retry && releasing && canRelease && <MReleaseModal returnFocus={returnFocus} target={{ action: "保存服务规则", object: changeText || "服务规则", createdAt: retry.createdAt, rejection: command.recoveryState?.replayRejection }}
+        where="被拒说明不了原操作有没有生效，先核实。" onCancel={() => setReleasing(false)} onConfirm={() => {
+          const released = command.releaseRejectedReplay();
+          setReleasing(false);
+          toast(released ? M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
+        }} />}
       <Panel icon={Route} tone="role-3" title="分配与继承规则" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
         explain="保存后立即生效。已有的绑定不会重排；继承只看之后注册的用户；还在等分配的客户按新的方式和时长继续处理。">
         {permission === "supervisor" && <Notice tone="neutral">只有超级管理员能改服务规则，你现在只能查看。</Notice>}
         {loading && !current && <BlockState state="loading" title="正在读取服务规则…" />}
         {saved && <Notice tone="ok">已保存。</Notice>}
-        {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则读不到，暂时不能查看和保存" detail={error || undefined} onRetry={() => setReload((n) => n + 1)} />}
-        {(error || command.message) && !readUnavailable && !confirm && !conflict && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
+        {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则加载失败" detail={`${error ? `${error} ` : ""}暂时不能查看和保存。`} onRetry={() => setReload((n) => n + 1)} />}
+        {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
         {draft && current && !(readUnavailable && !retry) && <div className="m5-form">
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
             ? "第一次发消息时，分给可接单的客服里负载最低的；没人可接就继续等。"
@@ -233,39 +356,43 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
               </Field>
             ))}
           </div>
-          {conflict && <Notice tone="warn" title="规则已被别人改过" actionBelow
-            action={latest ? <Button size="sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</Button> : <Button size="sm" onClick={() => void refreshLatest()}>读取最新规则</Button>}>
-            <p>{latest ? `现在是第 ${latest.version} 版，你改的是第 ${current.version} 版。` : "还没读到最新版本。"}你填的内容还在。</p>
-            {latest && <ul className="m5-plain-list">{changedFields(current, latest).map((field) => <li key={field}>{LABELS[field]}：{labelValue(field, current[field])} → {labelValue(field, latest[field])}</li>)}</ul>}
+          {(conflict || externalChanges.length > 0) && <Notice tone="warn" title="规则已被别人改过" actionBelow
+            action={conflict ? latest ? <Button size="sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</Button> : <Button size="sm" loading={rereadBusy} loadingText="正在读取…" onClick={() => void refreshLatest()}>读取最新规则</Button> : undefined}>
+            <p>{comparisonAfter && comparisonBefore ? `现在是第 ${comparisonAfter.version} 版，你改的是第 ${comparisonBefore.version} 版。` : "还没读到最新版本。"}{conflict ? "你填的内容还在。" : "你改过的项目已带到最新规则，请核对后重新确认。"}</p>
+            {conflict && !latest && error && <p>{error}</p>}
+            {comparisonBefore && comparisonAfter && <ul className="m5-plain-list">{externalChanges.map((field) => <li key={field}>{LABELS[field]}：{labelValue(field, comparisonBefore[field])} → {labelValue(field, comparisonAfter[field])}</li>)}</ul>}
           </Notice>}
           {permission === "superadmin" && <div className="rd-toolbar" data-end="">
-            <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : changed.length > 0 ? `改了 ${changed.length} 项，还没保存` : "没有改动"}</span>
-            <Button variant="primary" icon={<Save size={14} aria-hidden />} disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)}
+            <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : command.submitting ? "提交中…" : changed.length > 0 ? `改了 ${changed.length} 项，还没保存` : "没有改动"}</span>
+            <Button ref={formAction} variant="primary" icon={<Save size={14} aria-hidden />} disabled={permission !== "superadmin" || (retry ? false : !editable || !parsed || changed.length === 0)}
               disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !parsed ? "有填写不对的项，先改正" : undefined}
-              onClick={() => { if (retry) restore(); else setConfirm(true); }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
+              onClick={() => { if (retry) restore(); else { afterSave.current = undefined; releaseOpener.current = null; setConfirm(true); } }}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
           </div>}
         </div>}
         {reach("/service/overview", "service_m1_read") && <p className="m5-link-line">还在等分配的客户可以手动分：<a className="rd-link" href="/service/overview?view=pool">到客服工作台「待分配」</a></p>}
       </Panel>
-      {confirm && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide onClose={() => { if (!saving) setConfirm(false); }}
+      {confirm && !(retry && releasing) && original && confirmed && permission === "superadmin" && <Modal title={confirmedChanges.length === 1 ? `修改${LABELS[confirmedChanges[0]]}` : "保存服务规则"} icon={Route} busy={saving} wide returnFocus={returnFocus} onClose={() => { if (!saving) closeConfirm(); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
-          <Button disabled={saving} onClick={() => setConfirm(false)}>返回</Button>
-          <Button variant="primary" loading={saving} disabled={!canWrite || (!canConfirm && !retry) || saving || (!retry && Boolean(latest)) || retryExpired}
-            disabledReason={saving ? undefined : retryExpired ? "原请求超过 24 小时，只能查询原结果" : !retry && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>
+          <Button disabled={saving} onClick={closeConfirm}>取消</Button>
+          {retry && canQuery && <Button variant={command.canReplay || replayRefused ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
+          {retry && replayRefused ? canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>
+            : <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} loadingText="提交中…" disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}
+              disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
         </>}>
         <DiffList rows={confirmedChanges.map((field) => ({ key: field, label: LABELS[field], before: beforeLabel(field), after: labelValue(field, confirmed[field]) }))} />
         <Facts>
           <Fact k="影响谁">之后注册的用户、之后发消息的客户、还在等分配的客户</Fact>
           <Fact k="不变的">已有的绑定；改天数不补记维护</Fact>
         </Facts>
-        {retry && <Notice tone="warn" title="结果未知" action={<Button size="sm" disabled={saving || !authorities?.includes("service_m1_read")} onClick={() => void checkPending()}>查询原结果</Button>}>
-          {retryExpired ? RETRY_EXPIRED : `上次保存在 ${businessStamp(submittedAt)}（${businessZone().label}）提交，可能已经生效。先查询原结果，或按原请求重试，不会重复执行。`}
+        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
+          <p>{recoveryLine}</p>
+          <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}
-        <Field label="操作理由" required hint="8–200 字">
-          {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：客服人手调整，新客户改为主管分配" onChange={(event) => setReason(event.target.value)} />}
+        <Field label="操作理由" required hint={retry ? undefined : reasonRule.hint} error={!retry && reason ? reasonRule.fieldError : undefined}>
+          {(control) => <Textarea {...control} rows={3} value={retry?.payload.reason ?? reason} disabled={saving || Boolean(retry)} count={reasonRule.count} placeholder="例如：客服人手调整，新客户改为主管分配" onChange={(event) => setReason(event.target.value)} />}
         </Field>
-        {(error || command.message) && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
+        {(retry ? error : error || command.message) && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{(retry ? "" : command.message) || error}</Notice>}
       </Modal>}
     </section>
   );

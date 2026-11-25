@@ -1,4 +1,5 @@
 "use client";
+import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
@@ -1111,7 +1112,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     } finally { syncPending(); setRetrying(""); }
   };
 
-  const canQueryProposal = hasAuthority("risk_k1_read") && (hasAuthority("platform_a2_read") || hasAuthority("platform_a2_proposal_create") || canProposeRelease);
+  const canQueryProposal = hasAuthority("risk_k1_read") && (canReadOwnRecoveryProposal(authorities) || canProposeRelease);
   const retryBlocked = (record: K1PendingCommand) => {
     const state = k1Recovery.state(record);
     if (state.replayRejection) return RETRY_REJECTED_TEXT;
