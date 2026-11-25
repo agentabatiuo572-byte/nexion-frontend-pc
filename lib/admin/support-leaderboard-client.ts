@@ -1,6 +1,6 @@
 import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, performanceGeneration, performanceTotals, performanceObject, type PerformanceTotals } from "./support-performance-contract";
 import { MContentReadError, parseMContentApiEnvelope, supportContractMalformed } from "./m-support-read-contract";
-import { SupportClientError, supportRequest } from "./m-support-client.ts";
+import { handoffSupportReadAuthFailure, SupportClientError, supportRequest } from "./m-support-client.ts";
 import { guardedFetch } from "./error-messages.ts";
 import { businessStamp, businessZone } from "./business-time.ts";
 import type { SupportBoardRow } from "../../app/components/domain-views/m-tabs/support-leaderboard";
@@ -185,6 +185,7 @@ export async function fetchLeaderboardAvatar(url: string, agentId: string, q: Le
   if (!response.ok || !["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") ?? "").split(";")[0].toLowerCase())) {
     try { parseMContentApiEnvelope(response.status, await response.text(), false); }
     catch (error) {
+      handoffSupportReadAuthFailure(error);
       if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
       throw error;
     }

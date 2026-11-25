@@ -12,7 +12,7 @@ import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportPerformanceAnalyticsClient as analytics, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
 import { sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
-import { SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { isSupportSessionExpired, SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -292,7 +292,7 @@ function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose,
 function agentScopeDenied(cause: unknown) {
   if (!(cause instanceof SupportClientError)) return false;
   const status = analyticsResponseStatus(cause);
-  return status === 401 || status === 403 || status === 404 && cause.backendMessage === "SUPPORT_GROUP_NOT_FOUND";
+  return status === 403 || status === 404 && cause.backendMessage === "SUPPORT_GROUP_NOT_FOUND";
 }
 export function AnalyticsTable({ data, currency, drill, openProfile, session, perf, query, onSourceRefreshed, onSourceDenied, onAgentMissing }: { data: SupportAnalyticsResponse; currency: Currency; drill: Drill; openProfile: (customerId: string) => void; session?: CustomerSessionStart; perf: AnalyticsPerf; query: AnalyticsQueryState; onSourceRefreshed: (data: SupportAnalyticsResponse) => void; onSourceDenied: () => void; onAgentMissing: (accountId: string) => void }) {
   const { month, groupId } = query;
@@ -354,7 +354,8 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       if (!sameGeneration(fresh.window, source.performance!.window)) return { read: { status: "refresh-required" } };
       return { read: fresh, source };
     };
-    void readTarget().catch((cause): Result => {
+    void readTarget().catch((cause): Result | undefined => {
+      if (isSupportSessionExpired(cause)) return;
       if (agentScopeDenied(cause)) return { read: { status: "denied" } };
       if (cause instanceof SupportClientError) {
         const status = analyticsResponseStatus(cause);
@@ -363,7 +364,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       }
       return { read: { status: "error", detail: analyticsErrorText(cause) } };
     }).then(result => {
-      if (signal.aborted) return;
+      if (signal.aborted || !result) return;
       setRead(result.read);
       if (result.read.status === "denied") onSourceDenied();
       if (result.targetRemoved) onAgentMissing(agentId);
@@ -515,7 +516,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     if (scope?.scopeSummary.mode !== "PERSONAL" || !monthCalendar?.some(month => month.month === queryState.month)) return () => controller.abort();
     void analytics.query({ view: "OVERVIEW", basis: "PERIOD_EVENT", ...analyticsMonthWindow(queryState.month, monthCalendar), currency: queryState.currency ?? "USDT", pageSize: 1, signal: controller.signal }, scope.generation)
       .then(next => { if (!controller.signal.aborted && next.scopeSummary.mode === "PERSONAL") setPersonalPeriod(next); })
-      .catch(cause => { if (!controller.signal.aborted) setPersonalPeriodError(analyticsErrorText(cause)); });
+      .catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) setPersonalPeriodError(analyticsErrorText(cause)); });
     return () => controller.abort();
   }, [scope, queryState.month, queryState.currency, monthCalendar, personalPeriodRetry]);
   useEffect(() => {
@@ -527,7 +528,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       setMonthCalendar(months); setCalendarGeneration(generation);
       if (months[0]) setQueryState(previous => months.some(month => month.month === previous.month) ? previous : changeAnalyticsQuery(previous, { month: months[0].month }));
     })
-      .catch(cause => { if (!controller.signal.aborted) setCalendarError(analyticsErrorText(cause)); });
+      .catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) setCalendarError(analyticsErrorText(cause)); });
     return () => controller.abort();
   }, [needsCalendar, scopeRetry, calendarRetry]);
   useEffect(() => {
@@ -591,7 +592,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         if (personal) setPersonalView(tab === "my-customers" ? "customers" : "dashboard");
       } else setSection(current => current === "exports" || personal === (current === "personal") || current === "stats" ? current : personal ? "personal" : "stats");
       setScope(next); setQueryState(restored);
-    }).catch(cause => { if (!controller.signal.aborted) { setScope(null); setScopeDenied(cause instanceof SupportClientError && cause.status === 403); setScopeError(analyticsErrorText(cause)); } });
+    }).catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) { setScope(null); setScopeDenied(cause instanceof SupportClientError && cause.status === 403); setScopeError(analyticsErrorText(cause)); } });
     return () => controller.abort();
   }, [scopeRetry, entryReadMode]);
   useEffect(() => {
@@ -615,13 +616,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (next.scopeSummary.mode !== scope?.scopeSummary.mode) { setScope(null); setScopeRetry(n => n + 1); return; }
       setData(next);
     }).catch(cause => {
-      if (controller.signal.aborted || current !== generation.current) return;
+      if (controller.signal.aborted || current !== generation.current || isSupportSessionExpired(cause)) return;
       setData(null); setError(analyticsErrorText(cause));
       if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409)) {
         setEventsOpen(false); setFundMetric(null); setProfileId(null);
         if (queryState.expectedVersion) setQueryState(previous => changeAnalyticsQuery(previous, {}));
       }
-      if (cause instanceof SupportClientError && [401, 403].includes(cause.status)) { setScope(null); setScopeError(analyticsErrorText(cause)); }
+      if (cause instanceof SupportClientError && cause.status === 403) { setScope(null); setScopeError(analyticsErrorText(cause)); }
     }).finally(() => { if (!controller.signal.aborted && current === generation.current) setLoading(false); });
     return () => { controller.abort(); generation.current++; };
   }, [showStatistics, queryState, retry, scope?.scopeSummary.mode, scope?.generation, statisticsCalendar]);
@@ -639,7 +640,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         || !sameCoveredPerformance(next.totals, period)) throw new Error("SUPPORT_CONTRACT_MALFORMED:performance.eventReconciliation");
       setEvents(next);
     }).catch(cause => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
       setEvents(null);
       if (cause instanceof SupportClientError && (cause.status === 409 || cause.apiCode === 409) && !eventPairRetried.current) {
         eventPairRetried.current = true;
@@ -728,7 +729,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (controller.signal.aborted) return;
       setSessionCheck(null);
       if (hold.state === "OTHER") setSessionBusy({ row, hold }); else openSessions(row);
-    }).catch(() => { if (!controller.signal.aborted) { setSessionCheck(null); setSessionError(row); } });
+    }).catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) { setSessionCheck(null); setSessionError(row); } });
   } };
   const customerName = (row: SupportAnalyticsCustomer) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   function page(number: number) {

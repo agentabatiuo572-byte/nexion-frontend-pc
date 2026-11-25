@@ -2,6 +2,7 @@ import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, profilePerformance
 import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { guardedFetch } from "./error-messages.ts";
+import { resetAdminSession } from "./auth-session.ts";
 import { isExplicitRejection } from "./explicit-rejection";
 import { parseInvitationInviter, type InvitationInviter } from "./invitation-read-contract.ts";
 
@@ -193,6 +194,16 @@ export class SupportClientError extends Error {
     this.data = data;
   }
 }
+
+export function isSupportSessionExpired(error: unknown): boolean {
+  if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
+  return error.status === 401 || error.status === 200 && error.apiCode === 401;
+}
+
+export function handoffSupportReadAuthFailure(error: unknown) {
+  if (isSupportSessionExpired(error)) resetAdminSession();
+}
+
 /** Only use a denial from a read or write directed at the original customer or thread. */
 export function isSupportScopeDenial(error: unknown): boolean {
   if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
@@ -443,7 +454,10 @@ async function request<T>(path: string, parse: (value: unknown) => T, init: Requ
   const text = await response.text();
   try { return parse(parseMContentApiEnvelope<unknown>(response.status, transformResponseText ? transformResponseText(text) : text, true)); }
   catch (error) {
-    if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage, error.data);
+    if (error instanceof MContentReadError) {
+      if ((init.method ?? "GET").toUpperCase() === "GET") handoffSupportReadAuthFailure(error);
+      throw new SupportClientError(error.status, error.apiCode, error.backendMessage, error.data);
+    }
     throw error;
   }
 }
@@ -649,7 +663,11 @@ export const supportClient = {
     if (!response.ok) {
       const text = await response.text();
       try { parseMContentApiEnvelope(response.status, text, true); }
-      catch (error) { if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage); throw error; }
+      catch (error) {
+        handoffSupportReadAuthFailure(error);
+        if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
+        throw error;
+      }
       throw new SupportClientError(response.status, undefined, undefined);
     }
     if (!["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") || "").split(";")[0].toLowerCase())) malformed("attachment.contentType");
