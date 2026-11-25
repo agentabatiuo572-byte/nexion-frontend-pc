@@ -62,7 +62,7 @@ import {
   type D5Params as D5ParamData,
 } from "@/lib/admin/d-client";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { D5_NETWORK_BLOCK_REASON, D5_NETWORK_BLOCK_UNKNOWN, D5_PARAM_HELP } from "@/lib/admin/config-help/d5-withdrawal";
 import { d5Trc20ReplayBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL } from "@/lib/admin/trc20-closed";
 import { fundInvestigationAccess, type FundCommandOrigin, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
@@ -1269,7 +1269,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   ];
   const nav = useSectionNav(sections, { ready: !!params, onReveal: (id) => { if (id === "phase") setPhaseOpen(true); } });
   const approvalLine = (row: typeof pendingApproval[number]) => row.operator && row.ts
-    ? `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeFull(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`
+    ? `审批单 ${row.id} · ${row.operator} · ${row.rawTs ? `${formatBusinessTimeCompact(row.rawTs, row.ts)}（${zone}）` : row.ts}提交`
     : `审批单 ${row.id}`;
   const queueReadNotice = canQuery && (approvals.queueState === "failed" || approvals.queueRetrying) && (
     <Notice tone="neutral" title="待批列表加载失败" action={<InlineRetry onRetry={() => void loadApprovals()} retrying={approvals.queueRetrying} />}>{approvals.queueError}{auditLink && <> {auditLink}</>}</Notice>
