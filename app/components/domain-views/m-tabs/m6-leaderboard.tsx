@@ -10,7 +10,8 @@ import { Hourglass, MapPin, RefreshCw, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { canAccessResolvedPath, defaultConsolePath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import Link from "next/link";
 import { LeaderboardUpgrading, boundLeaderboardSelectorError, fetchLeaderboardAvatar, locateLeaderboardSelf, supportLeaderboardClient, type LeaderboardDetail, type LeaderboardPage, type LeaderboardQuery } from "@/lib/admin/support-leaderboard-client";
 import { BlockState, Button, Conclusion, Decision, Drawer, Explain, FilterBar, FilterField, Input, Notice, PageHeader, PageTabs, RdPage, Select, useTabIds } from "@/app/components/rd";
 import type { SupportBoardKey, SupportBoardQuery, SupportBoardRow } from "./support-leaderboard";
@@ -198,6 +199,8 @@ export function M6Leaderboard() {
   const detailRow = visibleDetail?.data?.row;
   const board = query.board, ready = !!data;
   const denied = !allowed || deniedIdentity === identity;
+  /** 看不到榜单时给一个去处（ST-38「返回有权限的页面」，和外壳的无权限页同一个落点）。 */
+  const landing = session ? defaultConsolePath(session.role, domains, session.authorities) : null;
   const reload = () => { if (allowed) { rejectedVersion.current = undefined; setDeniedIdentity(undefined); resetFirstPage("正在重新加载…"); } };
   /** 读取失败后的重试：按现在已应用的查询和页码再读一次；只有榜单版本已更新（409）才回第一页重读（ST-35、BUG-650）。 */
   const retry = () => { if (!allowed) return; if (conflict) reload(); else { setNotice(undefined); setRefresh(value => value + 1); } };
@@ -237,8 +240,8 @@ export function M6Leaderboard() {
   const conclusion = !data
     ? denied ? <Conclusion state="unknown">业绩榜：这个账号看不到榜单</Conclusion>
       : upgrading ? <Conclusion state="unknown">{BOARD_LABEL[board]}：{error}，暂不排名次</Conclusion>
-      : error ? <Conclusion state="unknown">业绩榜：读取失败，这部分没有判断</Conclusion>
-      : <Conclusion state="unknown">正在读取业绩榜…</Conclusion>
+      : error ? <Conclusion state="unknown">业绩榜：暂时无法判断</Conclusion>
+      : <Conclusion state="unknown">正在加载榜单…</Conclusion>
     : perfMissing ? <Conclusion state="unknown">{BOARD_LABEL[board]}：{boardPerf.kind === "unavailable" ? boardPerf.reason : PERF_UNAVAILABLE}，暂不排名次</Conclusion>
     : provisional ? <Conclusion state="unknown" icon={Hourglass} action={locateAction}
         explain="有数据还没核完时，这一版不排名次，也不评前三名；已经核完的业绩照常显示。核完后系统发布新的一版，点「刷新」查看。">{BOARD_LABEL[board]}：这一版有数据没核完，暂不排名次</Conclusion>
@@ -278,16 +281,16 @@ export function M6Leaderboard() {
         </FilterBar>
         {board === "netContribution" && groupScope && <Notice tone="done">组榜按业绩发生时所在的组算：调组后以前的业绩仍算在原来的组，所以榜上可能有已经不在这个组的客服。</Notice>}
         {conflict ? <Notice tone="warn">榜单已更新，请刷新后重试。</Notice>
-          : notice && !(ready && notice === "正在重新加载…") && <Notice tone={notice.startsWith("已") ? "ok" : "progress"}>{notice}</Notice>}
+          : notice && notice !== "正在重新加载…" && <Notice tone={notice.startsWith("已") ? "ok" : "progress"}>{notice}</Notice>}
         {/* 最新一版没发布成功、上一版还没过时限时也提示（R12）：数据截至在页头。 */}
-        {(data?.stale || data?.refreshFailed) && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
+        {(data?.stale || data?.refreshFailed) && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>刷新</Button>}>{data.refreshFailed ? "最新一版没有发布成功。" : "最新一版发布延迟。"}</Notice>}
         {conclusion}
         {!data && denied ? <BlockState state="denied" title="这个账号不能查看业绩榜"
-            detail="看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员；需要时联系超级管理员。"
+            detail={<>看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员；需要时联系超级管理员。{landing && landing !== "/service/leaderboard" && <> <Link className="rd-link" href={landing} prefetch={false}>返回有权限的页面</Link></>}</>}
             onRetry={allowed ? reload : undefined} retryLabel="重新核验" />
           : <>
             {/* 这一版不排名次（有数据没核完、或业绩额暂不可用）时不画前三名。 */}
-            {!readFailed && !provisional && !perfMissing && <Podium rows={podiumRows} total={data?.podium?.total ?? 0} onOpen={openDetail} onViewAll={viewAll}
+            {data && !provisional && !perfMissing && <Podium rows={podiumRows} total={data?.podium?.total ?? 0} onOpen={openDetail} onViewAll={viewAll}
               status={!data ? { kind: "loading" } : { kind: "ready" }} />}
             <div ref={rankingRef} tabIndex={-1} className="m6-ranking-anchor">
               <RankingPanel sub={data && !perfMissing && data.candidateCoverage === "COMPLETE" ? query.keyword ? `匹配 ${data.matched} 人` : `共 ${data.total} 人` : undefined}

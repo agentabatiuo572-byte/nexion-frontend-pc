@@ -1209,7 +1209,7 @@ async function sendI1Command(command: I1Command, retry: boolean): Promise<unknow
       body: command.original.body, headers: { "Content-Type": "application/json", "Idempotency-Key": command.commandKey }, cache: "no-store" });
     payload = await response.json() as ApiResult<unknown>;
   } catch {
-    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"), { commandKey: command.commandKey });
+    throw Object.assign(new OutcomeUnknownError("结果未知，请查询原结果或按原操作重试。"), { commandKey: command.commandKey });
   }
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw Object.assign(new OutcomeUnknownError("原操作的返回内容无法核实，请保留记录并查询原结果。"), { commandKey: command.commandKey });

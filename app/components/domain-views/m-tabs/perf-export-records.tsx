@@ -14,6 +14,7 @@ import { ExportAuditLink, ExportColumnsFold } from "./perf-export";
 import { EXPORT_LABEL, EXPORT_PARTIAL_RECEIPT, ExportOutcomeUnknownError, exportDownloadMessage, exportVisibleReceiptSummary, exportPreviousReceipt, exportReceiptSummary, exportStatus, type DecisionLookup, type ExportDownload, type ExportTask, type PendingDecision, type PendingSubmit, type PerfExportPorts } from "./perf-view";
 import { exportDecisionConflict, exportTaskHidden, isExportPermissionDenied, useExportClock } from "./perf-export-ports";
 import { isSupportSessionExpired } from "@/lib/admin/m-support-client";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import "./m1-export.css";
 
 type View = "MINE" | "APPROVALS";
@@ -46,7 +47,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
   const [location] = useState(() => exportListLocation(persona.views));
   const [view, setView] = useState<View>(location.view);
   const [rows, setRows] = useState<ExportTask[] | null>(null);
-  const [readError, setReadError] = useState(false);
+  const [readError, setReadError] = useState("");
   const [page, setPage] = useState(location.page), [pageSize, setPageSize] = useState(10), [total, setTotal] = useState(0);
   const [refresh, setRefresh] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -134,7 +135,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     const sameConditions = lastListQuery.current === listQuery;
     lastListQuery.current = listQuery;
     if (!sameConditions) setRows(null);
-    setReadError(false);
+    setReadError("");
     setRefreshing(sameConditions);
     onRefreshingChange?.(sameConditions);
     const { read, view, page, pageSize } = listQuery;
@@ -147,7 +148,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
       if (controller.signal.aborted || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       setRows(null);
-      setReadError(true);
+      setReadError(displayAdminReadError(error) || "导出记录没加载出来，请重试。");
     }).finally(() => {
       if (controller.signal.aborted) return;
       setRefreshing(false);
@@ -290,7 +291,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     }] : []),
     ...pending.map(p => ({
       key: p.operationId, createdAt: p.createdAt, object: p.objectHidden ? "导出操作" : `${VERB[p.decision]}导出申请 ${p.taskId}`,
-      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；原操作继续保留，可以再查询。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
+      tag: unknownTag, line: p.objectHidden ? `${p.at} 发出；现在看不到这条申请，可以再查询。` : `${p.at} 发出后没收到结果；先查询原结果，不要再点${VERB[p.decision]}。`,
       // 查询反馈不含申请内容，遮住时也照写（看不到、仍未知、这次没连上要分得清）。
       result: now >= p.expiresAt ? expiredResult(p.at, answers[p.operationId]) : answers[p.operationId],
       actions: queryButton(p.operationId, () => queryOriginal(p)), detail: p.reason && <p>理由：{p.reason}</p>, tech: <TechInfo commandKey={p.operationId} />,
@@ -317,9 +318,11 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     {recoveryPanel}
     <Panel title="导出记录" sub={sub} explain="汇总提交后就能下载；明细要另一位有审批权的管理员批准后才生成。下载链接每次获取后 24 小时内有效。"
       actions={!single && <Segments label="导出记录视图" value={view} items={[{ value: "MINE", label: "我的申请" }, { value: "APPROVALS", label: "待我审批" }]} onChange={next => { setOpenId(null); setPage(1); setView(next); }} />}>
-      {readError ? <BlockState state="error" title="导出记录加载失败" onRetry={() => setRefresh(value => value + 1)} />
-        : !rows ? <BlockState state="loading" title="正在读取导出记录…" />
-        : !rows.length ? <BlockState state="empty" title={view === "MINE" ? "还没有导出申请" : "没有等你审批的申请"} />
+      {readError ? <BlockState state="error" title="导出记录加载失败" detail={readError} onRetry={() => setRefresh(value => value + 1)} />
+        : !rows ? <BlockState state="loading" title="正在加载…" />
+        : !rows.length ? <BlockState state="empty" {...(view === "MINE"
+          ? { title: "暂无导出申请", detail: persona.canExport ? "点页头「导出业绩」提交后，会显示在这里。" : "提交过的业绩导出申请会显示在这里。" }
+          : { title: "暂无待你审批的申请", detail: "有人提交明细导出申请后，会显示在这里。" })} />
         : <>
           {rows.some(row => row.scopeLost) && <p className="m1-export-lost">这些申请的范围和行数现在看不到。</p>}
           <Table label="导出记录" className="m1-export-table"><thead><Tr>
@@ -399,8 +402,8 @@ function TaskDrawer({ task, view, zone, rows, refreshing, pending, now, lookup, 
   const steps = [
     { label: "提交", sub: submitted, state: "done" as const },
     // 撤回的申请停在审批前：这一步写「已撤回」，不算走完。
-    ...(DETAIL(task) ? [{ label: "审批", sub: task.state === "WITHDRAWN" ? "已撤回" : task.state === "PENDING_APPROVAL" ? reviewing ? "你" : "另一位审批人" : task.decidedAt ? <span className="sa-nowrap">{task.decidedAt.slice(-5)} {task.state === "REJECTED" ? "驳回" : "批准"}</span> : "—", state: task.state === "PENDING_APPROVAL" ? "current" as const : task.state === "WITHDRAWN" ? "todo" as const : "done" as const }] : []),
-    { label: "生成文件", sub: task.state === "READY" || task.state === "EXPIRED" ? DETAIL(task) ? "已生成" : submitted : task.state === "FAILED" ? "没生成" : generating ? task.failure ? "没生成" : "进行中" : "批准后", state: generating || task.state === "FAILED" ? "current" as const : task.state === "READY" || task.state === "EXPIRED" ? "done" as const : "todo" as const },
+    ...(DETAIL(task) ? [{ label: "审批", sub: task.state === "WITHDRAWN" ? "已撤回" : task.state === "PENDING_APPROVAL" ? reviewing ? "你" : "另一位审批人" : task.decidedAt ? <span className="sa-nowrap">{task.decidedAt.slice(-5)} {task.state === "REJECTED" ? "驳回" : "批准"}</span> : "—", state: task.state === "PENDING_APPROVAL" ? "current" as const : task.state === "WITHDRAWN" ? "todo" as const : task.state === "REJECTED" ? "failed" as const : "done" as const }] : []),
+    { label: "生成文件", sub: task.state === "READY" || task.state === "EXPIRED" ? DETAIL(task) ? "已生成" : submitted : task.state === "FAILED" ? "没生成" : generating ? task.failure ? "没生成" : "进行中" : "批准后", state: task.state === "FAILED" || generating && task.failure ? "failed" as const : generating ? "current" as const : task.state === "READY" || task.state === "EXPIRED" ? "done" as const : "todo" as const },
     { label: "下载", sub: task.mine ? "你本人" : "申请人", state: task.state === "READY" ? "current" as const : "todo" as const },
   ];
   const month = task.month ? `${task.month}（截至 ${task.asOf ? formatBusinessTimeCompact(task.asOf, "—") : "—"}，${zone}）` : "—";

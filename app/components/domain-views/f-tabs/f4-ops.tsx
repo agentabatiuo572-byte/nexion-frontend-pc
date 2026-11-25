@@ -130,7 +130,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
           if (quota && record.kind === "proposal") setQuotaOriginal(record.original);
           else if (confirm && original.f4Snapshot) ctx.openActionConfirm({ ...confirm,
             edit: confirm.edit ? { ...confirm.edit, initialValue: original.f4Snapshot.value } : undefined, f4Recovery: record });
-        }}>按原请求重试</Button>}
+        }}>按原操作重试</Button>}
         {original.replayRejection && <FReleaseButton label={confirm?.name ?? legacy?.name ?? "原操作"} toast={ctx.toast} onRelease={() => ctx.recoverF4(record, "release")} />}
       </>,
     };

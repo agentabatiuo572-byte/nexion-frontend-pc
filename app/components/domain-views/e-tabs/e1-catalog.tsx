@@ -26,6 +26,9 @@ export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1Invalid
   forceUnlock: boolean; forceLock: boolean; locked: (type: string, id: string) => boolean;
 };
 
+/** 商品目录重读到之后焦点落在这块卡片墙上，不落到整页外框（BUG-710）。 */
+const E1_CATALOG_GRID = { get current() { return document.querySelector<HTMLElement>(".e1-catalog-grid"); } };
+
 /** 后端时间按业务时区写到分钟（TX-25），时区跟在后面写一次。 */
 const zonedTime = (value?: string | null) => value ? `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）` : "—";
 
@@ -410,7 +413,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       <Select aria-label="商品档位筛选" value={tier} onChange={setTier} options={[{ value: "all", label: "全部档位" }, ...["Entry", "Pro", "Flagship", "Share"].map(t => ({ value: t, label: operatorSkuTier(t) }))]} />
     </FilterBar>
     {skuLink && available && <Notice tone="neutral" title={filtered.some(s => s.id === skuLink) ? `已定位商品 ${skuLink}` : `没有找到商品 ${skuLink}`} />}
-    {ctx.e1Loading ? <BlockState state="loading" title="正在读取商品目录…" /> : ctx.e1Error ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录暂时读不到" detail={ctx.e1Error} onRetry={() => void ctx.refreshE1()} retryLabel="重试" /> : !filtered.length ? <BlockState state="empty" title={skus.length ? "没有符合筛选条件的商品" : ctx.e1InvalidSkus.length ? "没有可显示的合法商品" : "尚未添加商品"} detail={skus.length ? <Button onClick={clear}>清除筛选</Button> : canWrite ? <Button disabledReason={writeBlock({ op: "sku-save" })} onClick={() => ctx.openSku()}>+ 新增商品</Button> : "当前账号只能查看商品"} /> : <section className="e1-catalog-grid" aria-label="商品目录">{filtered.map(s => {
+    {ctx.e1Loading ? <BlockState state="loading" title="正在加载商品目录…" /> : ctx.e1Error ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={ctx.e1Error} onRetry={() => void ctx.refreshE1()} afterRetryFocus={E1_CATALOG_GRID} /> : !filtered.length ? <BlockState state="empty" title={skus.length ? "没有符合筛选条件的商品" : ctx.e1InvalidSkus.length ? "没有可显示的合法商品" : "尚未添加商品"} detail={skus.length ? <Button onClick={clear}>清除筛选</Button> : canWrite ? <Button disabledReason={writeBlock({ op: "sku-save" })} onClick={() => ctx.openSku()}>+ 新增商品</Button> : "当前账号只能查看商品"} /> : <section className="e1-catalog-grid" aria-label="商品目录">{filtered.map(s => {
       const { release, open, needsAttention, blockers } = ctx.e1Gates ? e1SkuOpening(s, ctx.e1Gates, phaseCur) : { open: !s.unlock, needsAttention: !!s.unlock, blockers: [], release: undefined };
       const publishReason = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER" ? "测试标识不能发布" : s.publishBlockReason === "PRODUCT_NO_EFFECTIVE_EARNINGS" ? "未配置有效收益" : s.publishBlockReason || "发布门未通过";
       const locked = ctx.locked("device_sku", s.id);

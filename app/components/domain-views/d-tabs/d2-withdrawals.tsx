@@ -785,9 +785,9 @@ const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不
 
 const RECOVERY_HINT: Record<string, string> = {
   review: "",
-  batch: "按原请求重试会按原来那批提现单和理由原样重发。",
-  cregis: "按原请求重试不会重新打款。",
-  bank: "按原请求重试只查原单，不会重新打款。",
+  batch: "按原操作重试会按原来那批提现单和理由原样重发。",
+  cregis: "按原操作重试不会重新打款。",
+  bank: "按原操作重试只查原单，不会重新打款。",
   simulate: "只在本地开发环境出现。",
 };
 
@@ -1152,7 +1152,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         // 状态被别人改了：单笔审核的框留着，刷新成最新状态（D2-C89）；其余操作关框，列表已是最新（BUG-291）。重试的原命令继续走待确认。
         // 框留着时原因写在框里，不再弹同一句盖住标题；框关了才提示。
         if (unknown || (moved && !retained && extra.kind !== "review")) {
-          toast(unknown ? "结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
+          toast(unknown ? "结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
           return;
         }
         throw cause;
@@ -1704,7 +1704,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!submitting} checking={submitting === record.fingerprint}
           onCheck={check} onClose={() => setClosing(record)} />
         {unsupported && record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>看现在的状态</Button>}
-        <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
+        <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
       </>,
       detail: <>{RECOVERY_HINT[record.kind] && <p>{RECOVERY_HINT[record.kind]}</p>}{pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}</>,
       tech: `操作人 ${record.operator} ｜ 理由 ${record.reason}`,

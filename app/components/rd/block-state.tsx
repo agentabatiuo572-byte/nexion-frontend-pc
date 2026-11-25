@@ -24,8 +24,8 @@ import type { StateTone } from "./tone";
 
 /** 焦点没有落在任何控件上：掉到了页面上，或原来的元素已经卸下。 */
 const focusLost = () => { const active = document.activeElement; return !active || active === document.body || !active.isConnected; };
-/** 把焦点交给这一层；接不到（display: contents、隐藏、已卸下）时撤掉临时加的 tabIndex，返回 false，由调用方再往外找。 */
-function focusFrame(frame: HTMLElement) {
+/** 把焦点交给这一层；接不到（display: contents、隐藏、已卸下）时撤掉临时加的 tabIndex，返回 false，由调用方再往外找。弹层关掉后原行已不在时也用它（overlay.tsx）。 */
+export function focusFrame(frame: HTMLElement) {
   if (!frame.isConnected || frame.getClientRects().length === 0) return false;
   const added = !frame.hasAttribute("tabindex");
   if (added) { frame.tabIndex = -1; frame.setAttribute("data-retry-landing", ""); }
@@ -89,6 +89,8 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
     armed.current = null;
     pendingRetry = null;
     if (failed && (inside || focusLost())) retryButton.current?.focus({ preventScroll: true });
+    // 这一块还在，但结果换成了没有「重试」的样子（重读后变成无权限）：焦点留在这一块，不掉到页面上。
+    else if (!failed && focusLost()) box.current?.focus({ preventScroll: true });
   });
   useLayoutEffect(() => {
     // 重读时这一块被换掉、仍失败时在同一区域重新挂上：新的这一块接住焦点。

@@ -12,6 +12,7 @@ import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCo
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
+import { V8PromotionFacts } from "../f-tabs/v8-promotion-facts";
 import { aTicketPermissionText } from "@/lib/admin/a-approval-names";
 import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText, H8_SETTLEMENT_APPROVAL_PERMISSION } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
@@ -171,7 +172,7 @@ const NO_DECIDE = "这个账号没有处理这张单的权限";
 /** 页面判断不了这张单要哪项业务权限或附加条件时，入口照常放出，写这一句（协调人第五轮定）。 */
 const BACKEND_CHECKS_NOTE = "批准时系统再核对业务权限，没有权限会被拒绝并写明原因";
 const WAIT_OTHERS = "等待有权限的人处理";
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请在「操作记录」里按单号核对";
 
@@ -272,6 +273,13 @@ function V8PromotionRewardFact() {
   }, [readerId]);
 
   return <Fact k="V8 晋级奖励 · 首次到达发给本人">{reward && reward.readerId === readerId ? reward.text : "—"}</Fact>;
+}
+
+function v8PromotionFacts(ticket: A2OperationRow) {
+  const snapshot = ticket.v8PromotionSnapshot;
+  if (!snapshot) return <V8PromotionRewardFact />;
+  const fromV7 = snapshot.originalRank === "V7";
+  return <V8PromotionFacts rewards={snapshot.v8Rewards} v7={fromV7 ? snapshot.v7 : undefined} v8={fromV7 ? snapshot.v8 : undefined} snapshot />;
 }
 
 /** 批准后 App 读不到团队奖励配置：首次配置单看票上的七层；单层比例单只带这一层，其余各层按现在读到的算（OP-69）。 */
@@ -933,16 +941,16 @@ const DECISION_STATUS: Record<"approve" | "reject" | "withdraw", A2OperationRow[
 /** D5 审批单动到 TRC20：写这张单（或保存的原批准）会做什么、为什么不能做、下一步（OP-126、OP-93）。 */
 function d5Trc20Reason(block: string, retry: boolean) {
   if (block === TRC20_OPENS_WITHDRAWAL || block === TRC20_CHANGES_FEE)
-    return retry ? `原批准${block}，TRC20 ${TRC20_CLOSED}，不能按原请求重试` : `这张单${block}，TRC20 ${TRC20_CLOSED}；可以驳回，或由发起人撤回`;
-  return retry && block === D5_DIFF_UNREADABLE ? "审批单的变更详情读不懂，暂不能按原请求重试" : block;
+    return retry ? `原批准${block}，TRC20 ${TRC20_CLOSED}，不能按原操作重试` : `这张单${block}，TRC20 ${TRC20_CLOSED}；可以驳回，或由发起人撤回`;
+  return retry && block === D5_DIFF_UNREADABLE ? "审批单的变更详情读不懂，暂不能按原操作重试" : block;
 }
 const RECOVERY_HINT: Record<A2CommandKind, string> = {
-  approve: "可以查询这次批准的结果，或按原请求重试，不会重复执行。",
-  reject: "可以查询这次驳回的结果，或按原请求重试，不会重复执行。",
-  withdraw: "可以查询这次撤回的结果，或按原请求重试，不会重复执行。",
-  param: "查询只能看到现在的值，值相同也可能是别人改的。可以按原请求重试，不会重复执行。",
-  retention: "查询只能看到最近一次手动清理。可以按原请求重试，不会重复清理。",
-  export: "查询只能看到有没有这次的导出记录。可以按原请求重试，按当时的条件重新下载。",
+  approve: "可以查询这次批准的结果，或按原操作重试，不会重复执行。",
+  reject: "可以查询这次驳回的结果，或按原操作重试，不会重复执行。",
+  withdraw: "可以查询这次撤回的结果，或按原操作重试，不会重复执行。",
+  param: "查询只能看到现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
+  retention: "查询只能看到最近一次手动清理。可以按原操作重试，不会重复清理。",
+  export: "查询只能看到有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
 };
 /**
  * 查询原决定（A2-BE-17）后留在待确认条上的结果：只按这次决定自己的记录说，不拿这张单现在的状态推断。
@@ -951,7 +959,7 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
 type DecisionCheck = "processing" | "unconfirmed" | "readFailed";
 /**
  * 标签已经说了查到什么，后面这句只写下一步；查询失败的正文是读取错误本身，所以只有标签。
- * retried：刚才按原请求重试被拒，前面已经写了重试被拒的原因，这句要说清「原来那次」还没有结果。
+ * retried：刚才按原操作重试被拒，前面已经写了重试被拒的原因，这句要说清「原来那次」还没有结果。
  */
 const DECISION_CHECK: Record<DecisionCheck, { tone: "progress" | "warn"; icon?: typeof SearchX; label: string; text?: (verb: string, retried: boolean) => string }> = {
   processing: { tone: "progress", label: "仍在处理", text: (verb, retried) => retried ? `原来那次${verb}还在处理，稍后再查。` : "查过，稍后再查。" },
@@ -2219,7 +2227,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return mainLoading ? { state: "loading" } : ticket ? refundAmount(ticket)
       : { state: "error", message: "退款金额未读取" };
   };
-  /** 保存的 D5 批准会打开 TRC20 或改它的确认费：只能查询，不能按原请求重试。 */
+  /** 保存的 D5 批准会打开 TRC20 或改它的确认费：只能查询，不能按原操作重试。 */
   const d5RetryBlock = (record: A2PendingCommand) => {
     const ticket = recordTicket(record);
     if (record.kind !== "approve" || (record.operationCode ?? ticket?.operationCode) !== D5_APPROVAL_OP) return undefined;
@@ -2283,7 +2291,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)
         && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw")) {
         const reason = decisionRefusedReason(code || undefined, why, approvalReason) ?? "系统没有给出原因";
-        decisionRetryRefusals.current.set(record.commandKey, `按原请求重试被拒：${reason}。`);
+        decisionRetryRefusals.current.set(record.commandKey, `按原操作重试被拒：${reason}。`);
         await verifyDecisionPending(record, record.kind, true);
         return;
       }
@@ -2306,7 +2314,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if (!found) { notePending(record, "查询失败，导出记录暂时读不到。原记录继续保留。"); return; }
       const hit = found.recentLogs[0];
       notePending(record, hit
-        ? `查到：${logTime(hit)} 有这次的导出记录（${hit.obj.split(" · ").pop()}）。没下到文件就按原请求重试。原记录继续保留。`
+        ? `查到：${logTime(hit)} 有这次的导出记录（${hit.obj.split(" · ").pop()}）。没下到文件就按原操作重试。原记录继续保留。`
         : "没查到这次导出的记录，可能没有生成。原记录继续保留。");
       return;
     }
@@ -2598,7 +2606,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const i5Publish = w.operationCode === "i5_disclosure_publish" || w.operationCode === "i4_disclosure_publish";
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
-    const impact = scheduled || monthlyTargetChange(w) ? timing.impact
+    const impact = v8Promotion ? "立即升到 V8，首次到达按配置发奖。"
+      : scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
         // 新增商品批准后只是草稿（显示规则 5）；覆盖率检查提示另在事实区。
         : w.operationCode === "e1_sku_create" ? "批准后创建商品草稿，上架前 App / H5 Lite 上看不到。"
@@ -2674,7 +2683,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
             : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}
-                facts={v8Promotion ? <V8PromotionRewardFact /> : f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
+                facts={v8Promotion ? v8PromotionFacts(w) : f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
                 {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
                 <A2I5DisclosureReview key={w.id} ticket={w} />
               </A2ChangeReview>}
@@ -3013,7 +3022,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       noteKey: note?.text,
       actions: <>
         <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
-        <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原请求重试</Button>
+        <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原操作重试</Button>
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
       detail: <>
@@ -3024,11 +3033,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {record.kind === "approve" && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
         <p><Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button></p>
       </>,
-      tech: <p className="rd-note">技术信息：原请求编号 <span data-mono>{record.commandKey}</span> ｜ 操作人 {record.operator}</p>,
+      tech: <p className="rd-note">技术信息：操作编号 <span data-mono>{record.commandKey}</span> ｜ 操作人 {record.operator}</p>,
     };
   });
   const pendingNotices = <RecoveryPanel title={recoveryTitle(pendingItems.length)} items={pendingItems}
-    explain="有结论前不要重复处理这几张单。点行首的箭头看发出时间、理由和原请求编号。" />;
+    explain="有结论前不要重复处理这几张单。点行首的箭头看发出时间、理由和操作编号。" />;
 
   /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。
      没有这张单的业务权限时不显示批准、驳回（OP-124）；整页一行都没有可做的事时不画「操作」列（建议 3）。 */
@@ -3372,6 +3381,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const historyNote = shownHistory?.note.startsWith("原因:") ? { label: "原因", text: shownHistory.note.slice(3).trim() || "—" } : { label: "说明", text: shownHistory?.note || "—" };
   // 已批准的券冲正：和历史表同一份总览里的审批单按单号对上，读批准时记下的结果（F1-BE-19）。
   const voucherResult = a2VoucherReversalResult(shownHistory, records?.operationQueue ?? []);
+  // 同一份总览按单号找有权读取的终态审批单，处理历史自己不带快照。
+  const historyV8Ticket = shownHistory && records?.operationQueue.find(w => w.id === shownHistory.id
+    && (w.status === "approved" || w.status === "rejected" || w.status === "withdrawn")
+    && w.v8PromotionSnapshot && isV8PromotionTicket(w));
 
   const readOnly = canApprove ? undefined : canPropose ? "你不能批准，只能看进度和撤回自己发起的申请。" : canMakeV8 ? "你不能批准，只能看进度和撤回自己发起的 V8 晋升申请。" : "你不能批准审批单，只能查看。";
 
@@ -3428,7 +3441,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
-                facts={isV8PromotionTicket(shown) ? <V8PromotionRewardFact />
+                facts={isV8PromotionTicket(shown) ? v8PromotionFacts(shown)
                   : shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
@@ -3480,8 +3493,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: "发起人", icon: Users, tone: "users", value: shownActors?.proposer ?? "—" },
             { label: "处理人", value: shownActors ? `${shownActors.role} ${shownActors.actor}` : historyActorText(shownHistory.chain) },
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },
-            { label: historyNote.label, value: historyNote.text },
+            { label: historyV8Ticket ? "处理理由" : historyNote.label, value: historyNote.text },
           ]} />
+          {historyV8Ticket && <A2ChangeReview before={changeBefore(historyV8Ticket)} after={changeAfter(historyV8Ticket)}
+            operationCode={reviewOperation(historyV8Ticket)} amountKey={a2TicketKey(historyV8Ticket)} facts={<>
+              <Fact k="对象">{objectNode(historyV8Ticket)}</Fact>
+              <Fact k="发起理由">{keepCodes(historyV8Ticket.reason)}</Fact>
+              {v8PromotionFacts(historyV8Ticket)}
+            </>} />}
           {voucherResult && <section className="a2-change-review" aria-label="实际结果">
             <div className="a2-change-title">实际结果<Explain label="实际结果说明" content="批准执行时系统记下的券处置和扣款，不是申请时的选择。" /></div>
             {voucherResult.state === "available" ? <Facts>

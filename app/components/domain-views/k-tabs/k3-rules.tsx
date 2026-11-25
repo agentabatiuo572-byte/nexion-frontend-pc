@@ -201,7 +201,7 @@ const STATE_TONE: Record<RuleState, StateTone> = { draft: "neutral", active: "ok
 const STATE_ICON = { draft: FileText, active: CheckIcon, paused: Pause, archived: Archive };
 const DIM_ICON = { 金额: Coins, 速度: Gauge, 新账户: Users, 地址信誉: ShieldCheck };
 const REASON_PLACEHOLDER = "例如：依据提现风险复核工单，调整新账户的检查条件";
-const UNKNOWN_RESULT_TEXT = "结果未知，可能已经生效，已保留原请求。可以查询原结果，或按原请求重试。";
+const UNKNOWN_RESULT_TEXT = "结果未知，可能已经生效，已保留原请求。可以查询原结果，或按原操作重试。";
 const COVERAGE_LEAD = "这项操作可能让平台多付钱";
 const COVERAGE_CHECK = "提交时会先检查兑付覆盖率。";
 const ACTIVE_EFFECT = "保存后直接用于后续评估；已创建提现在放行复核时也可能按当前规则判断。";
@@ -563,7 +563,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           try { await reload(); setReadback("已重新读取规则和命中记录；现在的值证明不了原操作成没成，请到操作记录与审批核对。"); }
           catch (error) { setReadback(`读取失败 · ${errorText(error)}`); } finally { setBusyKey(null); }
         }}>查询原结果</Button>
-        <Button size="sm" disabledReason={noRetry} loading={busyKey === record.commandKey} loadingText="提交中…" onClick={() => saved && void execute(saved, true).catch(() => undefined)}>按原请求重试</Button>
+        <Button size="sm" disabledReason={noRetry} loading={busyKey === record.commandKey} loadingText="提交中…" onClick={() => saved && void execute(saved, true).catch(() => undefined)}>按原操作重试</Button>
         {saved?.rejected && <Button size="sm" onClick={() => setReleasing(saved)}>解除原操作记录</Button>}
         <Button size="sm" variant="ghost" onClick={() => setInspecting(record)}>技术信息</Button>
       </>}>
@@ -670,7 +670,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     {inspecting && <Modal title="原操作技术信息" onClose={() => setInspecting(null)} footer={<><Button onClick={() => setInspecting(null)}>关闭</Button>
       <Button onClick={() => void navigator.clipboard.writeText(JSON.stringify(isSavedCommand(inspecting) ? { commandKey: inspecting.commandKey, ...inspecting.request } : inspecting, null, 2)).then(() => ctx.toast("原请求技术信息已复制", "success")).catch(() => ctx.toast("复制失败，请手动复制", "error"))}>复制技术信息</Button></>}>
       <pre className="k3-request">{JSON.stringify(isSavedCommand(inspecting) ? { commandKey: inspecting.commandKey, ...inspecting.request } : inspecting, null, 2)}</pre>
-      <p>保留这次实际使用的方法、路径、原请求内容与原请求编号。本地记录属于本标签页，不提供跨设备恢复。</p>
+      <p>保留这次实际使用的方法、路径、原请求内容与操作编号。本地记录属于本标签页，不提供跨设备恢复。</p>
       {reach("/platform/audit") ? <p><Link className="rd-link" href="/platform/audit">操作记录与审批</Link></p> : <p>请有权限的风控或超级管理员核对原操作。</p>}
     </Modal>}
     {releasing && <Modal title="解除原操作记录" icon={ShieldCheck} onClose={() => setReleasing(null)} dirty={releaseVerified}
@@ -679,7 +679,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); setReleasing(null); ctx.toast("已解除本页的原操作记录，请继续到操作记录核对原操作", "info");
       }}>确认解除</Button></>}>
       <ReleaseBody label={releasing.label} />
-      <Facts><Fact k="原对象">{targetLabel(releasing.target)}</Fact><Fact k="原请求编号"><span data-mono="">{releasing.commandKey}</span></Fact><Fact k="原操作理由">{releasing.reason}</Fact></Facts>
+      <Facts><Fact k="原对象">{targetLabel(releasing.target)}</Fact><Fact k="操作编号"><span data-mono="">{releasing.commandKey}</span></Fact><Fact k="原操作理由">{releasing.reason}</Fact></Facts>
       <Fold title="原请求技术信息" summary="方法、路径、原内容与版本" inset><pre className="k3-request">{JSON.stringify({ request: releasing.request, original: releasing.original }, null, 2)}</pre></Fold>
       <Check label="我已核实原操作的对象、请求和结果" checked={releaseVerified} onChange={(event) => setReleaseVerified(event.target.checked)} />
     </Modal>}
@@ -727,7 +727,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage, can
   const changed = draft.kind === "create" ? hasDraftChanges : condition !== buildK3Condition(k3KindFromDimension(dimension), originalValue)
     || actionFromBusinessValue(value) !== rule!.action || priorityFromBusinessValue(value) !== rule!.priority;
   const dirty = hasDraftChanges || reason.length > 0;
-  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原结果或按原请求重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在读取理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage, canReadCoverage) : undefined);
+  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原结果或按原操作重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在读取理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage, canReadCoverage) : undefined);
   const effect = draft.kind === "create" ? CREATE_EFFECT : rule!.state === "active" ? ACTIVE_EFFECT : rule!.state === "draft" ? "仍为草稿，启用后才参与检查。" : "仍为已停用，重新启用后才参与检查。";
   const save = async () => {
     if (busy || disabledReason) return;

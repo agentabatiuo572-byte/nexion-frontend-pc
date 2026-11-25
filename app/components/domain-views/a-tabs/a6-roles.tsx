@@ -401,7 +401,7 @@ export default function A6Roles() {
       }
       // Start/stop without earlier ticket evidence also asked for the original result above.
       setToast(record.original.kind === "a6-status" && !record.ticket && !record.receipt
-        ? "没查到审批单，也没查到原结果，原记录仍保留；请稍后再查，或在 24 小时内按原请求重试。"
+        ? "没查到审批单，也没查到原结果，原记录仍保留；请稍后再查，或在 24 小时内按原操作重试。"
         : displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false;
     }
     closeOriginalView(record);
@@ -692,11 +692,11 @@ export default function A6Roles() {
       line: expired ? RETRY_EXPIRED_TEXT : shown?.line, receipt: outcome?.receipt,
       tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原请求重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原操作重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行。"}>结果未知</StatusTag>,
       actions: <>
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
         {canInvestigateECommand("platform_a6_read") && rbacClosureConclusions(outcome, expired).length > 0 && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
-        {!expired && <Button variant="ghost" disabledReason={replayBlock(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {!expired && <Button variant="ghost" disabledReason={replayBlock(record)} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
         {releasable && <Button variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
     };

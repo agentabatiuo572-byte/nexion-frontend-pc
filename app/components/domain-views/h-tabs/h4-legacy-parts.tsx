@@ -48,7 +48,8 @@ export function useH4DrawerFocus(open: boolean, panelId: string) {
     const settle = () => {
       // 抽屉还在收、或确认框比抽屉晚一步关（还在读最新）：等它们收完再看，最多 6 秒。
       if (document.querySelector(".rd-modal, .rd-drawer[data-state='closed']") && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
-      if (document.activeElement && document.activeElement !== document.body) return;
+      // 焦点停在共用弹层给的临时落点（data-retry-landing，原卡重画后找不到原按钮时）也算还没去处，照样放回原卡。
+      if (document.activeElement && document.activeElement !== document.body && !document.activeElement.hasAttribute("data-retry-landing")) return;
       const usable = (element: HTMLElement) => element.isConnected && element.getClientRects().length > 0 && !(element instanceof HTMLButtonElement && element.disabled);
       const panel = document.getElementById(panelId);
       // 提交成功后列表重读，卡片换了节点：按名字和编号找回那一张；列表还没读回来就再等。
@@ -77,9 +78,9 @@ export const h4OpeningReadFailure = (cause: unknown, readLatest: () => Promise<b
       action={<Button size="sm" onClick={retry}>重试</Button>}>{displayAdminReadError(cause)}</Notice> });
 
 /** 真实冲突（别人先改过）后的提示：拟改值留着、现在值换成最新的、旧理由清空，要重新填理由才能提交。结果未知的原请求恢复用原理由，是另一句提示。 */
-export function H4StaleNote({ readLatest }: { readLatest?: () => void }) {
+export function H4StaleNote({ readLatest, reading }: { readLatest?: () => void; reading?: boolean }) {
   return <Notice tone="warn" title="别人先改过，这次没有保存"
-    action={readLatest && <Button size="sm" onClick={readLatest}>读取最新</Button>}>
+    action={readLatest && <Button size="sm" loading={reading} onClick={readLatest}>读取最新</Button>}>
     {readLatest ? <>读取最新值后再核对；<span className="rd-keep">你填的还在，理由要重填。</span></>
       : <>现在值已换成最新的；<span className="rd-keep">你填的内容还在，请重新填写操作理由。</span></>}
   </Notice>;
@@ -179,8 +180,8 @@ export function lifecycleOf(event: LegacyEvent, requiredLanguages: readonly Loca
 
 export function unknownTag(kind: "approval" | "direct") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "approval"
-    ? "没收到确定结果，审批单可能已经建成。先查询原结果，查不到再按原请求重试，不会建第二张单。"
-    : "没收到确定结果，可能已经生效。先查询原结果，明确查不到后才能按原请求重试。"}>结果未知</StatusTag>;
+    ? "没收到确定结果，审批单可能已经建成。先查询原结果，查不到再按原操作重试，不会建第二张单。"
+    : "没收到确定结果，可能已经生效。先查询原结果，明确查不到后才能按原操作重试。"}>结果未知</StatusTag>;
 }
 export function pendingTag(object: string) {
   return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准、驳回或撤回之前，${object}不能再改，调低和关闭也不行。`}>待审批</StatusTag>;

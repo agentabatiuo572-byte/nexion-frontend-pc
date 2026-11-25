@@ -313,7 +313,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: retry && <>
           {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
-          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原请求重试</Button>}
+          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原操作重试</Button>}
           {replayRefused && canRelease && <Button size="sm" variant="ghost" disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
         </>,
       }]} />}
@@ -326,7 +326,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       <Panel icon={Route} tone="role-3" title="分配与继承规则" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
         explain="保存后立即生效。已有的绑定不会重排；继承只看之后注册的用户；还在等分配的客户按新的方式和时长继续处理。">
         {permission === "supervisor" && <Notice tone="neutral">只有超级管理员能改服务规则，你现在只能查看。</Notice>}
-        {loading && !current && <BlockState state="loading" title="正在读取服务规则…" />}
+        {loading && !current && <BlockState state="loading" title="正在加载服务规则…" />}
         {saved && <Notice tone="ok">已保存。</Notice>}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则加载失败" detail={`${error ? `${error} ` : ""}暂时不能查看和保存。`} onRetry={() => setReload((n) => n + 1)} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
@@ -378,7 +378,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
           {retry && canQuery && <Button variant={command.canReplay || replayRefused ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
           {retry && replayRefused ? canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>
             : <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} loadingText="提交中…" disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}
-              disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
+              disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原操作重试" : "确认保存"}</Button>}
         </>}>
         <DiffList rows={confirmedChanges.map((field) => ({ key: field, label: LABELS[field], before: beforeLabel(field), after: labelValue(field, confirmed[field]) }))} />
         <Facts>

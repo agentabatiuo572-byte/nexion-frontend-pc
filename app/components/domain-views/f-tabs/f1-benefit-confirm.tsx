@@ -65,7 +65,7 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
   const effect = (values: BusinessFormValue) => {
     if (original) return <StatusTag tone="warn" icon={CircleHelp} explain={original.original.approval
       ? proposalQueryOnly ? F1_PROPOSAL_LOOKUP_FIRST : "没查到原审批单，可以按原内容和理由重试。"
-      : "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>;
+      : "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原操作重试，不会重复执行。"}>结果未知</StatusTag>;
     const up = direction(values.value ?? "");
     if (up === 1) return <StatusTag tone="progress" filled icon={Clock3}>批准后生效</StatusTag>;
     if (up === -1) return <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>;

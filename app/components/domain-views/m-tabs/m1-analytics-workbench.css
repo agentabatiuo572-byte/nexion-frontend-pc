@@ -167,8 +167,7 @@
 /* 表头两行：名称（带问号）在上，口径和单位在下。 */
 .m1-th-stack { display: inline-flex; flex-direction: column; align-items: flex-end; white-space: nowrap; }
 .m1-th-stack small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }
-.m1-th-title, .m1-field-label { display: inline-flex; align-items: center; gap: var(--rd-space-1); }
-.m1-bucket-name { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
+.m1-th-title, .m1-field-label { display: inline-flex; align-items: center; gap: var(--rd-space-1); }.m1-bucket-name { display: inline-flex; align-items: center; gap: var(--rd-space-1); font-weight: var(--rd-weight-medium); color: var(--rd-text); }
 /* 组卡和「不在负责组里的业绩」两类按卡数平分一行（canvas 3a）。 */
 .sa-group-comparison > ul { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 /* 客服表 5 列：客服、当前绑定、活跃、当前客户累计业绩额（或持有设备）、操作。 */
@@ -200,7 +199,7 @@
 .m1-fact-reason { margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: var(--rd-weight-regular); }
 
 /* 总览的筛选条只有负责组、统计规则、月份三个范围控件：三格等宽铺开、各最宽 280，不挤在左边（P2-side；排法同 Ant Design ProComponents QueryFilter）。 */
-.m1-overview-filter .rd-filter-row > [data-cp="filter"] { flex: 1 1 0; max-width: 280px; }
+.m1-overview-filter .rd-filter-row > [data-cp="filter"] { flex: 1 1 0; min-width: 200px; }  /* 三格等宽铺满这一行（画板 3a），右边不空一大块（BUG-699 P2-side） */
 .m1-overview-filter .rd-filter-row > [data-cp="filter"] .rd-select { width: 100%; }
 
 /* 总览经营概况下面一行只剩当前口径的几格：铺满一行，不留孤格（P01）。 */

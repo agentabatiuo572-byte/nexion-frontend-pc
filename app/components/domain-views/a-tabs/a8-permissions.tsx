@@ -68,10 +68,8 @@ export default function A8Permissions() {
     fetchA8Permissions({ pageNum, pageSize, keyword, domain, permType })
       .then((data) => { if (!cancelled) setResult(data); })
       .catch((err) => {
-        if (!cancelled) {
-          setLoadError(displayAdminReadError(err));
-          setToast("权限列表加载失败，请重试");
-        }
+        // 失败只写在列表那一块的失败卡里，不再弹提示条（ST-34、ST-57）。
+        if (!cancelled) setLoadError(displayAdminReadError(err));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -206,7 +204,7 @@ export default function A8Permissions() {
         <Panel flush icon={Users} title="角色权限对照表"
           sub={rolesReady && records.length > 0 && grants.length > 0 ? `本页 ${records.length} 项权限 × ${grants.length} 个角色` : countText}
           explain={`横向是角色，纵向是列表当前页的${!loading && !loadError ? ` ${records.length} 项` : ""}权限，打勾表示该角色有这项权限。包括已停用的角色。翻页只换行，角色的授权不重新读取；要最新的就收起再展开。`}>
-          {loading ? <BlockState state="loading" title="加载中…" /> : loadError ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={() => setReloadKey((value) => value + 1)} /> : <>
+          {loading ? <BlockState state="loading" title="正在加载…" /> : loadError ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={() => setReloadKey((value) => value + 1)} /> : <>
           {matrixLoading ? (
               <BlockState state="loading" title="正在加载…" detail="要逐个读取每个角色的授权，角色多时要等几秒。" />
             ) : matrixError ? (
@@ -264,6 +262,8 @@ export default function A8Permissions() {
       ) : (
         <Panel flush icon={KeyRound} title={domain === "ALL" ? "权限列表" : `${domainLabel}的权限`} sub={countText}
           explain="点一行看这项权限的详情。哪些角色有它：先显示绑定的角色数，点右上「展开对照表」读出每个角色后显示角色名。">
+        {/* 读取失败用共用失败卡，不写在表格行里：重试中焦点留在这一块，仍失败回到「重试」，读到落在这块面板（ST-34、ST-35、BUG-710）。 */}
+        {loadError && !loading ? <BlockState state="error" title="权限列表加载失败" detail={loadError} retryKey="a8-records" onRetry={() => setReloadKey((value) => value + 1)} /> : (
         <Table label="权限清单" aria-busy={loading} className="a8-table">
           <thead><tr>
             <Th>权限</Th>
@@ -277,7 +277,6 @@ export default function A8Permissions() {
           </tr></thead>
           <tbody>
             {loading ? <TableLoading columns={4} rows={Math.min(pageSize, 10)} />
-              : loadError ? <TableMessage columns={4} role="alert">权限列表加载失败，请重试。{loadError !== "权限列表加载失败，请重试。" && <span className="a8-muted">{loadError}</span>} <Button size="sm" onClick={() => setReloadKey((value) => value + 1)}>重试</Button></TableMessage>
                 : records.length === 0 ? <TableMessage columns={4} role="status">
                   {filtered ? <>无匹配权限：换个关键词，或把模块、类型改回全部。 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "无匹配权限"}
                 </TableMessage>
@@ -294,6 +293,7 @@ export default function A8Permissions() {
                   ))}
           </tbody>
         </Table>
+        )}
         {!loadError && result && <Pager label="权限清单" total={total} page={pageNum} pageSize={pageSize} sizes={PAGE_SIZES} loading={loading}
           onPage={setPageNum} onPageSize={(s) => { setPageSize(s); setPageNum(1); }} />}
         </Panel>

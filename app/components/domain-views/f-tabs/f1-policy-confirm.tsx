@@ -194,7 +194,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   const effect = opening.pending
     ? <StatusTag tone="warn" icon={CircleHelp} explain={opening.pending.original.approval
       ? proposalQueryOnly ? F1_PROPOSAL_LOOKUP_FIRST : "没查到原审批单，可以按原内容和理由重试。"
-      : "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>
+      : "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原操作重试，不会重复执行。"}>结果未知</StatusTag>
     : remove ? <StatusTag tone="progress" filled icon={Zap}>立即生效</StatusTag>
       : <StatusTag tone="neutral" icon={LockOpen} explain={isCondition
         ? `调低是放宽：提交审批，${SUPER_APPROVER}（需有审批批准权限）批准后才生效，你自己不能批。调高或不变是收紧：确认后立即生效。`

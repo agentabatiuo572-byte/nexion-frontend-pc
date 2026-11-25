@@ -46,7 +46,7 @@ export class B5OutcomeUnknownError extends Error {
   readonly unknownOutcome = true;
   constructor(public readonly commandKey: string, detail?: string) {
     // 传输层的说明（服务不可用、网关异常）已经写了「结果未知」，不再重复一遍。
-    super(`${detail && !detail.includes("结果未知") ? `${detail} ` : ""}结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。`);
+    super(`${detail && !detail.includes("结果未知") ? `${detail} ` : ""}结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原操作重试。`);
     this.name = "B5OutcomeUnknownError";
   }
 }

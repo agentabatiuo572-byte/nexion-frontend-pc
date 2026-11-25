@@ -37,7 +37,7 @@ export type FundRecoveryRow = {
   /** 发出时间；旧记录没有时不写。 */
   createdAt?: number;
   expired: boolean;
-  /** 现在这个账号能不能按原请求重试。 */
+  /** 现在这个账号能不能按原操作重试。 */
   canRetry: boolean;
   /** 这一行有没有「查询原结果」按钮；不传时按记录本身能不能查判断。 */
   canQuery?: boolean;
@@ -65,7 +65,7 @@ export function unsettledLookupStatus(state: "NOT_FOUND" | "PROCESSING", expired
     ? { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` }
     : { tone: "progress", label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE });
 }
-const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
+const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原结果；按原操作重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
 /** 原请求是提交到「操作记录与审批」的申请：批准前什么都不生效，结果未知时只能说「可能已经提交」。 */
 function isProposal(record?: FundCommandRecord) {
@@ -117,12 +117,12 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
   // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine；记为失败过期时总有一句），说不了的沿用原句。
   const step = closureLine(eCommandClosureOffer(outcome, row.expired), receipt, canClose);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? step!
-    : row.canRetry ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
+    : row.canRetry ? "系统记录这次失败了；按原操作重试不会做两遍，已做成的直接拿回结果。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
   if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (!canClose ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE) };
-  // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
+  // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原操作重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", more, line: row.expired ? `后台已处理，看不出成没成；${closure}`
-    : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
+    : row.canRetry ? "后台已处理，看不出成没成；按原操作重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原操作重试确认。" };
   return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
 
@@ -140,7 +140,7 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
   const error = row.outcome && "error" in row.outcome ? row.outcome.error : "";
   const last = receipt?.investigation;
   const origin = row.record?.commandOrigin;
-  const tech = [row.record ? `原请求编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", receiptCodeTech(receipt), row.tech ?? ""].filter(Boolean).join(" ｜ ");
+  const tech = [row.record ? `操作编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", receiptCodeTech(receipt), row.tech ?? ""].filter(Boolean).join(" ｜ ");
   const id = `fund-row-${row.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   return <li className="fund-row">
     <div className="fund-row-line">
@@ -214,7 +214,7 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, settl
   </>;
 }
 
-/** 每行右侧的查询类按钮：查询原结果（只读）、核查结案（单独确认框）。按原请求重试由页面自己放在后面。 */
+/** 每行右侧的查询类按钮：查询原结果（只读）、核查结案（单独确认框）。按原操作重试由页面自己放在后面。 */
 export function FundCheckButtons({ record, outcome, expired, busy, checking, onCheck, onClose, lookupWithoutOrigin, canLookupOwnProposal }: {
   record: FundCommandRecord;
   /** 超过 24 小时：查到已处理完或记为失败也给核查结案（不能再重试，这是唯一的出路）。不传时只在仍未知时给。 */
@@ -276,7 +276,7 @@ export function FundClosureModal({ label, createdAt, facts, known, offer, blocke
   const block = !choices.length ? "这条现在结不了案" : !conclusion ? "请选择核查结论" : !length ? "请写明核查依据" : length > 512 ? "核查依据最多 512 字"
     : needsAudit && !auditId.trim() ? "选「已执行」要填成功记录编号" : needsAudit && !auditValid ? "成功记录编号须为正整数" : !acknowledged ? "请先勾选确认" : undefined;
   const notice = offer ? offerNotice(offer) : !basis ? "系统按你给的依据核对：证据够才记为「已执行」并解除这条记录；不够时记为「仍未知」，继续锁着。这类操作现在不能按「没有执行」结案。"
-    : !choices.length ? "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把原请求编号交给技术同事核对。"
+    : !choices.length ? "这条现在结不了案：后台没有能对上的结论，记录继续保留。请把操作编号交给技术同事核对。"
     : basis.rejected ? choices.length > 1 ? "后台当时拒绝了这次操作，按「后台拒绝」结案即可解除。操作记录里确有这次的成功记录时，才选「已执行」。" : "后台当时拒绝了这次操作，可以按「后台拒绝」结案。"
     : basis.success === "receipt" ? "后台按这次操作自己的处理记录核对：对得上才解除，对不上会退回，记录保留。"
     : "成功记录对得上才解除，对不上会退回，记录保留。操作记录里没有这次成功记录的，现在结不了案。";

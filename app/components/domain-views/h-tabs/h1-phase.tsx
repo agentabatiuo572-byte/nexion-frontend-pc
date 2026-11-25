@@ -285,7 +285,7 @@ export default function H1Phase({ ctx,
       boolean>>({});
   const [deepLink,
     setDeepLink] = useState<{ phase: string; dial: string } | null>(null);
-  /** 上次「查询原结果」查到的每个原请求（按原请求编号），决定这一步给不给「核查结案」。 */
+  /** 上次「查询原结果」查到的每个原请求（按操作编号），决定这一步给不给「核查结案」。 */
   const [receipts,
     setReceipts] = useState<Record<string, ECommandInvestigation | null>>({});
   const [closing,
@@ -439,13 +439,13 @@ export default function H1Phase({ ctx,
   const stepLine = (row: H1Pending, receipt: ECommandInvestigation | null) => {
     const expired = isRetryExpired(row);
     const result = eCommandResult(receipt);
-    if (!receipt) return !expired && permitted(row) ? "查不到不等于没执行；按原请求重试不会重复执行。" : displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"));
+    if (!receipt) return !expired && permitted(row) ? "查不到不等于没执行；按原操作重试不会重复执行。" : displayAdminError(new Error("INVESTIGATION_ORIGINAL_NOT_FOUND_REMAINS_LOCKED"));
     if (result === "PROCESSING") return displayAdminError(new Error("IDEMPOTENCY_REQUEST_IN_PROGRESS"));
     if (receipt.originalStatus === "UNKNOWN") return canClose ? expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE : "系统也没有结果；请有调查权限的超级管理员核查结案。";
     if (receipt.originalStatus === "FAILED") return expired ? canClose ? FAILED_EXPIRED_LINE : "有这次的成功记录时，请有调查权限的超级管理员核查结案。"
-      : permitted(row) ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" : "系统记录这次失败了；请有修改权限的人按原请求重试。";
+      : permitted(row) ? "系统记录这次失败了；按原操作重试不会做两遍，已做成的直接拿回结果。" : "系统记录这次失败了；请有修改权限的人按原操作重试。";
     if (result === "REJECTED") return rejectedStatus({ expired, canRetry: permitted(row), canClose }).line;
-    if (result === "BUSINESS_RESULT_UNAVAILABLE") return `后台已处理，看不出成没成；${!expired ? permitted(row) ? "按原请求重试可确认，不会重复执行。" : "请有修改权限的人按原请求重试确认。"
+    if (result === "BUSINESS_RESULT_UNAVAILABLE") return `后台已处理，看不出成没成；${!expired ? permitted(row) ? "按原操作重试可确认，不会重复执行。" : "请有修改权限的人按原操作重试确认。"
       : canClose ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。"}`;
     return receiptExplain(receipt) ?? receiptFact(receipt, "原记录继续保留");
   };
@@ -898,10 +898,10 @@ export default function H1Phase({ ctx,
             const open = result.outcomes.find((outcome) => !eCommandSettled(outcome.receipt));
             const index = open ? current.requests.findIndex((request) => request.commandKey === open.request.commandKey) : -1;
             const unsent = index > 0 && current.requests.slice(0, index).some((request) => !request.acknowledged);
-            // 前面的步骤都确认了、这一步还没发出：24 小时内按原请求重试就是接着发这一步。
+            // 前面的步骤都确认了、这一步还没发出：24 小时内按原操作重试就是接着发这一步。
             const nextUnsent = !unsent && !!open && result.steps.some((step) => step.request.commandKey === open.request.commandKey && step.state === "NOT_SENT");
             setFeedback(`${lead}${steps && open ? `${open.request.label}${unsent || nextUnsent ? "" : "："}` : ""}${unsent ? "还没发出，原记录继续保留；请到操作记录与审批核对。"
-              : nextUnsent ? "还没发出；按原请求重试接着发。" : stepLine(row, open?.receipt ?? null)}`);
+              : nextUnsent ? "还没发出；按原操作重试接着发。" : stepLine(row, open?.receipt ?? null)}`);
           }
         } finally { syncPending(); await reload(); }
         return;
@@ -940,7 +940,7 @@ export default function H1Phase({ ctx,
         ctx.toast(displayAdminError(failure),
           "warn");
       } finally { setBusy(false); }
-    }}>按原请求重试</Button>}
+    }}>按原操作重试</Button>}
     {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除原操作记录</Button>}
   </>;
 
@@ -976,7 +976,7 @@ export default function H1Phase({ ctx,
           </> };
       })} />
     : shownPending.map((row) => <Notice key={row.commandKey} tone={row.state === "approval" ? "progress" : "warn"} actionBelow action={recordActions(row, true)}>
-      <b>{rowTitle(row) ?? (row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原请求重试被拒绝" : "提交被拒绝" : "提交结果未知")}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
+      <b>{rowTitle(row) ?? (row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原操作重试被拒绝" : "提交被拒绝" : "提交结果未知")}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
       {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}</p>}
       {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !rowLine(row) && !(feedback && checked === row.commandKey) && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
       {row.state !== "approval" && isRetryExpired(row) && !(feedback && checked === row.commandKey) && !rowLine(row) && <p>{RETRY_EXPIRED_TEXT}；原记录继续保留，这项暂时不能再改。</p>}
@@ -1108,9 +1108,9 @@ export default function H1Phase({ ctx,
       </div>
     </>}
     {confirm && <OperationConfirmModal {...confirm} facts={(value) => <div className="h1-confirm-facts" data-pending={confirmPending?.state}>
-      {confirmPending && <div className="h1-pending-feedback"><Notice tone="warn" title={confirmPending.state === "rejected" ? confirmPending.retryRejected ? "按原请求重试被拒绝" : "提交被拒绝" : "提交结果未知"}>
+      {confirmPending && <div className="h1-pending-feedback"><Notice tone="warn" title={confirmPending.state === "rejected" ? confirmPending.retryRejected ? "按原操作重试被拒绝" : "提交被拒绝" : "提交结果未知"}>
         {confirmPending.requests.some((request) => request.acknowledged && request.kind === "patch") && <p>{confirmPending.requests.filter((request) => request.acknowledged && request.kind === "patch").map((request) => `${request.label}已保存`).join("，")}；{confirmPending.requests.filter((request) => !request.acknowledged).map((request) => `${request.label}${confirmPending.state === "rejected" ? confirmPending.retryRejected ? "重试被拒绝" : "未保存" : "结果未知"}`).join("，")}。</p>}
-        <p>{confirmPending.state === "rejected" ? `拒绝原因：${confirmPending.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}` : confirmPending.requests.some((request) => request.kind === "proposal") ? "可能已经建了审批单，批准前参数不变。请先查询原结果。" : "原内容和理由已保留，可以按原请求重试，不会重复执行。"}</p>
+        <p>{confirmPending.state === "rejected" ? `拒绝原因：${confirmPending.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}` : confirmPending.requests.some((request) => request.kind === "proposal") ? "可能已经建了审批单，批准前参数不变。请先查询原结果。" : "原内容和理由已保留，可以按原操作重试，不会重复执行。"}</p>
       </Notice></div>}
       {confirm.businessForm && rhythm ? <Facts>
         <Fact k="现在">第 {text(rhythm.currentMonth)} 月，本阶段进度 {text(rhythm.phaseProgressPct)}%</Fact>
@@ -1136,7 +1136,7 @@ export default function H1Phase({ ctx,
         facts={<>
           <Fact k="前后值"><Change from={pendingValue(row, row.before)} to={pendingValue(row, row.after)} /></Fact>
           {row.requests.length > 1 && <Fact k="核查这一步">{request.label}（第 {index + 1} 步，共 {row.requests.length} 步）</Fact>}
-          {row.requests.length > 1 && <Fact k="结案以后">{later ? `${later}还没发出，${expired ? "已过 24 小时发不了，记录继续保留" : "结案后按原请求重试接着发"}。`
+          {row.requests.length > 1 && <Fact k="结案以后">{later ? `${later}还没发出，${expired ? "已过 24 小时发不了，记录继续保留" : "结案后按原操作重试接着发"}。`
             : `${others.map((item) => `${item.label}已保存`).join("，")}，只剩这一步。`}</Fact>}
           <Fact k="系统记录">{receiptFact(receipt, "这项还锁着")}</Fact>
         </>}
@@ -1160,9 +1160,9 @@ export default function H1Phase({ ctx,
           <Fact k="发起人">{detail.operator}</Fact>
           <Fact k="提交时间">{formatBusinessTimeCompact(new Date(detail.createdAt).toISOString())}（{businessZone().label}）</Fact>
         </Facts>
-        <Fold inset title="技术信息" summary={`${detail.requests.length} 个原请求`}>
+        <Fold inset title="技术信息" summary={`${detail.requests.length} 个操作编号`}>
           <div className="h1-request-list">{detail.requests.map((request) => <Facts key={request.commandKey}>
-            <Fact k="原请求编号">
+            <Fact k="操作编号">
               <span data-mono>{request.commandKey}</span>
             </Fact>
             <Fact k="请求">{request.method} /api/admin{request.kind === "patch" ? "/growth" : ""}{request.path}</Fact>

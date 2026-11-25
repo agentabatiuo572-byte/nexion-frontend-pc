@@ -24,7 +24,7 @@ export function AnalyticsFreshness({ asOf, label = "统计数据", explain = tru
   return <span className={`sa-freshness${delayed ? " sa-freshness-delayed" : ""}`} role="status">
     <span>{label}截至 <time dateTime={asOf}>{formatBusinessTimeCompact(asOf, "未知")}</time>（{businessZone().label}）</span>
     {delayed && <span>统计更新延迟，当前显示的数据已超过 2 分钟。</span>}
-    {delayed && <button type="button" className="rd-link" onClick={onRefresh}>读取最新统计</button>}
-    {explain && !delayed && <Explain label={`${label || "统计"}更新说明`} content="统计约每分钟更新，另需计算时间。刷新读取最新完成版本。" />}
+    {delayed && <button type="button" className="rd-link" onClick={onRefresh}>刷新</button>}
+    {explain && !delayed && <Explain label={`${label || "统计"}更新说明`} content="统计约每分钟更新，另需计算时间。点「刷新」看最新算好的一版。" />}
   </span>;
 }

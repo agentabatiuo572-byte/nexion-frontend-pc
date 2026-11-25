@@ -5,7 +5,7 @@ import { Clock3 } from "lucide-react";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, KeepText, Notice, ReleaseModal, StatusTag, Timeline } from "@/app/components/rd";
 import { correctNotificationTime, fetchNotificationTimeEvidence, UsersOutcomeUnknownError, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -70,7 +70,8 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
         if (result.notificationId !== notificationId) throw new Error("通知证据编号不匹配，请重试");
         setData(result);
       })
-      .catch(cause => { if (active) setError(displayAdminError(cause)); });
+      // 读证据失败用读取的说法（OP-84、TX-14），不用提交类的「先刷新确认是否已生效」。
+      .catch(cause => { if (active) setError(displayAdminReadError(cause)); });
     return () => { active = false; generation.current += 1; controller.abort(); };
   }, [userKey, notificationId, actorKey, canCorrect, attempt]);
   const submit = async (reason: string) => {
@@ -158,12 +159,12 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
         <Button size="sm" loading={submitting} disabledReason={expired ? EXPIRED_TEXT : writeBlockedReason} onClick={() => void submit(pending.reason)}>重试原校正</Button>
         {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>}>
-      {expired ? `${EXPIRED_TEXT}。` : "按原请求重试会用原证据和理由。"}原理由：{pending.reason}
-      <Explain label="技术信息" content={`原请求编号 ${pending.commandKey}`} />
+      {expired ? `${EXPIRED_TEXT}。` : "按原操作重试会用原证据和理由。"}原理由：{pending.reason}
+      <Explain label="技术信息" content={`操作编号 ${pending.commandKey}`} />
       {!expired && writeBlockedReason && <p className="rd-toolbar-note">{writeBlockedReason}</p>}
     </Notice>}
-    {!data && !error && <BlockState state="loading" title="正在读取关联证据…" />}
-    {error && <BlockState state="error" title={error} onRetry={() => setAttempt(value => value + 1)} />}
+    {!data && !error && <BlockState state="loading" title="正在加载关联证据…" />}
+    {error && <BlockState state="error" title="关联证据加载失败" detail={error} onRetry={() => setAttempt(value => value + 1)} />}
     {data && <>
       <Notice tone={data.status === "MATCHED" ? "neutral" : "warn"}>{conclusion}</Notice>
       <JudgmentPoints title="判断要点" rows={[

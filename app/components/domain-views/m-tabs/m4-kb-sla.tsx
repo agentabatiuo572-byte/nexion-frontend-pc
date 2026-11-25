@@ -270,7 +270,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     const fingerprint = original?.fingerprint ?? `m4|${command.kind === "create" ? "create" : command.row.id}`;
     if (!original) mCommands.remember(fingerprint, commandKey, { faq: command });
     if (!mCommands.isDurablyStored(fingerprint, commandKey)) {
-      const failure = "原操作未能保存，暂未提交。请恢复浏览器存储后按原请求重试。";
+      const failure = "原操作未能保存，暂未提交。请恢复浏览器存储后按原操作重试。";
       if (!original) mCommands.forget(fingerprint, commandKey);
       onFailure?.(new Error(failure)); toast(failure, "warn"); return false;
     }
@@ -695,7 +695,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
         disabledReason={canQueryM4 ? undefined : "当前账号没有知识库查看权限"} onClick={() => void queryOriginal(record)}>查询原结果</Button>}
       {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending || Boolean(state.busy)} onClick={() => setClosing(record)}>核查结案</Button>}
       {record.faq && canWriteM4 && !state.expired && !state.replayRejection && <Button size="sm" disabled={writePending}
-        disabledReason={writePending ? undefined : faqRecoveryBindings(record).blockedReason} onClick={() => restore(record)}>按原请求重试</Button>}
+        disabledReason={writePending ? undefined : faqRecoveryBindings(record).blockedReason} onClick={() => restore(record)}>按原操作重试</Button>}
       {state.replayRejection && canQueryM4 && <Button size="sm" variant="ghost" disabled={writePending || Boolean(state.busy)} onClick={() => openRelease(record)}>核实后解除</Button>}
     </> };
   });
@@ -781,7 +781,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
           toast(released ? recoveryInfo(releasing).gone ? `已解除这条记录。${GONE_TEXT}` : M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
         }} />}
 
-      {loading ? <Conclusion state="unknown">正在读取问答…</Conclusion>
+      {loading ? <Conclusion state="unknown">正在加载问答…</Conclusion>
         : failed ? <div className="m4-health" data-module-health-state="error"><Conclusion state="unknown" action={<Button size="sm" onClick={() => void readCurrent()}>重试</Button>}
             hint={<>{knowledgeRead.kind === "failed" ? knowledgeRead.reason : pget("I.support.knowledgeError")} 暂时不能新建和修改。{loadError && "客服中心的其他数据也没同步成功。"}</>}
             explain="问答和旧的工单处理时限数据是一起读的，其中一份读不全，问答就显示不了。点「重试」只重读知识库。">问答加载失败</Conclusion></div>
@@ -984,7 +984,7 @@ function FaqModal({
             onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原结果</Button>}
           {gone ? null : info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
             : <Button variant={recovery && recoveryBindings?.state?.replayBlock ? "secondary" : "primary"} data-proof="support-faq-save" loading={pending && !querying} loadingText="提交中…" disabled={disabled}
-              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
+              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原操作重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
         </>
       }
     >

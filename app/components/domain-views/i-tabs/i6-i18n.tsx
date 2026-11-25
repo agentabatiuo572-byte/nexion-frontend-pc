@@ -399,7 +399,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
   const recoveryReadProblem = (record: HIRewardCommand | I6Command) => {
     const data = freshOverview();
-    if (!data) return "请先成功重新读取数据，再按原请求重试。";
+    if (!data) return "请先成功重新读取数据，再按原操作重试。";
     if ("payload" in record) {
       const target = record.payload.kind === "proposal" ? record.payload.input.obj : undefined;
       if (target && !data.courses.some(course => course.id === target))
@@ -1594,7 +1594,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原结果</Button>
         {canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
         {!i6Recovery.state(record).replayRejection && <Button size="sm" variant="primary" disabledReason={ordinaryRetryProblem(record)}
-          onClick={() => void retryOrdinary(record)}>按原请求重试</Button>}
+          onClick={() => void retryOrdinary(record)}>按原操作重试</Button>}
         {i6Recovery.state(record).replayRejection && <VerifiedReleaseButton disabled={!!ordinaryBusy || !!i6Recovery.state(record).busy} onClick={() => release.ask({ operation: record.label,
           target: <>{record.target && <>{courseOf(record) ? nexGridBrandText(courseOf(record)!.titleZh || courseOf(record)!.title) : <span className="i6-mono">{record.target}</span>} </>}{ordinaryChange(record)}</>,
           getSnapshot: i6Recovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { const released = i6Recovery.releaseRejectedReplay(record); updateRecovery(value => value + 1); return released; } })} />}
@@ -1659,12 +1659,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                   onClick={() => {
                   const confirmation: ActionConfirmReq = { briefKind: "record",
                   action: `核对原操作 · ${label}`,
-                  title: "按原请求重试",
+                  title: "按原操作重试",
                   detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>刚查过，没查到这张审批单；确认后按原内容再提交一次，不会重复建单。理由沿用原操作。</>,
                   effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
                   statedBrief: { impact: "按原内容再提交一次，不会建第二张审批单。", check: "核对是哪门课、哪个版本。" },
                   facts: <Facts><Fact k="原操作">{label}</Fact><Fact k="改动">{change(record) ?? "—"}</Fact><Fact k="提交时间">{businessStamp(record.createdAt)}（{BJ}）</Fact></Facts>,
-                  confirmLabel: "按原请求重试",
+                  confirmLabel: "按原操作重试",
                   getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
                   getPendingRecovery: () => coursePendingRecovery(record, () => queryCourseOriginal(record)),
                   run: async () => {
@@ -1681,7 +1681,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 };
                   recoveryConfirm.current = { commandKey: () => record.commandKey, finish: () => ctx.closeActionConfirm(confirmation) };
                   openActionConfirm(confirmation);
-                }}>按原请求重试</Button>}
+                }}>按原操作重试</Button>}
                 {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" && <VerifiedReleaseButton disabled={!!lookupKey || !!i6CourseRecovery.state(record).busy} onClick={() => release.ask({ operation: label, target: change(record), targetLabel: "改动", getSnapshot: i6CourseRecovery.releaseSnapshot(record), createdAt: record.createdAt,
                   release: () => { try { releaseRejectedI6Course(record); } finally { updateRecovery(value => value + 1); } } })} />}
                 </span>

@@ -87,7 +87,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
     });
   }
   return <><Button size="sm" className="avatar-control-button" disabled={!actorId || busy} onClick={() => { setOpen(true); void read(); }}>更换本人头像</Button>
-    {open && <Drawer open title="更换本人头像" sub={name} busy={busy} explain="仅具备有效客服或主管资格的本人可更换，不需要账号管理权限。" onClose={() => { if (!busy) setOpen(false); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={busy} onClick={() => setOpen(false)}>返回工作台</Button><Button type="button" variant="primary" disabled={!allowed || !assetId || blocking || busy || Boolean(pending)} onClick={confirm}>确认保存本人头像</Button></div>}>
+    {open && <Drawer open title="更换本人头像" sub={name} busy={busy} explain="仅具备有效客服或主管资格的本人可更换，不需要账号管理权限。" onClose={() => { if (!busy) setOpen(false); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={busy} onClick={() => setOpen(false)}>返回工作台</Button><Button type="button" variant="primary" disabledReason={busy ? "正在处理，稍候" : pending ? "原头像保存结果未知，请先查询原结果" : !allowed ? "本人头像资料还没加载到，加载后才能保存" : blocking ? "图片还在准备，准备好才能保存" : !assetId ? "先选一张头像" : undefined} onClick={confirm}>确认保存本人头像</Button></div>}>
       <div className="account-avatar-controls m1-avatar-editor">
       {busy && <p className="rd-note" role="status">正在核对头像资料…</p>}{error && <Notice tone="danger">{error}</Notice>}
       {!allowed && !busy && <div><Button type="button" onClick={() => void read()}>重新核对本人资格与头像</Button></div>}

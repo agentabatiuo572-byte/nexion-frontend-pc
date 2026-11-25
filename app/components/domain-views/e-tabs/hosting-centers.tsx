@@ -256,7 +256,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
       line,
       actions: <>
         {(receipt.status === "unknown" || receipt.status === "pending") && <Button size="sm" loading={receiptBusy} onClick={() => void recover(receipt, false)}>查询原结果</Button>}
-        {receipt.status === "unknown" && <Button size="sm" disabledReason={canWrite ? undefined : "当前账号没有提交权限"} loading={receiptBusy} onClick={() => void recover(receipt, true)}>按原请求重试</Button>}
+        {receipt.status === "unknown" && <Button size="sm" disabledReason={canWrite ? undefined : "当前账号没有提交权限"} loading={receiptBusy} onClick={() => void recover(receipt, true)}>按原操作重试</Button>}
         {receipt.status !== "unknown" && receipt.status !== "pending" && <Button size="sm" variant="ghost" onClick={() => dismiss(receipt)}>知道了</Button>}
       </>,
       detail: <Facts>
@@ -287,7 +287,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
     <RecoveryPanel tone={unknown ? "warn" : "progress"} title={recoveryTitle(unknown, waiting, ended)} label="托管机房清单的修改"
       explain={<>
         <p>整份清单一次只能有一份修改在等批准；批准或驳回之前，这页不能再提交。</p>
-        <p>结果未知：提交时没收到确定结果。先查询原结果；查不到、又没过 24 小时，可以按原请求重试，不会建第二张审批单。</p>
+        <p>结果未知：提交时没收到确定结果。先查询原结果；查不到、又没过 24 小时，可以按原操作重试，不会建第二张审批单。</p>
         <p>批准时会再核对清单有没有被别人改过；改过就不执行，要按现在的清单重新提交。</p>
       </>}
       foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit?domain=E" prefetch={false}>到操作记录与审批核对</Link> : undefined}

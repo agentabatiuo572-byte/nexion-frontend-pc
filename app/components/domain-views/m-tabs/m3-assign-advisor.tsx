@@ -72,7 +72,7 @@ export function AssignAdvisorDialog({ adminId, customerId, customerName, canWrit
   if (pending) return <Modal title="核对上次分配" icon="users" busy={saving} onClose={onClose} footer={<>
     <Button disabled={saving} onClick={onClose}>关闭</Button>
     <Button variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原结果</Button>
-    {canWrite && <Button variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : command.canReplay ? undefined : "先查询原结果，查不到才能按原请求重试"} onClick={() => void command.run("replay")}>按原请求重试</Button>}
+    {canWrite && <Button variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={isRetryExpired(pending) ? RETRY_EXPIRED_TEXT : command.canReplay ? undefined : "先查询原结果，查不到才能按原操作重试"} onClick={() => void command.run("replay")}>按原操作重试</Button>}
   </>}>
     <div className="m3s-assign">
       <Notice tone="warn">{saving ? "正在查询原结果…" : error || "上次分配结果未知，请先查询原结果。"}</Notice>

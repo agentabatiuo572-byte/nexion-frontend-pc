@@ -344,7 +344,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       status: processedOf(record, expired, retry) ?? replayRejectedStatus(rejected, outcomes[record.commandKey]),
       actions: <>
         {queryButtons(record, slotLabel, change)}
-        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryReadReason(record) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryReadReason(record) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={!!checking || !!state.busy} onClick={() => release.ask({ operation: slotLabel, target: change, targetLabel: "改动", getSnapshot: jEmergencyRecovery.releaseSnapshot(record), createdAt: record.createdAt,
           release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(record); if (released) closeOriginalConfirm(record); syncPending(); return released; } })} />}
       </>,
