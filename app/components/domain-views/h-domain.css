@@ -592,6 +592,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-rec-zone { margin: var(--rd-space-2) 0 0; }
 .h3-rec-state, .h3-rec-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
 .h3-rec-actions { justify-content: flex-end; }
+.h3-rec-note, .h7-rec-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 @container hdom (max-width: 900px) {
   .h3-rec { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
   .h3-rec-time { grid-column: 1; grid-row: 2; }

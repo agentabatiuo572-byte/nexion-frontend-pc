@@ -6,6 +6,7 @@
  * 修改权 growth_h2_write、取消权 growth_h2_session_cancel、扣款权 growth_h2_session_charge 各判各的，没有就不显示按钮（OP-124）。
  * 强制取消提交审批，批准后执行；强制扣款已退役，历史申请仍可查询。参数修改直接生效，结果未知时保留原操作。
  */
+import { APPROVAL_REPLAY_RELEASE, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -24,14 +25,14 @@ import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
 import { currentAdminSession } from "@/lib/admin/auth-client";
 import { buyProductReason, H2_BUY_LIST_ACTION, H2_BUY_LIST_OBJECT, isBuyListVersion, nonBlank, readH2SessionProducts, readH2TrialPurchase, type BuyList, type BuyListWrite, type TrialTarget } from "@/lib/admin/h2-trial-purchase";
 import { usePropose } from "@/lib/admin/use-propose";
-import { finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
+import { canRetryH2Cancellation, releaseRejectedH2Cancellation, finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP, trialParamHelp } from "@/lib/admin/config-help/h2-trial";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { getH2PageGuide } from "@/lib/admin/page-guides";
 import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -435,9 +436,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [currentSid, setCurrentSid] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingCommand[]>([]);
   const [recovering, setRecovering] = useState("");
-  const [retryRejected, setRetryRejected] = useState<string[]>([]);
   const [pendingNotes, setPendingNotes] = useState<Record<string, string>>({});
   const [releasing, setReleasing] = useState<PendingCommand | null>(null);
+  const [legacyReleaseKey, setLegacyReleaseKey] = useState<string | null>(null);
   const [queryMissing, setQueryMissing] = useState<string[]>([]);
   const [retiredCharge, setRetiredCharge] = useState<RetiredCharge | null>(null);
   const [chargeLookup, setChargeLookup] = useState<{ missing?: boolean; ticket?: A2OperationRow; error?: string }>({});
@@ -733,22 +734,30 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同理由，不接受新输入（OP-94）。只有成功才解除待确认。 */
   const retryPending = async (record: PendingCommand) => {
-    if (record.expiresAt <= Date.now()) { syncPending(); return; }
+    if (record.expiresAt <= Date.now() || record.replayRejection) { syncPending(); return; }
     if (record.kind === "charge") { notePending(record, CHARGE_RESULT); return; }
     if (!(record.kind === "cancel" ? canCancel : canWrite)) { notePending(record, NO_WRITE); return; }
+    if (record.kind === "cancel") {
+      const actor = currentRecoveryActor(adminSession?.adminId);
+      if (!actor || !canRetryH2Cancellation(actor.authorities) || !queryMissing.includes(record.commandKey)) return;
+      setQueryMissing(current => current.filter(key => key !== record.commandKey));
+    }
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       notePending(record, "浏览器里读不到原操作，这次没有发送。记录继续保留，请到操作记录与审批核对。");
       return;
     }
-    setRetryRejected((current) => current.filter((key) => key !== record.commandKey));
     notePending(record, "");
     setRecovering(record.commandKey);
     try {
       await sendCommand(record);
     } catch (cause) {
       notePending(record, `重试没有成功：${displayAdminError(cause)} 原操作结果仍未知，记录继续保留。`);
-      if (isExplicitRejection(cause)) setRetryRejected((current) => [...current, record.commandKey]);
+      const rejection = explicitRejectionCode(cause);
+      if (rejection) {
+        pendingCommands.markReplayRejected(record.fingerprint, record.commandKey, rejection);
+        syncPending();
+      }
     } finally {
       setRecovering("");
     }
@@ -757,8 +766,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   /** 按命令号查原提案。查到就有了结果，可以解除；查不到说明不了没提交，继续保留（OP-95）。 */
   const checkPending = async (record: PendingCommand) => {
     setRecovering(record.commandKey);
+    setQueryMissing((current) => current.filter(key => key !== record.commandKey));
     try {
-      const original = await fetchA2ProposalByKey(record.commandKey);
+      const original = await fetchA2ProposalByKey(record.commandKey, true);
       if (!original) {
         setQueryMissing((current) => [...current, record.commandKey]);
         notePending(record, "没查到原审批单，结果仍未知，记录继续保留。");
@@ -777,6 +787,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
 
   /** 重试被拒后，人核实过原操作的结果才解除。不发请求，后端仍按这条现在的状态校验。 */
   const releasePending = (record: PendingCommand) => {
+    if (!pendingCommands.list().some(row => row.commandKey === record.commandKey && row.replayRejection)) return;
     pendingCommands.forget(record.fingerprint, record.commandKey);
     syncPending();
     setReleasing(null);
@@ -852,10 +863,16 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  const canQuery = ctx.can("platform_a2_read");
+  const canQuery = canReadOwnRecoveryProposal(adminSession?.authorities ?? []);
   const auditHref = "/platform/audit";
   const recoverLegacy = async (record: (typeof legacyApprovals)[number], mode: H2TrialApprovalMode) => {
     if (!adminSession || useAdminAuth.getState().session?.adminId !== adminSession.adminId) return;
+    if (mode === "retry") {
+      const actor = currentRecoveryActor(adminSession.adminId);
+      if (!actor || !canRetryH2Cancellation(actor.authorities) || record.replayRejection
+        || record.expiresAt <= Date.now() || !queryMissing.includes(record.commandKey)) return;
+    }
+    setQueryMissing((current) => current.filter(key => key !== record.commandKey));
     setRecovering(record.commandKey);
     try {
       const ticket = await submitH2TrialApproval(adminSession, record, "", mode);
@@ -868,7 +885,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       toast(`已找回原审批单 ${ticket.id}，${PROPOSAL_STATUS[ticket.status]}。`, "success");
       await reload();
     } catch (cause) {
-      toast(displayAdminError(cause), "error");
+      setLegacyApprovals(pendingH2TrialApprovals(adminSession.adminId));
+      if (mode !== "retry" || !explicitRejectionCode(cause)) toast(displayAdminError(cause), "error");
     } finally {
       setRecovering("");
     }
@@ -939,9 +957,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       action={<>
         {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原结果</Button>}
         {record.expiresAt > Date.now() && <Button size="sm" disabled={!!recovering}
-          disabledReason={!canCancel ? NO_WRITE : !queryMissing.includes(record.commandKey) ? "先查询原结果，查不到才能重试" : undefined}
-          onClick={() => void recoverLegacy(record, "retry")}>按原操作重试</Button>}
-      </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原操作，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}</Notice>),
+          disabledReason={!canRetryH2Cancellation(adminSession?.authorities ?? []) ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除" : !queryMissing.includes(record.commandKey) ? "先查询原结果，查不到才能重试" : undefined}
+          onClick={() => void recoverLegacy(record, "retry")}>按原请求重试</Button>}
+        {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setLegacyReleaseKey(record.commandKey)}>解除原操作记录</Button>}
+      </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原请求，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}{record.replayRejection && <p>重试没有成功：{displayAdminError(new Error(record.replayRejection))} {APPROVAL_REPLAY_RELEASE}</p>}</Notice>),
     ...pending.map((record) => {
     if (record.kind === "charge") return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`}
@@ -952,23 +971,24 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const proposal = isProposal(record);
     const expired = record.expiresAt <= Date.now();
     const object = proposal ? record.sid : record.paramKey;
-    // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。没有查询能力的路径只能重试，照实写。
-    const canRetry = record.kind === "cancel" ? canCancel : canWrite;
-    const needQuery = proposal && canQuery && !queryMissing.includes(record.commandKey);
-    const retryBlock = !canRetry ? NO_WRITE : needQuery ? "先查询原结果，查不到才能重试" : undefined;
+    // 提案按原号明确查无后才能重试，直写沿用原号重发。
+    const canRetry = record.kind === "cancel" ? canRetryH2Cancellation(adminSession?.authorities ?? []) : canWrite;
+    const needQuery = proposal && !queryMissing.includes(record.commandKey);
+    const retryBlock = !canRetry ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除"
+      : proposal && !canQuery ? "这个账号查不了原审批单" : needQuery ? "先查询原结果，查不到才能重试" : undefined;
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`} action={<>
         {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原操作重试</Button>}
-        {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+        {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>}>
         {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         <KeepText text={proposal ? "审批可能已经提交，批准前不会执行；有结果前这条记录不能再操作。" : "可能已经生效，有结果前这项不能再改。"} />
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
         <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`操作编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
-        {!expired && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
+        <Explain label="技术信息" content={`原请求编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
+        {(!expired || record.replayRejection) && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
       </Notice>
     );
   })];
@@ -994,10 +1014,17 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         syncBuyPending();
       }} />
   );
-  const releaseModal = releasing && (
+  const legacyReleasing = legacyApprovals.find(record => record.commandKey === legacyReleaseKey);
+  const releaseModal = releasing ? (
     <ReleaseModal label={commandTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
       explain="重试被拒不代表原操作没生效，先到操作记录确认。解除只删掉这个标签页里的记录，后台可能仍锁着这一项。" />
-  );
+  ) : legacyReleasing && adminSession && <ReleaseModal label={`强制取消试用 · ${legacyReleasing.sid}`} explain={APPROVAL_REPLAY_RELEASE}
+    onCancel={() => setLegacyReleaseKey(null)} onConfirm={() => {
+      if (!releaseRejectedH2Cancellation(adminSession.adminId, legacyReleasing.commandKey)) return;
+      setLegacyApprovals(pendingH2TrialApprovals(adminSession.adminId));
+      setLegacyReleaseKey(null);
+      toast("已解除原操作记录，后台的结果和锁定不变", "success");
+    }} />;
 
   if (loading && !model) {
     return <>{header()}{pendingNotices}<BlockState state="loading" title="试用数据加载中…" />{releaseModal}{releaseBuyListModal}{retiredChargeModal}</>;

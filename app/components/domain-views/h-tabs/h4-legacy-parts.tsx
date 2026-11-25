@@ -4,7 +4,7 @@
  * H4「既有活动与转盘」页签的展示件：既有活动卡、App 上的样子、转盘概率条、奖档表、护栏卡、确认框里的概率对比。
  * 只排版：数据由页面按后端读模型传进来，不发请求、不判权限、不改请求内容。
  */
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { CalendarRange, CircleAlert, Clock3, EyeOff, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";
 import { Button, Explain, Fact, Facts, MoreMenu, Notice, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
@@ -16,6 +16,55 @@ import { amountText, formatTime } from "./h4-promotion-ui";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+
+const buttonName = (element: Element) => element.getAttribute("aria-label") ?? element.textContent ?? "";
+/** 一张卡、一行是谁：重新读取会换节点，靠不变的编号（活动编码、期编号）认回来，不用会改的名称。 */
+const rowCode = (element: Element) => element.closest<HTMLElement>("[data-code]")?.dataset.code;
+type H4Opener = { node: HTMLElement; row: Element | null; code?: string; name: string };
+const openerOf = (node: Element | null): H4Opener | null => node instanceof HTMLElement && node !== document.body
+  ? { node, row: node.closest("[data-code]"), code: rowCode(node), name: buttonName(node) } : null;
+/**
+ * 抽屉关上后焦点回打开它的按钮（CP-66）：按钮重画过就在同一编号的那张卡、那一行里找同名的，没有就落到这一块的标题，不落到 body。
+ * 抽屉和确认框都收完再看（都收完前不抢焦点）；焦点已被点到别处时不动。
+ * 点了按钮、抽屉要等读完才开的，开之前用返回的 from 记下点的是哪个按钮。
+ */
+export function useH4DrawerFocus(open: boolean, panelId: string) {
+  const opener = useRef<H4Opener | null>(null);
+  const clicked = useRef<H4Opener | null>(null);
+  const wasOpen = useRef(false);
+  const shown = useRef(false);
+  // 打开那一刻按钮还没重画，先记下来。
+  if (open && !wasOpen.current) {
+    opener.current = clicked.current ?? openerOf(document.activeElement);
+    clicked.current = null;
+  }
+  wasOpen.current = open;
+  useEffect(() => {
+    if (open) { shown.current = true; return; }
+    if (!shown.current) return;
+    shown.current = false;
+    const from = opener.current;
+    let timer = 0, waits = 20;
+    const settle = () => {
+      // 抽屉还在收、或确认框比抽屉晚一步关（还在读最新）：等它们收完再看，最多 6 秒。
+      if (document.querySelector(".rd-modal, .rd-drawer[data-state='closed']") && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
+      if (document.activeElement && document.activeElement !== document.body) return;
+      const usable = (element: HTMLElement) => element.isConnected && element.getClientRects().length > 0 && !(element instanceof HTMLButtonElement && element.disabled);
+      const panel = document.getElementById(panelId);
+      // 提交成功后列表重读，卡片换了节点：按名字和编号找回那一张；列表还没读回来就再等。
+      const rows = panel ? [...panel.querySelectorAll<HTMLElement>("[data-code]")] : [];
+      if (from?.row && !from.row.isConnected && !rows.length && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
+      const row = from?.row?.isConnected ? from.row : rows.find(item => item.dataset.code === from?.code);
+      const same = row && from ? [...row.querySelectorAll<HTMLElement>("button")].filter(element => usable(element) && buttonName(element) === from.name) : [];
+      const target = from && usable(from.node) ? from.node : same.length === 1 ? same[0] : panel?.querySelector<HTMLElement>(".rd-panel-title");
+      if (target?.matches(".rd-panel-title")) target.tabIndex = -1;
+      target?.focus();
+    };
+    timer = window.setTimeout(settle, 300);
+    return () => window.clearTimeout(timer);
+  }, [open, panelId]);
+  return { from: (node: HTMLElement) => { clicked.current = openerOf(node); } };
+}
 
 export const H4_MISSING_ORIGINAL = "最新列表里已没有这个对象，你填的内容没有提交。";
 export const H4_OLD_RECORD_REJECTED = "原来的修改没有保存，记录太旧无法逐项对比，请按最新配置重新修改。";
@@ -146,6 +195,10 @@ export function ApprovalFact({ amplify, object }: { amplify: string; object: str
   return <Fact k="谁来批">{amplify}<span className="rd-keep">要另一位超级管理员批准，</span><span className="rd-keep">批准前{object}不变</span></Fact>;
 }
 export const effectDirect = <StatusTag tone="progress" filled>立即生效</StatusTag>;
+/** 只存草稿：用户侧不变，灰底（VS-106）。 */
+export const effectDraft = <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>;
+/** 原操作结果未知时保存按钮的原因：抽屉主按钮和离开框用同一句。 */
+export const H4_UNKNOWN_SAVE = "原操作结果未知，先在本页顶部查询原结果";
 export const effectByDirection = (amplify = "让平台多付钱的修改") => <><StatusTag tone="progress" filled>调低立即生效</StatusTag><StatusTag tone="neutral" explain={`${amplify}要另一位超级管理员（需有审批批准权限）批准，批准前什么都不变；其余确认后立即生效。提交时由系统判断方向。`}>调高要批准</StatusTag></>;
 export const effectApproval = (note: string) => <StatusTag tone="progress" filled explain={`另一位超级管理员（需有审批批准权限）批准后才执行，批准前${note}不变。`}>批准后生效</StatusTag>;
 

@@ -267,9 +267,10 @@ const EDITOR_TABS: readonly { value: EditorTab; label: string }[] = [
 const TAB_OF = (key: string): EditorTab => key.startsWith("quiz.") || ["quizCount", "passScore", "retries", "completionCond", "rewardEvent"].includes(key) ? "quiz"
   : ["slug", "version", "category", "format", "difficulty", "duration", "reward"].includes(key) ? "settings" : "body";
 
-export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, onClose, onSave }: {
+export function CourseEditor({ open, spec, initial, requiredLanguages, title, sub, busy, onClose, onSave }: {
   open: boolean;
   spec: CourseSpec | null;
+  initial?: CourseForm;
   requiredLanguages: readonly OperatingLanguageCode[];
   title: string;
   sub?: ReactNode;
@@ -285,7 +286,7 @@ export function CourseEditor({ open, spec, requiredLanguages, title, sub, busy, 
   const specKey = spec ? `${spec.mode}:${spec.current?.slug ?? ""}:${spec.current?.version ?? ""}` : "";
   useEffect(() => {
     if (!spec) return;
-    setForm(mapCourseLanguages(courseFormState(spec), requiredLanguages, "edit"));
+    setForm(mapCourseLanguages(initial ?? courseFormState(spec), requiredLanguages, "edit"));
     setTab("body");
     setLang("zh");
     setTried(false);

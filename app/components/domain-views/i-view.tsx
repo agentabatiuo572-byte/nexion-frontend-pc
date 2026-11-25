@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./i-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { fetchIContentOverviews, iContentActions, type IContentData } from "@/lib/admin/i-client";
+import { fetchIContentOverviews, iContentActions, type IContentData, type IContentReadResult } from "@/lib/admin/i-client";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
@@ -116,7 +116,9 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
     ].join("\u0000");
   });
   const scopeKey = [tab, contentPermissionScope].join("\u0000");
-  const contentRequestSequence = useRef(0);
+  const currentScope = useRef(scopeKey);
+  currentScope.current = scopeKey;
+  const latestContentRequest = useRef<{ scopeKey: string; result: Promise<IContentReadResult> } | null>(null);
   const [contentSnapshot, setContentSnapshot] = useState<{
     data: IContentData;
     dataScope: string | null;
@@ -129,45 +131,42 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const contentLoading = contentReadable ? contentSnapshot.loading : true;
   const contentError = contentSnapshot.errorScope === scopeKey ? contentSnapshot.error : null;
 
-  const reloadIContent = useCallback(async () => {
-    const requestSequence = ++contentRequestSequence.current;
+  const reloadIContent = useCallback(async (): Promise<IContentReadResult> => {
+    if (currentScope.current !== scopeKey) return { ok: false, superseded: true };
     setContentSnapshot((current) => ({ ...current, loading: true }));
-    try {
-      const nextContent = await fetchIContentOverviews();
-      if (requestSequence !== contentRequestSequence.current) return;
-      const nextError = contentErrorForTab(tab, nextContent);
-      setContentSnapshot((current) => {
-        if (nextError && current.dataScope === scopeKey) {
-          return {
-            ...current,
-            loading: false,
-            error: nextError,
-            errorScope: scopeKey,
-          };
+    const result = fetchIContentOverviews().then(
+      nextContent => {
+        const nextError = contentErrorForTab(tab, nextContent);
+        if (currentScope.current === scopeKey && latestContentRequest.current?.result === result) {
+          setContentSnapshot(current => nextError && current.dataScope === scopeKey
+            ? { ...current, loading: false, error: nextError, errorScope: scopeKey }
+            : { data: nextContent, dataScope: scopeKey, loading: false, error: nextError, errorScope: scopeKey });
         }
-        return {
-          data: nextContent,
-          dataScope: scopeKey,
-          loading: false,
-          error: nextError,
-          errorScope: scopeKey,
-        };
-      });
-    } catch (error) {
-      if (requestSequence !== contentRequestSequence.current) return;
-      setContentSnapshot((current) => ({
-        ...current,
-        loading: false,
-        error: tab + " 数据加载失败，请刷新重试",
-        errorScope: scopeKey,
-      }));
+        return nextError ? { ok: false, reason: contentErrorText(nextError) } as const : { ok: true, data: nextContent } as const;
+      },
+      () => {
+        const error = tab + " 数据加载失败，请刷新重试";
+        if (currentScope.current === scopeKey && latestContentRequest.current?.result === result) {
+          setContentSnapshot(current => ({ ...current, loading: false, error, errorScope: scopeKey }));
+        }
+        return { ok: false, reason: contentErrorText(error) } as const;
+      },
+    );
+    latestContentRequest.current = { scopeKey, result };
+    let currentResult: Promise<IContentReadResult> = result;
+    for (;;) {
+      const outcome = await currentResult;
+      const latest = latestContentRequest.current;
+      if (currentScope.current !== scopeKey || !latest || latest.scopeKey !== scopeKey) return { ok: false, superseded: true };
+      if (latest.result === currentResult) return outcome;
+      currentResult = latest.result;
     }
   }, [scopeKey, tab]);
 
   useEffect(() => {
     // A completed request from the prior route or auth/permission generation
     // must not repopulate this scope before its own initial read starts.
-    contentRequestSequence.current += 1;
+    latestContentRequest.current = null;
     setActionConfirm(null);
     setCf(null);
   }, [scopeKey]);

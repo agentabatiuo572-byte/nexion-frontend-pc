@@ -4,10 +4,11 @@
  * 新人礼与邀请奖励（H8）。首屏回答：奖励开着没有、新人和邀请人每位实际拿多少（基础额 × 运营阶段设置的当月加成）、
  * 有多少注册在等结算、改哪一项会让平台多付钱。
  * 调高金额、启用、改成「符合资格就直接发」提交审批，另一位超级管理员批准后生效；反方向确认后立即保存。
- * 两种结算都只提交审批，另一位管理员批准后才发。结果未知保存完整原请求和确认事实，恢复不依赖概览。
+ * 两种结算都只提交审批，另一位超级管理员批准后才发。结果未知保存完整原请求和确认事实，恢复不依赖概览。
  */
 import { useFReconfirmations } from "@/lib/admin/f-reconfirmation";
 import { fetchA2Overview } from "@/lib/admin/a2-client";
+import { fApprovalPermissionText, H8_SETTLEMENT_APPROVAL_PERMISSION } from "@/lib/admin/f-approval-names";
 import { fProposalEndText } from "@/app/components/domain-views/f-tabs/f-release";
 import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
@@ -70,7 +71,6 @@ const WHO: Record<string, { who: string; per: string; icon: typeof Gift }> = {
   "inviter.nex": { who: "邀请人", per: "每位邀请人", icon: Users },
 };
 const APPROVER = "另一位超级管理员";
-const SETTLE_APPROVER = "另一位管理员";
 const MODE_HELP: Record<string, string> = {
   risk_bucket: "命中待复核风险的新人先不发；账户或账户组被标记或冻结的、在「异常套利与刷量排查」被拦截新人礼的也不发。",
   direct: "只跳过待复核风险这一层；账户或账户组被标记或冻结的、在「异常套利与刷量排查」被拦截新人礼的照样不发。",
@@ -554,7 +554,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {!targeted && value && <Fact k="这一批最多发出">{timesText(rewards?.["newcomer.usdt"], batchCount, usdtDecimals)} USDT + {timesText(rewards?.["newcomer.nex"], batchCount, uvtDecimals, rewards?.["inviter.nex"])} UVT</Fact>}
         {!checked && <Fact k="会冻结的">注册时标了首购冻结的，新人礼冻结到首笔实付订单；有几位页面算不出</Fact>}
         <Fact k="钱从哪出">平台出钱，进新人和邀请人的钱包，记进资金账本</Fact>
-        <Fact k="谁来批准">{SETTLE_APPROVER}（需有审批批准权限和邀请奖励结算权限）</Fact>
+        <Fact k="谁来批">{APPROVER}</Fact>
+        <Fact k="需有权限">{fApprovalPermissionText(H8_SETTLEMENT_APPROVAL_PERMISSION)}</Fact>
         {proposeBlock && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，提交会被拒绝；请有权限的同事发起</Fact>}
       </Facts>;
     };
@@ -564,7 +565,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     detail: targeted
       ? `只结算新人 ${invitedUserId}；不符合条件就不发，也不会改发给别人。已结算、礼包还冻结又已有首笔实付订单的，这次只解冻原礼包。`
       : "按注册先后找出生效时间起注册、已开钱包、还没结算、没被风控拦下的新人，有没有邀请人都算。",
-    effect: <><StatusTag tone="progress" filled explain={`${SETTLE_APPROVER}在「操作记录与审批」批准后才发，批准前什么都不发。批准时按那时的名单发；奖励配置在这期间变了，要重新提交。`}>批准后执行</StatusTag><IrreversibleTag /></>,
+    effect: <><StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才发，批准前什么都不发。批准时按那时的名单发；奖励配置在这期间变了，要重新提交。`}>批准后执行</StatusTag><IrreversibleTag /></>,
     statedBrief: {
       impact: targeted ? "批准后给这位新人和他的邀请人发奖励，发出去不能撤回。" : "批准后按注册先后给这一批新人和他们的邀请人发奖励，发出去不能撤回。",
       check: "核对人数和每位金额；理由写清结算依据或工单号。",
@@ -780,7 +781,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
             explain="三项实际发放都是 0 时不能结算；至少把一项改成大于 0。">奖励开着，但三项金额都是 0，现在结算会被拒绝</Conclusion>
         : pending > 0
           ? <Conclusion state="warn" icon={ListChecks}
-              hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
+              hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位超级管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
               explain="不会自动结算。批准时按那一刻的名单发，人数可能和现在不同。">
               奖励开着，有 {countText(pending)} 位新人等待结算</Conclusion>
           : <Conclusion state="ok" explain="待结算只算生效时间起注册、已开钱包、还没结算、没被风控拦下的新人。">奖励开着，没有等待结算的注册</Conclusion>;
@@ -862,7 +863,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         </Panel>
 
       <Panel title="结算" icon={Route} tone="role-3" sub={`待结算 ${countText(pending)} 位`}
-        explain="不会自动结算。批量和指定新人两种结算都只提交审批，另一位管理员批准后才发；同一时间只能有一张结算审批单。"
+        explain="不会自动结算。批量和指定新人两种结算都只提交审批，另一位超级管理员批准后才发；同一时间只能有一张结算审批单。"
         actions={canSettle ? <Button variant="primary" disabledReason={settleWriteBlock ?? freshBlocked ?? settleBlock} onClick={conflictDraft.register("settle:batch", () => settle())}>批量结算</Button> : undefined}>
         <RewardFlow pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
         <div className="h8-settle-foot">

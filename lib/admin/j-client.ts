@@ -1,12 +1,15 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { createPendingMutationStore, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { createPendingMutationStore, createPendingRecovery, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, type FundCommandOrigin, type FundCommandEvidence } from "./fund-command-investigation";
-import { discoverECommand, investigateECommand } from "./e-command-investigation";
+import { discoverECommand, investigateECommand, type ECommandInvestigation } from "./e-command-investigation";
+
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 type ApiResult<T> = {
   code?: number;
@@ -187,22 +190,54 @@ export const listJ4PendingCommands = () => emergencyCommands.list().filter((reco
   && (!record.sop.commandOrigin || record.sop.commandOrigin.originalAdminId === String(useAdminAuth.getState().session?.adminId)));
 export const listJ4PendingProposals = () => emergencyCommands.list().filter((record): record is J4PendingProposal => !!record.sopProposal);
 export const listJ4LegacyCommands = () => emergencyCommands.list().filter((record) => isJ4WriteSlot(record.fingerprint) && !record.sop);
-/** Local release after confirmation: expired legacy records cannot be replayed. */
-export function releaseExpiredJLegacyCommand(record: SlotAttemptRecord) {
-  const saved = emergencyCommands.list().find((row) => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
-  if (!saved || !isRetryExpired(saved) || saved.geo || saved.tamper || saved.sop || saved.sopProposal
-    || !(isJ2WriteSlot(saved.fingerprint) || saved.fingerprint === J3_CONFIG_SLOT || isJ4WriteSlot(saved.fingerprint))) return false;
-  emergencyCommands.forget(saved.fingerprint, saved.commandKey);
-  return true;
-}
 export const getJ4PendingCommand = (slot: string) => listJ4PendingCommands().find((record) => record.fingerprint === slot);
 export const getJ4PendingProposal = (code: string) => listJ4PendingProposals().find((record) => record.fingerprint === j4ProposalSlot(code));
 
-export async function retryJ4Command(record: J4PendingCommand) {
-  const saved = getJ4PendingCommand(record.fingerprint);
-  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
-  await apiRequest(saved.sop.path, { method: saved.sop.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.sop.body }, undefined, undefined, saved.sop.context);
+export const J4_TARGET_AUTHORITY: Record<string, string> = {
+  J1: "emergency_j1_gate_kill", J2: "emergency_j2_emergency_block", C2: "user_c2_account_freeze",
+  K1: "risk_k1_cluster_freeze", I3: "content_i3_write", I5: "content_i5_disclosure_publish",
+};
+
+export function j4CanWrite(context: J4CommandContext, grants: readonly string[]) {
+  if (context.kind === "create" || context.kind === "update" || context.kind === "drill") return grants.includes("emergency_j4_write");
+  if (!grants.includes("emergency_j4_playbook_execute")) return false;
+  if (context.kind === "rollback") return grants.includes("emergency_j1_gate_resume");
+  return context.kind !== "execute" || (grants.includes("platform_a2_write") || grants.includes("platform_a2_proposal_create"))
+    && context.playbook.seq.every(step => !!J4_TARGET_AUTHORITY[step.dom] && grants.includes(J4_TARGET_AUTHORITY[step.dom]));
+}
+
+function j2WriteAuthority(path: string) {
+  if (path.includes("country-lists/")) return "emergency_j2_country_manage";
+  if (path.includes("endpoints/")) return "emergency_j2_write";
+  return path.endsWith("edge-judge") ? "emergency_j2_edge_source_manage" : "emergency_j2_emergency_block";
+}
+
+export const jEmergencyRecovery = createPendingRecovery(emergencyCommands, {
+  capability: record => record.geo || record.tamper || record.sop || record.sopProposal ? "receipt" : "readback",
+  hasApproval: record => !!record.sopProposal?.accepted,
+  canReplay: record => {
+    const auth = useAdminAuth.getState(), grants = auth.session?.authorities;
+    if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || auth.session?.passwordChangeRequired || !grants) return false;
+    const context = record.sop?.context ?? record.sopProposal?.context;
+    if (context) return !record.sopProposal?.accepted && j4CanWrite(context, grants);
+    if (record.geo) return grants.includes(j2WriteAuthority(record.geo.path));
+    return !!record.tamper && grants.includes("emergency_j3_alert_config");
+  },
+  explicitRejectionCode,
+});
+
+export function jEmergencyRetryBlocked(record: SlotAttemptRecord) {
+  const state = jEmergencyRecovery.state(record);
+  if (state.replayRejection) return RETRY_REJECTED_TEXT;
+  if (state.expired) return RETRY_EXPIRED_TEXT;
+  return state.replayBlock ? "请查询原结果" : undefined;
+}
+
+export function retryJ4Command(record: J4PendingCommand) {
+  return jEmergencyRecovery.replay(record, async saved => {
+    if (!saved.sop) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+    await apiRequest(saved.sop.path, { method: saved.sop.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.sop.body }, undefined, undefined, saved.sop.context, saved.commandKey);
+  });
 }
 
 function validateJ4ProposalTicket(row: A2OperationRow, record: J4PendingProposal) {
@@ -217,141 +252,134 @@ function validateJ4ProposalTicket(row: A2OperationRow, record: J4PendingProposal
 }
 
 export async function queryJ4Proposal(record: J4PendingProposal) {
-  const row = await fetchA2ProposalByKey(record.commandKey, true);
-  if (!row) {
-    if (record.sopProposal.accepted) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
-    return null;
+  const result = await jEmergencyRecovery.query(record, async saved => {
+    if (!saved.sopProposal) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+    const row = await fetchA2ProposalByKey(saved.commandKey, true);
+    if (!row) {
+      if (saved.sopProposal.accepted) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
+      return { conclusion: "not-found", row } as const;
+    }
+    validateJ4ProposalTicket(row, { ...saved, sopProposal: saved.sopProposal });
+    return { conclusion: row.status === "pending" ? "unknown" : row.status === "approved" ? "succeeded" : "not-executed", row } as const;
+  });
+  if (!result) return null;
+  if (result.row?.status === "pending") emergencyCommands.remember(record.fingerprint, record.commandKey, { ...record, sopProposal: { ...record.sopProposal, accepted: true } });
+  else if (result.row) jEmergencyRecovery.settleFromQuery(record, result.conclusion);
+  return result.row;
+}
+
+export async function submitJ4Proposal(input: J4ProposalInput, commandKey: string, context: Extract<J4CommandContext, { kind: "execute" }>, observe?: (record: J4PendingProposal, row: A2OperationRow) => void) {
+  if (getJ4PendingProposal(context.playbook.code)) throw new Error("J4_ORIGINAL_PENDING");
+  const slot = j4ProposalSlot(context.playbook.code);
+  const body = JSON.stringify(input);
+  emergencyCommands.remember(slot, commandKey, { inputFingerprint: body, sopProposal: { body, context, accepted: false } });
+  if (!emergencyCommands.isDurablyStored(slot, commandKey)) {
+    emergencyCommands.forget(slot, commandKey);
+    throw new Error("EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
   }
-  validateJ4ProposalTicket(row, record);
-  if (row.status !== "pending") emergencyCommands.forget(record.fingerprint, record.commandKey);
-  else emergencyCommands.remember(record.fingerprint, record.commandKey, { inputFingerprint: record.sopProposal.body, sopProposal: { ...record.sopProposal, accepted: true } });
+  const original = getJ4PendingProposal(context.playbook.code)!;
+  await sendJ4Proposal(original, false);
+  const row = await queryJ4Proposal(original);
+  if (row) observe?.(original, row);
   return row;
 }
 
-/** Called only after the operator confirms clearing an expired, authoritatively absent proposal. */
-export async function releaseExpiredJ4Proposal(record: J4PendingProposal) {
-  const saved = getJ4PendingProposal(record.sopProposal.context.playbook.code);
-  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  if (saved.sopProposal.accepted) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
-  if (!isRetryExpired(saved)) throw new Error("J4_PROPOSAL_NOT_EXPIRED");
-  if (await queryJ4Proposal(saved)) return false;
-  emergencyCommands.forget(saved.fingerprint, saved.commandKey);
-  return true;
-}
-
-export async function submitJ4Proposal(input: J4ProposalInput, commandKey: string, context: Extract<J4CommandContext, { kind: "execute" }>) {
-  const slot = j4ProposalSlot(context.playbook.code);
-  const saved = getJ4PendingProposal(context.playbook.code);
-  const body = JSON.stringify(input);
-  if (saved && (saved.commandKey !== commandKey || saved.sopProposal.body !== body)) {
-    throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
-  }
-  if (saved && (isRetryExpired(saved) || saved.sopProposal.accepted)) {
-    throw new Error(saved.sopProposal.accepted ? "J4_PROPOSAL_STATUS_UNAVAILABLE" : RETRY_EXPIRED_TEXT);
-  }
-  if (!saved) emergencyCommands.remember(slot, commandKey, { inputFingerprint: body, sopProposal: { body, context, accepted: false } });
-  if (!emergencyCommands.isDurablyStored(slot, commandKey)) {
-    if (!saved) emergencyCommands.forget(slot, commandKey);
-    throw new Error(saved ? "EMERGENCY_ORIGINAL_RETRY_STORAGE_UNAVAILABLE" : "EMERGENCY_IDEMPOTENCY_STORE_UNAVAILABLE");
-  }
-  const original = getJ4PendingProposal(context.playbook.code)!;
+async function sendJ4Proposal(original: J4PendingProposal, recovering: boolean) {
+  const { commandKey, fingerprint: slot } = original;
+  if (!j4CanWrite(original.sopProposal.context, useAdminAuth.getState().session?.authorities ?? [])) throw new Error("ACCESS_DENIED");
+  if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
   try {
     const row = await createA2OperationProposal(JSON.parse(original.sopProposal.body), commandKey, true);
     validateJ4ProposalTicket(row, original);
   } catch (error) {
     const failure = error as { status?: number; backendMessage?: string } | null;
-    const rejected = saved ? isExplicitRejection(error)
-      : !isA2OutcomeUncertainError(error) && !isEmergencyOutcomeUncertain(error)
+    const rejected = !isA2OutcomeUncertainError(error) && !isEmergencyOutcomeUncertain(error)
         && !isIdempotencyOutcomeOpen(failure?.backendMessage)
         && isDeterministicRejection(failure?.status ?? 0);
-    if (rejected) emergencyCommands.forget(slot, commandKey);
+    if (!recovering && rejected) emergencyCommands.forget(slot, commandKey);
     throw error;
   }
   // A replayed create receipt is historical. Persist acceptance, then query current status.
-  emergencyCommands.remember(slot, commandKey, { inputFingerprint: body, sopProposal: { ...original.sopProposal, accepted: true } });
-  return queryJ4Proposal(getJ4PendingProposal(context.playbook.code)!);
+  emergencyCommands.remember(slot, commandKey, { ...original, sopProposal: { ...original.sopProposal, accepted: true } });
 }
 
 export async function retryJ4Proposal(record: J4PendingProposal) {
-  const saved = getJ4PendingProposal(record.sopProposal.context.playbook.code);
-  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  return submitJ4Proposal(JSON.parse(saved.sopProposal.body), saved.commandKey, saved.sopProposal.context);
+  await jEmergencyRecovery.replay(record, saved => {
+    if (!saved.sopProposal) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+    return sendJ4Proposal({ ...saved, sopProposal: saved.sopProposal }, true);
+  });
+  return queryJ4Proposal(record);
 }
 
-export async function retryJ3Command(record: J3PendingCommand) {
-  const saved = getJ3PendingCommand();
-  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
-  await apiRequest(saved.tamper.path, { method: saved.tamper.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.tamper.body }, undefined, saved.tamper.context);
+export function retryJ3Command(record: J3PendingCommand) {
+  return jEmergencyRecovery.replay(record, async saved => {
+    if (!saved.tamper) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+    await apiRequest(saved.tamper.path, { method: saved.tamper.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.tamper.body }, undefined, saved.tamper.context, undefined, saved.commandKey);
+  });
 }
 
-/** Receipt lookup and controlled closure share the E4/D3 evidence contract, including after expiry. */
-export async function queryJ3Command(record: J3PendingCommand, evidence?: FundCommandEvidence) {
-  const saved = getJ3PendingCommand();
-  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  let receipt;
-  if (saved.tamper.commandOrigin) {
-    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.tamper.commandOrigin }, evidence);
-  } else {
-    // During backend-first rollout an older client may already have a retained server receipt.
-    // Its server-owned origin must prove this operator; do not invent or persist a legacy maker.
+async function queryEmergency(record: SlotAttemptRecord, authority: FundCommandOrigin["readAuthority"], scope: (saved: EmergencyPendingCommand) => string | undefined, evidence?: FundCommandEvidence) {
+  const result = await jEmergencyRecovery.query(record, async saved => {
+    const origin = saved.geo?.commandOrigin ?? saved.tamper?.commandOrigin ?? saved.sop?.commandOrigin;
     const actorId = useAdminAuth.getState().session?.adminId;
     if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
-    const locator = { commandKey: saved.commandKey, originalMethod: "PUT" as const,
-      originalPath: "/api/admin/emergency/tamper/alert-config", originalAdminId: String(actorId) };
-    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j3_read") : await discoverECommand(locator);
-  }
-  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
-  return receipt;
+    const [method, path] = saved.fingerprint.split(" ");
+    const locator = { commandKey: saved.commandKey, originalMethod: method as "PUT" | "POST",
+      originalPath: `/api/admin/emergency${path}`, originalAdminId: String(actorId) };
+    const receipt: ECommandInvestigation | null = origin ? await checkFundCommand({ ...saved, commandOrigin: origin }, evidence)
+      : evidence ? await investigateECommand(saved, locator, evidence, authority) : await discoverECommand(locator);
+    if (fundCommandSettled(receipt)) return { receipt, conclusion: receipt?.originalStatus === "CONFIRMED_NOT_EXECUTED" ? "not-executed"
+      : receipt?.originalStatus === "CONFIRMED_REJECTED" ? "rejected" : "succeeded" } as const;
+    const exactScope = !receipt && !evidence ? scope(saved) : undefined;
+    const status = exactScope ? await fetchDirectCommandReceipt(exactScope.toUpperCase().replace(/[^A-Z0-9_.:-]/g, "_"), saved.commandKey, actorId) : undefined;
+    return { receipt, conclusion: status === "NOT_FOUND" ? "not-found" : "unknown" } as const;
+  });
+  if (!result) return null;
+  jEmergencyRecovery.settleFromQuery(record, result.conclusion);
+  return result.receipt;
+}
+
+/** The older shared-journal record has no request snapshot and can only be settled by its receipt. */
+export function settleJ3LegacyCommand(record: SlotAttemptRecord, receipt: ECommandInvestigation) {
+  const saved = getJ3LegacyCommand();
+  if (saved?.commandKey !== record.commandKey || saved.commandOwnerId !== receipt.originalAdminId
+    || receipt.commandKey !== record.commandKey || receipt.scope !== "J3_ALERT_CONFIG"
+    || receipt.originalMethod !== "PUT" || receipt.originalPath !== "/api/admin/emergency/tamper/alert-config" || !fundCommandSettled(receipt)) return;
+  emergencyCommands.forget(saved.fingerprint, saved.commandKey);
+}
+export function queryJ3Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
+  return queryEmergency(record, "emergency_j3_read", saved => saved.tamper ? "J3_ALERT_CONFIG" : undefined, evidence);
 }
 
 // Report generation is a read-only export (B4-PD02), so an unavailable file never locks future exports.
 export const finishJ3ReportAttempt = (commandKey: string) => emergencyCommands.forget("POST /tamper/reports", commandKey);
 
-export async function retryJ2Command(record: J2PendingCommand) {
-  const saved = getJ2PendingCommand(record.fingerprint);
-  if (!saved || saved.commandKey !== record.commandKey) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  if (isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
-  await apiRequest(saved.geo.path, { method: saved.geo.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.geo.body }, saved.geo.context);
+export function retryJ2Command(record: J2PendingCommand) {
+  return jEmergencyRecovery.replay(record, async saved => {
+    if (!saved.geo) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
+    await apiRequest(saved.geo.path, { method: saved.geo.method, headers: { "Idempotency-Key": saved.commandKey }, body: saved.geo.body }, saved.geo.context, undefined, undefined, saved.commandKey);
+  });
 }
 
-/** Read the original geo command, including rollout-era records whose origin only exists on the server. */
-export async function queryJ2Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
-  const saved = emergencyCommands.list().find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
-  if (!saved || !(isJ2WriteSlot(saved.fingerprint) || isJ2CountrySlot(saved.fingerprint))) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  let receipt;
-  if (saved.geo?.commandOrigin) {
-    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.geo.commandOrigin }, evidence);
-  } else {
-    const actorId = useAdminAuth.getState().session?.adminId;
-    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
-    // The accepted slot fixes method/path; the receipt must prove the original operator and server hash.
-    const [method, path] = saved.fingerprint.split(" ");
-    const locator = { commandKey: saved.commandKey, originalMethod: method as "PUT" | "POST",
-      originalPath: `/api/admin/emergency${path}`, originalAdminId: String(actorId) };
-    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j2_read") : await discoverECommand(locator);
-  }
-  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
-  return receipt;
+export function queryJ2Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
+  return queryEmergency(record, "emergency_j2_read", saved => {
+    if (!saved.geo) return;
+    const { path } = saved.geo;
+    const key = decodeURIComponent(path.split("/").at(-1)!);
+    if (path.includes("/country-lists/")) return `J2_COUNTRY_LIST:${key}`;
+    if (path.includes("/endpoints/")) return `J2_ENDPOINT:${key}`;
+    return path.endsWith("/edge-judge") ? "J2_EDGE_SOURCE" : "J2_EMERGENCY_BLOCK";
+  }, evidence);
 }
 
-/** Lists and current settings cannot settle a playbook command, even after its retry window. */
-export async function queryJ4Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
-  const saved = [...listJ4PendingCommands(), ...listJ4LegacyCommands()].find(row => row.fingerprint === record.fingerprint && row.commandKey === record.commandKey);
-  if (!saved) throw new Error("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE");
-  let receipt;
-  if (saved.sop?.commandOrigin) {
-    receipt = await checkFundCommand({ ...saved, commandOrigin: saved.sop.commandOrigin }, evidence);
-  } else {
-    const actorId = useAdminAuth.getState().session?.adminId;
-    if (!actorId) throw new Error("ADMIN_AUTH_REQUIRED");
-    const [method, path] = saved.fingerprint.split(" ");
-    const locator = { commandKey: saved.commandKey, originalMethod: method as "PUT" | "POST",
-      originalPath: `/api/admin/emergency${path}`, originalAdminId: String(actorId) };
-    receipt = evidence ? await investigateECommand(saved, locator, evidence, "emergency_j4_read") : await discoverECommand(locator);
-  }
-  if (fundCommandSettled(receipt)) emergencyCommands.forget(saved.fingerprint, saved.commandKey);
-  return receipt;
+export function queryJ4Command(record: SlotAttemptRecord, evidence?: FundCommandEvidence) {
+  return queryEmergency(record, "emergency_j4_read", saved => {
+    const context = saved.sop?.context;
+    if (!context) return;
+    if (context.kind === "create") return "J4_PLAYBOOK_CREATE";
+    if (context.kind === "drill" || context.kind === "update") return `J4_PLAYBOOK_${context.kind.toUpperCase()}:${context.playbook.code}`;
+    if ("execution" in context) return `J4_PLAYBOOK_${context.kind.toUpperCase()}:${context.execution.executionId}`;
+  }, evidence);
 }
 
 function emergencyInputFingerprint(body: BodyInit | null | undefined) {
@@ -382,7 +410,7 @@ export function isEmergencyOutcomeUncertain(error: unknown) {
     || (error instanceof Error && error.name === "EmergencyOutcomeUncertainError");
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext, tamperContext?: TamperAlertConfig, sopContext?: J4CommandContext): Promise<T> {
+async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2CommandContext, tamperContext?: TamperAlertConfig, sopContext?: J4CommandContext, replayKey?: string): Promise<T> {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
   const isWrite = method !== "GET" && method !== "HEAD";
@@ -402,6 +430,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       }
       const saved = getJ2PendingCommand(writeSlot);
       isOriginalRetry = !!saved;
+      if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原结果。");
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.geo.body !== init?.body)) {
         throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
@@ -422,6 +451,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       if (getJ3LegacyCommand()) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
       const saved = getJ3PendingCommand();
       isOriginalRetry = !!saved;
+      if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原结果。");
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.tamper.body !== init?.body)) {
         throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
@@ -445,6 +475,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       if (listJ4LegacyCommands().some((record) => record.fingerprint === writeSlot)) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
       const saved = getJ4PendingCommand(writeSlot);
       isOriginalRetry = !!saved;
+      if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原结果。");
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.sop.body !== init?.body)) throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原请求重试或查询原结果");
       const commandKey = providedCommandKey || idempotencyKey();
@@ -525,11 +556,11 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     const rejected = !partialExecution && (isOriginalRetry ? isExplicitRejection(error)
       : !error.unknownOutcome && !isIdempotencyOutcomeOpen(payload.message)
         && isDeterministicRejection(res.status, payload.code));
-    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
+    if (isWrite && (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED")) {
       useAdminAuth.getState().signOut();
     }
     if (rejected) {
-      emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
+      if (!isOriginalRetry) emergencyCommands.forget(writeSlot, headers.get("Idempotency-Key")!);
       throw error;
     }
     // 5xx 的通用中文是给读取失败写的（请稍后重新加载）；写入没收到确定结果时换成结果未知的说法。
@@ -547,7 +578,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
   }
   if (requestFailed) {
     if (isWrite) emergencyAttempts.forget(writeSlot);
-    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
+    if (isWrite && (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED")) {
       useAdminAuth.getState().signOut();
     }
     const status = isJ1AutoRuleWrite && res.ok ? payload.code ?? res.status : res.status;

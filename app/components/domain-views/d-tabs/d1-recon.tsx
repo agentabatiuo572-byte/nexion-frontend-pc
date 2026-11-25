@@ -499,7 +499,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
       return `读到：银行卡支付单笔上限现在是 ${current.config.perTxLimitUsd.toLocaleString("en-US")} USDT（第 ${current.config.version} 版）。${kept}`;
     }
     if (path.startsWith("/vietqr/orders/")) {
-      const latest = await fetchD1BankOrders({ keyword: code, pageNum: 1, pageSize: 20 });
+      const latest = await fetchD1BankOrders({ keyword: code, pageNum: 1, pageSize: 20 }, undefined, true);
       const order = latest.records.find(value => value.intentNo === code);
       return order ? `读到：这笔现在是「${orderStatusText(order.status)}」${order.creditedUsdt > 0 ? `，已入账 ${usdt(order.creditedUsdt)} USDT` : "，还没入账"}。${kept}` : "读到：列表里暂时找不到这笔，记录继续保留。";
     }

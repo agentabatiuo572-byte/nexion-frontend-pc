@@ -680,7 +680,7 @@ export default function RiskRadarPage() {
     <span className="b5-meta">
       数据时间 {timeText(data.generatedAt)}
       <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" />
-      {radar.streamWarning && <span className="b5-muted"> · 实时连接正在重连，先显示最近一次数据</span>}
+      {radar.streamWarning && <span className="b5-muted"> · {radar.streamWarning.replace(/。$/, "")}</span>}
     </span>
   );
   const headerActions = (killSwitchLink || canReadSubscription) ? (

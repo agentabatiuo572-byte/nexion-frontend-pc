@@ -1267,7 +1267,9 @@ export const h3CommandStorage = {
   list: () => Object.entries(h3Stores).flatMap(([store, commands]) => commands.list().map(record => ({ store: store as H3CommandStore, record }))),
   remember: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].remember(record.fingerprint, record.commandKey, record),
   forget: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].forget(record.fingerprint, record.commandKey),
-  durable: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].isDurablyStored(record.fingerprint, record.commandKey),
+  markReplayRejected: (store: H3CommandStore, fingerprint: string, commandKey: string, code: string) =>
+    h3Stores[store].markReplayRejected(fingerprint, commandKey, code),
+  durable: (store: H3CommandStore, record: Pick<PendingMutationRecord, "fingerprint" | "commandKey">) => h3Stores[store].isDurablyStored(record.fingerprint, record.commandKey),
 };
 
 export class H3BindingOutcomeUncertainError extends Error {

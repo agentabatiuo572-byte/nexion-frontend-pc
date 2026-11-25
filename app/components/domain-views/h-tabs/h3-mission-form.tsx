@@ -37,14 +37,15 @@ const SUBJECT_TEXT: Record<string, string> = {
   WEEKLY_T2: "每周二档任务",
 };
 
-export function H3MissionFormDrawer({ missionType, readFailed, onClose, onReview }: {
+export function H3MissionFormDrawer({ missionType, initial, readFailed, onClose, onReview }: {
   missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2";
+  initial?: H3MissionForm;
   /** 抽屉开着时页面重读失败：抽屉和填的内容留着，读到前不能进下一步。 */
   readFailed?: { retrying: boolean; onRetry: () => void };
   onClose: () => void;
   onReview: (value: H3MissionForm) => void;
 }) {
-  const [value, setValue] = useState<H3MissionForm>(MISSION_FORM_INITIAL);
+  const [value, setValue] = useState<H3MissionForm>(initial ?? MISSION_FORM_INITIAL);
   const [attempted, setAttempted] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const errors = useMemo(() => missionFormErrors(value, missionType), [value, missionType]);

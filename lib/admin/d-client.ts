@@ -1,7 +1,7 @@
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { parseBankEligibility, parseBankSettlement, readBankEvidence, type BankBeneficiaryEligibility, type BankSettlementEvidence } from "@/lib/admin/bank-payout-evidence";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
+import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError, fetchAdminReadWithLocalAuth } from "@/lib/admin/auth-lifecycle";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, hasPersistedPendingCommandOwner } from "@/lib/admin/pending-mutation-store";
@@ -804,7 +804,7 @@ type FinanceRequestInit = RequestInit & {
   preparationNetwork?: PreparationNetwork;
 };
 
-async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: FinanceRequestInit & { retainOnSuccess?: boolean }) {
+async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw", path: string, init?: FinanceRequestInit & { retainOnSuccess?: boolean; localBankReadAuth?: boolean }) {
   assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -880,8 +880,10 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     }
   }
   let response: Response;
+  const localBankReadAuth = method === "GET" && init?.localBankReadAuth === true;
   try {
-    response = await guardedFetch(`/api/admin/${base}${path}`, {
+    const send = localBankReadAuth ? fetchAdminReadWithLocalAuth : guardedFetch;
+    response = await send(`/api/admin/${base}${path}`, {
       ...init,
       headers,
       signal: init?.signal ?? AbortSignal.timeout(30_000),
@@ -900,7 +902,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
-      if (init?.bankManualAuthEpoch !== undefined) {
+      if (localBankReadAuth || method !== "GET" && method !== "HEAD" && init?.bankManualAuthEpoch !== undefined) {
         // Do not start an uncoordinated logout whose late Set-Cookie can clear
         // a later login. Local signOut preserves this owner's uncertain command.
         useAdminAuth.getState().signOut();
@@ -2222,8 +2224,9 @@ export async function fetchD1TopupFlows(params: { status?: string; userId?: numb
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
 
-export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; settlementStatus?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch()) {
-  const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch }));
+/** localReadAuth 只给人工入账的结果核对用：登录失效时就地退出、保留待确认记录。普通列表和计数走统一退出（ST-47）。 */
+export async function fetchD1BankOrders(params: { paymentRail?: string; status?: string; settlementStatus?: string; keyword?: string; pageNum?: number; pageSize?: number }, bankManualAuthEpoch = adminAuthLifecycleEpoch(), localReadAuth = false) {
+  const page = requireD1BankOrdersPage(await apiRequest<unknown>("finance", `/vietqr/orders${buildQuery(params)}`, { bankManualAuthEpoch, localBankReadAuth: localReadAuth }));
   assertD1BankManualAuthEpoch(bankManualAuthEpoch);
   return page;
 }
@@ -2261,7 +2264,7 @@ async function submitD1BankManualCredit(path: string, body: string, commandKey?:
   const retainedKey = pendingMutations.get(fingerprint) ?? commandKey;
   try {
     const intentNo = path.split("/")[3];
-    const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch);
+    const latest = await fetchD1BankOrders({ keyword: intentNo, pageNum: 1, pageSize: 20 }, authEpoch, true);
     assertD1BankManualAuthEpoch(authEpoch);
     const order = latest.records.find(value => value.intentNo === intentNo);
     if (!order || order.status !== "CREDITED" || order.creditedUsdt <= 0) throw new Error("人工入账结果未知");

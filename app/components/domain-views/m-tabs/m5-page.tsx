@@ -15,6 +15,7 @@ import { M5UnboundPolicy } from "./m5-unbound-policy";
 import { M5WelcomeMessage } from "./m5-welcome-message";
 import { M5Flow, type M5PolicySummary, type M5RulesSummary, type M5Tab, type M5WelcomeSummary } from "./m5-views";
 import type { MCtx } from "./types";
+import { useH4EditHost } from "../h-tabs/h4-edit-guard";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, loadError, title, summary, authEpoch }: {
@@ -25,6 +26,8 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
   const [tab, setTab] = useState<M5Tab>(manager ? "rules" : "content");
   const shownTab: M5Tab = !manager && (tab === "rules" || tab === "roster" || tab === "welcome") ? "content" : tab;
   const ids = useTabIds();
+  // 分配规则、欢迎语有没保存的改动时，离开这页先问（OP-29）；页内切页签不丢。
+  const edit = useH4EditHost(false);
   const [rules, setRules] = useState<M5RulesSummary>({ state: "loading" });
   const [policy, setPolicy] = useState<M5PolicySummary>({ state: "loading" });
   const [welcome, setWelcome] = useState<M5WelcomeSummary>({ state: "loading" });
@@ -55,7 +58,7 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
     ? <BlockState state="loading" title={`正在读取${what}…`} />
     : <BlockState state="error" title={`${what}读不到`} detail="客服中心的数据没同步成功。" onRetry={() => void ctx.refreshContent()} retryLabel="重新读取" />;
 
-  return (
+  return edit.provide(
     <>
       <PageHeader pageId="M5" title={title} summary={summary}
         readOnly={permission === "supervisor" ? canWriteM5 ? "分配规则和欢迎语只有超级管理员能改；客服接待和话术按你的管理范围维护" : "你只能改客服接待的接单设置，其余只能查看" : undefined} />

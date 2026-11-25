@@ -366,7 +366,7 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
 type ModalProps = { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean; dirty?: boolean; className?: string; style?: CSSProperties;
   /** 只在改版页面起作用：标题下的后果标签，和标题前图标底的颜色（VS-101、VS-106）。 */
-  sub?: ReactNode; tone?: "danger" | "neutral" };
+  sub?: ReactNode; tone?: "danger" | "neutral"; returnFocus?: () => HTMLElement | null };
 
 const legacy = ({ sub: _sub, tone: _tone, ...rest }: Omit<ModalProps, "icon">) => rest;
 
@@ -611,6 +611,9 @@ export type PendingConfirmRecovery = {
   expiresAt: number;
   blockedReason?: string;
   query?: () => Promise<void>;
+  queryOnly?: boolean;
+  queryLabel?: string;
+  statusText?: string;
   state?: PendingRecoveryState;
   subscribe?: (listener: () => void) => () => void;
   getRevision?: () => number;
@@ -3871,7 +3874,7 @@ export type InlineOperationApproval = {
   fieldLayout?: "compact";
 };
 
-export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason: reasonRequested = true, reasonReadOnly, initialReason, initialRejection, measureReason, getPendingReason, getPendingRecovery, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, reviewedFacts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional , icon: titleIcon, className: dialogClass }: { /** 弹窗外层加的类名，页面用它限定自己的排版；不传时照旧。 */ className?: string; /** 标题前的图标：不传时改值框（有 edit）用滑杆、其余用盾牌；业务表单里改一个值的框传 "sliders"（VS-101）。危险确认始终是警告图标。 */ icon?: IconName; /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode | ((value: BusinessFormValue, editValue?: string) => ReactNode); confirmLabel?: string; confirmLabelForValue?: (value?: string, businessValue?: BusinessFormValue) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue, reviewedValue?: string) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string, businessValue?: BusinessFormValue) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; reasonReadOnly?: boolean; initialReason?: string; initialRejection?: ConfirmReadConflict | PendingConfirmRejected; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingRecovery?: () => PendingConfirmRecovery | undefined; reviewedFacts?: EditReviewResult["facts"]; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, title, detail, content, amplifies, coverage, coverageReliable, coverageUnavailableBlocks, edit, businessForm, businessFormRevision, completionCopy: directCompletionCopy, approval: approvalSpec, inlineApproval, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, requireReason: reasonRequested = true, reasonReadOnly, initialReason, initialRejection, returnFocus, measureReason, getPendingReason, getPendingRecovery, getPendingBusinessValue, auditSink, briefKind, onBusinessSelectionChange, onClose, onConfirm, effect, confirmLabel = "确认提交", confirmLabelForValue, blockedReason, statedBrief, facts, reviewedFacts, confirmTone = "primary", coverageLead = "这项操作会让平台多付钱", coverageCheck = "提交时会先检查兑付覆盖率。", reasonPlaceholder = "例如：工单号、处理依据", reasonPolicyOptional , icon: titleIcon, className: dialogClass }: { /** 弹窗外层加的类名，页面用它限定自己的排版；不传时照旧。 */ className?: string; /** 标题前的图标：不传时改值框（有 edit）用滑杆、其余用盾牌；业务表单里改一个值的框传 "sliders"（VS-101）。危险确认始终是警告图标。 */ icon?: IconName; /** 系统什么时候查覆盖率，写真实路径；走审批的后端不在提交时查，传批准时的说法。 */ coverageCheck?: string; /** 框上写的标题，只写动作和对象；长单号放 facts。不传就用 action。action 照旧是记进操作记录的名字（VS-101）。 */ title?: ReactNode; reasonPlaceholder?: string; /** 紧急关停不能被规则服务挡住：规则读不到时按默认 8–200 继续（Q-06）。 */ reasonPolicyOptional?: boolean; effect?: ReactNode | ((value: BusinessFormValue, editValue?: string) => ReactNode); confirmLabel?: string; confirmLabelForValue?: (value?: string, businessValue?: BusinessFormValue) => string; blockedReason?: ReactNode; statedBrief?: { impact: string; check: string } | ((value: BusinessFormValue, reviewedValue?: string) => { impact: string; check: string }); /** 传函数时随输入变：参数是填好的新值，没填好是 undefined；每次都要返回事实块，没填好时写现在的值。 */ facts?: ReactNode | ((value?: string, businessValue?: BusinessFormValue) => ReactNode); confirmTone?: "primary" | "danger"; coverageLead?: ReactNode; action: ReactNode; detail: ReactNode; content?: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; coverageReliable?: boolean; coverageUnavailableBlocks?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; businessFormRevision?: number | null; completionCopy?: string; approval?: OperationApproval; inlineApproval?: InlineOperationApproval; reasonMin?: number; reasonMax?: number; requireReason?: boolean; reasonReadOnly?: boolean; initialReason?: string; initialRejection?: ConfirmReadConflict | PendingConfirmRejected; returnFocus?: () => HTMLElement | null; measureReason?: (reason: string) => number; getPendingReason?: () => string | undefined; getPendingRecovery?: () => PendingConfirmRecovery | undefined; reviewedFacts?: EditReviewResult["facts"]; getPendingBusinessValue?: () => BusinessFormValue | undefined; auditSink?: "a2" | "local-history"; briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind); onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const surface = useRdSurface();
   const [pendingReason, setPendingReason] = useState(() => getPendingReason?.());
   const pendingRecovery = usePendingConfirmRecovery(pendingReason, getPendingRecovery);
@@ -4006,7 +4009,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   // 对象状态变了或已不在：框里只留橙黄提示和「取消」（VS-107），不再画过期的改动和理由框。
   const finalConflict = !!readConflict && !readConflict.review && readConflict.final;
-  const canConfirm = !blockedReason && !readConflict && !readingConflict && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason && !pendingRecovery?.blockedReason && !pendingRecovery?.state?.replayBlock
+  const canConfirm = !blockedReason && !readConflict && !readingConflict && !pendingRecovery?.queryOnly && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason && !pendingRecovery?.blockedReason && !pendingRecovery?.state?.replayBlock
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && (!editReview || !!readyReview) && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
       && (!inlineApproval || !approvalRecovery || !!approval));
   const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
@@ -4101,11 +4104,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
       if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
-        setSubmitError(inlineApproval ? `${error.message} 命令号：${error.commandKey}` : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。命令号：${error.commandKey}`);
+        const message = getPendingRecovery?.() && error.queryMessage || (inlineApproval ? error.message
+          : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。`);
+        setSubmitError(`${message} 命令号：${error.commandKey}`);
       } else {
         setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
         setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
-        setSubmitError(operationConfirmErrorMessage(error));
+        setSubmitError(getPendingRecovery?.() && isA2OutcomeUncertainError(error) && error.queryMessage
+          ? `${error.queryMessage} 命令号：${error.commandKey}` : operationConfirmErrorMessage(error));
       }
     } finally {
       setPendingReason(getPendingReason?.());
@@ -4134,12 +4140,12 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     try {
       if (!await recoverApproval(reason.trim())) {
         setApprovalRecovery("retry");
-        setSubmitError(inlineApproval?.expired || inlineApproval?.queryOnly ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
+        setSubmitError(getPendingRecovery?.() || inlineApproval?.expired || inlineApproval?.queryOnly ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
       } else if (inlineApproval?.recoverLabel) {
         setSubmitError(null);
       }
     } catch (error) {
-      setSubmitError(isA2OutcomeUncertainError(error) ? error.message : operationConfirmErrorMessage(error));
+      setSubmitError(isA2OutcomeUncertainError(error) ? (getPendingRecovery?.() && error.queryMessage || error.message) : operationConfirmErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -4182,7 +4188,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
-  const pendingReasonHelp = pendingRecovery?.state?.expired ? RETRY_EXPIRED_TEXT
+  const pendingReasonHelp = pendingRecovery?.statusText ?? (pendingRecovery?.state?.expired ? RETRY_EXPIRED_TEXT
     : pendingRecovery?.state && pendingRecovery.blockedReason ? pendingRecovery.blockedReason
     : pendingRecovery?.state?.capability === "replay" ? "按原请求重试会重新发送一次。"
     : inlineApproval?.expiredRequestRecovery === "reload"
@@ -4190,7 +4196,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     : inlineApproval?.expiredRequestRecovery === "query"
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
       : inlineApproval?.queryOnly ? "只能查询原结果，不能重发。"
-        : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。";
+        : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。");
   const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : needsEditPreview && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined, businessValue) ?? confirmLabel);
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
@@ -4232,16 +4238,16 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     </div>
   );
   return (
-    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : titleIcon ?? (spec ? "sliders" : "shield")} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={finalConflict ? undefined : readyReview?.effect ?? (rdApproval ? effectiveEffect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effectiveEffect)} onClose={handleClose} className={["rd-confirm", inlineApproval?.dialogClassName, dialogClass].filter(Boolean).join(" ")} busy={submitting || readingConflict} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
+    <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : titleIcon ?? (spec ? "sliders" : "shield")} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={finalConflict ? undefined : readyReview?.effect ?? (rdApproval ? effectiveEffect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effectiveEffect)} onClose={handleClose} returnFocus={returnFocus} className={["rd-confirm", inlineApproval?.dialogClassName, dialogClass].filter(Boolean).join(" ")} busy={submitting || readingConflict} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting || readingConflict} onClick={handleClose}>取消</Btn>
-        {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原结果</Btn>}
+        {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>{pendingRecovery.queryLabel ?? "查询原结果"}</Btn>}
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
             {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
-        {!approvalOnlyLookup && pendingRecovery?.state?.capability !== "readback" && !finalConflict && (surface ? (
+        {!approvalOnlyLookup && !pendingRecovery?.queryOnly && pendingRecovery?.state?.capability !== "readback" && !finalConflict && (surface ? (
           <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
             disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>

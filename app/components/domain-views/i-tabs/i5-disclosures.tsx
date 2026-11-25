@@ -590,7 +590,9 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
         };
         const result = await writes.send(editing
           ? { target: `jur:${jurisdiction}`, label: `编辑披露草稿 · ${jurisdiction} ${version}`, op: { kind: "content", call: { fn: "updateI5DisclosureVersion", args: [jurisdiction, version, payload, reason] } } }
-          : { target: `jur:${jurisdiction}`, label: `新建披露版本 · ${jurisdiction} ${version}`, op: { kind: "content", call: { fn: "createI5DisclosureVersion", args: [jurisdiction, payload, reason] } } });
+          : { target: `jur:${jurisdiction}`, label: `新建披露版本 · ${jurisdiction} ${version}`, op: { kind: "content", call: { fn: "createI5DisclosureVersion", args: [jurisdiction, payload, reason] } } })
+          // 被拒就作废要去的地方：之后的普通关闭只关这个编辑器。
+          .catch((cause: unknown) => { after = undefined; throw cause; });
         setEditor(null);
         if (result === "done") { toast("草稿已保存，App 内容不变", "success"); after?.(); }
       },
@@ -1207,6 +1209,6 @@ function VersionEditor({ initial, requiredLanguages, switcher, regions, language
         <Button variant="primary" onClick={() => void switchRegion(pendingRegion)}>换适用范围，放弃已填内容</Button>
       </>}><p>换成 {pendingRegion} 后，表单改成这个适用范围当前已发布版本的内容，已填内容不会保留。</p></Modal>
     )}
-    <LeaveDialog guard={guard} saveLabel="保存草稿" saveBlocked={saveBlocked} onSave={() => onSave(form, guard.saved)} />
+    <LeaveDialog guard={guard} saveLabel="保存草稿" saveBlocked={saveBlocked} onSave={(saved) => onSave(form, saved)} />
   </>;
 }
