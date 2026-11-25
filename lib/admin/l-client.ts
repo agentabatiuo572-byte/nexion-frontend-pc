@@ -221,7 +221,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const status = needsWriteReceipt ? reportCreationStatus(res, payload) : res.status;
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`)) as Error & { code?: string; status: number; reasonCode?: string };
+    const error = new Error(formatAdminApiError(payload.message, `BI_API_${status}`, needsWriteReceipt || init?.method && init.method !== "GET" ? "write" : "read")) as Error & { code?: string; status: number; reasonCode?: string };
     error.code = payload.message;
     error.status = status;
     error.reasonCode = payload.message;

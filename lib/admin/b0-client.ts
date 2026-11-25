@@ -19,7 +19,7 @@ async function read(endpoint: string, exactMoney = false): Promise<Row> {
   if (!response.ok || !result || result.code !== 0 || !result.data) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     if (response.status === 403) announcePermissionDenied();
-    throw new Error(formatAdminApiError(result?.message, `B0_LOAD_FAILED_${response.status}`));
+    throw new Error(formatAdminApiError(result?.message, `B0_LOAD_FAILED_${response.status}`, "read"));
   }
   return result.data;
 }

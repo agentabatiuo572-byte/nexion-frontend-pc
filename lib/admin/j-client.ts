@@ -582,7 +582,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       useAdminAuth.getState().signOut();
     }
     const status = isJ1AutoRuleWrite && res.ok ? payload.code ?? res.status : res.status;
-    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status, reasonCode: payload.message });
+    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`, isWrite ? "write" : "read")), { status, reasonCode: payload.message });
   }
   if (isJ4Write) {
     // A successful J4 response is a complete sopOverview, not an empty acknowledgement.
@@ -606,7 +606,7 @@ async function contentApiRequest<T>(path: string): Promise<T> {
     throw new Error(`读到的内容无法识别（HTTP ${res.status}），请稍后重试。`);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
+    throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`, "read"));
   }
   return payload.data as T;
 }

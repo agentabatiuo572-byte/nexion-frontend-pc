@@ -36,7 +36,7 @@ export function parseBusinessCalendar(raw: unknown): BusinessCalendarView {
 async function request(path: string, init?: RequestInit): Promise<BusinessCalendarView> {
   const response = await guardedFetch(`${BASE}${path}`, { ...init, cache: "no-store" });
   const body = await response.json().catch(() => null) as ApiResult<BusinessCalendarView> | null;
-  if (!response.ok || !body || body.code !== 0 || !body.data) throw new Error(formatAdminApiError(body?.message, `BUSINESS_CALENDAR_REQUEST_FAILED_${response.status}`));
+  if (!response.ok || !body || body.code !== 0 || !body.data) throw new Error(formatAdminApiError(body?.message, `BUSINESS_CALENDAR_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"));
   return parseBusinessCalendar(body.data);
 }
 

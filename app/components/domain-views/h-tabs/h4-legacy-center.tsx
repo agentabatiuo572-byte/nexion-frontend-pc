@@ -375,7 +375,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const reloadWheelUsage = async () => {
     setWheelDailyUsage(null); setWheelDailyUsageError(null);
     try { setWheelDailyUsage(await fetchH4WheelDailyUsage()); }
-    catch (cause) { setWheelDailyUsageError(displayAdminError(cause)); }
+    catch (cause) { setWheelDailyUsageError(displayAdminReadError(cause)); }
   };
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);

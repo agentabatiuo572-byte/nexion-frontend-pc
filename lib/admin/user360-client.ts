@@ -739,7 +739,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     throw Object.assign(new UsersRequestError(
       response.status,
       serverMessage,
-      formatAdminApiError(serverMessage, `USERS_REQUEST_FAILED_${response.status}`),
+      formatAdminApiError(serverMessage, `USERS_REQUEST_FAILED_${response.status}`, method === "GET" ? "read" : "write"),
       result?.code,
     ), { reasonCode: serverMessage });
   }
