@@ -103,8 +103,9 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
     // 打开者所在的框还开着（抽屉里点开的确认框）：回到那个框；那个框已经关了（离开框）：用那个框关掉时的去处。
     if (host.current?.isConnected) return host.current;
     const inherited = hostHandoff.current?.() ?? null;
-    // 那个框的去处在还开着的抽屉外面（离开框是点侧栏链接、切页签打开的）：留在抽屉里，不跳出去（BUG-710）。
-    const drawer = document.querySelector<HTMLElement>('.rd-drawer[data-state="open"]');
+    // 那个框的去处不在最上层还开着的抽屉里（离开框是点侧栏链接、切页签打开的，或去处在被盖住的下一层抽屉里）：留在最上层抽屉，不跳出去（BUG-710）。
+    // 抽屉都挂在同一个容器里，后打开的排在后面，最后一个就是最上层（详情抽屉上再开编辑抽屉时是编辑抽屉）。
+    const drawer = [...document.querySelectorAll<HTMLElement>('.rd-drawer[data-state="open"]')].at(-1);
     return drawer && !(inherited && drawer.contains(inherited)) ? drawer : inherited;
   };
   const latest = useRef(target);
@@ -123,9 +124,9 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
       const top = openOverlay(self);
       // 都找不到时回到还开着的最上层框，不落到页面上。
       const next = latest.current() ?? top;
-      // 这时已经换上了另一个弹窗（离开框收起、保存确认打开）：焦点归那个弹窗，不拉出去。
-      if (!next || top?.matches(".rd-modal") && !top.contains(next)) return;
-      next.focus();
+      // 这时上面还开着另一个弹窗（离开框收起、保存确认打开）：焦点留在那个弹窗里，不拉出去。
+      if (top?.matches(".rd-modal") && !(next && top.contains(next))) { if (!top.contains(document.activeElement)) top.focus(); return; }
+      next?.focus();
     },
   };
 }

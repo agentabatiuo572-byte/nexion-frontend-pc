@@ -36,13 +36,13 @@ function focusFrame(frame: HTMLElement) {
 }
 /**
  * 按过「重试」、还没有结果的那一次。有的页面重读时把这一块换成加载占位（卸下），仍失败时再挂一块新的：
- * 新挂上的失败块在原来那一块所在的区域里（region：卸下时还挂着的最近一层外框），就认出是同一块，不靠标题文字（重读前后原因不同时标题也会变）；
- * 焦点掉在页面上、或还停在交接的那一层时把它交回「重试」。30 秒内有效，用一次就清掉。
+ * 新挂上的失败块要同时满足两条才算同一块：标识相同（retryKey；没传时用标题文字），并且在原来那一块所在的区域里（region：卸下时还挂着的最近一层外框）。
+ * 同一面板里另一项读取的失败块标识不同，不会接走这次的交接（BUG-710 F02）。新的这一块有「重试」才接；焦点掉在页面上、或还停在交接的那一层时把它交回「重试」。30 秒内有效，用一次就清掉。
  */
-let pendingRetry: { at: number; region?: HTMLElement; landing?: HTMLElement } | null = null;
+let pendingRetry: { key: string; at: number; region?: HTMLElement; landing?: HTMLElement } | null = null;
 const RETRY_FOCUS_MS = 30_000;
 
-export function BlockState({ state, title, detail, onRetry, retrying, retryLabel = "重试", compact, afterRetryFocus }: {
+export function BlockState({ state, title, detail, onRetry, retrying, retryLabel = "重试", compact, afterRetryFocus, retryKey }: {
   state: "loading" | "error" | "empty" | "denied";
   title: ReactNode;
   detail?: ReactNode;
@@ -53,6 +53,8 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   compact?: boolean;
   /** 按「重试」读到之后焦点去哪：这一块的标题。不传时交给还挂着的最近一层外框。 */
   afterRetryFocus?: RefObject<HTMLElement | null>;
+  /** 这一块的固定标识：重读前后失败原因不同、标题会变时传，认出重读后新挂上的失败块还是这一块。不传时用标题文字。 */
+  retryKey?: string;
 }) {
   const failed = state === "error";
   const busy = state === "loading" || !!retrying;
@@ -64,9 +66,10 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   focusAfter.current = afterRetryFocus;
   /** 按「重试」那一刻这一块的外框，由近到远；这一块卸下后从里面找还挂着的一层接焦点。 */
   const frames = useRef<HTMLElement[]>([]);
+  const key = retryKey ?? (typeof title === "string" ? title : "");
   const retry = onRetry && (() => {
     armed.current = { at: Date.now(), started: false, target: afterRetryFocus };
-    pendingRetry = { at: Date.now() };
+    pendingRetry = { key, at: Date.now() };
     frames.current = [];
     for (let frame = box.current?.parentElement; frame && frame !== document.body; frame = frame.parentElement) frames.current.push(frame);
     onRetry();
@@ -89,7 +92,7 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   useEffect(() => {
     // 重读时这一块被换掉、仍失败时在同一区域重新挂上：新的这一块接住焦点。
     const pending = pendingRetry;
-    if (!failed || !pending || Date.now() - pending.at > RETRY_FOCUS_MS || !pending.region?.contains(box.current)) return;
+    if (!failed || !retryButton.current || !pending || Date.now() - pending.at > RETRY_FOCUS_MS || pending.key !== key || !pending.region?.contains(box.current)) return;
     pendingRetry = null;
     if (focusLost() || document.activeElement === pending.landing) retryButton.current?.focus({ preventScroll: true });
   // 只在挂上时看一次。
