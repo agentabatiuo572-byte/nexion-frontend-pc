@@ -492,7 +492,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
             </Tr>;
           })}</tbody></Table> : <Table label="阶段设置" className={`e1-phase-table${canWrite ? "" : " e1-readonly-table"}`}><thead><tr><Th>阶段</Th><Th>门槛说明</Th><Th>商品标签</Th><Th>排序与状态</Th>{canWrite && <Th sticky="end">操作</Th>}</tr></thead><tbody>
           {!phases.length && <Tr><Td colSpan={canWrite ? 5 : 4}>暂无阶段配置</Td></Tr>}{phases.map(ph => {
-            const archiveBlock = writeBlock({ op: "phase-archive", phaseId: ph.p }) || (phases.filter(p => p.status !== "archived").length <= 1 ? "至少保留一个启用阶段" : skus.some(s => resolveE1PhaseId(phases, s.unlock) === ph.p) || releases.some(g => resolveE1PhaseId(phases, g.phase) === ph.p) ? "商品或上架条件仍引用此阶段" : ctx.locked("device_phase", ph.p) ? "此对象有待审批或待核对的操作" : undefined);
+            const archiveBlock = writeBlock({ op: "phase-archive", phaseId: ph.p }) || (ctx.locked("device_phase", ph.p) ? "此对象有待审批或待核对的操作" : undefined);
             return <Tr key={ph.p}>
               <Td><div className="e1-table-stack"><strong>{phaseLabel(ph.p)}</strong><span className="e1-phase-code" data-mono>编号 {ph.p}{ph.p === phaseCur && <StatusTag tone="progress" icon={CircleDot}>当前</StatusTag>}</span></div></Td>
               <Td>{ph.meta ? <Cell main={ph.meta} title={ph.meta} /> : "—"}</Td><Td>{ph.skus ? <Cell main={ph.skus} title={ph.skus} /> : "—"}</Td><Td><div className="e1-table-stack"><span>排序 {ph.sortOrder ?? "—"}</span><StatusTag tone={ph.status === "archived" ? "done" : "ok"} icon={ph.status === "archived" ? Archive : CheckCircle2}>{ph.status === "archived" ? "已归档" : "已启用"}</StatusTag></div></Td>

@@ -104,7 +104,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
-import { e1DisplayEffect, e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1DisplayEffect, e1GateText, e1NumericReviewValue, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount, rewardText } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -648,21 +648,12 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
-const E1_NUMERIC_REVIEW_FIELDS = new Set([
-  "price", "computePoints", "displaySoldBase", "monthlyTargetUsdt", "monthlyTargetBandPct", "stock",
-  "dailyEarn", "dailyEarnNex", "phoneDailyEarn", "phoneDailyEarnNex", "shareYieldMin", "shareYieldMax",
-  "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins",
-  "rating", "reviews", "generation", "tradeinDiscount", "derivedDaily",
-]);
-
 /** 空值、空串和缺键等价。只在数值字段里忽略数字的书写差异。 */
 function e1ReviewValue(key: string, value: unknown): unknown {
   if (value == null || value === "") return null;
-  if (typeof value === "string" && E1_NUMERIC_REVIEW_FIELDS.has(key)) {
-    // reviewPair 为售价加了币种后缀。
-    const numberText = (key === "price" ? value.replace(/ USD$/, "") : value).trim();
-    if (/^-?\d+(?:\.\d+)?$/.test(numberText)) return Number(numberText);
-  }
+  // reviewPair 为售价加了币种后缀。
+  const numeric = e1NumericReviewValue(key, key === "price" && typeof value === "string" ? value.replace(/ USD$/, "") : value);
+  if (numeric !== undefined) return numeric;
   if (Array.isArray(value)) return value.map(item => e1ReviewValue(key, item));
   if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map(field => [field, e1ReviewValue(field, value[field])]));
   return value;
