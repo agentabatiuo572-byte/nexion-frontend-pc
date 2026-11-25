@@ -24,8 +24,8 @@ import type { StateTone } from "./tone";
 
 /** 焦点没有落在任何控件上：掉到了页面上，或原来的元素已经卸下。 */
 const focusLost = () => { const active = document.activeElement; return !active || active === document.body || !active.isConnected; };
-/** 把焦点交给这一层；接不到（display: contents、隐藏、已卸下）时撤掉临时加的 tabIndex，返回 false，由调用方再往外找。 */
-function focusFrame(frame: HTMLElement) {
+/** 把焦点交给这一层；接不到（display: contents、隐藏、已卸下）时撤掉临时加的 tabIndex，返回 false，由调用方再往外找。弹层关掉后原行已不在时也用它（overlay.tsx）。 */
+export function focusFrame(frame: HTMLElement) {
   if (!frame.isConnected || frame.getClientRects().length === 0) return false;
   const added = !frame.hasAttribute("tabindex");
   if (added) { frame.tabIndex = -1; frame.setAttribute("data-retry-landing", ""); }

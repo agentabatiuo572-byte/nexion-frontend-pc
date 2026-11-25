@@ -29,7 +29,7 @@
  * - 抽屉上最多再叠一层弹窗，弹窗上不再叠弹窗（PG-38）；错误写在最上层。
  *
  * Modal 用法同旧 Modal。RdPage 里的旧 Modal、OperationConfirmModal 会自动走这个组件，不用改调用。
- * 框里打过字后点空白不关；按 Esc 先在底栏左边轻提示「再按一次 Esc 关闭」，再按一次才关，免得手滑丢了填的内容。
+ * 框里打过字后点空白和 Esc 都不关，按 Esc 只在底栏左边轻提示要关请点 ×，免得手滑丢了填的内容（OP-46）；提交中照旧不响应。
  * ×、取消照常关。只靠点选的表单传 dirty，搜索框不算填内容。
  *
  * 弹窗里的文字分四层（VS-100～VS-108）：
@@ -47,6 +47,7 @@
 import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ComponentProps, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
+import { focusFrame } from "./block-state";
 import { Button, IconButton, TipSide } from "./button";
 import { Explain } from "./explain";
 import { Fact, Facts } from "./facts";
@@ -69,6 +70,8 @@ function dismissesDrawer(target: EventTarget | null) {
 
 /** 每个开过的弹窗、抽屉关掉后焦点该回哪。从另一个框里打开的框，原按钮跟着那个框一起没了时（离开框里点「…后继续」打开的保存确认），接着问那个框（BUG-710）。 */
 const handoffs = new WeakMap<Element, () => HTMLElement | null>();
+/** 打开者那一行已经不在时接焦点的稳定外框：表格外框、面板、页签面板。 */
+const STABLE_FRAME = ".rd-table-scroll, .rd-panel, [role=tabpanel]";
 /** 最上层还开着的弹窗或抽屉，不含正在关的这个。 */
 const openOverlay = (except: Element | null) => [...document.querySelectorAll<HTMLElement>('.rd-modal[data-state="open"], .rd-drawer[data-state="open"]')].filter((node) => node !== except).at(-1) ?? null;
 
@@ -136,7 +139,15 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
       const next = latest.current() ?? top;
       // 这时上面还开着另一个弹窗（离开框收起、保存确认打开）：焦点留在那个弹窗里，不拉出去。
       if (top?.matches(".rd-modal") && !(next && top.contains(next))) { if (!top.contains(document.activeElement)) top.focus(); return; }
-      next?.focus();
+      if (next) { next.focus(); return; }
+      // 打开者那一行处理完已经移出列表（A2 撤回成功）：不找别的记录的同名按钮，交给还挂着的最近一层稳定外框；
+      // 接不到焦点再往外一层，到整页外框为止，不落到整页外框和页面上（BUG-710 补记三）。焦点已经在页面别处时不动。
+      const active = document.activeElement;
+      if (active && active !== document.body && active.isConnected && !self?.contains(active)) return;
+      for (const frame of chain.current) {
+        if (frame.matches(".rd-page")) break;
+        if (frame.isConnected && frame.matches(STABLE_FRAME) && focusFrame(frame)) return;
+      }
     },
   };
 }
@@ -285,10 +296,10 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   const typed = useRef(false);
   // 失焦时校验提示换掉帮助文字（删了节点），Radix 的焦点圈在焦点换手途中看到删除，会把焦点拉回外框（BUG-536）；记下本来要去的控件，送过去。
   const focusTarget = useRef<HTMLElement | null>(null);
-  // 填过内容后第一次按 Esc 只提示，第二次才关；接着打字就收起提示，重新算。
-  const [escArmed, setEscArmed] = useState(false);
+  // 填过内容后按 Esc 一直不关，只提示要关请点 ×（OP-46）；接着打字就收起提示。
+  const [escHinted, setEscHinted] = useState(false);
   const close = () => { if (!busy) onClose(); };
-  const escText = "再按一次 Esc 关闭，已填的内容不保留";
+  const escText = "填过内容，按 Esc 不会关闭；要放弃请点右上角 ×";
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next) close(); }}>
       <Dialog.Portal container={surface?.container ?? undefined}>
@@ -304,7 +315,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           onInput={(event) => {
             if (event.target instanceof Element && event.target.matches(SEARCH_INPUT)) return;
             typed.current = true;
-            setEscArmed(false);
+            setEscHinted(false);
           }}
           onBlur={(event) => { focusTarget.current = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null; }}
           onFocus={(event) => {
@@ -313,9 +324,9 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
             if (event.target === event.currentTarget && next && next !== event.currentTarget && event.currentTarget.contains(next)) next.focus();
           }}
           onEscapeKeyDown={(event) => {
-            if (busy || !(dirty || typed.current) || escArmed) return;
+            if (busy || !(dirty || typed.current)) return;
             event.preventDefault();
-            setEscArmed(true);
+            setEscHinted(true);
           }}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
@@ -334,9 +345,9 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           </div>
           <ToastHost dialogId={feedbackId} />
           <div className="rd-modal-body">{children}</div>
-          {/* 读屏用的状态区一直在，有字时才读出来；看得见的提示只在按过一次 Esc 后排进底栏，平时不占位。 */}
-          <span className="rd-sr-only" role="status">{escArmed ? escText : ""}</span>
-          {(footer || escArmed) && <div className="rd-modal-foot">{escArmed && <p className="rd-modal-esc" aria-hidden><KeepText text={escText} /></p>}<TipSide side="top">{footer}</TipSide></div>}
+          {/* 读屏用的状态区一直在，有字时才读出来；看得见的提示只在按过 Esc 后排进底栏，平时不占位。 */}
+          <span className="rd-sr-only" role="status">{escHinted ? escText : ""}</span>
+          {(footer || escHinted) && <div className="rd-modal-foot">{escHinted && <p className="rd-modal-esc" aria-hidden><KeepText text={escText} /></p>}<TipSide side="top">{footer}</TipSide></div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
