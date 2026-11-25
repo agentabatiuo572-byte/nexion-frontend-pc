@@ -8,6 +8,7 @@
  *
  * - 文字「第 {page} / {totalPages} 页 · 共 {total} 条」，单页也显示，按钮禁用。
  * - 按钮文字固定「上一页」「下一页」，读屏名带列表名。加载中翻页禁用，分页条本身不消失。
+ * - 加载中和到首页、末页时用 aria-disabled，不用原生 disabled：键盘在「下一页」上按回车后焦点留在这个按钮上，读完也在（ST-56，BUG-746）。
  * - 改每页条数回第 1 页、页码写网址都由页面做（ST-23）。
  */
 import type { ReactNode } from "react";
@@ -34,8 +35,8 @@ export function Pager({ label, sizeLabel, total, page, pageSize, sizes, loading 
       <div className="rd-pager-tools">
         <Select aria-label={`${sizeLabel ?? label}每页条数`} value={String(pageSize)} onChange={(value) => onPageSize(Number(value))}
           options={sizes.map((size) => ({ value: String(size), label: `${size} 条/页` }))} />
-        <Button size="sm" aria-label={`${label} 上一页`} disabled={loading || page <= 1} onClick={() => onPage(page - 1)}>上一页</Button>
-        <Button size="sm" aria-label={`${label} 下一页`} disabled={loading || page >= pages} onClick={() => onPage(page + 1)}>下一页</Button>
+        <Button size="sm" aria-label={`${label} 上一页`} aria-disabled={loading || page <= 1} onClick={() => onPage(page - 1)}>上一页</Button>
+        <Button size="sm" aria-label={`${label} 下一页`} aria-disabled={loading || page >= pages} onClick={() => onPage(page + 1)}>下一页</Button>
       </div>
     </div>
   );

@@ -100,9 +100,9 @@ export default function A8Permissions() {
     return () => { cancelled = true; };
   }, [matrixOpen, matrixReloadKey]);
 
-  // keyword debounce 350ms
+  // keyword debounce 300ms（ST-17）
   useEffect(() => {
-    const t = setTimeout(() => { setKeyword(keywordInput.trim()); setPageNum(1); }, 350);
+    const t = setTimeout(() => { setKeyword(keywordInput.trim()); setPageNum(1); }, 300);
     return () => clearTimeout(t);
   }, [keywordInput]);
 

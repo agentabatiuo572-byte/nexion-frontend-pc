@@ -1260,6 +1260,8 @@ export default function UserDetailPage() {
   const securityUnread = !!detail?.sessions && detail.security == null;
   const securityAlert = paymentSecurity.state === "exception" || paymentSecurity.pending || summary.locked === true || unfinishedRevokes.length > 0;
   const securityFailed = paymentSecurity.state === "failed" || !!paymentError || revokeScanFailed || securityUnread;
+  // 支付安全重读在途时「安全」组不收起：页头「刷新」、更新事件触发的重读不经过「重试」，没手动展开过的组不先收起再展开（BUG-746）。颜色仍只按异常和失败。
+  const securityKeepOpen = securityAlert || securityFailed || paymentSecurity.state === "reloading";
   const latestFundsFailed = detail?.latestDepositStatus === "ERROR" || detail?.latestWithdrawalStatus === "ERROR";
   const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account) || ledgerUnread || latestFundsFailed;
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
@@ -1748,7 +1750,7 @@ export default function UserDetailPage() {
 
       <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
-          <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
+          <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityKeepOpen, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityKeepOpen)} alert={securityAlert || securityFailed}>
             {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} issue={summary.locked === true ? "账号已锁定" : undefined} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时也显示为空，0 条或没有记录不能证明没登录过。">
               <Values rows={[
                 ["在线登录设备", numberLabel(summary.activeSessionCount)],
