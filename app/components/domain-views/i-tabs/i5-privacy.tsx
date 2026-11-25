@@ -89,7 +89,9 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
       reasonPlaceholder: "例如：法务审定稿，工单号",
       run: async (reason) => {
         const { version, status, locales: nextLocales, revision } = form;
-        const result = await writes.send({ target: "privacy", label: `保存隐私政策 · ${version}`, op: { kind: "privacy", document: { version, status, locales: nextLocales, revision }, reason } });
+        const result = await writes.send({ target: "privacy", label: `保存隐私政策 · ${version}`, op: { kind: "privacy", document: { version, status, locales: nextLocales, revision }, reason } })
+          // 被拒就作废要去的地方。
+          .catch((cause: unknown) => { after = undefined; throw cause; });
         setEditing(false);
         if (result === "done") { toast(live ? "隐私政策已更新，请核对公开页" : "草稿已保存，公开版本不变", "success"); after?.(); }
       },
@@ -280,7 +282,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
         {!localeKeys.length && <Notice tone="warn" title="还没有语言">先在上面新增一种语言。</Notice>}
       </div>
     </Drawer>
-    <LeaveDialog guard={guard} saveLabel={saveLabel} saveBlocked={saveBlocked} onSave={() => onSave(form, guard.saved)} />
+    <LeaveDialog guard={guard} saveLabel={saveLabel} saveName={form.status === "PUBLISHED" || form.status === "UNPUBLISHED" ? "保存并立即生效" : undefined} saveBlocked={saveBlocked} onSave={(saved) => onSave(form, saved)} />
     {removing && <Modal title={`删除${localeName(locale)}`} icon={Trash2} onClose={() => setRemoving(false)} footer={<>
       <Button onClick={() => setRemoving(false)}>取消</Button>
       <Button variant="danger" onClick={removeLocale}>删除这种语言</Button>

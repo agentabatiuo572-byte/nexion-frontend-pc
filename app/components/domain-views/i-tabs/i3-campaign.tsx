@@ -1249,9 +1249,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           }}
         />
       )}
-      <LeaveDialog guard={{ asking: leaving, stay: () => setLeaving(false), hide: () => setLeaving(false),
+      <LeaveDialog guard={{ asking: leaving, stay: () => setLeaving(false), startSave: () => { setLeaving(false); return () => {}; },
         discard: () => { setLeaving(false); setNewOpen(false); setEditing(null); } }}
-        discardLabel="放弃改动并返回" saveLabel="保存草稿" saveBlocked={draftSaveBlocked} onSave={() => void submitNew()} />
+        saveLabel="保存草稿" saveBlocked={draftSaveBlocked} onSave={() => void submitNew()} />
 
       {/* ===== 排期 ===== */}
       {scheduleRow && (canSendCampaign(scheduleRow) || !!schedulePendingKey) && (
