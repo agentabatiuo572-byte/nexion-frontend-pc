@@ -70,11 +70,11 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [pendingSubmit, ports.canShowOriginalSubmit, refreshKey, visibilityRetry]);
   const [visibleSubmit, setVisibleSubmit] = useState<typeof visibilityRead>();
-  const [receiptVisibility, setReceiptVisibility] = useState<{ key: string; refreshKey: number; visible: boolean }>();
+  const [receiptVisibility, setReceiptVisibility] = useState<{ key: string; refreshKey: number; retry: number; visible: boolean }>();
   const [answers, setAnswers] = useState<Record<string, { tag: ReactNode; line: string }>>({});
   const [querying, setQuerying] = useState<string | null>(null);
   const [settled, setSettled] = useState<{ key: string; label: string; text: string; taskId?: string; mine?: boolean }[]>([]);
-  const verifiedReceipt = receiptVisibility && receiptVisibility.key === pendingSubmit?.operationId && receiptVisibility.refreshKey === refreshKey
+  const verifiedReceipt = receiptVisibility && receiptVisibility.key === pendingSubmit?.operationId && receiptVisibility.refreshKey === refreshKey && receiptVisibility.retry === visibilityRetry
     ? receiptVisibility : undefined;
   const hidePendingScope = !pendingSubmit || querying === pendingSubmit.operationId
     || (verifiedReceipt ? !verifiedReceipt.visible : !visibilityRead || visibleSubmit !== visibilityRead);
@@ -246,7 +246,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
     });
     ports.lookupSubmit().then(found => {
       const visible = found.originalView !== undefined;
-      setReceiptVisibility({ key, refreshKey, visible });
+      setReceiptVisibility({ key, refreshKey, retry: visibilityRetry, visible });
       if (found.kind === "matched") {
         setSettled(list => [{ key, label: "提交导出", text: exportReceiptSummary(found.rows), mine: true }, ...list]);
         setRefresh(value => value + 1);
@@ -277,12 +277,14 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
   // 过期后照样查得了：这次查询的反馈（不含申请内容）接在过期句后面。
   const expiredResult = (at: string, answer?: { line: string }) => ({ tag: <StatusTag tone="warn">已过期</StatusTag>,
     line: `${at} 发出；${RETRY_EXPIRED_TEXT}${answer && answer.line !== RETRY_EXPIRED_TEXT ? `这次查询：${answer.line}` : ""}` });
+  const scopeNoted = <T extends { line: string }>(shown: T | undefined) => shown && visibilityFailed ? { ...shown, line: `${shown.line}原来的导出范围没读到，原填写内容先不显示。` } : shown;
   const recovery: RecoveryItem[] = [
     ...(pendingSubmit ? [{
       key: pendingSubmit.operationId, createdAt: pendingSubmit.createdAt, object: hidePendingScope ? "提交导出" : `提交导出 · ${pendingSubmit.query.month} · ${pendingSubmit.query.types.map(type => EXPORT_LABEL[type]).join("、")}`,
       tag: pendingSubmit.acceptedRequestId ? acceptedTag : unknownTag,
       line: `${pendingSubmit.acceptedRequestId ? EXPORT_PARTIAL_RECEIPT : `${businessStamp(pendingSubmit.createdAt)} 发出后没收到结果；先查询原结果，不要再点提交。`}${visibilityFailed ? "原来的导出范围没读到，原填写内容先不显示。" : ""}`,
-      result: !pendingSubmit.acceptedRequestId && now >= pendingSubmit.expiresAt ? expiredResult(businessStamp(pendingSubmit.createdAt), answers[pendingSubmit.operationId]) : answers[pendingSubmit.operationId],
+      // 有查询结果时面板只显示结果那一行：原范围没读到的说明跟过去，不被盖掉。
+      result: scopeNoted(!pendingSubmit.acceptedRequestId && now >= pendingSubmit.expiresAt ? expiredResult(businessStamp(pendingSubmit.createdAt), answers[pendingSubmit.operationId]) : answers[pendingSubmit.operationId]),
       actions: <>{queryButton(pendingSubmit.operationId, () => querySubmit(pendingSubmit))}{visibilityFailed && <Button size="sm" onClick={() => setVisibilityRetry(value => value + 1)}>重读原范围</Button>}</>,
       detail: !hidePendingScope && <p>理由：{pendingSubmit.reason}</p>, tech: <TechInfo commandKey={pendingSubmit.operationId} />,
     }] : []),
