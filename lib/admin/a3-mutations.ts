@@ -35,6 +35,7 @@ export type A3Command = PendingMutationRecord & {
   change: string;
   /** Present only when this content request actually sends its explicit command key. */
   contentCommandActor?: number;
+  contentRetryFeedback?: { kind: "unknown" | "readback-failed"; detail: string };
 };
 const PATHS: Record<A3Original["kind"], string> = {
   flag: "/api/admin/platform/config", param: "/api/admin/platform/config",
@@ -47,6 +48,7 @@ export const a3Deduplicates = (record: Pick<A3Command, "original" | "contentComm
   || record.contentCommandActor !== undefined;
 export const a3HasOriginalReceipt = (record: A3Command) => isA3ContentCommand(record) ? a3Deduplicates(record) : ["param", "flag", "experience"].includes(record.original.kind);
 const readContent = (kind: A3ContentOriginal["kind"]) => kind === "docs" ? fetchDeveloperDocsAdmin() : fetchHowContentAdmin();
+class A3ContentReadbackError extends OutcomeUnknownError {}
 export type A3ContentComparison = {
   revision: { submitted: number; expected: number; current: number; matches: boolean };
   version: { submitted: string; current: string; matches: boolean };
@@ -111,6 +113,9 @@ const commands = createPendingMutationStore<A3Command>({
         && record.method === (record.original.kind === "cancel" ? "POST" : "PUT")
         && typeof record.body === "string" && object(JSON.parse(record.body)) && typeof record.reason === "string"
         && typeof record.name === "string" && typeof record.change === "string"
+        && (record.contentRetryFeedback === undefined || isA3ContentCommand(record)
+          && ["unknown", "readback-failed"].includes(record.contentRetryFeedback.kind)
+          && typeof record.contentRetryFeedback.detail === "string")
         && (record.commandOrigin === undefined || record.original.kind === "param" && isOriginalCommandOrigin(record.commandOrigin, a3ParamCommandRoutes.A3))
         && record.fingerprint === (record.commandOrigin ? `${record.commandOrigin.originalAdminId}:${a3Slot(record.original)}`
           : record.contentCommandActor === undefined ? a3Slot(record.original) : `${record.contentCommandActor}:${a3Slot(record.original)}`);
@@ -170,12 +175,12 @@ export function useA3Commands() {
     const read = async () => {
       if (original.kind === "docs" || original.kind === "how") {
         const result = await queryA3ContentCommand(record, original.kind, String(actorId), evidence);
-        const conclusion = result.rejected ? "rejected" : result.receipt ? "unknown" : "not-found";
         const status = result.receipt?.originalStatus;
-        const restoreDraft = !evidence && !isRetryExpired(record) && (
-          (result.rejected && !recovery.state(record).replayRejection)
-          || status === "CONFIRMED_NOT_EXECUTED" || status === "CONFIRMED_REJECTED"
-        );
+        const restoreDraft = status === "CONFIRMED_NOT_EXECUTED" || status === "CONFIRMED_REJECTED"
+          || result.rejected && !isRetryExpired(record) && !recovery.state(record).replayRejection;
+        const conclusion = status === "CONFIRMED_NOT_EXECUTED" ? "not-executed"
+          : restoreDraft || result.rejected ? "rejected"
+            : result.settled ? "succeeded" : result.receipt ? "unknown" : "not-found";
         // B101 still fences new writes for FAILED, even with a rollback marker.
         if (!result.settled && !restoreDraft) return { ...result, conclusion, current: undefined, restoreDraft } as const;
         const details = await readContent(original.kind).then(current => ({ current }), error => ({ current: undefined, readError: displayAdminReadError(error) }));
@@ -189,7 +194,7 @@ export function useA3Commands() {
     };
     const result = evidence ? await read() : await recovery.query(record, read);
     if (!result || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
-    if (result.settled) { recovery.settleAcknowledged(record); sync(); }
+    if (result.settled && !isA3ContentCommand(record)) { recovery.settleAcknowledged(record); sync(); }
     return result;
   };
   const queryContent = async (record: A3Command) => {
@@ -210,6 +215,17 @@ export function useA3Commands() {
   const send = async (record: A3Command, retry = false) => {
     try {
       return retry ? await recovery.replay(record, saved => submit(saved, true)) : await submit(record, false);
+    } catch (error) {
+      if (retry && isA3ContentCommand(record) && error instanceof OutcomeUnknownError) {
+        const saved = find(record.fingerprint);
+        if (saved?.commandKey === record.commandKey) {
+          commands.remember(saved.fingerprint, saved.commandKey, { ...saved, contentRetryFeedback: {
+            kind: error instanceof A3ContentReadbackError ? "readback-failed" : "unknown",
+            detail: error.message,
+          } });
+        }
+      }
+      throw error;
     } finally { sync(); }
   };
   const submit = async (record: A3Command, retry: boolean) => {
@@ -240,8 +256,12 @@ export function useA3Commands() {
         const status = response.ok && apiCode !== undefined && apiCode >= 400 && apiCode < 500 ? apiCode : response.status;
         const error = Object.assign(new Error(formatAdminApiError(reasonCode, `A3_REQUEST_FAILED_${response.status}`)), { status, reasonCode, apiCode });
         if (retry && explicitRejectionCode(error)) throw error;
-        if (!retry && !isIdempotencyOutcomeOpen(reasonCode) && isDeterministicRejection(response.status, error.apiCode)) {
+        // The cross-command A3 fence runs before inserting this new key.
+        const blockedBeforeClaim = !retry && isA3ContentCommand(record)
+          && status === 409 && reasonCode === "IDEMPOTENCY_ORIGINAL_OPERATION_REQUIRES_INVESTIGATION";
+        if (blockedBeforeClaim || !retry && !isIdempotencyOutcomeOpen(reasonCode) && isDeterministicRejection(response.status, error.apiCode)) {
           commands.forget(record.fingerprint, record.commandKey);
+          if (blockedBeforeClaim) throw new Error("这次保存没有开始。请有调查权限的超级管理员到「操作记录与审批」核查占用此内容的原操作。");
           throw error;
         }
         throw new OutcomeUnknownError(error.message);
@@ -279,10 +299,10 @@ export function useA3Commands() {
         }
       }
       const current = retry && isA3ContentCommand(record) ? await readContent(record.original.kind).catch(error => {
-        throw new OutcomeUnknownError(`原操作已执行，最新内容加载失败。请查询原操作。 ${displayAdminReadError(error)}`);
+        throw new A3ContentReadbackError(displayAdminReadError(error));
       }) : undefined;
       if (!isPendingCommandOwnedBy(record)) throw new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN");
-      commands.forget(record.fingerprint, record.commandKey); sync();
+      if (!current) commands.forget(record.fingerprint, record.commandKey);
       return current;
     } catch (error) {
       sync();
@@ -291,6 +311,7 @@ export function useA3Commands() {
     }
   };
   return { pending, find, capture, send, queryOriginal, queryContent, sync, recoveryState: recovery.state,
+    settleContent: (record: A3Command) => { const settled = recovery.settleAcknowledged(record); sync(); return settled; },
     releaseSnapshot: recovery.releaseSnapshot,
     releaseRejected: (record: A3Command) => !!currentRecoveryActor(record.commandOwnerId) && recovery.releaseRejectedReplay(record) };
 }
