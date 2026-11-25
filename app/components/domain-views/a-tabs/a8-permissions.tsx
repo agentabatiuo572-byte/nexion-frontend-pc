@@ -272,7 +272,8 @@ export default function A8Permissions() {
   };
 
   const rolesCell = (p: A8Permission) => {
-    if (matrixOpen && matrixLoading && !rolesReady) return <span className="rd-skeleton a8-role-skel" aria-label="正在加载角色" />;
+    // 角色授权在重读：不拿旧授权给新读到的行下结论（RF02），整列先显示在途。
+    if (matrixOpen && matrixLoading) return <span className="rd-skeleton a8-role-skel" aria-label="正在加载角色" />;
     if (!rolesReady) {
       return <Cell num main={<span className={p.boundRoleCount === 0 ? "a8-muted" : undefined}>{p.boundRoleCount} 个角色</span>}
         sub={matrixOpen && matrixError ? matrixError.kind === "denied" ? MATRIX_DENIED : "角色名没读到" : undefined} />;
@@ -305,7 +306,7 @@ export default function A8Permissions() {
     <RdPage className="a8-page">
       <PageHeader pageId="A8" title="权限清单" summary="查一个权限管什么、风险多大、哪些角色有它。"
         guideContent={getA8PageGuide(canReadRoles)}
-        actions={result && <Button ref={refreshButtonRef} variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />}
+        actions={(result || loadError) && <Button ref={refreshButtonRef} variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />}
           loading={loading || (matrixOpen && matrixLoading)} onClick={refreshPage}>刷新</Button>}
         readOnly="这页只能查看；登记和授权在别的页面" />
       {conclusion}
@@ -378,8 +379,11 @@ export default function A8Permissions() {
                         <Td sticky="start"><Cell title={`${operatorCopyText(p.permissionName || p.permissionCode)}\n${p.permissionCode}`} main={operatorCopyText(p.permissionName || p.permissionCode)} sub={<span data-mono>{p.permissionCode}</span>} /></Td>
                         {grants.map(({ role, codes, failure }) => (
                           <Td key={role.id} className="a8-matrix-cell"
-                            title={failure ? `${role.roleName} 的权限没读到，这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
-                            {failure
+                            title={matrixLoading ? `${role.roleName} 的权限正在重新读取` : failure ? `${role.roleName} 的权限没读到，这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
+                            {/* 角色授权在重读：新读到的行不拿旧授权下有 / 没有的结论（RF02）。 */}
+                            {matrixLoading
+                              ? <span className="a8-mark" data-mark="unknown" aria-label={`${role.roleName} 的权限正在重新读取`}>…</span>
+                              : failure
                               ? <span className="a8-mark" data-mark="unknown" aria-label={`${role.roleName} 的权限没读到，这一格不代表没有权限`}>?</span>
                               : codes.has(p.permissionCode)
                                 ? <span className="a8-mark" data-mark="yes" aria-label={`${role.roleName} 有此权限`}><CheckIcon size={14} aria-hidden /></span>
