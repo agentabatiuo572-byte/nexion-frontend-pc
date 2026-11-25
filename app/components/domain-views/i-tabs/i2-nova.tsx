@@ -32,6 +32,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { fetchI2NovaOverview, type NovaOverview, i2Recovery, i2RetryBlockedReason, pendingI2Commands, queryI2Command, retryI2Command, type I2Command, type NovaSocialEventSampleView, type NovaTemplateView } from "@/lib/admin/i-client";
 import { fundCommandSettled, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
+import { useEditorOpening } from "@/lib/admin/use-editor-opening";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
@@ -397,15 +398,18 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       tickValue: tick.value, tickUnit: tick.unit, cooldownValue: cooldown.value, cooldownUnit: cooldown.unit };
   };
   const openNewNova = (draftKey?: string) => {
+    if (!editorOpening.canOpen()) return;
     const blocked = lockReason("channel-create");
     if (blocked) { toast(blocked); return; }
     const saved = draftKey ? newChannelDrafts.get(session?.adminId, draftKey) : undefined;
+    if (draftKey && !saved) return;
     drawerSource.current = data;
     setDrawerPendingKey(null); setEditNovaKey(null);
     setOpenedChannelDraft(saved && draftKey ? draftKey : null);
     setForm(saved?.form ?? EMPTY_FORM); setNovaDrawer(true);
   };
   const openEditNova = (n: OpsNova) => {
+    if (!editorOpening.canOpen()) return;
     const blocked = lockReason(`channel:${n.key}`);
     if (blocked) { toast(blocked); return; }
     drawerSource.current = data;
@@ -631,6 +635,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const [tplDrawer, setTplDrawer] = useState(false);
+  const [distDrawer, setDistDrawer] = useState(false);
+  const editorOpening = useEditorOpening(novaDrawer || tplDrawer || distDrawer, message => toast(message, "warn"));
   const draftEditorOpen = useRef(false);
   draftEditorOpen.current = novaDrawer || tplDrawer;
   const [openedTemplateDraft, setOpenedTemplateDraft] = useState<string | null>(null);
@@ -639,32 +645,42 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const editTplChannel = editTplSnapshot?.channel ?? null;
   const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
   const newTpl = async (draftKey?: string) => {
-    setRequiredLanguages(await getRequiredContentLanguages());
-    const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
-    const saved = draftKey ? newTemplateDrafts.get(session?.adminId, draftKey) : undefined;
+    const owner = session?.adminId;
+    const saved = draftKey ? newTemplateDrafts.get(owner, draftKey) : undefined;
     if (draftKey && !saved) return;
     if (saved && (!novas.some(n => n.key === saved.channel) || NOVA_TPLS.some(t => t.ch === saved.channel) || lockReason(`channel:${saved.channel}`))) {
       toast("当前频道不能新建这份模板，请刷新并核对原频道。", "warn");
       return;
     }
-    setEditTplSnapshot(null);
-    setOpenedTemplateDraft(saved && draftKey ? draftKey : null);
-    setTplForm(saved ?? { ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
-    setTplDrawer(true);
+    await editorOpening.run(draftKey ?? "new-template", async () => {
+      const required = await getRequiredContentLanguages();
+      return () => {
+        const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
+        setRequiredLanguages(required);
+        setEditTplSnapshot(null);
+        setOpenedTemplateDraft(draftKey ?? null);
+        setTplForm(saved ?? { ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
+        setTplDrawer(true);
+      };
+    }, () => !draftKey || newTemplateDrafts.get(owner, draftKey) === saved);
   };
   const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
     const snapshot = data?.templates.find((template) => template.channel === t.ch);
     if (!snapshot) return;
-    const required = await getRequiredContentLanguages();
-    setRequiredLanguages(required);
-    setEditTplSnapshot(snapshot);
-    setOpenedTemplateDraft(null);
-    const current = { channel: t.ch, name: t.name, cta: t.cta, version: t.v, ...mapContentTitleBody(t, required, "edit") };
-    const saved = templateDrafts.get(session?.adminId, `edit:${t.ch}`);
-    openedTemplateEdit.current = saved;
-    setTplForm(restoreFields(saved, current, { name: "模板名称", cta: "点击后去哪", version: "版本", titleZh: "中文标题", bodyZh: "中文正文",
-      titleVi: "越南语标题", bodyVi: "越南语正文", titleEn: "英语标题", bodyEn: "英语正文" }, saved?.revision !== undefined && saved.revision === snapshot?.revision));
-    setTplDrawer(true);
+    await editorOpening.run(`edit-template:${t.ch}`, async () => {
+      const required = await getRequiredContentLanguages();
+      return () => {
+        setRequiredLanguages(required);
+        setEditTplSnapshot(snapshot);
+        setOpenedTemplateDraft(null);
+        const current = { channel: t.ch, name: t.name, cta: t.cta, version: t.v, ...mapContentTitleBody(t, required, "edit") };
+        const saved = templateDrafts.get(session?.adminId, `edit:${t.ch}`);
+        openedTemplateEdit.current = saved;
+        setTplForm(restoreFields(saved, current, { name: "模板名称", cta: "点击后去哪", version: "版本", titleZh: "中文标题", bodyZh: "中文正文",
+          titleVi: "越南语标题", bodyVi: "越南语正文", titleEn: "英语标题", bodyEn: "英语正文" }, saved?.revision !== undefined && saved.revision === snapshot.revision));
+        setTplDrawer(true);
+      };
+    });
   };
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplSnapshot(null); setTplForm(EMPTY_TEMPLATE); };
   const submitTpl = () => {
@@ -744,13 +760,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   });
 
   // ── 真实事件的五类概率:一次编辑全部类型，不静默改动另一类。──
-  const [distDrawer, setDistDrawer] = useState(false);
   const [distDraft, setDistDraft] = useState<Record<string, string>>({});
   const [distBase, setDistBase] = useState<Record<string, string>>({});
   const openedDistribution = useRef<ReturnType<typeof distributionDrafts.get>>(undefined);
   const distributionValues = (rows: typeof SOCIAL_DIST) => Object.fromEntries(rows.map(item => [item.key, String(item.pct)]));
   const distributionLabels = (rows: typeof SOCIAL_DIST) => Object.fromEntries(rows.map(item => [item.key, operatorCopyText(item.name)]));
   const openDistDrawer = () => {
+    if (!editorOpening.canOpen()) return;
     const saved = distributionDrafts.get(session?.adminId, "distribution");
     openedDistribution.current = saved;
     const latest = distributionValues(SOCIAL_DIST);
@@ -1018,7 +1034,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={() => void actions.reloadIContent()}>刷新</Button>
       </span> : undefined}
-      actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={lockReason("channel-create")} onClick={() => openNewNova()}>新增频道</Button> : undefined} />
+      actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={editorOpening.blocked ?? lockReason("channel-create")} onClick={() => openNewNova()}>新增频道</Button> : undefined} />
   );
   // 恢复行写频道名字，不写频道键；新增、编辑频道的两个间隔写成中文。
   const unknownObject = (row: I2Command) => {
@@ -1078,7 +1094,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         const channelDraft = newChannelDrafts.get(owner, row.key);
         const templateDraft = newTemplateDrafts.get(owner, row.key);
         return <>
-        <Button size="sm" disabledReason={newMutationReason} onClick={() => {
+        <Button size="sm" loading={editorOpening.opening === row.key} disabledReason={editorOpening.blocked ?? newMutationReason} onClick={() => {
           if (channelDraft) openNewNova(row.key);
           else void newTpl(row.key);
         }}>继续修改</Button>
@@ -1172,7 +1188,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const toggleBlocked = lockReason(`channel:${n.key}`) || (!n.on && st !== "published" ? "先给它发布模板才能启用" : undefined);
     const cardActions = canWriteI2 ? <>
       <Button size="sm" icon={n.on ? <PowerOff size={14} aria-hidden /> : <Power size={14} aria-hidden />} disabledReason={toggleBlocked} aria-label={`${n.on ? "停用" : "启用"} ${channelName(n.key, n.name)}`} onClick={() => toggleNova(n)}>{n.on ? "停用" : "启用"}</Button>
-      <Button size="sm" icon={<Pencil size={14} aria-hidden />} disabledReason={lockReason(`channel:${n.key}`) || (phase ? "跟随「运营阶段设置」，这里不能改" : undefined)} aria-label={`编辑 ${channelName(n.key, n.name)}`} onClick={() => openEditNova(n)}>编辑</Button>
+      <Button size="sm" icon={<Pencil size={14} aria-hidden />} disabledReason={editorOpening.blocked || lockReason(`channel:${n.key}`) || (phase ? "跟随「运营阶段设置」，这里不能改" : undefined)} aria-label={`编辑 ${channelName(n.key, n.name)}`} onClick={() => openEditNova(n)}>编辑</Button>
       <MoreMenu label={`${channelName(n.key, n.name)} 的更多操作`} disabled={!!lockReason(`channel:${n.key}`)} items={[{ key: "delete", label: "删除频道", danger: true, onSelect: () => removeNova(n) }]} />
     </> : undefined;
     return (
@@ -1203,7 +1219,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const blocked = lockReason(`channel:${t.ch}`);
     if (size === "md") return <>
       {st === "draft" && <Button variant="primary" disabledReason={blocked} icon={<Send size={14} aria-hidden />} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
-      {st === "draft" && <Button disabledReason={blocked} icon={<Pencil size={14} aria-hidden />} onClick={() => editTpl(t)}>编辑</Button>}
+      {st === "draft" && <Button disabledReason={editorOpening.blocked ?? blocked} icon={<Pencil size={14} aria-hidden />} onClick={() => editTpl(t)}>编辑</Button>}
       {st === "published" && <Button disabledReason={blocked} icon={<Ban size={14} aria-hidden />} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
       {st !== "published" && <Button variant="danger-outline" disabledReason={blocked} icon={<Trash2 size={14} aria-hidden />} onClick={() => removeTpl(t)}>删除模板</Button>}
     </>;
@@ -1211,7 +1227,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       {st === "draft" && <Button size="sm" disabledReason={blocked} icon={<Send size={14} aria-hidden />} aria-label={`发布模板 ${t.name}`} onClick={() => publishTpl(t.ch, t.name)}>发布</Button>}
       {st === "published" && <Button size="sm" disabledReason={blocked} icon={<Ban size={14} aria-hidden />} aria-label={`归档模板 ${t.name}`} onClick={() => archiveTpl(t.ch, t.name)}>归档</Button>}
       {st !== "published" && <MoreMenu label={`模板 ${t.name} 的更多操作`} disabled={!!blocked} items={[
-        ...(st === "draft" ? [{ key: "edit", label: "编辑", onSelect: () => editTpl(t) }] : []),
+        ...(st === "draft" ? [{ key: "edit", label: "编辑", disabledReason: editorOpening.blocked, onSelect: () => editTpl(t) }] : []),
         { key: "delete", label: "删除模板", danger: true, onSelect: () => removeTpl(t) },
       ]} />}
     </>;
@@ -1284,7 +1300,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <div {...lowerIds.panel("templates")} hidden={lower !== "templates"} className="rd-tab-pane">
       <Panel title="消息模板" icon={FileText} tone="role-4" sub={`${templatePager.total} 个 · 每个频道一个`}
         explain="模板就是用户收到的标题和正文。英文和运营区域语言必填；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
-        actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason || (templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined)} onClick={() => void newTpl()}>新建模板</Button> : undefined}>
+        actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={editorOpening.blocked || newMutationReason || (templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined)} onClick={() => void newTpl()}>新建模板</Button> : undefined}>
         {retiredBrandChannels.length > 0 && <Notice tone="warn" title={`${retiredBrandChannels.length} 个频道的已发布模板里还有退役的品牌名，现在发不出去`}>
           <p>{retiredBrandChannels.map(displayOf).join("、")}：系统发送时会跳过这些模板。要恢复推送：归档模板，删掉后用现在的名称新建、发布，再启用频道。</p>
         </Notice>}
@@ -1320,7 +1336,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <div {...lowerIds.panel("material")} hidden={lower !== "material"} className="rd-tab-pane">
       <Panel title="事件概率" icon={Percent} tone="role-2" sub={`五类 · 合计 ${distTotal}%`}
         explain="只管「真实动态」频道：每次先按这组概率选一类，再从这一类有效的最近 100 条里随机取一条。某一类没有有效事件，就按其余几类的比例重新分。"
-        actions={canWriteI2 ? <Button icon={<Percent size={14} aria-hidden />} disabledReason={lockReason("distribution") || (SOCIAL_DIST.length === 0 ? "没有读到五类概率" : undefined)} onClick={openDistDrawer}>调整概率</Button> : undefined}>
+        actions={canWriteI2 ? <Button icon={<Percent size={14} aria-hidden />} disabledReason={editorOpening.blocked || lockReason("distribution") || (SOCIAL_DIST.length === 0 ? "没有读到五类概率" : undefined)} onClick={openDistDrawer}>调整概率</Button> : undefined}>
         {SOCIAL_DIST.length === 0
           ? <BlockState state="empty" title="没有读到事件概率" compact />
           : <div className="i2-dist">

@@ -39,6 +39,7 @@ import { RETRY_REJECTED_NEXT, RETRY_REJECTED_TEXT } from "@/lib/admin/retry-reje
 import { businessStamp, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
+import { useEditorOpening } from "@/lib/admin/use-editor-opening";
 import { useReach } from "@/lib/nav/use-reach";
 import { I6_COURSE_REWARD_DECIMALS, i6Amount, i6RewardChange } from "@/lib/admin/i6-amount";
 import { AppCoursePreview, CATEGORY_LABEL, COMPLETION_LABEL, CompareRows, CourseEditor, FORMAT_LABEL, LANGS, LEVEL_LABEL, REWARD_EVENT_LABEL, RETIRED_OPTIONS_VIEW_NOTE, RetiredOption, blockedText, categoryIcon, categoryLabel, copyFormMissing, courseFormMissing, courseFormState, mapCourseLanguages, durationText, NO_REWARD, nsLabel, rewardPerUser, uvtText, type CourseForm, type CourseSpec, type Lang } from "./i6-parts";
@@ -350,6 +351,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     return required;
   };
   const [courseEditor, setCourseEditor] = useState<CourseEditorState | null>(null);
+  const editorOpening = useEditorOpening(!!courseEditor || !!copyEditor, message => toast(message, "warn"));
   const courseEditorOpen = useRef(false);
   courseEditorOpen.current = !!courseEditor;
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
@@ -1058,31 +1060,37 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       toast("原课程标识已经存在，请核对当前课程。", "warn");
       return;
     }
-    await readRequiredLanguages();
-    if (draftKey && (!saved || newCourseDrafts.get(useAdminAuth.getState().session?.adminId, draftKey) !== saved)) return;
-    const spec = courseSpec("create");
-    setCourseEditor({ spec, initial: saved, title: "新建课程", sub: "存成草稿，用户看不到",
-      save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
-        action: <>新建课程(存为草稿)</>,
-        title: "保存新课程草稿",
-        detail: (
-          <>
-            课程标识、分类、形式、难度、奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）和三语标题、正文、测验一起存成草稿；草稿用户看不到，发布另外操作。
-          </>
-        ),
-        effect: draftEffect,
-        confirmLabel: "保存草稿",
-        statedBrief: { impact: "存成 v1 草稿，用户看不到；发布另外操作。", check: "课程标识建好后不能改。" },
-        facts: courseDraftFacts(form, <Fact k="课程标识">{form.slug}</Fact>),
-        amplifies: false,
-        run: async (reason) => {
-          const id = form.slug?.trim() || "new";
-          await saveCourseDraft(actions.createI6Course(id, await submittedCourse(spec, form), reason), "课程草稿已创建", () => {
-            if (draftKey && saved?.slug === id) newCourseDrafts.consume(session?.adminId, draftKey, saved);
-          });
-        },
-      }),
-    });
+    const owner = session?.adminId;
+    if (draftKey && !saved) return;
+    await editorOpening.run(draftKey ?? "new-course", async () => {
+      const required = await getRequiredContentLanguages();
+      return () => {
+        setRequiredLanguages(required);
+        const spec = courseSpec("create");
+        setCourseEditor({ spec, initial: saved, title: "新建课程", sub: "存成草稿，用户看不到",
+          save: (form) => confirmI6(`course:${form.slug.trim()}`, { briefKind: "config",
+            action: <>新建课程(存为草稿)</>,
+            title: "保存新课程草稿",
+            detail: (
+              <>
+                课程标识、分类、形式、难度、奖励（{TUTORIAL_REWARD_RANGE.min}–{TUTORIAL_REWARD_RANGE.max} UVT）和三语标题、正文、测验一起存成草稿；草稿用户看不到，发布另外操作。
+              </>
+            ),
+            effect: draftEffect,
+            confirmLabel: "保存草稿",
+            statedBrief: { impact: "存成 v1 草稿，用户看不到；发布另外操作。", check: "课程标识建好后不能改。" },
+            facts: courseDraftFacts(form, <Fact k="课程标识">{form.slug}</Fact>),
+            amplifies: false,
+            run: async (reason) => {
+              const id = form.slug?.trim() || "new";
+              await saveCourseDraft(actions.createI6Course(id, await submittedCourse(spec, form), reason), "课程草稿已创建", () => {
+                if (draftKey && saved?.slug === id) newCourseDrafts.consume(session?.adminId, draftKey, saved);
+              });
+            },
+          }),
+        });
+      };
+    }, () => !draftKey || newCourseDrafts.get(owner, draftKey) === saved);
   };
 
   const editCrsState = (c: Course, saved?: ReturnType<typeof courseDrafts.get>): CourseEditorState => ({ courseId: c.id, spec: courseSpec("edit", {
@@ -1139,9 +1147,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     }
   };
   const editCrs = async (c: Course) => {
-    await readRequiredLanguages();
-    const editor = editCrsState(c, courseDrafts.get(session?.adminId, `course-draft:${c.id}`));
-    setCourseEditor({ ...editor, initial: reopenedCourse(`course-draft:${c.id}`, editor.spec, c.revision) });
+    await editorOpening.run(`edit-course:${c.id}`, async () => {
+      const required = await getRequiredContentLanguages();
+      return () => {
+        setRequiredLanguages(required);
+        const editor = editCrsState(c, courseDrafts.get(session?.adminId, `course-draft:${c.id}`));
+        setCourseEditor({ ...editor, initial: reopenedCourse(`course-draft:${c.id}`, editor.spec, c.revision) });
+      };
+    });
   };
 
   const deleteCrs = (c: Course) => confirmI6(`course:${c.id}`, { briefKind: "record",
@@ -1174,28 +1187,33 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   });
 
   const newCourseVersion = async (c: Course) => {
-    let nextVersion: string | undefined;
-    try { nextVersion = await actions.fetchI7NextCourseVersion(c.id); }
-    catch (error) { toast(displayAdminError(error), "error"); return; }
-    const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
-      ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
-    await readRequiredLanguages();
-    const spec = courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`));
-    const saved = courseDrafts.get(session?.adminId, `version-create:${c.id}`);
-    setCourseEditor({ courseId: c.id, spec, initial: reopenedCourse(`version-create:${c.id}`, spec), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
-      save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
-        action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
-        title: "保存新版本草稿",
-        detail: <>当前发布版继续服务用户；新版本在独立草稿中编辑，发布后才整体替换当前版。</>,
-        effect: draftEffect,
-        confirmLabel: "保存草稿",
-        statedBrief: { impact: `存成 ${form.version} 草稿；线上 ${c.v} 和用户进度都不变。`, check: "一门课同时只能有一个版本草稿。" },
-        facts: courseDraftFacts(form, <Fact k="版本"><Change from={`${c.v}（线上）`} to={`${form.version}（草稿）`} /></Fact>),
-        amplifies: false,
-        run: async (reason) => saveCourseDraft(
-          actions.createI7CourseVersion(c.id, await submittedCourse(courseSpec("version-create"), form), reason, { course: data?.courses.find(row => row.id === c.id) }), `${nexGridBrandText(c.title)} ${form.version} 草稿已创建`,
-          () => courseDrafts.consume(session?.adminId, `version-create:${c.id}`, saved)),
-      }),
+    await editorOpening.run(`new-course-version:${c.id}`, async () => {
+      let nextVersion: string | undefined;
+      try { nextVersion = await actions.fetchI7NextCourseVersion(c.id); }
+      catch (error) { toast(displayAdminError(error), "error"); return; }
+      const maxVersion = Math.max(Number(c.v.replace(/^v/i, "")) || 0,
+        ...courseVersions.map((row) => Number(row.version.replace(/^v/i, "")) || 0));
+      const required = await getRequiredContentLanguages();
+      return () => {
+        setRequiredLanguages(required);
+        const spec = courseSpec("version-create", courseCurrent(c, nextVersion ?? `v${maxVersion + 1}`));
+        const saved = courseDrafts.get(session?.adminId, `version-create:${c.id}`);
+        setCourseEditor({ courseId: c.id, spec, initial: reopenedCourse(`version-create:${c.id}`, spec), title: "新版本草稿", sub: `${nexGridBrandText(c.title)} · 线上 ${c.v} 照常服务`,
+          save: (form) => confirmI6(`course:${c.id}`, { briefKind: "config",
+            action: <>新建课程版本草稿 · {nexGridBrandText(c.title)}</>,
+            title: "保存新版本草稿",
+            detail: <>当前发布版继续服务用户；新版本在独立草稿中编辑，发布后才整体替换当前版。</>,
+            effect: draftEffect,
+            confirmLabel: "保存草稿",
+            statedBrief: { impact: `存成 ${form.version} 草稿；线上 ${c.v} 和用户进度都不变。`, check: "一门课同时只能有一个版本草稿。" },
+            facts: courseDraftFacts(form, <Fact k="版本"><Change from={`${c.v}（线上）`} to={`${form.version}（草稿）`} /></Fact>),
+            amplifies: false,
+            run: async (reason) => saveCourseDraft(
+              actions.createI7CourseVersion(c.id, await submittedCourse(courseSpec("version-create"), form), reason, { course: data?.courses.find(row => row.id === c.id) }), `${nexGridBrandText(c.title)} ${form.version} 草稿已创建`,
+              () => courseDrafts.consume(session?.adminId, `version-create:${c.id}`, saved)),
+          }),
+        });
+      };
     });
   };
 
@@ -1216,9 +1234,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     }),
   });
   const editCourseVersion = async (c: Course, row: LearningCourseVersionView) => {
-    await readRequiredLanguages();
-    const editor = editCourseVersionState(c, row, courseDrafts.get(session?.adminId, `version-draft:${c.id}:${row.version}`));
-    setCourseEditor({ ...editor, initial: reopenedCourse(`version-draft:${c.id}:${row.version}`, editor.spec, row.revision) });
+    await editorOpening.run(`edit-course-version:${c.id}:${row.version}`, async () => {
+      const required = await getRequiredContentLanguages();
+      return () => {
+        setRequiredLanguages(required);
+        const editor = editCourseVersionState(c, row, courseDrafts.get(session?.adminId, `version-draft:${c.id}:${row.version}`));
+        setCourseEditor({ ...editor, initial: reopenedCourse(`version-draft:${c.id}:${row.version}`, editor.spec, row.revision) });
+      };
+    });
   };
 
   const deleteCourseVersion = (c: Course, row: LearningCourseVersionView) => confirmI6(`course:${c.id}`, { briefKind: "record",
@@ -1659,7 +1682,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             </li>), ...ordinaryItems, ...drafts.map(([key, draft]) => <li key={key}>
               <StatusTag tone="neutral">草稿已保留</StatusTag>
               <span className="i6-pending-what">新建课程 · {draft.slug}</span>
-              <span className="i6-pending-act"><Button size="sm" disabledReason={!canWriteI7 ? "当前账号只能查看" : newWriteProblem(`course:${draft.slug}`)}
+              <span className="i6-pending-act"><Button size="sm" loading={editorOpening.opening === key} disabledReason={editorOpening.blocked ?? (!canWriteI7 ? "当前账号只能查看" : newWriteProblem(`course:${draft.slug}`))}
                 onClick={() => void newCrs(key)}>继续修改</Button>
                 <Button size="sm" variant="ghost" disabled={!!courseEditor} onClick={() => discardRecovery.ask(() => {
                   const owner = useAdminAuth.getState().session?.adminId;
@@ -1747,15 +1770,20 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         ? issue.samples.map(key => MESSAGES.find(message => message.messageKey === key)).find(Boolean)
         : sm;
       if (!target) return;
-      const required = await readRequiredLanguages();
-      setSelectedMessageKey(target.messageKey);
-      const base = mapSingleContentText(target, required, "edit");
-      const saved = mode === "edit" ? messageDrafts.get(session?.adminId, target.messageKey) : undefined;
-      const merged = saved?.before ? rebaseTerminalDraft(mapSingleContentText(saved.before, required, "edit"),
-        mapSingleContentText(saved.desired, required, "edit"), base) : undefined;
-      if (merged?.others.length) toast(`别人改过：${merged.others.map(key => LANGS.find(item => item.key === key)?.label).join("、")}。请核对你的拟改内容。`, "warn");
-      if (saved && !merged && saved.version !== target.version) toast("原草稿缺少修改前的内容，已显示最新版本，请重新选择拟改项。", "warn");
-      setCopyEditor({ mode, issue, ...(merged?.value ?? (saved?.version === target.version ? saved?.desired : undefined) ?? base), tried: false });
+      await editorOpening.run(`edit-copy:${target.messageKey}`, async () => {
+        const required = await getRequiredContentLanguages();
+        return () => {
+          setRequiredLanguages(required);
+          setSelectedMessageKey(target.messageKey);
+          const base = mapSingleContentText(target, required, "edit");
+          const saved = mode === "edit" ? messageDrafts.get(session?.adminId, target.messageKey) : undefined;
+          const merged = saved?.before ? rebaseTerminalDraft(mapSingleContentText(saved.before, required, "edit"),
+            mapSingleContentText(saved.desired, required, "edit"), base) : undefined;
+          if (merged?.others.length) toast(`别人改过：${merged.others.map(key => LANGS.find(item => item.key === key)?.label).join("、")}。请核对你的拟改内容。`, "warn");
+          if (saved && !merged && saved.version !== target.version) toast("原草稿缺少修改前的内容，已显示最新版本，请重新选择拟改项。", "warn");
+          setCopyEditor({ mode, issue, ...(merged?.value ?? (saved?.version === target.version ? saved?.desired : undefined) ?? base), tried: false });
+        };
+      });
     };
     const whenSeen = !sm ? "—" : sm.status === "published" ? "已在远程文案里；App 下次拉取时用它"
       : sm.status === "draft" ? "草稿，用户看不到；发布后 App 下次拉取时换上" : sm.status === "archived" ? "已撤下远程文案；App 拉到新文案包后改用自带文字" : "—";
@@ -1775,7 +1803,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             onClick={() => copyEditor.mode === "fix" && copyEditor.issue ? fixIntegrity(copyEditor.issue, copyEditor) : editKeyDraft(copyEditor)}>{copyEditor.mode === "fix" ? "保存修复" : "保存草稿"}</Button>} />
       : <Decision
           danger={sm.status === "published" ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} onClick={() => archiveKey()}>归档</Button> : undefined}
-          others={<Button icon={<Pencil size={14} aria-hidden />} onClick={() => startEdit("edit")}>编辑三语草稿</Button>}
+          others={<Button icon={<Pencil size={14} aria-hidden />} disabledReason={editorOpening.blocked} onClick={() => startEdit("edit")}>编辑三语草稿</Button>}
           primary={sm.status === "draft" ? <Button variant="primary" icon={<Send size={14} aria-hidden />} disabledReason={publicationIssues.length > 0 ? `暂不能发布：${publicationIssues.join("；")}` : undefined} onClick={() => pubKey()}>发布</Button> : undefined} />;
 
     return <>
@@ -1889,7 +1917,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 <IconTile icon={FilePen} tone="warn" />
                 <span className="i6-issue-name">{issueName(issue)}</span>
                 <span className="i6-issue-cnt">{count(issue.cnt)} 处</span>
-                {canWriteI6 && sm && <span className="i6-issue-fix"><span className="i6-muted" title={sm.messageKey}>所选 <span className="i6-mono">{sm.messageKey.length > 22 ? `…${sm.messageKey.slice(-21)}` : sm.messageKey}</span></span><span data-pair=""><Button size="sm" onClick={() => { setMessageDrawer(true); setCompareVersion(""); startEdit("fix", issue); }}>修复所选文案</Button><Explain label="修的是哪一条" content="修的是列表里最后点过的那条文案（没点过时是第一条）。要修别的，先点「例如」里的键或列表里的文案。" /></span></span>}
+                {canWriteI6 && sm && <span className="i6-issue-fix"><span className="i6-muted" title={sm.messageKey}>所选 <span className="i6-mono">{sm.messageKey.length > 22 ? `…${sm.messageKey.slice(-21)}` : sm.messageKey}</span></span><span data-pair=""><Button size="sm" disabledReason={editorOpening.blocked} onClick={() => { setMessageDrawer(true); setCompareVersion(""); startEdit("fix", issue); }}>修复所选文案</Button><Explain label="修的是哪一条" content="修的是列表里最后点过的那条文案（没点过时是第一条）。要修别的，先点「例如」里的键或列表里的文案。" /></span></span>}
               </div>
               {issue.samples.length > 0 && <div className="i6-issue-samples">
                 <span className="i6-muted">例如</span>
@@ -1935,7 +1963,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         {sm && !copyEditor && <>
           <JudgmentPoints rows={judgment} />
           {sm.status === "draft" && publicationIssues.length > 0 && <Notice tone="warn" title="暂不能发布">{publicationIssues.join("；")}。编辑三语草稿补齐后再发布。</Notice>}
-          {smIssues.length > 0 && <Notice tone="warn" title="完整性检查点到这条" action={canWriteI6 ? <Button size="sm" onClick={() => startEdit("fix", smIssues[0])}>修复</Button> : undefined}>
+          {smIssues.length > 0 && <Notice tone="warn" title="完整性检查点到这条" action={canWriteI6 ? <Button size="sm" disabledReason={editorOpening.blocked} onClick={() => startEdit("fix", smIssues[0])}>修复</Button> : undefined}>
             {smIssues.map(issueName).join("、")}
           </Notice>}
           <section className="i6-langs" aria-label="三种语言">
@@ -2067,7 +2095,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     if (canWriteI7 && !archived && !isDraft) more.push({ key: "archive", label: "下架", danger: true, disabledReason: archiveProblem(c), onSelect: () => archiveCrs(c) });
     const primary = isDraft
       ? <>
-        {canWriteI7 && <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} onClick={() => editCrs(c)}>编辑</Button>}
+        {canWriteI7 && <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} disabledReason={editorOpening.blocked} onClick={() => editCrs(c)}>编辑</Button>}
         {canPublishI7 && <Button size="sm" variant="primary" icon={<Send size={14} aria-hidden />} aria-label={`发布 ${title}`} onClick={() => pubCrs(c)}>{c.reward > 0 ? "提交发布" : "发布"}</Button>}
       </>
       : !archived && canAdjustI7Reward
@@ -2088,7 +2116,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         : canWriteI7 && !archived ? <Button variant="danger-outline" icon={<Archive size={14} aria-hidden />} aria-label={`下架 ${title}`} disabledReason={archiveProblem(c)} onClick={() => archiveCrs(c)}>下架</Button> : undefined}
       others={<>
         <Button onClick={() => setVersionCourseId("")}>关闭</Button>
-        {isDraft && canWriteI7 && <Button icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} onClick={() => editCrs(c)}>编辑</Button>}
+        {isDraft && canWriteI7 && <Button icon={<Pencil size={14} aria-hidden />} aria-label={`编辑 ${title}`} disabledReason={editorOpening.blocked} onClick={() => editCrs(c)}>编辑</Button>}
         {!isDraft && !archived && canAdjustI7Reward && <Button aria-label={`调整奖励 ${title}`} disabledReason={rewardApprovalBlocked} onClick={() => adjRwd(c)}>调奖励</Button>}
       </>}
       primary={isDraft && canPublishI7 ? <Button variant="primary" icon={<Send size={14} aria-hidden />} onClick={() => pubCrs(c)}>{c.reward > 0 ? "提交发布" : "发布"}</Button> : undefined} />;
@@ -2114,7 +2142,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     </StatBand>
 
     <Panel title="课程" icon={GraduationCap} tone="role-2" sub={`${count(filteredCrs.length)} 门`}
-      actions={canWriteI7 ? <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} onClick={() => void newCrs()}>新建课程</Button> : <StatusTag tone="neutral" icon={Eye}>只读</StatusTag>}>
+      actions={canWriteI7 ? <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={editorOpening.blocked} onClick={() => void newCrs()}>新建课程</Button> : <StatusTag tone="neutral" icon={Eye}>只读</StatusTag>}>
       <div className="i6-course-filter">
         <Segments label="按分类看" value={catFlt} onChange={setCatFlt}
           items={[{ value: "all", label: "全部", count: allCourses.length }, ...courseCategories.map((category) => ({ value: category, label: categoryLabel(category), count: allCourses.filter((c) => c.cat === category).length }))]} />
@@ -2242,7 +2270,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           {courseTab === "versions" && <div className="rd-stack">
             <div className="i6-version-bar">
               <span className="i6-muted">线上 {versionCourse.v}；新版本先存草稿，发布后整体替换。时间为{BJ}。</span>
-              {canWriteI7 && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={versionsLoading ? "版本列表还在读取" : versionsError ? "版本列表没有读到" : undefined} onClick={() => newCourseVersion(versionCourse)}>新版本草稿</Button>}
+              {canWriteI7 && <Button size="sm" variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={editorOpening.blocked ?? (versionsLoading ? "版本列表还在读取" : versionsError ? "版本列表没有读到" : undefined)} onClick={() => newCourseVersion(versionCourse)}>新版本草稿</Button>}
             </div>
             {versionsError ? <BlockState state="error" title="版本列表没有读到" detail={versionsError} onRetry={() => setVersionsRetry((value) => value + 1)} />
               : <Table label="课程版本">
@@ -2260,7 +2288,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                       <Td><Cell main={row.updatedAt ? formatBusinessTimeCompact(row.updatedAt, "—") : "—"} /></Td>
                       <Td align="right" data-fit=""><span className="i6-row-actions">
                         {row.status === "DRAFT" && canWriteI7 && <>
-                          <Button size="sm" variant="ghost" onClick={() => editCourseVersion(versionCourse, row)}>编辑草稿</Button>
+                          <Button size="sm" variant="ghost" disabledReason={editorOpening.blocked} onClick={() => editCourseVersion(versionCourse, row)}>编辑草稿</Button>
                           <Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} onClick={() => deleteCourseVersion(versionCourse, row)}>删除草稿</Button>
                         </>}
                         {row.status === "DRAFT" && canPublishI7 && <Button size="sm" variant="primary" onClick={() => publishCourseVersion(versionCourse, row)}>{Number(row.payload.rewardNex) > 0 ? "提交发布" : "发布"}</Button>}

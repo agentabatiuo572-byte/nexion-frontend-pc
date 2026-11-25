@@ -19,6 +19,7 @@ import { createPendingRecovery, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_E
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Direct = { kind: "direct"; path: string; method: "POST" | "PATCH" | "DELETE"; body: string };
+type ApprovedFact = "found" | "task-missing" | "unreadable" | "superseded";
 export type H3Change = {
   target: string; action: string; title: string; before: string; after: string; reason: string; success: string;
   editValue?: string; businessValue?: Record<string, string>; rewardCurrency?: string; regionBaseline?: H3WeeklyRegionMapping[];
@@ -132,7 +133,14 @@ function retryBlocked(record: H3PendingCommand) {
 }
 
 /** H3-only transport and recovery. The page owns all existing form markup. */
-export function useH3Mutations(toast: (message: string) => void, settled: (commandKey?: string, draft?: H3PendingCommand) => Promise<void>, readApproved: (record: H3PendingCommand) => Promise<boolean>, finish: (commandKey: string) => void, isFresh: (record?: H3PendingCommand) => boolean, model: H3Model | null) {
+export function useH3Mutations(
+  toast: (message: string) => void,
+  settled: (commandKey?: string, draft?: H3PendingCommand, refresh?: boolean) => Promise<void>,
+  readApproved: (records: readonly H3PendingCommand[], refresh: boolean) => Promise<(record: H3PendingCommand) => ApprovedFact>,
+  finish: (commandKey: string) => void,
+  isFresh: (record?: H3PendingCommand) => boolean,
+  model: H3Model | null,
+) {
   const session = useAdminAuth(s => s.session);
   const adminId = session?.adminId;
   const operator = session?.operator || session?.username || "";
@@ -140,6 +148,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   const [, update] = useReducer(n => n + 1, 0);
   const auditRows = useRef<A2OperationRow[] | null>(null);
   const confirmedTickets = useRef(new Map<string, A2OperationRow>());
+  const approvedReads = useRef(new Map<string, symbol>());
   const queryErrors = useRecoveryQueryErrors();
   useEffect(() => { update(); auditRows.current = null; confirmedTickets.current.clear(); }, [adminId]);
   const records = () => savedCommands(adminId, operator).map(r => ({ ...r, ticket: confirmedTickets.current.get(r.commandKey) }));
@@ -161,27 +170,52 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     if (!ticket.mine || ticket.obj !== r.change.target || ticket.operationCode !== op
       || !["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status)) throw new OutcomeUnknownError("审批单与保存的原申请不符，原请求继续保留，请查询原结果。");
   };
-  const settleApproved = async (record: H3PendingCommand) => {
-    await queryErrors.read(record.commandKey, async () => {
-      if (!await readApproved(record)) throw new Error("审批单已批准，当前值没读到，请重新读取。");
-      if (h3Recovery.settleAcknowledged(record)) {
-        confirmedTickets.current.delete(record.commandKey);
-        finish(record.commandKey);
+  const settleApproved = async (approved: H3PendingCommand[], refresh = false) => {
+    const request = Symbol();
+    let found = false;
+    for (const record of approved) approvedReads.current.set(record.commandKey, request);
+    update();
+    try {
+      const factOf = await readApproved(approved, refresh);
+      for (const record of approved) {
+        if (approvedReads.current.get(record.commandKey) !== request) continue;
+        const fact = factOf(record);
+        if (fact === "superseded") continue;
+        if (fact === "unreadable") {
+          const error = new Error("审批单已批准，当前值没读到，请重新读取。");
+          queryErrors.fail(record.commandKey, error);
+          if (!refresh) throw error;
+        } else if (h3Recovery.settleAcknowledged(record)) {
+          queryErrors.clear(record.commandKey);
+          confirmedTickets.current.delete(record.commandKey);
+          finish(record.commandKey);
+          if (fact === "task-missing") toast("审批单已批准；这个任务现在已不在列表里，记录已解除。");
+          else found = true;
+        }
       }
-    });
+      return found;
+    } finally {
+      for (const { commandKey } of approved) {
+        if (approvedReads.current.get(commandKey) === request) approvedReads.current.delete(commandKey);
+      }
+      update();
+    }
   };
-  const query = async (r: H3PendingCommand, quiet = false) => {
+  const query = async (r: H3PendingCommand, refresh = false) => {
     requireActor(false);
     const current = currentH3Commands().find(record => record.commandKey === r.commandKey);
     if (!current) return;
-    if (current.ticketStatus === "approved") { await settleApproved(current); return; }
+    if (current.ticketStatus === "approved") {
+      if (!refresh && !approvedReads.current.has(current.commandKey)) await settleApproved([current]);
+      return;
+    }
     if (r.request.kind === "direct") {
       await h3Recovery.query(r, async () => {
         // A readback refreshes the data without settling the original command.
         await settled();
         return { conclusion: "unknown" };
       });
-      if (!quiet) toast("已重新读取；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
+      if (!refresh) toast("已重新读取；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
       return undefined;
     }
     // Keep known ticket status while a fresh query is in flight.
@@ -195,19 +229,19 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     }));
     if (!result) return undefined;
     const { ticket } = result;
-    if (!ticket) { if (!quiet) toast("暂未查到原审批单，原请求继续保留。"); return null; }
+    if (!ticket) { if (!refresh) toast("暂未查到原审批单，原请求继续保留。"); return null; }
     if (ticket.status === "pending" || ticket.status === "approved") {
       const saved = { ...current, acknowledged: true, ticketStatus: ticket.status, ticket: undefined } as const;
       retain(saved);
       confirmedTickets.current.set(r.commandKey, ticket);
       update();
-      if (ticket.status === "approved") await settleApproved(saved);
+      if (ticket.status === "approved" && !refresh && await settleApproved([saved])) toast(`审批单已批准：${ticket.before} → ${ticket.after}`);
     }
     else if (h3Recovery.settleFromQuery(r, result.conclusion)) {
       confirmedTickets.current.delete(r.commandKey);
-      await settled(r.commandKey, result.conclusion === "not-executed" ? { ...r, ticket } : undefined);
+      await settled(r.commandKey, result.conclusion === "not-executed" ? { ...r, ticket } : undefined, !refresh);
     }
-    if (!quiet) toast(`审批单${({ pending: "待审批", approved: "已批准", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}：${ticket.before} → ${ticket.after}`);
+    if (!refresh && ticket.status !== "approved") toast(`审批单${({ pending: "待审批", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}：${ticket.before} → ${ticket.after}`);
     return ticket;
   };
   const pendingApprovals = () => [...new Map([...(auditRows.current ?? []), ...confirmedTickets.current.values()].map(t => [t.id, t])).values()];
@@ -309,6 +343,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
     records: records(), record, blocked, query, pendingApprovals: pendingApprovals(), pendingTargets: pendingTargets(), auditKnown: auditRows.current !== null,
     recovery: h3Recovery,
     queryErrors: queryErrors.errors,
+    approvedReading: (commandKey: string) => approvedReads.current.has(commandKey),
     retryBlocked: (record: H3PendingCommand) => retryBlocked(record) ?? (!isFresh(record) ? "请先成功刷新用户任务数据" : undefined),
     async refreshTickets() {
       requireActor(false);
@@ -321,10 +356,16 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
           auditRows.current = audit.operationQueue.filter(t => ["h3_quest_config", "h3_mission_create"].includes(t.operationCode ?? "") && t.status === "pending");
           update();
         }) : Promise.resolve();
+      const originals = records().filter(record => record.request.kind !== "direct");
+      if (!originals.length) {
+        const [overview] = await Promise.allSettled([lookup, settleApproved([], true)]);
+        return [overview];
+      }
       const [overview] = await Promise.allSettled([lookup]);
       // A later exact-key verdict supersedes the earlier overview observation.
-      const originals = await Promise.allSettled(records().filter(r => r.request.kind !== "direct").map(r => query(r, true)));
-      return [overview, ...originals];
+      const outcomes = await Promise.allSettled(originals.map(record => query(record, true)));
+      await settleApproved(records().filter(record => record.ticketStatus === "approved"), true);
+      return [overview, ...outcomes];
     },
     async retry(r: H3PendingCommand) {
       const blocked = retryBlocked(r);

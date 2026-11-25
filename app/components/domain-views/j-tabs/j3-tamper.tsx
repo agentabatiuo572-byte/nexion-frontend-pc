@@ -346,7 +346,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
   const rejected = !!command && !!jEmergencyRecovery.state(command).replayRejection;
   const canClose = canSubmit && eCommandClosureRequests(receipt, expired).conclusions.length > 0;
   const retry = canConfigure && !readBlocked && !expired && !!command && !jEmergencyRetryBlocked(command);
-  const processedView = processed && command ? processedStatus({ expired, canRetry: retry, canClose, canRelease: rejected, receipt }) : undefined;
+  const processedView = processed && (command || expired) ? processedStatus({
+    expired, canRetry: retry, canClose, canRelease: rejected, canReachAudit: reach("/platform/audit", "platform_a2_read"), legacy: !!saved?.legacy, receipt,
+  }) : undefined;
   const recoveryRows: FundRecoveryRow[] = saved ? [{
     key: outcomeKey ?? "j3-legacy",
     title: savedTitle(saved),
@@ -356,10 +358,10 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     expired,
     canRetry: retry,
     canQuery: true,
-    status: saved.legacy ? expired
+    status: processedView ?? (saved.legacy ? expired
       ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
       : { tone: "warn", label: "结果未知", line: outcome && "error" in outcome ? outcome.error : "改版前的旧记录可核对原号和现在的设置。" }
-      : processedView ?? replayRejectedStatus(rejected, outcome),
+      : replayRejectedStatus(rejected, outcome)),
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}

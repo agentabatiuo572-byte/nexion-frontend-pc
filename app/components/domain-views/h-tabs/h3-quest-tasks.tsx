@@ -223,6 +223,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const canPhase = reach("/growth/phase");
   const [model, setModel] = useState<H3Model | null>(null);
   const [loading, setLoading] = useState(true);
+  const taskReadSequence = useRef(0);
+  const refreshInFlight = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const conflictDraft = useHConflictDraft(!loading && !error && fresh.current);
   const [readAt, setReadAt] = useState<number | null>(null);
@@ -239,27 +242,30 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
 
 
   const reload = async (reportQueryError = false) => {
+    const request = ++taskReadSequence.current;
     fresh.current = false;
     setLoading(true);
     try {
       const latest = parseH3Model(await fetchH3QuestEvents("tasks"));
+      if (request !== taskReadSequence.current) return;
       setModel(latest);
       fresh.current = true;
       setError(null);
       setReadAt(Date.now());
       return latest;
     } catch (err) {
+      if (request !== taskReadSequence.current) return;
       setError(displayAdminReadError(err));
       if (reportQueryError) throw err;
     } finally {
-      setLoading(false);
+      if (request === taskReadSequence.current) setLoading(false);
     }
   };
 
   const finishConfirmation = (commandKey: string) => {
     if (confirmation.current?.commandKey === commandKey) confirmation.current.finish();
   };
-  const mutations = useH3Mutations(toast, async (commandKey, draft) => {
+  const mutations = useH3Mutations(toast, async (commandKey, draft, read = true) => {
     fresh.current = false;
     if (commandKey) finishConfirmation(commandKey);
     if (draft && (draft.change.editValue !== undefined || draft.change.businessValue)) {
@@ -286,31 +292,58 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           desired: params.mappings.map(({ callingCode, zoneId }) => ({ callingCode, zoneId })), revision: typeof params.expectedRevision === "number" ? params.expectedRevision : undefined });
       }
     }
-    await reload(commandKey === undefined);
-    await region.reload();
-  }, async (record) => {
-    if (record.store === "region") return !!await region.reload();
-    const latest = await reload();
-    if (!latest) return false;
-    const target = record.change.target;
-    if (record.store === "mission") {
-      return [...latest.dayOneTasks, ...latest.weeklyTier1, ...latest.weeklyTier2].some(task => codeOf(task) === target);
+    if (read) {
+      await reload(commandKey === undefined);
+      await region.reload();
     }
-    if (target === "dayOne.triReward") return h3HasConfigValue(latest.dayOneTriReward);
-    if (target.startsWith("weekly.mult.")) {
-      return latest.weeklyMultipliers.some(row => `weekly.mult.${cleanPhaseKey(row.p)}` === target && h3HasConfigValue(row.mult));
-    }
-    return [...latest.weeklyTier1, ...latest.weeklyTier2].some(task => `mission.${codeOf(task)}.reward` === target && decimalOf(task.reward) !== null)
-      || latest.monthlyMissions.some(task => `monthly.${codeOf(task)}.reward` === target && decimalOf(task.reward) !== null);
+  }, async (records, refresh) => {
+    const tasks = refresh || records.some(record => record.store !== "region") ? reload() : undefined;
+    const request = taskReadSequence.current;
+    const rules = refresh || records.some(record => record.store === "region") ? region.reload() : undefined;
+    const [latest, policy] = await Promise.all([tasks, rules]);
+    const complete = (count: number | undefined, length: number) => count === undefined || count === length;
+    return (record) => {
+      if (record.store === "region") return policy ? "found" : "unreadable";
+      if (request !== taskReadSequence.current) return "superseded";
+      if (!latest) return "unreadable";
+      const target = record.change.target;
+      const weekly = [...latest.weeklyTier1, ...latest.weeklyTier2];
+      const { dayOneTaskCount, weeklyTier1Count, weeklyTier2Count, monthlyMissionCount } = latest.h3Stats;
+      const weeklyComplete = complete(weeklyTier1Count, latest.weeklyTier1.length) && complete(weeklyTier2Count, latest.weeklyTier2.length);
+      if (record.store === "mission") {
+        if ([...latest.dayOneTasks, ...weekly].some(task => codeOf(task) === target)) return "found";
+        return weeklyComplete && complete(dayOneTaskCount, latest.dayOneTasks.length) ? "task-missing" : "unreadable";
+      }
+      if (target === "dayOne.triReward") return h3HasConfigValue(latest.dayOneTriReward) ? "found" : "unreadable";
+      if (target.startsWith("weekly.mult.")) {
+        return latest.weeklyMultipliers.some(row => `weekly.mult.${cleanPhaseKey(row.p)}` === target && h3HasConfigValue(row.mult)) ? "found" : "unreadable";
+      }
+      if (!/^(?:mission|monthly)\..+\.reward$/.test(target)) return "unreadable";
+      const monthly = target.startsWith("monthly.");
+      const list = monthly ? latest.monthlyMissions : weekly;
+      const task = list.find(row => `${monthly ? "monthly" : "mission"}.${codeOf(row)}.reward` === target);
+      if (task) return decimalOf(task.reward) !== null ? "found" : "unreadable";
+      return (monthly ? complete(monthlyMissionCount, list.length) : weeklyComplete) ? "task-missing" : "unreadable";
+    };
   }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model);
   const refresh = async () => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    fresh.current = false;
+    setRefreshing(true);
     openMc.current = null; setMc(null); shellCtx.closeConfirm?.();
-    await reload();
-    await region.reload();
-    const results = await mutations.refreshTickets();
-    for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
+    try {
+      const results = await mutations.refreshTickets();
+      for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+    }
   };
-  useEffect(() => { void refresh().catch(cause => toast(displayAdminError(cause))); }, []);
+  useEffect(() => {
+    void refresh().catch(cause => toast(displayAdminError(cause)));
+    return () => { taskReadSequence.current += 1; };
+  }, []);
 
   const runWrite = async (write: Omit<H3Write, "change"> & Pick<H3Write["change"], "target" | "before" | "after" | "success" | "rewardCurrency" | "regionBaseline">, reason: string) => {
     const attempt = confirmation.current;
@@ -1023,7 +1056,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     <PageHeader pageId="H3" title="用户任务管理" summary="管 App 的新手任务、每周任务和它们的奖励。"
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${zone}）· 打开时读取`}</span>
-        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void refresh().catch(cause => toast(displayAdminError(cause)))}>刷新</Button>
+        <Button variant="ghost" size="sm" loading={loading || refreshing} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void refresh().catch(cause => toast(displayAdminError(cause)))}>刷新</Button>
       </span> : undefined}
       readOnly={!canModuleWrite ? "你只能查看；新建、修改、启停任务要有用户任务的修改权限。" : undefined} />
   );
@@ -1073,7 +1106,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       submittedAt: original.createdAt,
       tag: approved ? <StatusTag tone="ok">已批准</StatusTag> : pending ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
         : rejected ? rejectedTag() : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
-      actions: <><Button size="sm" onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>{approved ? "重新读取" : "查询原结果"}</Button>
+      actions: <><Button size="sm" disabled={approved && (refreshing || mutations.approvedReading(original.commandKey))} onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>{approved ? "重新读取" : "查询原结果"}</Button>
         {!original.ticket && !original.acknowledged && !isRetryExpired(original) && !releasable(original)
           && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={!!state.busy} onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",

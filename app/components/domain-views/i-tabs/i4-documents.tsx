@@ -27,6 +27,9 @@ import { frozenNextStep, frozenTitle } from "@/lib/admin/retry-rejected";
 export type I4DocumentEditor =
   | { mode: "upload"; document: TrustDocument; file: File | null; fields: TrustDocumentUpload }
   | { mode: "restore"; document: TrustDocument; reason: string };
+export type I4DocumentRecoveryNotice =
+  | { kind: "release"; key: string }
+  | { kind: "lookup"; key: string; settled: boolean; observation?: TrustDocument; error?: string };
 
 const sizeText = (bytes: number) => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 const UPLOAD_PUBLIC = "上传成功后立即公开";
@@ -35,7 +38,7 @@ const fingerprint = (sha256?: string) => sha256 ? <span title={sha256}>{`${sha25
 const observedText = (document: TrustDocument) => `${document.source === "UPLOADED" ? "上传的" : "默认的"} ${document.fileName} · 指纹 ${document.sha256.slice(0, 12)}… · ${document.updatedAt ? `${timeText(document.updatedAt)} ${document.updatedBy ?? ""}`.trim() : "没有上传记录"}`;
 
 export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal, forgetDraft }: {
-  onPendingChange: () => void; recovery: { key: string; settled: boolean; observation?: TrustDocument; error?: string } | null;
+  onPendingChange: () => void; recovery: I4DocumentRecoveryNotice | null;
   getDraft: (slot: TrustDocumentSlot) => I4DocumentUploadDraft | undefined;
   queryOriginal: typeof queryI4DocumentCommand;
   forgetDraft: (owner: number | undefined, slot: TrustDocumentSlot) => void;
@@ -90,10 +93,10 @@ export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal
   useEffect(() => {
     if (!recovery) return;
     if (pendingKey === recovery.key) {
-      if (recovery.settled) { setEditor(null); setPendingKey(null); }
+      if (recovery.kind === "release" || recovery.settled) { setEditor(null); setPendingKey(null); }
       else if (recovery.error || recovery.observation) setEditorError(recovery.error ?? `刚读到现在用的：${observedText(recovery.observation!)}`);
     }
-    void refresh();
+    if (recovery.kind === "lookup") void refresh();
   }, [recovery]);
   if (!canRead) return null;
 

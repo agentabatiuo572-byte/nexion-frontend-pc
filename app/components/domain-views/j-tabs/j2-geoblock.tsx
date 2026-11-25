@@ -255,14 +255,11 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const expiry = Math.min(...[...pending, ...legacy].filter((record) => !isRetryExpired(record)).map((record) => record.expiresAt));
     if (!Number.isFinite(expiry)) return;
     const timer = window.setTimeout(() => {
-      const active = activeConfirmation.current;
-      const saved = active && getJ2PendingCommand(active.slot);
-      if (saved && isRetryExpired(saved)) closeOriginalConfirm(saved);
       setPending(listJ2PendingCommands());
       setLegacy(listJ2LegacyCommands());
     }, Math.max(0, expiry - Date.now()));
     return () => window.clearTimeout(timer);
-  }, [pending, legacy, openActionConfirm]);
+  }, [pending, legacy]);
   /** 只记下查到的结论给运营看；解除与否由 queryJ2Command 按后端结论决定。 */
   const recordOutcome = (record: SlotAttemptRecord, outcome: FundInvestigationOutcome) => {
     setOutcomes((current) => ({ ...current, [record.commandKey]: outcome }));
@@ -317,7 +314,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const canClose = fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
       && eCommandClosureRequests(outcome.receipt, expired).conclusions.length > 0;
     const canRelease = !legacy && !!jEmergencyRecovery.state(record).replayRejection;
-    return processedStatus({ expired, canRetry: retry, canClose, canRelease, legacy, receipt: outcome.receipt });
+    return processedStatus({ expired, canRetry: retry, canClose, canRelease, canReachAudit: reach("/platform/audit", "platform_a2_read"), legacy, receipt: outcome.receipt });
   };
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const input = JSON.parse(record.geo.body) as J2CommandBody;

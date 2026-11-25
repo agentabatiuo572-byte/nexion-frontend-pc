@@ -45,7 +45,7 @@ import { useIConflictReview } from "@/lib/admin/i-conflict-review";
 import { conflictRow, IConflictModal, IConflictPending, inGroup, useIConflictView, type IConflictRow } from "./i-conflict";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
-import { I4Documents } from "./i4-documents";
+import { I4Documents, type I4DocumentRecoveryNotice } from "./i4-documents";
 import { i4DocumentRecovery, pendingI4DocumentCommands, queryI4DocumentCommand, type I4DocumentCommand, type I4DocumentUploadDraft } from "@/lib/admin/i4-document-commands";
 import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts } from "@/lib/admin/use-terminal-drafts";
 import {
@@ -178,7 +178,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
     record: I4SectionCommand; status: A2OperationRow["status"]; reason: string;
   }>>({});
   const [documentCommands, setDocumentCommands] = useState<I4DocumentCommand[]>([]);
-  const [documentRecovery, setDocumentRecovery] = useState<{ key: string; settled: boolean; observation?: I4DocumentCommand["observation"]; error?: string } | null>(null);
+  const [documentRecovery, setDocumentRecovery] = useState<I4DocumentRecoveryNotice | null>(null);
   const [recovering, setRecovering] = useState<string | null>(null);
   useSyncExternalStore(i4SectionRecovery.subscribe, i4SectionRecovery.getRevision, i4SectionRecovery.getRevision);
   useSyncExternalStore(i4DraftRecovery.subscribe, i4DraftRecovery.getRevision, i4DraftRecovery.getRevision);
@@ -972,7 +972,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
           : materialRejected(record) ? RETRY_REJECTED_NEXT : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "先点「查询原结果」；明确查不到，再到这份资料的「恢复默认」里按原请求重试。"),
         actions: <><Button size="sm" onClick={() => {
           void readMaterialOriginal(record).then(result => {
-            setDocumentRecovery({ key: record.commandKey, settled: result.settled, observation: result.current, error: result.error });
+            setDocumentRecovery({ kind: "lookup", key: record.commandKey, settled: result.settled, observation: result.current, error: result.error });
           }, () => undefined);
         }}>查询原结果</Button>
           {materialRejected(record) && <VerifiedReleaseButton disabled={materialReads.current.has(record.commandKey) || !!i4DocumentRecovery.state(record).busy}
@@ -983,7 +983,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
                 createdAt: record.createdAt,
                 release: () => {
                   const released = i4DocumentRecovery.releaseRejectedReplay(record);
-                  if (released) setDocumentRecovery({ key: record.commandKey, settled: true });
+                  if (released) setDocumentRecovery({ kind: "release", key: record.commandKey });
                   syncCommands();
                   return released;
                 } });

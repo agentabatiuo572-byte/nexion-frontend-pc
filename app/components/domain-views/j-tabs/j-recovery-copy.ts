@@ -19,18 +19,28 @@ export const SETTLED_OTHER = "后台已处理原请求，记录已解除；页�
  * 回执是「已处理」、记录还没解除时这一行怎么说；查到的是后台拒绝（receipt）时换成「后台拒绝」那一档。
  * more 是展开后的说明，和资金页面板同一档的一样（receiptExplain）。
  */
-export function processedStatus({ expired, canRetry, canClose, canRelease = false, legacy, receipt }: { expired: boolean; canRetry: boolean; canClose: boolean; canRelease?: boolean; legacy?: boolean; receipt?: ECommandInvestigation | null }): { tone: StateTone; label: string; line: string; more?: string } {
+export function processedStatus({ expired, canRetry, canClose, canRelease = false, canReachAudit, legacy, receipt }: {
+  expired: boolean; canRetry: boolean; canClose: boolean; canRelease?: boolean; canReachAudit?: boolean; legacy?: boolean; receipt?: ECommandInvestigation | null;
+}): { tone: StateTone; label: string; line: string; more?: string } {
   const more = receiptExplain(receipt);
   const rejected = receiptRejected(receipt);
+  const label = rejected ? "后台拒绝" : "已处理";
+  const result = rejected ? "后台拒绝了，不保证没有改动。" : "后台已处理，看不出成没成。";
+  if (expired && canReachAudit !== undefined) {
+    const next = canRelease ? RETRY_REJECTED_NEXT
+      : canClose ? "可以核查结案。"
+        : canReachAudit ? "请到操作记录与审批核对。" : "请有调查权限的超级管理员核查结案。";
+    return { tone: "warn", label, line: `已超过 24 小时，不能再重试。${next}${result}`, more };
+  }
   if (rejected && (legacy || canRetry && !expired)) return { ...rejectedStatus({ expired, canRetry, canClose, legacy }), more };
   if (legacy) {
     const next = expired ? canClose ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。"
       : "旧记录过 24 小时后可核查结案。";
     return { tone: "warn", label: "已处理", line: `后台已处理，看不出成没成；${next}`, more };
   }
-  const result = rejected ? "后台拒绝了，不保证没有改动。" : "后台已处理，看不出成没成。";
   const next = canRelease ? RETRY_REJECTED_NEXT
     : canRetry && !expired ? "按原请求重试可确认，不会重复执行。"
-      : canClose ? "可以核查结案。" : "请到操作记录与审批核对。";
-  return { tone: "warn", label: rejected ? "后台拒绝" : "已处理", line: `${result}${next}`, more };
+      : canClose ? "可以核查结案。"
+        : canReachAudit === false ? "请有调查权限的超级管理员核查结案。" : "请到操作记录与审批核对。";
+  return { tone: "warn", label, line: `${result}${next}`, more };
 }
