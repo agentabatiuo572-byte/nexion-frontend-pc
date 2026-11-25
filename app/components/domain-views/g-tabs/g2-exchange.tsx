@@ -654,6 +654,8 @@ function G2ExchangePage() {
       businessForm={mc.businessForm}
       reasonMax={mc.reasonMax}
       getPendingReason={mc.getPendingReason}
+      getPendingRecovery={() => mc.approvalObject === undefined ? undefined
+        : paramApproval.getPendingRecovery(mc.approvalObject, () => openActionConfirm(null))}
       getPendingBusinessValue={mc.getPendingBusinessValue}
       effect={mc.effect}
       facts={mc.facts}
@@ -792,6 +794,7 @@ function G2ExchangePage() {
             unit: copy?.unit, hint: copy?.hint,
             amplifiesWhen: cap.key === "fee" || cap.key === "feeMin" ? "decrease" : "increase" },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, `/exchange/params/${cap.key}`)?.input.reason ?? paramApproval.getPendingReason(cap.key),
+      approvalObject: cap.key,
       run: async (reason, value) => {
         const savedDirect = pendingG2ExchangeCommand(batchAdminId, `/exchange/params/${cap.key}`);
         if (originalDirect || savedDirect) {

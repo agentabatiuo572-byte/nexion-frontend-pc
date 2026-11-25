@@ -467,6 +467,8 @@ function G7RepurchasePage() {
       businessForm={mc.businessForm}
       reasonMax={mc.reasonMax}
       getPendingReason={mc.getPendingReason}
+      getPendingRecovery={() => mc.approvalObject === undefined ? undefined
+        : paramApproval.getPendingRecovery(mc.approvalObject, () => openActionConfirm(null))}
       getPendingBusinessValue={mc.getPendingBusinessValue}
       effect={mc.effect}
       facts={mc.facts}
@@ -599,6 +601,7 @@ function G7RepurchasePage() {
         fields: [{ key: "g4Ref", label: "创世奖池核对编号", inputKind: "text", placeholder: "例如 POOL-2026-07", required: true, wide: true }],
       } : undefined,
       getPendingReason: () => directRecord(param.key)?.input.reason ?? paramApproval.getPendingReason(param.key),
+      approvalObject: param.key,
       getPendingBusinessValue: () => {
         const saved = directRecord(param.key);
         return saved ? { g4Ref: saved.input.g4Ref } : undefined;
