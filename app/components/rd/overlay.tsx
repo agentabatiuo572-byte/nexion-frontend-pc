@@ -99,8 +99,9 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
     const opener = returnFocus?.() ?? previous.current;
     if (opener?.isConnected) return opener;
     // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就在它原来那一行、那块面板里找看得见的同名那一个。
+    // 那一行、那块面板自己已经不在了（整行被删掉）就不找，免得落到别的记录的同名按钮上。
     // 先在还挂着的最近一层（同一张卡、同一行）里找：一页有好几个同名按钮（每张卡一个「配置」）时，只在大的面板里找会找到好几个（BUG-710：H4 玩法抽屉放弃后落到 body）。
-    if (opener) for (const scope of [chain.current.find((node) => node.isConnected), area.current]) {
+    if (opener && area.current?.isConnected) for (const scope of [chain.current.find((node) => node.isConnected && area.current?.contains(node)), area.current]) {
       if (!scope?.isConnected) continue;
       const name = opener.getAttribute("aria-label") ?? opener.textContent;
       const same = [...scope.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
