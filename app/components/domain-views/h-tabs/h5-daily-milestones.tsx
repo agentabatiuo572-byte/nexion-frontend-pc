@@ -26,7 +26,7 @@ import { useHConflictDraft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { businessClock, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
 import { useReach } from "@/lib/nav/use-reach";
 import type { ActionConfirmReq, HCtx } from "./types";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
@@ -60,7 +60,7 @@ function decimalText(value: string) {
 }
 
 /** 谁来批：签到规则走旧规则审批，另一位有审批批准权限和签到规则修改权限的管理员就能批；成长、收益、连签的专用审批要另一位超级管理员。 */
-const RULE_APPROVER = "另一位管理员";
+const RULE_APPROVER = "另一位超级管理员";
 const RULE_APPROVER_RIGHTS = "审批批准权限和签到规则修改权限";
 const FUND_APPROVER = "另一位超级管理员";
 const FUND_APPROVER_RIGHTS = "审批批准权限";
@@ -567,7 +567,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       key: record.commandKey,
       name: record.change.name,
       change: <>{h5OriginalNonMultiplierPowerUpSummary(record) ?? `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`}
-        {readError && <span className="rd-note"> · 原审批单加载失败。{readError}{record.ticket && " 显示上次读到的审批状态。"}</span>}
+        {readError && <span className="rd-note"> · 原审批单加载失败。{readError}{record.ticket && (record.ticketReadAt ? ` 显示 ${businessStamp(record.ticketReadAt)}（${businessZone().label}）读到的审批状态。` : " 显示上次读到的审批状态。")}</span>}
         {state.replayRejection && <span className="rd-note"> · 操作编号 {record.commandKey} · {retryReason}</span>}</>,
       submittedAt: record.createdAt,
       tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
@@ -790,7 +790,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     rules: (
       <Panel title="签到规则" icon={CalendarCheck} tone="role-4"
         sub={`${signRules.length} 项`}
-        explain="每天签到给多少、抽倍率的机会多大。改动都要提交审批，另一位管理员批准后才生效；批准前仍按现在的值发。">
+        explain="每天签到给多少、抽倍率的机会多大。改动都要提交审批，另一位超级管理员批准后才生效；批准前仍按现在的值发。">
         {signRules.length
           ? <ConfigList label="签到规则">{signRules.map(ruleRow)}</ConfigList>
           : <BlockState state="empty" title="还没有签到规则" />}

@@ -204,7 +204,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         setBusy(true);
         try {
           await proposeSessionRevocation(session, userId, userLabel(selectedUser), reason);
-          ctx.toast("已提交全部设备登出审批，批准后生效");
+          ctx.toast("已提交，等待审批后执行");
         } catch (error) {
           if (!pendingSessionRevocationApproval(owner, userId)) throw error;
           ctx.toast("原操作已保留，请在页面上方查询原操作。", "warn");

@@ -43,6 +43,8 @@ export interface H5PendingCommand extends PendingMutationRecord {
   request: { kind: "direct"; path: string; body: string } | { kind: "approval"; body: Proposal } | { kind: "earn-create"; body: EarnCreate & { reason: string } };
   acknowledged?: boolean;
   ticket?: A2OperationRow;
+  /** 上次成功读到这张审批单的时间；之后读取失败时显示「几点读到的状态」（ST-36）。 */
+  ticketReadAt?: number;
 }
 
 export function h5PowerUpDayChange(expectedDay: number, day: number) {
@@ -93,7 +95,8 @@ const pending = createPendingMutationStore<H5PendingCommand>({
         || kind === "power" && !snapshot.powerUps.some(item => item.id === Number(id))
         || kind === "earn" && !snapshot.earnMilestones.some(item => item.key === id)
         || kind === "tick" && id !== "interval"
-        || r.acknowledged !== undefined && typeof r.acknowledged !== "boolean") return false;
+        || r.acknowledged !== undefined && typeof r.acknowledged !== "boolean"
+        || r.ticketReadAt !== undefined && typeof r.ticketReadAt !== "number") return false;
       const proposalValid = (p: H5Change["proposal"]) => p?.command?.domain === "H" && p.command.op === operations[kind]
         && p.target?.domain === "H" && p.target.type === targetTypes[kind] && p.target.id === id
         && !!p.command.params && (kind === "rule" ? p.command.params.ruleKey === id : !!p.command.params.values);
@@ -220,7 +223,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       if (feedback !== "refresh") toast(isRetryExpired(original) ? "没查到原审批单。已超过重试时限，请到操作记录与审批核对。" : "没查到原审批单，原操作继续保留。");
       return null;
     }
-    if (ticket.status === "pending") retain({ ...original, acknowledged: true, ticket });
+    if (ticket.status === "pending") retain({ ...original, acknowledged: true, ticket, ticketReadAt: Date.now() });
     else if (!recovery.settleFromQuery(original, conclusion)) return;
     if (feedback === "submitted" && ticket.status === "pending") {
       toast(`已提交，等待审批后执行 · 审批单 ${ticket.id}`);
