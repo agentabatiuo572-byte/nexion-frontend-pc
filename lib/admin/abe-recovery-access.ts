@@ -44,3 +44,15 @@ export function rebaseRecoverySet<T>(before: readonly T[], desired: readonly T[]
   const original = new Set(before), proposed = new Set(desired);
   return [...new Set([...latest.filter(item => !original.has(item) || proposed.has(item)), ...desired.filter(item => !original.has(item))])];
 }
+
+/** The old draft remains until this confirmation succeeds or has a retained replacement. */
+export async function sendRecoveredDraft<T>(send: () => Promise<T>, hasReplacement: () => boolean, discard?: () => void): Promise<T> {
+  let sent = false;
+  try {
+    const result = await send();
+    sent = true;
+    return result;
+  } finally {
+    if (discard && (sent || hasReplacement())) discard();
+  }
+}

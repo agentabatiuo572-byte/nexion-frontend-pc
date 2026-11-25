@@ -1,5 +1,6 @@
 "use client";
-import { nextRecoveryDeadline, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
+import { nextRecoveryDeadline, rebaseRecoveryFields, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
+import { useRecoveryDraftDiscard } from "@/app/components/domain-views/recovery-draft-discard";
 import { usePendingReplayDeadline } from "@/app/components/domain-views/design-kit";
 
 /**
@@ -22,7 +23,7 @@ import { useBDomainDashboard, type BLedger } from "@/lib/admin/b-client";
 import { downloadD3Csv, fetchD3NetExposure, type D3NetExposure } from "@/lib/admin/d-client";
 import { bThresholdRecovery, discardThresholdRecoveryDraft, pendingThresholdConfigApproval, submitB1ThresholdApproval, thresholdRecoveryDrafts } from "@/lib/admin/withdrawal-config-approval";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { b1Commands, b1Recovery, executeB1Command, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
+import { b1Commands, b1Recovery, executeB1Command, queryB1InjectionReceipt, type B1PendingWrite, type B1CommandFacts } from "@/lib/admin/b1-commands";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -43,7 +44,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 type Mc = (
   | { kind: "threshold"; idempotencyKey: string; baseline: Pick<BLedger, "redlinePct" | "healthyPct" | "thresholdVersion"> }
   | { kind: "injection" | "ack" | "export"; idempotencyKey: string }
-) & { requestKey?: string; original?: B1PendingWrite; facts?: B1CommandFacts; approvalRecovery?: true; draft?: BusinessFormValue; draftReason?: string; otherChanges?: string[] };
+) & { requestKey?: string; original?: B1PendingWrite; facts?: B1CommandFacts; approvalRecovery?: true; draft?: BusinessFormValue; draftReason?: string; otherChanges?: string[]; recoveryDraftKey?: string };
 
 function command(kind: Exclude<Mc["kind"], "threshold">): Mc {
   return { kind, idempotencyKey: `b1-${kind}-${crypto.randomUUID()}` };
@@ -85,7 +86,9 @@ interface B1PendingCommand {
   queryLabel?: string;
   onQuery?: () => void;
   onRestore?: () => void;
+  onDiscard?: () => void;
   queryHref?: string;
+  queryHrefLabel?: string;
   /** 只有审批提案过期、且刚刚按原请求查询明确没有这张单时才给（决定 R1-提案过期）。 */
   onRelease?: () => void;
 }
@@ -105,9 +108,10 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
       items={items.map((item): RecoveryItem => ({
         key: item.commandKey, object: item.object, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
         actions: <>
-          {item.queryHref ? <Link className="rd-link" href={item.queryHref} prefetch={false}>{item.queryLabel}</Link>
-            : item.onQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>{item.queryLabel ?? "查询原结果"}</Button>}
+          {item.onQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>{item.queryLabel ?? "查询原结果"}</Button>}
+          {item.queryHref && <Link className="rd-link" href={item.queryHref} prefetch={false}>{item.queryHrefLabel}</Link>}
           {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
+          {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
           {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
           {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
         </>,
@@ -131,6 +135,8 @@ export default function DualLedgerPage() {
   const canExport = authorities.includes("finance_d3_export");
   const canAcknowledge = authorities.includes("overview_b1_write");
   const [toastNode, setToast] = useToast();
+  const discardRecovery = useRecoveryDraftDiscard();
+  const [injectionNotes, setInjectionNotes] = useState<Record<string, string>>({});
   const [mc, setActionConfirm] = useState<Mc | null>(null);
   const [, setPendingRevision] = useState(0);
   const [needsRead, setNeedsRead] = useState(false);
@@ -337,7 +343,7 @@ export default function DualLedgerPage() {
         expectedVersion: thresholdBaseline.thresholdVersion!,
         redlinePct: round2(Number(values.redlinePct)),
         healthyPct: round2(Number(values.healthyPct)),
-      }, original?.reason ?? reason, readActive, lookupOnly ? "query" : original ? "retry" : "new", dialogFacts);
+      }, original?.reason ?? reason, readActive, lookupOnly ? "query" : original ? "retry" : "new", dialogFacts, mc?.recoveryDraftKey);
       if (!result) return false;
       if (result.ticket.status === "pending") setVerifiedPendingKey(pendingThresholdConfigApproval("B1", session.adminId)?.commandKey ?? null);
       setToast(result.acknowledgement);
@@ -420,7 +426,10 @@ export default function DualLedgerPage() {
       }
       setNeedsRead(true);
       try {
-        await executeB1Command(original, !!current.original);
+        const saved = original;
+        await sendRecoveredDraft(() => executeB1Command(saved, !!current.original),
+          () => b1Commands.isDurablyStored(saved.fingerprint, saved.commandKey), current.recoveryDraftKey
+            ? () => discardThresholdRecoveryDraft("B1", session.adminId, current.recoveryDraftKey!) : undefined);
       } catch (error) {
         if (!current.original && isBCommandRejection(error, false)) {
           setActionConfirm(current.original ? null : { ...current, requestKey: `b1-${current.kind}-${crypto.randomUUID()}`, original: undefined, draft: original.form, draftReason: JSON.parse(original.body).reason });
@@ -429,7 +438,7 @@ export default function DualLedgerPage() {
           if (fresh && !current.original && error instanceof Error && "reasonCode" in error && error.reasonCode === "CONFIG_VERSION_CONFLICT") throw new Error(THRESHOLD_REFRESHED);
           if (fresh && error instanceof Error && "reasonCode" in error && error.reasonCode === "B1_THRESHOLDS_APPROVAL_REQUIRED") {
             setActionConfirm({ kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
-              baseline: fresh.ledger, draft: original.form, draftReason: JSON.parse(original.body).reason });
+              baseline: fresh.ledger, draft: original.form, draftReason: JSON.parse(original.body).reason, recoveryDraftKey: current.recoveryDraftKey });
             return;
           }
         }
@@ -483,23 +492,44 @@ export default function DualLedgerPage() {
     if (!pendingApproval?.b1Facts) { void queryApproval(); return; }
     setActionConfirm({ kind: "threshold", idempotencyKey: pendingApproval.commandKey, baseline: pendingApproval.b1Facts, facts: pendingApproval.b1Facts, approvalRecovery: true });
   };
+  const queryInjection = async (record: B1PendingWrite) => {
+    const show = (note: string) => setInjectionNotes(current => ({ ...current, [record.commandKey]: note }));
+    show("正在查询原结果…");
+    try {
+      const result = await queryB1InjectionReceipt(record);
+      if (result === "SUCCEEDED") {
+        setToast("查到原结果：已登记储备注入。");
+        await refreshB1();
+      } else show(result === "NOT_FOUND" ? "没查到原回执，原记录继续保留。"
+        : result === "PROCESSING" ? "原操作仍在处理，稍后再查。"
+          : "这次查询没有确认已登记，原记录继续保留。");
+    } catch (error) { show(displayAdminReadError(error)); }
+    finally { syncPending(); }
+  };
   const pendingItems: B1PendingCommand[] = pendingWrites.map(record => {
     const expired = record.expiresAt <= Date.now();
     const recovery = b1Recovery.state(record);
+    const injection = record.kind === "injection";
+    const canReadInjectionReceipt = authorities.includes("finance_d3_read");
+    const injectionPage = injection && reach("/finance/pool");
     return {
       commandKey: record.commandKey,
       object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
       tag: { tone: "warn", label: expired ? "已过期" : "结果未知" },
-      line: recovery.replayRejection ? "按原请求重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先查询原结果。",
+      line: record.kind === "injection" ? injectionNotes[record.commandKey] ?? "原记录继续保留，可核对储备注入。"
+        : recovery.replayRejection ? "按原请求重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先查询原结果。",
       body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
         .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
       expired,
-      note: record.kind === "injection" ? "原操作记录继续保留。" : expired ? "当前值仅供核对，原操作记录继续保留。" : "24 小时内只能按原请求重试，不能改值。",
+      note: injection ? injectionPage ? "原操作记录继续保留。" : "储备注入 · 无权限。原操作记录继续保留。"
+        : expired ? "当前值仅供核对，原操作记录继续保留。" : "24 小时内只能按原请求重试，不能改值。",
       onRetry: !recovery.replayBlock ? () => recoverWrite(record) : undefined,
       onRelease: record.kind !== "injection" && recovery.replayRejection ? () => setReleasing(record) : undefined,
-      queryLabel: record.kind === "injection" ? "到储备注入核对" : expired ? READ_CURRENT_VALUE : undefined,
-      queryHref: record.kind === "injection" && reach("/finance/pool", "finance_d3_read") ? "/finance/pool" : undefined,
-      onQuery: record.kind === "injection" ? undefined : () => void readCurrentForWrite(record),
+      queryLabel: record.kind !== "injection" && expired ? READ_CURRENT_VALUE : undefined,
+      queryHref: injectionPage ? "/finance/pool" : undefined,
+      queryHrefLabel: canReadInjectionReceipt ? "到储备注入核对" : "资金储备与应付款",
+      onQuery: injection ? canReadInjectionReceipt ? () => void queryInjection(record) : undefined
+        : () => void readCurrentForWrite(record),
     };
   });
   if (pendingApproval) {
@@ -535,12 +565,10 @@ export default function DualLedgerPage() {
         before.redlinePct !== redlinePct && `红线 ${fmtConfigPct(before.redlinePct)} → ${fmtConfigPct(redlinePct)}`,
         before.healthyPct !== healthyPct && `健康线 ${fmtConfigPct(before.healthyPct)} → ${fmtConfigPct(healthyPct)}`,
       ].filter((value): value is string => !!value);
-      discardThresholdRecoveryDraft("B1", session.adminId, draft.commandKey);
-      syncPending();
     }
     setActionConfirm({
       kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
-      baseline: { ...latest, thresholdVersion: LEDGER.thresholdVersion }, draft: recovered, otherChanges,
+      baseline: { ...latest, thresholdVersion: LEDGER.thresholdVersion }, draft: recovered, otherChanges, recoveryDraftKey: draft?.commandKey,
     });
   };
   if (session) for (const draft of thresholdRecoveryDrafts("B1", session.adminId)) pendingItems.push({
@@ -548,6 +576,7 @@ export default function DualLedgerPage() {
     line: "可重新确认原拟改值。", body: `红线 ${fmtConfigPct(draft.values.redlinePct)} · 健康线 ${fmtConfigPct(draft.values.healthyPct)}`,
     expired: false, note: "",
     onRestore: draft.b1Facts && canConfigureThresholds ? () => openThreshold(draft) : undefined,
+    onDiscard: () => discardRecovery.ask(() => { discardThresholdRecoveryDraft("B1", session.adminId, draft.commandKey); syncPending(); }),
   });
 
   // ---------- 结论 ----------
@@ -958,6 +987,7 @@ export default function DualLedgerPage() {
         {loading
           ? <BlockState state="loading" title="正在读取储备、应付款和覆盖率…" />
           : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} retryLabel="重新读取" />}
+        {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
         {dialog}
         {releaseDialog}
@@ -976,6 +1006,7 @@ export default function DualLedgerPage() {
           title={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "应付款明细是空的，暂时算不出构成" : b1DataError}
           detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "九类应付款一项都没读到。重读一次；仍是空的请联系值班人员核对账本。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
           onRetry={refreshB1} retryLabel="重新读取" />
+        {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
         {dialog}
         {releaseDialog}
@@ -987,6 +1018,7 @@ export default function DualLedgerPage() {
     <RdPage className="b1-page">
       {header(<>数据时间 {timeText(generatedAt)} · 打开页面和写入后读取<Explain label="数据时间说明" content="上面的储备、应付款、覆盖率和告警是同一次读取。差额走势是另一次读取，时间写在那一块里；写入后两块都会重读。" /></>, headerActions, readOnly)}
       {warningNotice}
+      {discardRecovery.dialog}
       <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />
       {conclusion}
       {stats}

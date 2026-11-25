@@ -17,6 +17,7 @@ import { createPendingMutationStore, createPendingRecovery, RETRY_EXPIRED_TEXT, 
 import { fetchPhoneOperation, PhoneApiError } from "@/lib/admin/phone-replacement-client";
 import { canReadPolicyReceipt, parsePhonePolicy, phoneFields, phonePrefix, phoneDraftError, phonePolicyValues, phoneConflictMessage, record, type PhonePolicy, type PhoneReceipt } from "@/lib/admin/phone-replacement-contract";
 import { PhoneFacts, PhoneReceiptView } from "../phone-replacement-receipt";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
 import { PROPOSAL_END } from "./e-command-check";
 type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
@@ -67,6 +68,8 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
 }) {
     const canWrite = rights.includes("device_e6_write") && rights.includes("device_e6_flag_toggle") && rights.some(r=>["platform_a2_write","platform_a2_proposal_create"].includes(r));
     const [editor,setEditor]=useState(false),[releaseKey,setReleaseKey]=useState<string|null>(null),[discard,setDiscard]=useState(false);
+    const discardRecovery = useRecoveryDraftDiscard();
+    const [recoveryDraft, setRecoveryDraft] = useState<SavedProposal | null>(null);
     const canRecover = canReadPolicyReceipt(rights);
     const canQueryProposal = rights.includes("platform_a2_read") || rights.includes("platform_a2_proposal_create");
     const [policy, setPolicy] = useState<PhonePolicy | null>(null), [values, setValues] = useState(["", "", ""]), [allow, setAllow] = useState(false);
@@ -79,12 +82,14 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     const [otherChanges, setOtherChanges] = useState<{ key: string; label: string; before: string; after: string }[]>([]);
     const openEditor = useRef(false);
     openEditor.current = editor || !!confirm;
-    const [ack, setAck] = useState(false), [pending, setPending] = useState<SavedProposal | null>(null);
+    const [ack, setAck] = useState(false), [records, setRecords] = useState<SavedProposal[]>([]);
+    const activePending = records.find(row => !row.terminal);
+    const pending = activePending ?? records.at(-1);
     const [lookup, setLookup] = useState(""), [mode, setMode] = useState("id"), [type, setType] = useState("PHONE_POLICY_PUBLISH"), [receipt, setReceipt] = useState<PhoneReceipt | null>(null);
     const [queryMessage,setQueryMessage]=useState(""),[queryError,setQueryError]=useState("");
     const [denied, setDenied] = useState(false);
     const live = useRef(true), generation = useRef(0), mutation = useRef(false);
-    const syncPending = () => setPending(proposals.list().find(r => r.owner === owner) ?? null);
+    const syncPending = () => setRecords(proposals.list().filter(r => r.owner === owner));
     useSyncExternalStore(policyRecovery.subscribe, policyRecovery.getRevision, () => 0);
     const recoveryState = pending ? policyRecovery.state(pending) : undefined;
     const retryRejectedKey = recoveryState?.replayRejection ? pending?.commandKey : undefined;
@@ -118,7 +123,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             if (live.current && id === generation.current) {
                 if (record(failure) && [401, 403].includes(Number(failure.status))) {
                     setDenied(true);
-                    setPending(null);
+                    setRecords([]);
                     setReceipt(null);
                     setConfirm(null);
                 }
@@ -136,11 +141,11 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         const current = [policy.minReplacementIntervalDays, policy.replacementWindowDays, policy.maxReplacementsInWindow][i];
         return current == null ? v === "" : v !== "" && Number(v) === current;
     });
-    const blocked = loading || busy || !!confirm || !!pending || !canWrite || !policy?.policyVersion || denied;
+    const blocked = loading || busy || !!confirm || !!activePending || !canWrite || !policy?.policyVersion || denied;
     function preview() { if (blocked || draftError || unchanged || !policy?.policyVersion)
         return; setConfirm({ values: phonePolicyValues(allow, values), version: policy.policyVersion, before: policy }); setAck(false); setError(""); }
     async function submit(reason: string) {
-        if (mutation.current || !confirm || !ack || reason.trim().length < 8 || reason.trim().length > 200 || !canWrite || pending)
+        if (mutation.current || !confirm || !ack || reason.trim().length < 8 || reason.trim().length > 200 || !canWrite || activePending)
             return;
         mutation.current = true;
         setBusy(true);
@@ -161,8 +166,14 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             return;
         }
         syncPending();
+        const consumeDraft = () => {
+            if (!recoveryDraft) return;
+            proposals.forget(recoveryDraft.fingerprint, recoveryDraft.commandKey);
+            if (live.current) setRecoveryDraft(null);
+        };
         try {
             const ticket = await createA2OperationProposal(input, key, true);
+            consumeDraft();
             if (!live.current)
                 return;
             proposals.remember(fingerprint, key, { owner, input, baseline, ticketId: ticket.id });
@@ -177,13 +188,14 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             const firstRejection = !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
                 && isDeterministicRejection(response.httpStatus, response.apiCode);
             if (firstRejection) proposals.forget(fingerprint, key);
+            else if (proposals.isDurablyStored(fingerprint, key)) consumeDraft();
             if (live.current) {
                 syncPending();
                 if (!firstRejection) setConfirm(null);
                 if (!firstRejection && record(failure) && [401, 403].includes(Number(failure.status))) {
                     setDenied(true);
                     setPolicy(null);
-                    setPending(null);
+                    setRecords([]);
                     setReceipt(null);
                 }
                 // 结果未知时提示条已经说明，这里不再另写一句；被拒时写原因。
@@ -230,7 +242,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
                 if (record(failure) && [401, 403].includes(Number(failure.status))) {
                     setDenied(true);
                     setPolicy(null);
-                    setPending(null);
+                    setRecords([]);
                     setReceipt(null);
                     setConfirm(null);
                 }
@@ -263,7 +275,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
                 if (failure instanceof PhoneApiError && [401, 403].includes(failure.status)) {
                     setDenied(true);
                     setPolicy(null);
-                    setPending(null);
+                    setRecords([]);
                     setReceipt(null);
                     setConfirm(null);
                 }
@@ -305,8 +317,8 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         }
         const latest = await refresh(true);
         if (!latest || openEditor.current) return;
+        const current = policyBaseline(latest);
         if (base && record(desired)) {
-            const current = policyBaseline(latest);
             const merged = rebaseRecoveryFields(base, desired as Record<string, string>, current);
             const display = (value: string) => value === "on" ? "开启" : value === "off" ? "关闭" : value || "未配置";
             setOtherChanges(phoneFields.map((field, i) => {
@@ -315,31 +327,48 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             }).filter(row => row.before !== row.after));
             setAllow(merged[phonePrefix + phoneFields[0]] === "on");
             setValues(phoneFields.slice(1).map(field => merged[phonePrefix + field]));
-            setEditor(true);
+            setRecoveryDraft(saved);
+        } else {
+            setOtherChanges([]);
+            setAllow(current[phonePrefix + phoneFields[0]] === "on");
+            setValues(phoneFields.slice(1).map(field => current[phonePrefix + field]));
+            setRecoveryDraft(null);
+            proposals.forget(saved.fingerprint, saved.commandKey);
+            syncPending();
         }
-        proposals.forget(saved.fingerprint, saved.commandKey);
-        syncPending();
+        setEditor(true);
     }
+    const closeEditor = () => {
+        setEditor(false); setRecoveryDraft(null); setOtherChanges([]);
+        if (policy) {
+            const current = policyBaseline(policy);
+            setAllow(current[phonePrefix + phoneFields[0]] === "on");
+            setValues(phoneFields.slice(1).map(field => current[phonePrefix + field]));
+        }
+    };
     // 原提交的提醒和按钮：编辑抽屉开着时放进抽屉顶上，运营不用关抽屉找；抽屉关着时放在面板里。只放一处。
     const inDrawer=editor&&!!policy;
     const recovery=pending&&<>
       {pending&&!canRecover&&<Notice tone="warn">有一次换机规则提交还没有结论，恢复处置权限后才能查看；暂不能发起新提案。</Notice>}
       {pending&&(canQueryProposal || canWrite)&&pending.ticketId&&!pending.terminal&&<Notice tone="warn" action={<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询审批结果</Button>}><p>手机换机规则的变更已提交，等待审批 · <span data-mono>{pending.ticketId}</span></p>{error&&<p role="status">{error}</p>}{message&&!error&&<p role="status">{message}</p>}</Notice>}
-      {pending&&(canQueryProposal || canWrite)&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?`换机规则审批${PROPOSAL_END[pending.terminal]?.tag ?? "已结束"}`:retryRejectedKey===pending.commandKey?"按原请求重试被拒绝":"换机规则提交结果未知"} actionBelow action={<>{!pending.terminal&&canQueryProposal&&<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询原结果</Button>}{!pending.ticketId&&!recoveryState?.expired&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy || !!recoveryState?.replayBlock} onClick={()=>void retryOriginal()}>按原请求重试</Button>}{(retryRejectedKey===pending.commandKey&&!pending.ticketId)&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除原操作记录</Button>}{pending.terminal&&<Button size="sm" disabled={busy || editor || !!confirm || !canWrite} onClick={()=>void prepareNewChange(pending)}>准备新变更</Button>}</>}>
+      {pending&&(canQueryProposal || canWrite)&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?`换机规则审批${PROPOSAL_END[pending.terminal]?.tag ?? "已结束"}`:retryRejectedKey===pending.commandKey?"按原请求重试被拒绝":"换机规则提交结果未知"} actionBelow action={<>{!pending.terminal&&canQueryProposal&&<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询原结果</Button>}{!pending.ticketId&&!recoveryState?.expired&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy || !!recoveryState?.replayBlock} onClick={()=>void retryOriginal()}>按原请求重试</Button>}{(retryRejectedKey===pending.commandKey&&!pending.ticketId)&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除原操作记录</Button>}{pending.terminal&&<Button size="sm" disabled={busy || editor || !!confirm || !canWrite} onClick={()=>void prepareNewChange(pending)}>准备新变更</Button>}{pending.terminal && pending.terminal !== "approved" && <Button size="sm" disabled={busy || editor || !!confirm} onClick={() => discardRecovery.ask(() => {
+        proposals.forget(pending.fingerprint, pending.commandKey); syncPending();
+      })}>放弃这份草稿</Button>}</>}>
       {retryRejectedKey===pending.commandKey&&!pending.terminal?<><p>拒绝原因：{error||recoveryState?.replayRejection}</p><p>核对后可以解除这条记录。</p></>:<><p>{pending.terminal?"刷新当前策略核对后，再准备新变更。":recoveryState?.expired?RETRY_EXPIRED_TEXT:"原内容和理由都已保存。不知道审批单建没建成，可以查询原结果，或按原请求重试，不会重复建单。"}</p>{error&&<p role="status">{error}</p>}</>}{message&&<p>{message}</p>}<p>提交：{formatBusinessTimeCompact(new Date(pending.createdAt).toISOString(),"—")}（{businessZone().label}）{pending.ticketId&&<> · 审批单：<span data-mono>{pending.ticketId}</span></>}</p><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p>
       <Fold title="原策略与目标策略技术记录" summary="原请求编号与原文" inset><div className="e6-fold-content"><p>理由：{pending.input.reason}</p><p>原请求编号：<code>{pending.commandKey}</code></p><pre className="e6-json">{JSON.stringify(pending.input,null,2)}</pre></div></Fold>
       </Notice>}
     </>;
-    return <Panel title="手机绑定与换机策略" icon={ArrowRightLeft} tone="role-3" sub={policy?`当前策略版本 ${policy.policyVersion??"未取得"} · 整组审批`:undefined} data-proof="e6-phone-binding" explain="四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行手机不受追溯影响。" actions={<>{policy&&<Button size="sm" disabled={loading||busy||!!confirm} onClick={()=>policy&&!unchanged?setDiscard(true):void refresh(true)}>刷新</Button>}{canWrite&&<Button size="sm" disabledReason={pending?"上一次提交还没有结论":!policy?.policyVersion?"未取得有效策略版本":undefined} onClick={()=>{setOtherChanges([]);setEditor(true);}}>修改换机规则</Button>}</>}>
+    return <Panel title="手机绑定与换机策略" icon={ArrowRightLeft} tone="role-3" sub={policy?`当前策略版本 ${policy.policyVersion??"未取得"} · 整组审批`:undefined} data-proof="e6-phone-binding" explain="四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行手机不受追溯影响。" actions={<>{policy&&<Button size="sm" disabled={loading||busy||!!confirm} onClick={()=>policy&&!unchanged?setDiscard(true):void refresh(true)}>刷新</Button>}{canWrite&&<Button size="sm" disabledReason={activePending?"上一次提交还没有结论":!policy?.policyVersion?"未取得有效策略版本":undefined} onClick={()=>{closeEditor();setEditor(true);}}>修改换机规则</Button>}</>}>
+      {discardRecovery.dialog}
       {error&&policy&&!pending&&!inDrawer&&<Notice tone="warn">{error}</Notice>}{message&&!denied&&!pending&&<Notice tone="neutral">{message}</Notice>}
       {denied?<BlockState state="denied" title="当前没有查看原结果的权限，内容已隐藏"/>:<>
         {loading?<BlockState state="loading" title="正在读取手机策略…"/>:!policy?configReadFailed?<BlockState state="empty" title="等设备配置读取成功后可用"/>:<BlockState state="error" title="策略读取失败，暂不可提交" detail={error} onRetry={()=>void refresh(true)}/>:<>
           {!policy.available&&<Notice tone="warn">策略不完整。有效版本存在时，可填齐四项后提交修复；没有版本时请先重新读取。</Notice>}
           <ConfigList label="手机换机当前规则"><ConfigRow name="允许更换绑定手机" what="是否允许后续更换绑定手机" when="四项批准后同时生效" value={policy.allowReplacement==null?"未配置":policy.allowReplacement?"开启":"关闭"}/><ConfigRow name="换机最短间隔" value={policy.minReplacementIntervalDays==null?"未配置":`${policy.minReplacementIntervalDays} 天`} note="0 表示不限间隔"/><ConfigRow name="换机统计窗口" value={policy.replacementWindowDays==null?"未配置":`${policy.replacementWindowDays} 天`}/><ConfigRow name="窗口内换机上限" value={policy.maxReplacementsInWindow==null?"未配置":`${policy.maxReplacementsInWindow} 次`}/></ConfigList>
         </>}
-        {editor&&policy&&<Drawer open title="修改手机换机规则" icon={ArrowRightLeft} busy={busy} onClose={()=>setEditor(false)} footer={<Decision primary={<Button variant="primary" disabledReason={pending?"上一次提交还没有结论，先处理上面的提示":blocked?"当前只读或版本未取得":draftError||(unchanged?"没有修改":undefined)} onClick={preview}>预览并确认策略变更</Button>} others={<Button onClick={()=>setEditor(false)}>取消</Button>}/> }>
-          {recovery}{pending&&<p className="e6-help">{pending.terminal?"点「准备新变更」后才能再改。":retryRejectedKey===pending.commandKey?"解除这条记录后才能再改这组规则，所以输入框是灰的。":"这次提交有结论前不能改这组规则，所以输入框是灰的。"}</p>}
-          {error&&!pending&&!confirm&&<Notice tone="warn">{error}</Notice>}
+        {editor&&policy&&<Drawer open title="修改手机换机规则" icon={ArrowRightLeft} busy={busy} onClose={closeEditor} footer={<Decision primary={<Button variant="primary" disabledReason={activePending?"上一次提交还没有结论，先处理上面的提示":blocked?"当前只读或版本未取得":draftError||(unchanged?"没有修改":undefined)} onClick={preview}>预览并确认策略变更</Button>} others={<Button onClick={closeEditor}>取消</Button>}/> }>
+          {recovery}{activePending&&<p className="e6-help">{retryRejectedKey===activePending.commandKey?"解除这条记录后才能再改这组规则，所以输入框是灰的。":"这次提交有结论前不能改这组规则，所以输入框是灰的。"}</p>}
+          {error&&!activePending&&!confirm&&<Notice tone="warn">{error}</Notice>}
           {unchanged&&<p className="e6-help">没有修改，请先调整需要变更的规则。</p>}
           {otherChanges.length > 0 && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={otherChanges}/></Fold>}
           <Notice tone="neutral">四项一起提交审批；按策略版本 {policy.policyVersion??"未取得"} 核对，只影响后续换机资格。</Notice>

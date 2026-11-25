@@ -790,6 +790,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       setE5OverviewError(`设备概览：${eReadError(overviewResult.reason)}`);
     }
     setE5Loading(false);
+    return deviceResult.status === "fulfilled";
   }, [tab, e5ProductFilter, e5Keyword, e5SourceFilter, e5Page, e5PageSize, e5StateFilter]);
   useEffect(() => { if (tab === "E6" && canReadE5) void refreshE5(); }, [tab, canReadE5, refreshE5]);
   const runE5DeviceAction = useCallback(async (deviceId: number, action: "activate" | "deactivate", reason: string) => {
@@ -813,9 +814,11 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     setE6Error(null);
     try {
       setE6Config(await fetchE6ComputeConfig());
+      return true;
     } catch (error) {
       setE6Error(displayAdminError(error));
       setE6Config(null);
+      return false;
     } finally {
       setE6Loading(false);
     }

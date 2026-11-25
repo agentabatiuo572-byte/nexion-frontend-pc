@@ -219,7 +219,7 @@ export interface EViewCtx {
   setE5ProductFilter: (value: string) => void;
   setE5Page: (page: number) => void;
   setE5PageSize: (pageSize: number) => void;
-  refreshE5: () => Promise<void>;
+  refreshE5: () => Promise<boolean>;
   // E6 算力与设备配置(开关/系数/显卡映射/下载内容均走后端 config API,聚合视图)
   canReadE6: boolean;
   canWriteE6: boolean;
@@ -227,5 +227,5 @@ export interface EViewCtx {
   e6Config: E6ComputeConfigView | null;
   e6Loading: boolean;
   e6Error: string | null;
-  refreshE6: () => Promise<void>;
+  refreshE6: () => Promise<boolean>;
 }

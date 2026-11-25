@@ -1,5 +1,5 @@
 "use client";
-import { nextRecoveryDeadline, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
+import { nextRecoveryDeadline, rebaseRecoveryFields, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
 
 /**
  * B5 风险提醒。先答「现在哪一项在报警、有多严重、去哪页处理」：一句结论，有事的项展开成卡片排在前面，
@@ -16,6 +16,7 @@ import {
   PageHeader, PageTabs, Panel, RdPage, ReleaseModal, StatusTag, Textarea, useTabIds,
 } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
+import { useRecoveryDraftDiscard } from "@/app/components/domain-views/recovery-draft-discard";
 import { useToast, usePendingReplayDeadline } from "@/app/components/domain-views/design-kit";
 import {
   fetchB5Radar,
@@ -99,6 +100,7 @@ interface B5PendingCommand {
   onRelease?: () => void;
   onQuery?: () => void;
   onRestore?: () => void;
+  onDiscard?: () => void;
   verified?: true;
 }
 
@@ -111,6 +113,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
           action={<span className="b5-row-actions">
             {item.onQuery && <Button size="sm" onClick={item.onQuery}>查询原结果</Button>}
             {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
+            {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
             {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
             {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
             {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
@@ -126,6 +129,8 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
 export default function RiskRadarPage() {
   const router = useRouter();
   const radar = useB5Radar();
+  const discardRecovery = useRecoveryDraftDiscard();
+  const [thresholdDraftKey, setThresholdDraftKey] = useState<string>();
   const session = useAdminAuth((state) => state.session);
   const operator = useAdminAuth((state) => state.operator || state.session?.operator || state.session?.username || "");
   const authorities = session?.authorities ?? [];
@@ -241,11 +246,19 @@ export default function RiskRadarPage() {
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
   const requiresApproval = !thresholdOriginal && (!!pendingApproval || !!threshold && redPct > threshold.redPct);
   const staleThreshold = !thresholdOriginal && !approvalRecovery && !!threshold && radar.data?.bankrun.version !== threshold.version;
+  const latestThreshold = radar.data?.bankrun;
   useEffect(() => {
-    if (radar.data && !thresholdOriginal && !approvalRecovery && !savingThreshold) {
-      setThreshold(current => current && current.version !== radar.data!.bankrun.version ? radar.data!.bankrun : current);
-    }
-  }, [radar.data, thresholdOriginal, approvalRecovery, savingThreshold]);
+    if (!threshold || !latestThreshold || threshold.version === latestThreshold.version
+      || thresholdOriginal || approvalRecovery || savingThreshold) return;
+    setYellowInput(input => Number(input) === threshold.yellowPct ? String(latestThreshold.yellowPct) : input);
+    setRedInput(input => Number(input) === threshold.redPct ? String(latestThreshold.redPct) : input);
+    setOtherThresholdChanges([
+      threshold.yellowPct !== latestThreshold.yellowPct && `黄线 ${fmtConfigPct(threshold.yellowPct)} → ${fmtConfigPct(latestThreshold.yellowPct)}`,
+      threshold.redPct !== latestThreshold.redPct && `红线 ${fmtConfigPct(threshold.redPct)} → ${fmtConfigPct(latestThreshold.redPct)}`,
+    ].filter((change): change is string => !!change));
+    setThreshold(latestThreshold);
+  }, [threshold, latestThreshold, thresholdOriginal, approvalRecovery, savingThreshold]);
+  const thresholdChanged = !!threshold && (yellowPct !== threshold.yellowPct || redPct !== threshold.redPct);
   const thresholdVersion = threshold?.version;
   const ratio24h = radar.data?.bankrun.ratio24h;
   const withdraw24hUsdt = radar.data?.bankrun.withdraw24hUsdt;
@@ -258,7 +271,7 @@ export default function RiskRadarPage() {
   const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdOriginal
     ? !b5Recovery.state(thresholdOriginal).replayBlock
     : approvalRecovery === "retry" ? !!approvalRecoveryState && !approvalRecoveryState.replayBlock
-      : !newWriteBlocked && !pendingApproval && !pendingWrites.some(record => record.fingerprint === THRESHOLD_SLOT) && reasonValid && previewReady);
+      : !newWriteBlocked && !pendingApproval && !pendingWrites.some(record => record.fingerprint === THRESHOLD_SLOT) && thresholdChanged && reasonValid && previewReady);
 
   useEffect(() => {
     if (!session || !pendingApproval || savingThreshold) return;
@@ -429,6 +442,7 @@ export default function RiskRadarPage() {
   const openThreshold = (draft?: ReturnType<typeof thresholdRecoveryDrafts<"B5">>[number]) => {
     if (draft && (threshold || pendingApproval || !draft.b5Facts || !session || !canThreshold || newWriteBlocked || !data)) return;
     setOtherThresholdChanges([]);
+    setThresholdDraftKey(draft?.commandKey);
     if (pendingApproval) {
       setYellowInput(String(pendingApproval.values.yellowPct));
       setRedInput(String(pendingApproval.values.redPct));
@@ -451,8 +465,6 @@ export default function RiskRadarPage() {
           before.yellowPct !== latest.yellowPct && `黄线 ${fmtConfigPct(before.yellowPct)} → ${fmtConfigPct(latest.yellowPct)}`,
           before.redPct !== latest.redPct && `红线 ${fmtConfigPct(before.redPct)} → ${fmtConfigPct(latest.redPct)}`,
         ].filter((value): value is string => !!value));
-        discardThresholdRecoveryDraft("B5", session.adminId, draft.commandKey);
-        syncPending(value => value + 1);
       }
       setReason("");
       setApprovalRecovery(null);
@@ -485,7 +497,7 @@ export default function RiskRadarPage() {
     try {
       if (requiresApproval) {
         const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
-          pendingApproval?.reason ?? reason.trim(), fetchB5Radar, pendingApproval ? "retry" : "new", facts);
+          pendingApproval?.reason ?? reason.trim(), fetchB5Radar, pendingApproval ? "retry" : "new", facts, thresholdDraftKey);
         if (!result) return;
         setApprovalVerifiedKey(result.ticket.status === "pending" ? pendingThresholdConfigApproval("B5", session.adminId)?.commandKey ?? null : null);
         setToast(result.acknowledgement);
@@ -495,7 +507,10 @@ export default function RiskRadarPage() {
           body: JSON.stringify({ yellowPct, redPct, expectedVersion: threshold.version, reason: reason.trim(), operator }),
         }) as Extract<B5PendingWrite, { kind: "threshold" }>;
         setThresholdOriginal(original);
-        await executeB5Command(original, !!thresholdOriginal);
+        const saved = original;
+        await sendRecoveredDraft(() => executeB5Command(saved, !!thresholdOriginal),
+          () => b5Commands.isDurablyStored(saved.fingerprint, saved.commandKey), thresholdDraftKey
+            ? () => discardThresholdRecoveryDraft("B5", session.adminId, thresholdDraftKey) : undefined);
         setToast("提现压力的黄线和红线已更新");
       }
       setApprovalRecovery(null); setThresholdUnknown(false);
@@ -509,7 +524,6 @@ export default function RiskRadarPage() {
           setThresholdOriginal(null); setApprovalRecovery(null); setPreview(null);
           setNeedsFreshRadar(true);
           const fresh = await radar.reload();
-          if (fresh) setThreshold(fresh.bankrun);
           rereadAfterConflict = !!fresh && cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "B5_THRESHOLD_VERSION_CONFLICT";
         }
       } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
@@ -604,6 +618,7 @@ export default function RiskRadarPage() {
     commandKey: draft.commandKey, title: "提高红线的审批 · 未执行",
     body: `黄线 ${fmtConfigPct(draft.values.yellowPct)} · 红线 ${fmtConfigPct(draft.values.redPct)}`,
     expired: false, verified: true, onRestore: draft.b5Facts && canThreshold ? () => openThreshold(draft) : undefined,
+    onDiscard: () => discardRecovery.ask(() => { discardThresholdRecoveryDraft("B5", session.adminId, draft.commandKey); syncPending(value => value + 1); }),
   });
 
   // ---------- 五项 ----------
@@ -682,6 +697,7 @@ export default function RiskRadarPage() {
   return (
     <RdPage className="radarpage">
         {header(meta, !data || radar.error ? killSwitchLink : headerActions, !data || radar.error ? undefined : readOnly)}
+        {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={canCross("/platform/audit")} />
         {pendingApproval && (
           <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
@@ -767,6 +783,7 @@ export default function RiskRadarPage() {
         const submitLabel = recovering ? "按原请求重试" : requiresApproval ? "提交审批" : "确认调整";
         const blocked = !canThreshold ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
           : !thresholdValid ? "先把黄线、红线填在范围内"
+            : !recovering && !thresholdChanged ? "没有修改"
             : !reasonValid && approvalRecovery !== "retry" ? "理由要写 8–200 个字"
               : !previewReady && approvalRecovery !== "retry" ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
                 : undefined;

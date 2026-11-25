@@ -19,7 +19,7 @@ import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
 import { currentRecoveryActor, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
-import { e1MediaCommands, e1MediaHasOwner, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
+import { e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
 export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number; draftId?: string; mediaCommandKey?: string; mediaDraftForm?: SkuForm;
@@ -166,6 +166,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const editId = original?.id;
+  const pendingMediaForEditor = () => request && e1PendingMediaFor(actor, request.sku?.id, request.draftId);
+  const mediaBlocked = !!pendingMediaForEditor();
+  const mediaRecoveryOnly = mediaBlocked && (!mediaPending || mediaPending.commandKey !== request?.mediaCommandKey);
   const seriesLocked = original?.seriesLocked === true;
   const seriesChoices = skuSeriesChoices(form.tier, original);
   const nav = useSectionNav(SECTIONS, { ready: !!request });
@@ -248,8 +251,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
   const pickMedia = async (file?: File) => {
     if (!file || !request || uploadBusy.current || !writable) return;
-    if (!mediaPending && e1MediaCommands.list().some(row => row.actorId === actor && ownsMedia(row, request))) {
-      setMediaError("请从原上传记录打开核对。");
+    if (mediaPending && mediaPending.commandKey !== request.mediaCommandKey) return;
+    if (!mediaPending && pendingMediaForEditor()) {
+      setMediaError(E1_PENDING_MEDIA);
       return;
     }
     const ext = file.name.split(".").pop()?.toLowerCase(), mime = file.type.toLowerCase();
@@ -288,7 +292,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     finally { setMediaBusy(false); }
   };
   const crop = async () => {
-    if (!media || media.kind !== "image" || mediaPending || mediaBusy || !writable) return;
+    if (!media || media.kind !== "image" || pendingMediaForEditor() || mediaPending || mediaBusy || !writable) return;
     setMediaBusy(true);
     try {
       const image = new Image(); image.crossOrigin = "anonymous";
@@ -351,7 +355,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (gateError) e[/阶段/.test(gateError) ? "unlock" : /周期/.test(gateError) ? "gateQuotaPeriod" : /会员/.test(gateError) ? "gateRankMin" : /直接/.test(gateError) ? "gateActiveDirectMin" : /算力点/.test(gateError) ? "gateTeamComputePointsMin" : "gateQuotaCap"] = gateError;
     if (gates?.skuReviewContractVersion !== 1) e.form = "商品审核暂时不可用，请刷新后重试；已填写的内容会保留";
     if (!writable) e.form = "当前不能提交，请核对权限和目录读取状态";
-    if (mediaBusy || mediaPending || media && !media.assetId) e.media = "媒体上传尚未确认，请先核对原文件";
+    if (pendingMediaForEditor() || mediaBusy || mediaPending || media && !media.assetId) e.media = E1_PENDING_MEDIA;
     if (!acceptedRevision && latestChanged) e.form = "商品已被别人改过，请先核对别人改了什么";
     for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
       const error = appVisibleTextError(form[key], label);
@@ -397,7 +401,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={shownError(key)} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
-  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaPending ? "媒体上传结果未知" : Object.values(copyErrors)[0] ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
+  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaBlocked || mediaPending ? E1_PENDING_MEDIA : Object.values(copyErrors)[0] ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
   const sectionItems = SECTIONS.map((s, index) => {
     const keys = index === 0 ? BASIC_FIELDS : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? ["inventoryMode", "stock", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"] : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
     const invalid = keys.some(key => !!shownError(key));
@@ -440,17 +444,18 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
           </div>
           <Field label="产品图 / 视频" error={errors.media} explain="图片≤10 MiB；视频≤200 MiB。直接上传不经审批；关联商品由商品提案批准，移除不删除原资源。">
             <label className="e1-upload" data-drag={drag ? "" : undefined} onDragOver={e => { e.preventDefault(); if (!mediaBusy) setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); void pickMedia(e.dataTransfer.files[0]); }}>
-              <input type="file" aria-label={mediaBusy ? "媒体上传中" : mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+              <input type="file" aria-label={mediaBusy ? "媒体上传中" : mediaPending ? "重新选择原文件" : "上传商品图片或视频"} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" disabled={!writable || mediaBusy || busy || mediaRecoveryOnly} onChange={e => { void pickMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
               <ImageIcon size={24} aria-hidden /><span>{mediaBusy ? "上传中…" : drag ? "松开即上传" : mediaPending ? "重新选择原文件核对" : "点击或拖拽图片/视频到此"}</span>
             </label>
           </Field>
           {mediaBusy && <Notice tone="neutral" title="媒体上传中"><progress className="e1-upload-progress" aria-label="媒体上传进度" /><p>正在处理文件并确认上传结果，请等待。</p></Notice>}
           {media && <div className="e1-editor-media">{media.src ? media.kind === "video" ? <video src={media.src} controls muted playsInline preload="metadata" onLoadedMetadata={e => { const v = e.currentTarget; setMedia(m => m ? { ...m, w: v.videoWidth, h: v.videoHeight, duration: Number.isFinite(v.duration) ? v.duration : undefined } : m); }} onError={() => setMediaError(media.assetId ? "视频已保存，预览暂时显示不了" : "视频暂时无法预览，请核对上传结果")} /> : <img src={media.src} alt="商品媒体预览" onLoad={e => { const i = e.currentTarget; setMedia(m => m ? { ...m, w: i.naturalWidth, h: i.naturalHeight } : m); }} onError={() => setMediaError(media.assetId ? "图片已保存，预览暂时显示不了" : "图片暂时无法预览，请核对上传结果")} /> : <BlockState compact state="error" title="图片已保存，预览暂时显示不了" />}
             <div className="e1-muted">{media.name} · {media.size == null ? "大小未读取" : `${e1Number(media.size)} 字节`} · {media.w && media.h ? `${media.w}×${media.h}px` : "尺寸未读取"}{media.kind === "video" && ` · ${media.duration == null ? "时长未读取" : `${e1Number(media.duration)} 秒`}`}</div>
-            <div className="e1-table-actions">{media.assetId && <Button size="sm" onClick={() => void refreshPreview(media.assetId!)}>重新加载图片</Button>}{media.kind === "image" && media.w && media.h && Math.abs(media.w - media.h) > Math.max(media.w, media.h) * 0.02 && <Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => void crop()}>裁剪为 1:1</Button>}<Button size="sm" disabledReason={mediaBusy || mediaPending ? "先核对上传结果" : undefined} onClick={() => setMedia(null)}>移除</Button></div>
+            <div className="e1-table-actions">{media.assetId && <Button size="sm" onClick={() => void refreshPreview(media.assetId!)}>重新加载图片</Button>}{media.kind === "image" && media.w && media.h && Math.abs(media.w - media.h) > Math.max(media.w, media.h) * 0.02 && <Button size="sm" disabledReason={mediaBusy || mediaBlocked || mediaPending ? "先核对上传结果" : undefined} onClick={() => void crop()}>裁剪为 1:1</Button>}<Button size="sm" disabledReason={mediaBusy || mediaBlocked || mediaPending ? "先核对上传结果" : undefined} onClick={() => { if (!pendingMediaForEditor()) setMedia(null); }}>移除</Button></div>
           </div>}
+          {mediaRecoveryOnly && <Notice tone="warn" title={E1_PENDING_MEDIA} />}
           {mediaError && !mediaBusy && <Notice tone="warn" title={mediaError} />}
-          {mediaPending && !mediaBusy && <Notice tone="warn" title="媒体上传结果未知" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : mediaRecovery.state(mediaPending).replayBlock ? "原上传不能重试" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRecovery.state(mediaPending).replayRejection && <Button onClick={() => setMediaRelease(true)}>解除原操作记录</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只能用原文件按原请求重试；换新文件不能代替原操作。"}</p><p>如果上传的是裁剪图，它是页面生成的图片，刷新后无法用原图原样重试。请到商品详情核对图片是否已更新；已更新时，按本页现有条件解除原操作记录；未更新或无法解除时，请联系技术核查。</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
+          {mediaPending && !mediaRecoveryOnly && !mediaBusy && <Notice tone="warn" title="媒体上传结果未知" actionBelow action={<><Button disabledReason={mediaBusy ? "正在上传" : isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : !fileRef.current ? "请重新选择原文件核对摘要" : mediaRecovery.state(mediaPending).replayBlock ? "原上传不能重试" : undefined} onClick={() => fileRef.current && void upload(mediaPending, fileRef.current, true)}>按原文件重试</Button>{mediaRecovery.state(mediaPending).replayRejection && <Button onClick={() => setMediaRelease(true)}>解除原操作记录</Button>}</>}><p>{isRetryExpired(mediaPending) ? RETRY_EXPIRED_TEXT : "只能用原文件按原请求重试；换新文件不能代替原操作。"}</p><p>如果上传的是裁剪图，它是页面生成的图片，刷新后无法用原图原样重试。请到商品详情核对图片是否已更新；已更新时，按本页现有条件解除原操作记录；未更新或无法解除时，请联系技术核查。</p><Fold inset title="原上传与技术信息" summary={mediaPending.fileName}><pre className="e1-raw">{JSON.stringify(mediaPending, null, 2)}</pre></Fold></Notice>}
         </EditorSection>
         <EditorSection id="e1-earnings" title="收益与任务">
           <div className="rd-form-grid">{field("price", "售价(USD)", { number: true, unit: "USD", min: 0, required: true, explain: "购买一件商品的目录价，批准后影响新交易；原订单快照不回写。" })}{field("computePoints", "每件算力点", { number: true, min: 0, step: 1, help: editId ? "留空保留原值；0 为真实零" : "留空按售价 × 10", explain: "购买一件计入团队的点数，最多18位非负整数，只影响之后的新订单快照；App为0时当前隐藏。" })}</div>

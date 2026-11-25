@@ -11,7 +11,7 @@ import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
-import { currentRecoveryActor } from "./abe-recovery-access";
+import { currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
@@ -200,6 +200,7 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
   readActive: () => Promise<T>,
   mode: "new" | "query" | "retry",
   facts?: B1CommandFacts | B5ThresholdFacts,
+  draftKey?: string,
 ) {
   const slot = approvalSlot(source, session.adminId);
   const previous = pendingThresholdConfigApproval(source, session.adminId);
@@ -248,12 +249,16 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
     if (mode === "retry" && (original.received || original.b1Ticket || original.b5Ticket)) {
       mode = "query";
     } else {
-      try {
-        await (mode === "retry" ? bThresholdRecovery.replay(original, post) : post(original));
-      } catch (error) {
-        if (mode === "new" && isBCommandRejection(error, false)) attempts.forget(slot, key);
-        throw error;
-      }
+      const saved = original;
+      await sendRecoveredDraft(async () => {
+        try {
+          await (mode === "retry" ? bThresholdRecovery.replay(saved, post) : post(saved));
+        } catch (error) {
+          if (mode === "new" && isBCommandRejection(error, false)) attempts.forget(slot, key);
+          throw error;
+        }
+      }, () => attempts.isDurablyStored(slot, key), mode === "new" && draftKey
+        ? () => discardThresholdRecoveryDraft(source, session.adminId, draftKey) : undefined);
       attempts.remember(slot, key, { ...original, received: true });
     }
   }
@@ -273,13 +278,13 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
 }
 
 export function submitB1ThresholdApproval<T>(session: AdminSession, values: ThresholdApprovalValues["B1"], reason: string,
-  readActive: () => Promise<T>, mode: "new" | "query" | "retry", facts?: B1CommandFacts) {
-  return submitThresholdApproval("B1", session, values, reason, readActive, mode, facts);
+  readActive: () => Promise<T>, mode: "new" | "query" | "retry", facts?: B1CommandFacts, draftKey?: string) {
+  return submitThresholdApproval("B1", session, values, reason, readActive, mode, facts, draftKey);
 }
 
 export function submitB5ThresholdApproval<T>(session: AdminSession, values: ThresholdApprovalValues["B5"], reason: string,
-  readActive: () => Promise<T>, mode: "new" | "query" | "retry", facts?: B5ThresholdFacts) {
-  return submitThresholdApproval("B5", session, values, reason, readActive, mode, facts);
+  readActive: () => Promise<T>, mode: "new" | "query" | "retry", facts?: B5ThresholdFacts, draftKey?: string) {
+  return submitThresholdApproval("B5", session, values, reason, readActive, mode, facts, draftKey);
 }
 
 export function configApprovalOriginalInput(sourceDomain: "H8", input: string): H8ConfigApprovalInput;

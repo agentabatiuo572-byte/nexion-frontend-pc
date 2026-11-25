@@ -116,6 +116,12 @@ export const e1MediaCommands = createPendingMutationStore<E1MediaPending>({
     && row.params?.domain === "E" && row.params.entityType === "SKU" && typeof row.params.operator === "string",
 });
 
+export function e1PendingMediaFor(actorId: string, skuId?: string, draftId?: string) {
+  return e1MediaCommands.list().find(row => row.actorId === actorId && (skuId ? row.skuId === skuId
+    : !!draftId && !row.skuId && row.draftId === draftId));
+}
+export const E1_PENDING_MEDIA = "请从原上传记录打开核对。";
+
 export type E1Legacy = PendingMutationRecord & { inputFingerprint: string };
 /** Old slots have no reason/actor/envelope. Read only, never resolve or expire them. */
 export function e1LegacyCommands(actorId: string): E1Legacy[] {

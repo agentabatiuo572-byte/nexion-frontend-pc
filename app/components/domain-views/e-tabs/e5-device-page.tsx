@@ -114,6 +114,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState("");
   const [activityVersion, setActivityVersion] = useState(0);
+  const [readingCurrent, setReadingCurrent] = useState(false);
   const request = useRef(0);
   const overviewRequest = useRef(0);
   // 列宽排法只给样式用：第一次读完前不定；之后重读、翻页、筛选沿用上一次，只有新一页数据需要另一种时才换，表头不来回跳。
@@ -135,12 +136,16 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   }, [query]);
   useEffect(() => { if (!ready || keyword === query.keyword) return; const timer = setTimeout(() => change({ keyword }), 300); return () => clearTimeout(timer); }, [keyword, ready, query.keyword, change]);
   const readList = useCallback(async (successMessage?: string, preserveScreen = false) => {
-    if (!ready || !ctx.canReadE5 || queryError) { setRows([]); setTotal(0); setLoading(false); return; }
+    if (!ready || !ctx.canReadE5 || queryError) { setRows([]); setTotal(0); setLoading(false); setReadingCurrent(false); return; }
     const id = ++request.current;
+    setReadingCurrent(true);
     if (!preserveScreen) { setLoading(true); setError(""); setRows([]); }
-    try { const result = await fetchE5Devices(query); if (request.current !== id) return; setRows(result.records); setTotal(result.total); setReadAt(Date.now()); setSelectedId(current => result.records.some(row => row.deviceId === current) ? current : null); return result.records; }
-    catch (cause) { if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied(); if (request.current === id && !preserveScreen) { setRows([]); setTotal(0); setError(`${successMessage ? `${successMessage}，最新设备状态暂时读不到。` : ""}${displayAdminReadError(cause)}`); setSelectedId(null); } }
-    finally { if (request.current === id) setLoading(false); }
+    try { const result = await fetchE5Devices(query); if (request.current !== id) return; setError(""); setRows(result.records); setTotal(result.total); setReadAt(Date.now()); setSelectedId(current => result.records.some(row => row.deviceId === current) ? current : null); return result.records; }
+    catch (cause) { if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied(); if (request.current === id) {
+      if (!preserveScreen) { setRows([]); setTotal(0); setSelectedId(null); }
+      setError(`${successMessage ? `${successMessage}，最新设备状态暂时读不到。` : ""}${displayAdminReadError(cause)}`);
+    } }
+    finally { if (request.current === id) { setLoading(false); setReadingCurrent(false); } }
   }, [ready, ctx.canReadE5, query, queryError]);
   const readOverview = useCallback(async () => {
     if (!ctx.canReadE5) return;
@@ -176,10 +181,10 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
     void fetchE5Observability().then(value => { if (live) setActivity(value); }).catch(cause => { if (live) setActivityError(displayAdminReadError(cause)); }).finally(() => { if (live) setActivityLoading(false); });
     return () => { live = false; };
   }, [activityOpen, activityVersion, actor, epoch, ctx.canReadE5]);
-  const refresh = async (successMessage?: string) => { await Promise.all([readList(successMessage), readOverview()]); if (activityOpen) setActivityVersion(value => value + 1); };
+  const refresh = async (successMessage?: string) => { await Promise.all([readList(successMessage, !!successMessage || !!error), readOverview()]); if (activityOpen) setActivityVersion(value => value + 1); };
   const readBack = async (record: import("@/lib/admin/e5-command").E5Command) => {
     const [fresh] = await Promise.all([readList(undefined, true), readOverview()]);
-    if (!fresh) return "最新设备列表未读到，请重试读取；原记录继续保留。";
+    if (!fresh) return "最新设备列表未读到，请重试读取。";
     const matches = fresh.filter(row => record.intent === "pause" || record.intent === "resume" ? row.userId === record.device.userId : row.deviceId === record.device.deviceId);
     return matches.length ? `已读到：${matches.map(row => `${row.serial} · ${e5StateNote(row).label ?? E5_STATES[row.simState!].label}`).join("；")}。当前列表状态不能单独确认原操作结果，请结合操作记录与审批核对。` : "已读取当前列表，原对象不在当前页或筛选结果中。请清除筛选核对；原记录继续保留。";
   };
@@ -202,7 +207,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const layout = pageLayout ?? tableLayout;
   if (pageLayout && (pageLayout.noRange !== tableLayout?.noRange || pageLayout.noTask !== tableLayout?.noTask)) setTableLayout(pageLayout);
   return <RdPage><PageHeader pageId="E5" title="设备管理" summary={roleReadOnly || simOff ? "查看用户设备的运行状态和本月到账。" : "看用户设备运行、到账，处理激活和停用。"} meta={readAt ? <>{businessClock(readAt)} 读取 · {businessZoneText()}<Explain label="数据时间说明" content="打开、筛选和点「刷新」时读取，不自动刷新。" /></> : undefined} readOnly={simOff ? "任务已关闭，本页只读" : roleReadOnly ? "当前账号只能查看设备" : undefined} actions={<Button icon={<RefreshCw size={14} />} disabled={loading || overviewLoading} onClick={() => void refresh()}>刷新</Button>} />
-    {!ctx.canReadE5 ? <BlockState state="denied" title="没有查看设备的权限" /> : <E5CommandScope ctx={ctx} refresh={refresh} readBack={readBack} toast={ctx.toast}>
+    {!ctx.canReadE5 ? <BlockState state="denied" title="没有查看设备的权限" /> : <E5CommandScope ctx={ctx} refresh={refresh} readBack={readBack} toast={ctx.toast} writeBlock={readingCurrent ? "正在读取当前设备状态" : error ? "设备列表读取失败，请先重试读取" : undefined}>
       <Panel plain className="e5-summary" aria-label="用户设备概览与状态分布">
       {overview?.total !== 0 && <Conclusion state={overviewError || attentionTotal ? "warn" : overview ? "neutral" : "unknown"} icon={Boxes} explain={<><p>这里是用户通过购买、置换、试用转正、赠送得到的设备，不含手机。</p><p>手机在{reach("/devices/compute-config", "device_e5_read") ? <Link href="/devices/compute-config">手机算力配置</Link> : "手机算力配置"}的用户手机里。统计不随筛选变。</p><p>等待启动含待激活、等待初始化、旧任务未结清，后两者点「激活」解决不了。</p><p>其他含等待配置、已暂停、停用中、已解绑、出错重试中、任务已关闭。</p></>}>
         {overviewLoading ? "正在读取用户设备概览…" : overview ? simOff ? `任务已关闭，${overview.total} 台用户设备仅可查看` : overview.total ? `${overview.total} 台用户设备，${overview.running} 台运行中${overview.waitingActivation ? `，${overview.waitingActivation} 台等待启动` : ""}${attentionTotal ? `，${attentionTotal} 台需要处理` : ""}` : "还没有用户设备" : "暂时无法判断设备运行情况"}
@@ -239,7 +244,8 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
           <FilterField><Select aria-label="设备来源筛选" value={query.source} onChange={source => change({ source })} options={[{ value: "all", label: "全部来源" }, ...Object.entries(SOURCES).map(([value, label]) => ({ value, label }))]} /></FilterField>
         </FilterBar>
         <div className="e5-table-host" data-proof="e5-devices" data-layout-pending={!layout && loading ? "" : undefined} data-no-range={layout?.noRange ? "" : undefined} data-no-task={layout?.noTask ? "" : undefined} data-extra={extraColumns ? "" : undefined} data-product={showProduct ? "" : undefined} data-source={showSource ? "" : undefined}><Table label="用户设备" className="e5-table"><colgroup><col className="e5-col-device" /><col className="e5-col-user" />{showProduct && <col className="e5-col-product" />}{showSource && <col className="e5-col-source" />}<col className="e5-col-status" /><col className="e5-col-income" /><col className="e5-col-task" /><col className="e5-col-action" /></colgroup><thead><tr><Th sticky={extraColumns ? "start" : undefined} className="e5-device-col">设备</Th><Th className="e5-user-col">用户</Th>{showProduct && <Th className="e5-product-col">商品 · 托管机房</Th>}{showSource && <Th>来源</Th>}<Th align="left" sticky={extraColumns ? "end" : undefined} className="e5-status-col">状态<Explain label="设备状态说明" content={Object.entries(E5_STATES).map(([key, value]) => <p key={key}>{value.label}：{value.reason}</p>)} /></Th><Th align="right" className="e5-income-col">本月收益（USDT）<Explain label="设备月收益口径" content="到账是本设备月已完成目标任务的收益，预估按当前配置满运行计算；没有设备月数据不认定为 0。点设备行可核对周期起止、产能、目标关闭和周期内配置变化。停跑期间不计收益、不补发。" /></Th><Th className="e5-task-col">当前任务<Explain label="当前任务口径" content="当前任务为空不代表设备没有运行。点任务类型可核对任务名、任务号、起止与读取时间；时间位置不是执行完成率。" /></Th><Th align="right" sticky={extraColumns ? "end" : undefined} className="e5-action-col">操作</Th></tr></thead><tbody>
-          {loading ? <TableLoading columns={6 + Number(columns.isVisible("product")) + Number(columns.isVisible("source"))} /> : error || queryError ? <TableMessage columns={6 + Number(showProduct) + Number(showSource)}><BlockState state="error" title={queryError ? "筛选条件无效" : "用户设备读取失败"} detail={queryError || error} retryLabel={queryError ? "清除筛选" : "重试读取"} onRetry={queryError ? clear : () => void readList()} /></TableMessage> : !rows.length ? <TableMessage columns={6 + Number(showProduct) + Number(showSource)}><BlockState state="empty" title={activeFilters.length ? "暂无符合条件的用户设备" : "暂无用户设备"} onRetry={activeFilters.length ? clear : undefined} retryLabel="清除筛选" /></TableMessage> : rows.map(d => <Tr key={d.deviceId} selected={d.deviceId === selectedId} onOpen={() => select(d.deviceId)}>
+          {(error || queryError) && !loading && <TableMessage columns={6 + Number(showProduct) + Number(showSource)}><BlockState state="error" title={queryError ? "筛选条件无效" : "用户设备读取失败"} detail={queryError || <>{error}{rows.length > 0 && readAt && <p>下方设备数据于 {businessClock(readAt)} 读取 · {businessZoneText()}</p>}</>} retryLabel={queryError ? "清除筛选" : "重试读取"} onRetry={queryError ? clear : () => void readList(undefined, !!rows.length)} /></TableMessage>}
+          {loading ? <TableLoading columns={6 + Number(columns.isVisible("product")) + Number(columns.isVisible("source"))} /> : queryError || error && !rows.length ? null : !rows.length ? <TableMessage columns={6 + Number(showProduct) + Number(showSource)}><BlockState state="empty" title={activeFilters.length ? "暂无符合条件的用户设备" : "暂无用户设备"} onRetry={activeFilters.length ? clear : undefined} retryLabel="清除筛选" /></TableMessage> : rows.map(d => <Tr key={d.deviceId} selected={d.deviceId === selectedId} onOpen={() => select(d.deviceId)}>
             <Td sticky={extraColumns ? "start" : undefined} className="e5-device-col"><Cell main={<span className="e5-device-name"><span title={d.deviceName}>{d.deviceName}</span><E5PendingMark device={d} /></span>} sub={<Tooltip.Provider><Tooltip.Root><Tooltip.Trigger asChild><span className="e5-serial" tabIndex={0} aria-label={d.serial} title={d.serial}><span className="e5-serial-prefix" aria-hidden>{d.serial.slice(0, -8)}</span><span className="e5-serial-suffix" aria-hidden>{d.serial.slice(-8)}</span></span></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="rd-tip e5-serial-tip" sideOffset={6}>{d.serial}</Tooltip.Content></Tooltip.Portal></Tooltip.Root></Tooltip.Provider>} /></Td><Td className="e5-user-col"><Cell main={d.nickname} sub={<span className="e5-user-meta">{reach(`/users/search/${d.userNo}`) ? <Link href={`/users/search/${d.userNo}`}>{d.userNo}</Link> : d.userNo}<span aria-hidden>·</span><Button size="sm" variant="ghost" className="e5-user-slots" data-full={d.activeDevicesForUser >= d.maxDevicesPerUser ? "" : undefined} aria-label={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} title={`这位用户已激活 ${d.activeDevicesForUser} 台设备（含手机），每人最多 ${d.maxDevicesPerUser} 台。点击只看这位用户的设备`} onClick={() => { setKeyword(""); change({ userId: d.userId, keyword: "" }); }}><span><span className="e5-slot-prefix" aria-hidden>已激活 </span>{d.activeDevicesForUser}/{d.maxDevicesPerUser}</span><ArrowUpRight size={11} aria-hidden /></Button></span>} title={d.user} /></Td>
             {showProduct && <Td className="e5-product-col"><Cell main={products.get(d.productCode) ?? d.productCode} sub={d.hostingLabel || "—"} title={d.hostingLabel} /></Td>}{showSource && <Td>{SOURCES[d.sourceChannel]}</Td>}
             <Td align="left" sticky={extraColumns ? "end" : undefined} className="e5-status-col"><DeviceStatus device={d} /></Td><Td align="right" className="e5-income-col"><MonthlyIncome device={d} compact digits={incomeDigits} rangeDigits={rangeDigits} /></Td><Td className="e5-task-col"><CurrentTask device={d} readAt={readAt} /></Td><Td align="right" sticky={extraColumns ? "end" : undefined} className="e5-action-col"><E5DeviceActions device={d} ctx={ctx} /></Td>

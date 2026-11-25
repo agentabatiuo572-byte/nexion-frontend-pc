@@ -9,6 +9,7 @@ import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETR
 
 import { explicitRejectionCode } from "./explicit-rejection";
 import { currentRecoveryActor } from "./abe-recovery-access";
+import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 export type B1CommandFacts = Pick<BLedger, "reserveUsd" | "valuationReliable" | "redlineBreached" | "coverageRatio" | "redlinePct" | "healthyPct" | "thresholdVersion"> & { generatedAt?: string };
 export interface B1PendingWrite extends PendingMutationRecord {
@@ -100,4 +101,15 @@ async function sendOriginal(record: B1PendingWrite, retry: boolean) {
 export function executeB1Command(record: B1PendingWrite, retry = true) {
   if (record.kind === "injection") throw new Error("储备注入请到资金储备与应付款核对。");
   return retry ? b1Recovery.replay(record, original => sendOriginal(original, true)) : sendOriginal(record, false);
+}
+
+export async function queryB1InjectionReceipt(record: B1PendingWrite) {
+  const actor = currentRecoveryActor(record.adminId);
+  if (record.kind !== "injection" || !actor?.authorities.includes("finance_d3_read")
+    || !b1Commands.list().some(saved => saved.commandKey === record.commandKey && saved.kind === "injection")) {
+    throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
+  }
+  const result = await fetchDirectCommandReceipt("D3_RESERVE_INJECTION", record.commandKey, actor.adminId);
+  if (result === "SUCCEEDED") b1Recovery.settleAcknowledged(record);
+  return result;
 }

@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import Link from "next/link";
 import { RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { OperationConfirmModal, useToast, usePendingReplayDeadline } from "../design-kit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -26,7 +28,7 @@ import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1Pha
 import { E1Catalog, E1_MISSING_SERIES_REASON, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest, type E1SkuReview } from "./e1-editor";
 import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
-import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1MediaHasOwner, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 import { withLegacyReplayRejection, nextRecoveryDeadline, currentRecoveryActor, canCreateRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 
@@ -96,6 +98,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [pending, setPending] = useState<E1Pending[]>([]);
   const [verifiedDrafts, setVerifiedDrafts] = useState<E1Pending[]>([]);
+  const discardRecovery = useRecoveryDraftDiscard();
   const draftKey = useRef<string | undefined>(undefined);
   const [legacy, setLegacy] = useState<E1Legacy[]>([]);
   const [media, setMedia] = useState<E1MediaPending[]>([]);
@@ -356,6 +359,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const submit = async (spec: ProposeSpec) => {
     if (!canWrite || !actor || sending.current) throw new Error("正在提交或账号没有提交权限，本次没有提交");
     const object = e1Object(spec);
+    if (object.startsWith("device_sku|") && (e1PendingMediaFor(actor, spec.obj)
+      || spec.command.op === "e1_sku_create" && e1PendingMediaFor(actor, undefined, edit?.draftId))) throw new Error(E1_PENDING_MEDIA);
     if (e1Pending(actor).some(r => !r.verifiedNotExecuted && e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有待审批或待核对的操作，请先核对原操作");
     const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
     const savedSpec = JSON.parse(JSON.stringify(spec)) as ProposeSpec;
@@ -363,11 +368,13 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (!e1Commands.isDurablyStored(fingerprint, commandKey)) { e1Commands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原操作，本次没有提交。请检查浏览器设置后重试。"); }
     syncPending();
     setAttemptKey(commandKey);
-    const draft = e1Pending(actor).find(row => row.commandKey === draftKey.current && row.verifiedNotExecuted);
-    await send(e1Commands.list().find(r => r.commandKey === commandKey)!, false);
-    if (draft) forgetE1(draft);
-    draftKey.current = undefined;
-    syncPending();
+    const draft = e1Pending(actor).find(row => row.commandKey === draftKey.current && row.verifiedNotExecuted && e1Object(row.spec) === object && row.spec.command.op === spec.command.op);
+    const replacement = e1Commands.list().find(r => r.commandKey === commandKey)!;
+    await sendRecoveredDraft(() => send(replacement, false), () => e1Commands.isDurablyStored(fingerprint, commandKey), draft && (() => {
+      forgetE1(draft);
+      if (draftKey.current === draft.commandKey) draftKey.current = undefined;
+      syncPending();
+    }));
   };
   const check = async (record: { commandKey: string }, propagate = false) => {
     const full = e1Pending(actor).find(r => r.commandKey === record.commandKey && !r.verifiedNotExecuted);
@@ -559,8 +566,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     ...verifiedDrafts.map(record => ({
       key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
       tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可从原编辑入口重新确认。",
-      actions: skuDraftOps.includes(record.spec.command.op) && (record.spec.command.op === "e1_sku_create" || record.skuBaseline) ? <Button size="sm" disabled={!!edit || !!confirmation || !skuWritesReady}
-        onClick={() => openSku(record.spec.command.op === "e1_sku_update" ? record.spec.obj : undefined, undefined, record)}>重新确认</Button> : undefined,
+      actions: <>{skuDraftOps.includes(record.spec.command.op) && (record.spec.command.op === "e1_sku_create" || record.skuBaseline) && <Button size="sm" disabled={!!edit || !!confirmation || !skuWritesReady}
+        onClick={() => openSku(record.spec.command.op === "e1_sku_update" ? record.spec.obj : undefined, undefined, record)}>重新确认</Button>}
+        <Button size="sm" onClick={() => discardRecovery.ask(() => { forgetE1(record); syncPending(); })}>放弃这份草稿</Button></>,
     })),
     ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留",
       tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
@@ -573,6 +581,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),
   ];
   return <RdPage className="e1-page">
+    {discardRecovery.dialog}
     <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); receipts.filter(row => row.status === "pending").forEach(row => { void refreshReceipt(row); }); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}

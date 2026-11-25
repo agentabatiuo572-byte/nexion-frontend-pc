@@ -1,4 +1,6 @@
 "use client";
+import { sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { useReach } from "@/lib/nav/use-reach";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 
@@ -145,6 +147,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const [redrivePreviewing, setRedrivePreviewing] = useState(false);
   const [redrivePreviewError, setRedrivePreviewError] = useState<string | null>(null);
   const commands = useA4Commands();
+  const discardRecovery = useRecoveryDraftDiscard();
   const [querying, setQuerying] = useState<string | null>(null);
   // 清理按原号查到的结论：只用来显示；记录解不解除由 queryA4RetentionCommand 按后端结论决定。
   const [retentionOutcomes, setRetentionOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
@@ -408,17 +411,19 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     return { state, expiresAt: state.expiresAt, subscribe: a4DirectRecovery.subscribe, getRevision: a4DirectRecovery.getRevision,
       query: () => queryOriginal(original) };
   };
-  const runDirect = async (original: A4Original, reason: string, name: string, change: string, success?: string) => {
+  const runDirect = async (original: A4Original, reason: string, name: string, change: string, success?: string, draft?: A4Command) => {
     currentRegistryActor(true, original.kind === "retention" || original.kind === "redrive");
     const objectBlock = original.kind === "lifecycle" ? registryObjectBlock(original.schema.eventName) : undefined;
     if (objectBlock) throw new Error(objectBlock);
     const retained = commands.find(a4Slot(original));
+    if (draft && (draft.fingerprint !== a4Slot(original) || retained)) throw new Error("A4_ORIGINAL_UNRESOLVED");
     if (!retained) checkNewWrite();
     const record = retained ?? commands.capture({ original, reason, name, change });
     overviewReady.current = false;
     setMutating(original.kind === "redrive" ? "h3-dead-redrive" : original.kind === "retention" ? "retention-run" : a4Slot(original));
     try {
-      const result = await commands.send(record, !!retained);
+      const result = await sendRecoveredDraft(() => commands.send(record, !!retained),
+        () => commands.find(record.fingerprint)?.commandKey === record.commandKey, draft && (() => commands.discardDraft(draft)));
       ctx.closeActionConfirm?.(record.fingerprint);
       if (result && "lockAcquired" in result) {
         // A replay is the original receipt; latest is the current read model.
@@ -449,16 +454,17 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     } finally { setMutating(null); }
   };
 
-  const updateParam = (key: string, value: string, reason: string, success: string, reviewed?: A4Overview["dimensionParams"][number]) => {
+  const updateParam = (key: string, value: string, reason: string, success: string, reviewed?: A4Overview["dimensionParams"][number], draft?: A4Command) => {
     const saved = commands.find(`param:${key}`);
+    if (draft && saved) throw new Error("A4_ORIGINAL_UNRESOLVED");
     const param = saved?.original.kind === "param" ? saved.original.param : reviewed ?? KPI_DIMENSION_PARAMS.find(row => row.key === key);
     if (!param || param.locked) throw new Error("A4_EVENT_PARAM_LOCKED");
-    return runDirect(saved?.original ?? { kind: "param", param, value }, reason, param.name, `${param.value} → ${value}`, success);
+    return runDirect(saved?.original ?? { kind: "param", param, value }, reason, param.name, `${param.value} → ${value}`, success, draft);
   };
 
   /* ────────────────── 口径参数调整 ────────────────── */
 
-  const adjDay0 = (original?: A4Command, draft?: { value: string; param: A4Overview["dimensionParams"][number] }) => {
+  const adjDay0 = (original?: A4Command, draft?: { value: string; param: A4Overview["dimensionParams"][number]; record: A4Command }) => {
     if (!canWrite) { toast("你只有查看权限，不能修改统计参数"); return false; }
     const saved = original?.original.kind === "param" ? original.original : undefined;
     if (!original && commands.find("param:day0")) { adjDay0(commands.find("param:day0")); return false; }
@@ -493,12 +499,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         if (!/^\d{1,4}\s*(?:秒|s|sec|seconds?)?$/i.test(val)) { toast("请输入 30–600 秒"); return false; }
         const seconds = Number.parseInt(val, 10);
         if (seconds < 30 || seconds > 600) { toast("请输入 30–600 秒"); return false; }
-        return updateParam("day0", val, reason, `首笔收益到账时限已更新为 ${seconds} 秒`, draft?.param);
+        return updateParam("day0", val, reason, `首笔收益到账时限已更新为 ${seconds} 秒`, draft?.param, draft?.record);
       },
     });
   };
 
-  const adjEventRetention = (original?: A4Command, draft?: { value: string; param: A4Overview["dimensionParams"][number] }) => {
+  const adjEventRetention = (original?: A4Command, draft?: { value: string; param: A4Overview["dimensionParams"][number]; record: A4Command }) => {
     if (!canWrite) { toast("你只有查看权限，不能修改统计参数"); return false; }
     const saved = original?.original.kind === "param" ? original.original : undefined;
     if (!original && commands.find("param:event_retention")) { adjEventRetention(commands.find("param:event_retention")); return false; }
@@ -533,12 +539,12 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         if (!/^\d{1,3}\s*(?:个月|月|months?)?$/i.test(val)) { toast("请输入 13–60 个月"); return false; }
         const months = Number.parseInt(val, 10);
         if (months < 13 || months > 60) { toast("请输入 13–60 个月"); return false; }
-        return updateParam("event_retention", val, reason, `事件留存期已更新为 ${months} 个月`, draft?.param);
+        return updateParam("event_retention", val, reason, `事件留存期已更新为 ${months} 个月`, draft?.param, draft?.record);
       },
     });
   };
 
-  const adjSampling = (original?: A4Command, draft?: { value: string; param: A4Overview["dimensionParams"][number] }) => {
+  const adjSampling = (original?: A4Command, draft?: { value: string; param: A4Overview["dimensionParams"][number]; record: A4Command }) => {
     if (!canWrite) { toast("你只有查看权限，不能修改统计参数"); return false; }
     const saved = original?.original.kind === "param" ? original.original : undefined;
     if (!original && commands.find("param:sampling")) { adjSampling(commands.find("param:sampling")); return false; }
@@ -582,7 +588,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         }
         const percent = Number.parseInt(val.match(/\d{1,3}/)?.[0] || "", 10);
         if (!Number.isFinite(percent) || percent < 0 || percent > 100) { toast("浏览和会话类请输入 0–100%"); return false; }
-        return updateParam("sampling", String(percent), reason, `浏览和会话的采集比例已更新为 ${percent}%`, draft?.param);
+        return updateParam("sampling", String(percent), reason, `浏览和会话的采集比例已更新为 ${percent}%`, draft?.param, draft?.record);
       },
     });
   };
@@ -647,6 +653,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       submit: (actor, reason, bv) => {
         const ev = (bv?.eventName || "").trim();
         if (!ev) throw new Error("请填写事件名");
+        if (draft && ev !== draft.input.obj) throw new Error("A4_ORIGINAL_RESULT_MISMATCH");
         if (!eventNameValid(ev)) throw new Error("事件名格式应为 模块.对象_动作，动作用过去式");
         const objectBlock = registryWriteBlock(ev);
         if (objectBlock) throw new Error(objectBlock);
@@ -812,7 +819,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     return businessStamp(at.getTime()).slice(0, 10);
   }, [retentionMonths]);
 
-  const runRetention = (original?: A4Command, currentMonths?: string) => {
+  const runRetention = (original?: A4Command, currentMonths?: string, draft?: A4Command) => {
     if (!canRunRetention) { toast("你没有清理事件的权限"); return; }
     if (!original && commands.find("retention")) { runRetention(commands.find("retention")); return; }
     if (!original) checkNewWrite();
@@ -850,7 +857,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       getPendingReason: () => commands.find("retention")?.reason,
       getPendingRecovery: directRecovery("retention"),
       run: (reason) => runDirect(saved ?? { kind: "retention", months: reviewedMonths, cutoff: reviewedCutoff, expectedRetentionMonths: firstInt(reviewedMonths) },
-        reason, "立即清理到期的事件记录", `${reviewedMonths} · ${reviewedCutoff ?? "—"}`),
+        reason, "立即清理到期的事件记录", `${reviewedMonths} · ${reviewedCutoff ?? "—"}`, undefined, draft),
     });
   };
 
@@ -892,13 +899,15 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     }
   };
 
-  const redriveAuditedH3DeadEvent = (original?: A4Command, fresh?: A4H3DeadOutboxRedrivePreview) => {
+  const redriveAuditedH3DeadEvent = (original?: A4Command, fresh?: A4H3DeadOutboxRedrivePreview, draft?: A4Command) => {
     if (!canRedriveH3Dead) {
       toast("你没有重新发送任务事件的权限");
       return;
     }
     const saved = original?.original.kind === "redrive" ? original.original : undefined;
-    const pending = commands.find(`redrive:${redriveEventId.trim()}`);
+    const eventId = saved?.snapshot.eventId ?? fresh?.eventId ?? redriveEventId.trim();
+    const pending = commands.find(`redrive:${eventId}`);
+    if (draft && pending) throw new Error("A4_ORIGINAL_UNRESOLVED");
     if (!original && pending) { redriveAuditedH3DeadEvent(pending); return; }
     if (!original) checkNewWrite();
     const snapshot = saved?.snapshot ?? fresh ?? redrivePreview;
@@ -939,14 +948,15 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       initialReason: original?.reason,
       getPendingReason: () => commands.find(`redrive:${snapshot.eventId}`)?.reason,
       getPendingRecovery: directRecovery(`redrive:${snapshot.eventId}`),
-      run: (reason) => runDirect(saved ?? { kind: "redrive", snapshot: commandSnapshot }, reason, "重新排队任务事件", snapshot.eventId),
+      run: (reason) => runDirect(saved ?? { kind: "redrive", snapshot: commandSnapshot }, reason, "重新排队任务事件", snapshot.eventId, undefined, draft),
     });
   };
 
-  const transitionLifecycle = (currentSchema: A4Overview["schemaRegistrations"][number], original?: A4Command, desired?: Exclude<A4Lifecycle, "new">) => {
+  const transitionLifecycle = (currentSchema: A4Overview["schemaRegistrations"][number], original?: A4Command, desired?: Exclude<A4Lifecycle, "new">, draft?: A4Command) => {
     const objectBlock = registryObjectBlock(currentSchema.eventName);
     if (objectBlock && !original) { toast(objectBlock); return; }
     const pending = commands.find(`lifecycle:${currentSchema.eventName}`);
+    if (draft && pending) throw new Error("A4_ORIGINAL_UNRESOLVED");
     if (!original && pending) { transitionLifecycle(currentSchema, pending); return; }
     if (!original) checkNewWrite();
     const saved = original?.original.kind === "lifecycle" ? original.original : undefined;
@@ -961,7 +971,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         const latest = await fetchA4SchemaRegistration(schema.eventName);
         setSchemaLookup(current => current?.eventName === latest.eventName ? latest : current);
         // Keep the requested destination; a conflict must never become a different lifecycle action.
-        transitionLifecycle(latest, undefined, next);
+        transitionLifecycle(latest, undefined, next, draft);
       } catch (error) { overviewReady.current = false; throw error; }
     };
     openActionConfirm({ briefKind: "record",
@@ -994,7 +1004,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         try {
           return await runDirect(saved ?? { kind: "lifecycle", schema, target: next }, reason,
             "更新事件状态", `${schema.eventName} · ${lifecycleText(schema.lifecycleState)} → ${lifecycleText(next)}`,
-            `${schema.eventName} 已改为 ${lifecycleText(next)}`);
+            `${schema.eventName} 已改为 ${lifecycleText(next)}`, draft);
         } catch (error) {
           if (!original && !commands.find(`lifecycle:${schema.eventName}`) && (error as { reasonCode?: string }).reasonCode === "A4_EVENT_LIFECYCLE_STALE") {
             stale = true;
@@ -1047,8 +1057,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
             try {
               const actor = currentRegistryActor();
               const draftKey = registryDraftKey.current;
-              const ticket = await registryConfirm.submit(actor, reason, businessValue);
-              if (draftKey) discardA4RegistryDraft(actor.adminId, draftKey);
+              const ticket = await sendRecoveredDraft(() => registryConfirm.submit!(actor, reason, businessValue),
+                () => !!pendingA4RegistryProposal(actor.adminId), draftKey ? () => discardA4RegistryDraft(actor.adminId, draftKey) : undefined);
               registryDraftKey.current = undefined;
               finishRegistry(ticket);
             } finally {
@@ -1107,8 +1117,10 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   for (const draft of registryHistory.filter(row => row.verifiedNotExecuted)) {
     recoveryRows.push({ key: draft.commandKey, name: REGISTRY_OP_TEXT[draft.input.command.op],
       change: draft.input.obj, submittedAt: draft.createdAt, tag: <StatusTag tone="neutral">未执行</StatusTag>,
-      actions: <Button size="sm" disabled={!!registryConfirm || naBatch || !!mutating || !!pendingRegistry || !canWrite}
-        onClick={() => void restoreRegistryDraft(draft)}>重新确认</Button> });
+      actions: <><Button size="sm" disabled={!!registryConfirm || naBatch || !!mutating || !!pendingRegistry || !canWrite}
+        onClick={() => void restoreRegistryDraft(draft)}>重新确认</Button><Button size="sm" onClick={() => discardRecovery.ask(() => {
+          discardA4RegistryDraft(currentRegistryActor(false).adminId, draft.commandKey); setRegistryRevision(value => value + 1);
+        })}>放弃这份草稿</Button></> });
   }
   /** 清理的原号查询：只记下查到的结论给运营看；解不解除由 queryA4RetentionCommand 按后端结论决定。 */
   const queryRetention = async (record: A4Command, evidence?: ECommandEvidence) => {
@@ -1199,23 +1211,22 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         if (!current || current.locked) throw new Error("A4_EVENT_PARAM_LOCKED");
         const open = { day0: adjDay0, event_retention: adjEventRetention, sampling: adjSampling }[original.param.key];
         if (!open) return;
-        open(undefined, { value: original.value, param: current });
+        open(undefined, { value: original.value, param: current, record });
       } else if (original.kind === "retention") {
-        runRetention(undefined, overview.dimensionParams.find(param => param.key === "event_retention")?.value);
+        runRetention(undefined, overview.dimensionParams.find(param => param.key === "event_retention")?.value, record);
       } else if (original.kind === "lifecycle") {
         const current = await fetchA4SchemaRegistration(original.schema.eventName);
         if (directEditorBusy.current || current.eventName !== original.schema.eventName) return;
         const objectBlock = registryObjectBlock(current.eventName);
         if (objectBlock) throw new Error(objectBlock);
         if (NEXT_LIFECYCLE[current.lifecycleState] !== original.target) throw new Error("A4_EVENT_LIFECYCLE_TRANSITION_INVALID");
-        transitionLifecycle(current, undefined, original.target);
+        transitionLifecycle(current, undefined, original.target, record);
       } else {
         const current = await fetchH3DeadOutboxRedrivePreview(original.snapshot.eventId);
         if (directEditorBusy.current || current.eventId !== original.snapshot.eventId) return;
         if (current.status !== "DEAD" || current.deliveryStatus !== "DEAD") throw new Error("A4_ORIGINAL_RESULT_MISMATCH");
-        redriveAuditedH3DeadEvent(undefined, current);
+        redriveAuditedH3DeadEvent(undefined, current, record);
       }
-      commands.discardDraft(record);
     } catch (error) { toast(displayAdminError(error)); }
   };
   // 按原号查到结论的（清理，以及有原请求出处的其余三类）写在这一行；句子和资金页、J2 的定稿一致。
@@ -1281,12 +1292,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   for (const draft of commands.drafts) recoveryRows.push({
     key: draft.commandKey, name: draft.name, change: draft.change, submittedAt: draft.createdAt,
     tag: <StatusTag tone="neutral">未执行</StatusTag>,
-    actions: <Button size="sm" disabled={!canRetryRecord(draft) || directEditorBusy.current} onClick={() => void restoreDirectDraft(draft)}>重新确认</Button>,
+    actions: <><Button size="sm" disabled={!canRetryRecord(draft) || directEditorBusy.current} onClick={() => void restoreDirectDraft(draft)}>重新确认</Button>
+      <Button size="sm" onClick={() => discardRecovery.ask(() => commands.discardDraft(draft))}>放弃这份草稿</Button></>,
   });
   const closingOutcome = retentionClosing ? retentionOutcomes[retentionClosing.commandKey] : undefined;
   const closingReceipt = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt : null;
   const recoveryNotice = (
     <>
+      {discardRecovery.dialog}
       {retentionSettled.map((item) => <SettledLine key={item.key} label={item.label}
         text={item.status === "CONFIRMED_REJECTED" ? SETTLED_REJECTED : !item.retention
           ? item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认没有执行，记录已解除，可以重新发起。" : item.status === "CONFIRMED_SUCCEEDED" ? "核查确认已执行，记录已解除，不要再做一次。" : "原操作已执行，记录已解除，不要再做一次。"
@@ -1893,6 +1906,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
               const producer = batchForm.producer.trim(), consumer = batchForm.consumer.trim();
               if (!canWrite) { toast("你只有查看权限，不能登记"); return; }
               const eventName = `${domain}.${event}`;
+              const draft = registryHistory.find(row => row.commandKey === registryDraftKey.current);
+              if (draft && eventName !== draft.input.obj) { toast(displayAdminError("A4_ORIGINAL_RESULT_MISMATCH")); return; }
               const objectBlock = registryWriteBlock(eventName);
               if (objectBlock) { toast(objectBlock); return; }
               if (!batchFormValid) { toast("请填写模块名、事件名（动作用过去式）、发送方和使用方"); return; }

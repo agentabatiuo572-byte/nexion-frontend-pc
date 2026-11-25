@@ -28,7 +28,7 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
     const settlement = key && m.settledByKey[key];
     if (settlement) {
       originalKey.current = undefined;
-      if (settlement.outcome === "succeeded" && onRecovered) void onRecovered(settlement.result);
+      if (settlement.result && onRecovered) void onRecovered(settlement.result);
       else props.onClose();
     } else if (key && m.records.some(item => item.commandKey === key && isE6VerifiedDraft(item))) {
       originalKey.current = undefined;
@@ -72,8 +72,12 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
       setUnknown(false);
       try {
         if (unknown && record && onRecovered) {
+          originalKey.current = record.commandKey;
           const result = await m.send(record, true);
-          await onRecovered(result);
+          if (originalKey.current === record.commandKey) {
+            originalKey.current = undefined;
+            await onRecovered(result);
+          }
         } else await props.onConfirm(...args);
       }
       catch (failure) {

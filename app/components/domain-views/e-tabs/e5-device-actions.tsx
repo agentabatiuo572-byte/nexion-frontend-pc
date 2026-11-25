@@ -1,5 +1,5 @@
 "use client";
-import { nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
+import { nextRecoveryDeadline, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -20,6 +20,7 @@ import { canInvestigateECommand, eCommandSettled, type ECommandEvidence, type EC
 import { e6Commands, isE6ActiveRecord, type E6Pending } from "@/lib/admin/e6-command";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { BlockState, Button, Change, Check, Decision, Fact as RdFact, Facts, Fold, IconButton, IrreversibleTag, Modal, MoreMenu, Notice, RatioBar, ReleaseBody, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { usePendingReplayDeadline, OperationConfirmModal } from "../design-kit";
 import { E5_STATES, e5StateNote } from "./e5-device-state";
 import { CommandClosureModal, CommandOutcomeLine, commandOutcomeSummary, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, SettledLine, closureOpen, eReadError, recoveryTitle, type CommandOutcome, type RecoveryItem } from "./e-command-check";
@@ -56,6 +57,7 @@ interface ActionsState {
   canInvestigate: boolean;
   setEditorOpen: (editor: symbol, open: boolean) => void;
   forgetDraft: (record: E5Command) => void;
+  writeBlock?: string;
   refresh: () => Promise<void>;
   toast: (message: string) => void;
 }
@@ -70,13 +72,14 @@ const proposalQueryError = (record: E5Command, cause: unknown) => record.receive
   : cause instanceof Error && cause.message === "提案缺少有效票号" ? "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。" : eReadError(cause);
 export const useE5Commands = () => useContext(CommandsContext)!;
 
-export function E5CommandScope({ children, ctx, refresh, readBack, toast }: { children: ReactNode; ctx: EViewCtx; refresh: (successMessage?: string) => Promise<void>; readBack?: (record: E5Command) => Promise<string>; toast: (message: string) => void }) {
+export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeBlock }: { children: ReactNode; ctx: EViewCtx; refresh: (successMessage?: string) => Promise<void>; readBack?: (record: E5Command) => Promise<string>; toast: (message: string) => void; writeBlock?: string }) {
   const actorId = useAdminAuth(s => String(s.session?.adminId ?? ""));
   const authorities = useAdminAuth(s => s.session?.authorities ?? []);
   const role = useAdminAuth(s => s.session?.role);
   const epoch = useAdminAuth(s => s.authEpoch);
   const [records, setRecords] = useState<E5Command[]>([]);
   const [drafts, setDrafts] = useState<E5Command[]>([]);
+  const discardRecovery = useRecoveryDraftDiscard();
   const [restoring, setRestoring] = useState<{ record: E5Command; device: E5Device } | null>(null);
   const openEditors = useRef(new Set<symbol>());
   const setEditorOpen = useCallback((editor: symbol, open: boolean) => {
@@ -116,6 +119,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast }: { ch
   }, [sync, epoch]);
   const allowed = canSendE5Command;
   const execute = async (record: E5Command, retry: boolean) => {
+    if (writeBlock) throw new Error(writeBlock);
     if (busy) throw new Error("另一个设备操作正在提交，请稍后核对。");
     if (!allowed(record)) throw new Error("当前账号缺少原操作所需权限，请核对授权。");
     setBusy(record.commandKey); setError(""); setErrorKey(record.commandKey);
@@ -128,7 +132,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast }: { ch
         ? result.pendingDeactivate ? "已申请停用，当前任务结束后自动停用" : "设备已取消激活"
         : record.intent === "pause" ? `暂停成功 · ${result.changedCount} 台设备` : record.intent === "resume" ? `已恢复 ${result.changedCount} 台运营暂停的设备` : "设备已激活";
       if (!submitted || !retry || result.status === "pending") { toast(message); await refresh(message); }
-      else { settleEnd(record, String(result.id), String(result.status)); await refresh(); }
+      else { settleEnd(record, String(result.id), String(result.status)); await refresh(message); }
     } catch (cause) {
       if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied();
       sync();
@@ -175,9 +179,9 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast }: { ch
     } catch (cause) { setReadResults(values => ({ ...values, [record.commandKey]: displayAdminReadError(cause) })); }
   };
   const prepareDraft = async (record: E5Command) => {
-    if (busy || openEditors.current.size || !allowed(record)) return;
+    if (writeBlock || busy || openEditors.current.size || !allowed(record)) return;
     try {
-      const list = await fetchE5Devices({ keyword: record.device.serial, pageNum: 1, pageSize: 10 });
+      const list = await fetchE5Devices({ keyword: record.device.serial, userId: record.device.userId, pageNum: 1, pageSize: 10 });
       if (openEditors.current.size || !allowed(record)) return;
       const device = list.records.find(row => row.deviceId === record.device.deviceId && row.userId === record.device.userId && row.serial === record.device.serial);
       if (!device) throw new Error("原设备状态或归属已变化，请重新核对。");
@@ -197,7 +201,8 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast }: { ch
     ...drafts.map(record => ({
       key: record.commandKey, object: `${record.label} · ${record.device.serial}`, createdAt: record.createdAt,
       tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可以重新确认原操作。",
-      actions: allowed(record) && <Button size="sm" disabled={!!busy} onClick={() => void prepareDraft(record)}>重新确认</Button>,
+      actions: <>{allowed(record) && <Button size="sm" disabledReason={writeBlock} disabled={!!busy} onClick={() => void prepareDraft(record)}>重新确认</Button>}
+        <Button size="sm" onClick={() => discardRecovery.ask(() => forgetDraft(record))}>放弃这份草稿</Button></>,
     })),
     ...records.map(record => {
       const recovery = e5Recovery.state(record);
@@ -219,7 +224,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast }: { ch
         actions: <>
           {<Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
           {direct(record) && canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!busy} onClick={() => setClosing(record)}>核查结案</Button>}
-          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={expired ? RETRY_EXPIRED_TEXT : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
+          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={writeBlock ?? (expired ? RETRY_EXPIRED_TEXT : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined)} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
           {refused && !record.receivedTicketId && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
         </>,
         detail: <>
@@ -227,7 +232,8 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast }: { ch
           <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="原请求编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
     }),
   ];
-  return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, setEditorOpen, forgetDraft, refresh, toast }}>
+  return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, setEditorOpen, forgetDraft, refresh, toast, writeBlock }}>
+    {discardRecovery.dialog}
     {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
     <RecoveryPanel title={recoveryTitle(items.filter(item => !item.key.startsWith("waiting:")).length, items.filter(item => item.key.startsWith("waiting:")).length)} tone="warn"
       explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看提交时间、说明和原请求。" items={items} />
@@ -279,14 +285,16 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const [reading, setReading] = useState(false);
   const editor = useRef(Symbol("device editor"));
   const restoreAction = useRef<() => void>(() => {});
-  useEffect(() => { if (recovered) restoreAction.current(); }, [recovered?.commandKey]);
   const registerEditor = state?.setEditorOpen;
   useEffect(() => {
     const token = editor.current;
     registerEditor?.(token, !!action || candidateOpen);
     return () => registerEditor?.(token, false);
   }, [registerEditor, action, candidateOpen]);
-  useEffect(() => { setAction(null); setCandidateOpen(false); setCandidate(null); setCandidateError(""); }, [d.deviceId, d.userId, d.serial, epoch]);
+  useEffect(() => {
+    setAction(null); setCandidateOpen(false); setCandidate(null); setCandidateError("");
+    if (recovered) restoreAction.current();
+  }, [d.deviceId, d.userId, d.serial, epoch, recovered?.commandKey]);
   if (!session || !state) return null;
   const readOnly = !phones && d.simState === "SIM_OFF";
   // Shared by rows and the detail footer; do not infer ownership from raw status alone.
@@ -295,7 +303,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
   const deactivatable = phones ? ["active", "busy", "offline", "abnormal", "unknown"].includes(d.state) : ["WAITING_INIT", "LEGACY_PENDING", "RUNNING", "WAITING_CONFIG", "PAUSED", "ERROR"].includes(d.simState ?? "");
   const platform = session.authorities.some(a => ["platform_a2_write", "platform_a2_proposal_create"].includes(a));
   const full = d.activeDevicesForUser >= d.maxDevicesPerUser;
-  const locked = (intent: E5Intent) => state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有结果未知的操作，请先核对原操作" : intent === "activate" && !activatable || intent === "force-activate" && !forceActivatable ? formatAdminApiError("INVALID_STATE_TRANSITION", "INVALID_STATE_TRANSITION") : undefined;
+  const locked = (intent: E5Intent) => state.writeBlock ?? (state.legacyBlocked ? "旧操作缺少原请求，请先核查" : state.busy ? "设备操作正在提交" : state.records.some(r => e5CommandBlocks(r, d, intent)) || state.phoneBlocks(d, intent) ? "这个设备或用户有结果未知的操作，请先核对原操作" : intent === "activate" && !activatable || intent === "force-activate" && !forceActivatable ? formatAdminApiError("INVALID_STATE_TRANSITION", "INVALID_STATE_TRANSITION") : undefined);
   const options: MoreMenuItem[] = [];
   const add = (intent: E5Intent, label: string, extra?: string) => options.push({ key: intent, label, danger: intent === "unbind" || intent === "pause", disabledReason: locked(intent) ?? extra, onSelect: () => setAction(intent) });
   if (!readOnly) {
@@ -335,7 +343,7 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
           catch (cause) { setCandidate(null); setCandidateError(displayAdminReadError(cause)); }
           finally { setReading(false); }
         }}>结束未确认任务（不计收益）</Button>}
-      others={<>{candidate && !reading && <Button onClick={() => void readCandidate()}>重新核对</Button>}<Button onClick={() => setCandidateOpen(false)}>关闭</Button></>} />}>
+      others={<>{candidate && !reading && <Button onClick={() => void readCandidate()}>重新核对</Button>}<Button onClick={() => { setCandidateOpen(false); onRecoveryClose?.(); }}>关闭</Button></>} />}>
       <Facts><Fact label="设备" value={d.serial} /><Fact label="用户" value={d.user} /></Facts>
       {reading ? <BlockState state="loading" title="正在核对终结资格…" /> : candidateError ? <BlockState state="error" title="终结资格读取失败" detail={candidateError} onRetry={() => void readCandidate()} /> : candidate && <>
         <Notice tone={candidate.eligible ? "progress" : "neutral"} title={!candidate.caseId ? "无可终结的未确认旧任务" : candidate.resolution ? "已取消 · 不计收益" : candidate.status === "QUIESCENCE_REQUIRED" ? "等待有效退出证明" : candidate.eligible ? "可申请终结" : "终结条件未满足"}>{candidate.reason && <p>{displayAdminError(new Error(candidate.reason))}</p>}</Notice>
@@ -378,12 +386,12 @@ export function E5DeviceActions({ device: d, ctx, phones = false, inline = false
         if (!e5Commands.isDurablyStored(fingerprint, commandKey)) { e5Commands.forget(fingerprint, commandKey); throw new Error("原操作无法保存，暂不能提交。"); }
         const record = e5Commands.list().find(row => row.commandKey === commandKey)!;
         try {
-          await state.execute(record, false);
-          if (recovered) state.forgetDraft(recovered);
+          await sendRecoveredDraft(() => state.execute(record, false),
+            () => e5Commands.isDurablyStored(fingerprint, commandKey), recovered && (() => state.forgetDraft(recovered)));
           setAction(null); onRecoveryClose?.();
         }
         catch (cause) {
-          if (e5Commands.get(fingerprint)) setAction(null);
+          if (e5Commands.isDurablyStored(fingerprint, commandKey)) { setAction(null); onRecoveryClose?.(); }
           // Nothing is left to resume: the list was reread, so close the dialog instead of offering the same 404 again.
           else if (cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "PAUSED_USER_DEVICES_NOT_FOUND") { setAction(null); state.toast(displayAdminError(cause)); return; }
           throw cause;
