@@ -1,7 +1,7 @@
 "use client";
 
 import { displayAdminReadError, supportContractReadError } from "@/lib/admin/error-messages";
-import { SupportClientError } from "@/lib/admin/m-support-client";
+import { isSupportSessionExpired, SupportClientError } from "@/lib/admin/m-support-client";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
@@ -36,7 +36,7 @@ function message(error: unknown): string {
   if (error instanceof LeaderboardUpgrading) return error.message;
   const contractError = supportContractReadError(error);
   if (contractError) return contractError;
-  return status(error) === 403 || status(error) === 401 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
+  return status(error) === 403 ? "这个账号没有业绩榜的读取权限，需要时联系超级管理员。"
     : versionChanged(error) ? "榜单已更新，或你能看的范围变了，请从第一页重新加载。"
       : error instanceof SupportClientError ? displayAdminReadError(error) : "榜单加载失败，请重试。";
 }
@@ -103,7 +103,7 @@ export function M6Leaderboard() {
     setNotice("能看的范围变了，范围已回到全员榜，按新权限重读。");
     setQuery(fallback);
   };
-  const deny = () => { setDeniedIdentity(identity); setResult(undefined); setLastGood(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: "当前账号不能查看此榜单，请重新确认登录和客服权限。" }); };
+  const deny = () => { setDeniedIdentity(identity); setResult(undefined); setLastGood(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: "这个账号没有业绩榜的读取权限，需要时联系超级管理员。" }); };
 
   useEffect(() => {
     const pending = pendingLocate.current;
@@ -132,8 +132,8 @@ export function M6Leaderboard() {
       if (next.self.row && next.self.row.id !== String(session?.adminId)) supportContractMalformed("leaderboard.selfIdentity");
       if (active && !controller.signal.aborted && liveKey.current === requestKey) { setResult({ key: requestKey, data: next }); setLastGood({ identity, data: next }); setScopeStale(false); }
     }).catch(cause => {
-      if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
-      if (status(cause) === 403 || status(cause) === 401) deny();
+      if (!active || controller.signal.aborted || liveKey.current !== requestKey || isSupportSessionExpired(cause)) return;
+      if (status(cause) === 403) deny();
       else if (boundLeaderboardSelectorError(cause, query)) selectorLost(query);
       else if (scopeChanged(cause)) scopeLost(cause);
       // 读失败时「正在重新加载…」不再留在错误卡旁边。
@@ -153,7 +153,7 @@ export function M6Leaderboard() {
         urls[row.id] = URL.createObjectURL(blob); setPhotos({ key: requestKey, urls: { ...urls } });
       }).catch(cause => {
         if (!active || controller.signal.aborted || liveKey.current !== requestKey) return;
-        if (status(cause) === 403 || status(cause) === 401) { controller.abort(); deny(); }
+        if (status(cause) === 403) { controller.abort(); deny(); }
         else if (boundLeaderboardSelectorError(cause, q)) { controller.abort(); selectorLost(q); }
         else if (scopeChanged(cause)) { controller.abort(); scopeLost(cause); }
         else if (versionChanged(cause)) { controller.abort(); setResult(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
@@ -182,7 +182,8 @@ export function M6Leaderboard() {
       if (!controller.signal.aborted && sequence === detailSequence.current && liveKey.current === requestKey) setDetail({ key: requestKey, agentId, data: next });
     }).catch(cause => {
       if (controller.signal.aborted || sequence !== detailSequence.current || liveKey.current !== requestKey) return;
-      if (status(cause) === 403 || status(cause) === 401) deny();
+      if (isSupportSessionExpired(cause)) return;
+      if (status(cause) === 403) deny();
       else if (boundLeaderboardSelectorError(cause, bound)) selectorLost(bound);
       else if (scopeChanged(cause)) scopeLost(cause);
       else if (versionChanged(cause)) { closeDetail(); setResult(undefined); setPhotos(undefined); setFailure({ key: requestKey, text: message(cause), conflict: true }); }
@@ -282,7 +283,7 @@ export function M6Leaderboard() {
         {(data?.stale || data?.refreshFailed) && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
         {conclusion}
         {!data && denied ? <BlockState state="denied" title="这个账号不能查看业绩榜"
-            detail="请重新确认登录和客服权限；看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员。"
+            detail="看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员；需要时联系超级管理员。"
             onRetry={allowed ? reload : undefined} retryLabel="重新核验" />
           : <>
             {/* 这一版不排名次（有数据没核完、或业绩额暂不可用）时不画前三名。 */}

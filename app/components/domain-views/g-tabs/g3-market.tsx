@@ -1058,7 +1058,13 @@ function G3MarketEditor() {
               when="暂停直接生效；恢复会提价时要审批"
               effect="暂停后不再自动推进；恢复后等下一次排程再推进，恢复时检查兑付覆盖率"
               note="暂停挡不住应急改现价和固定生效日，这两项照常发布价格。暂停只要暂停权限；恢复还要超级管理员。"
-              value={<span className="g3-value">{paused ? <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag> : <StatusTag tone="ok">自动变化中</StatusTag>}<ObjectTag state={OBJECT_STATES.paused} /></span>}
+              value={<span className="g3-value">
+                {paused ? <>
+                  <StatusTag tone="warn" icon={PauseCircle}>已暂停</StatusTag>
+                  <span className="g3-subnote">按最后一次正式发布的价格结算</span>
+                </> : <StatusTag tone="ok">自动变化中</StatusTag>}
+                <ObjectTag state={OBJECT_STATES.paused} />
+              </span>}
               action={allowed("finprod_g3_engine_pause_toggle") || hasRecovery("paused") ? (describedBy) => (
                 <Button size="sm" variant={pauseActionResumes ? "secondary" : "danger-outline"} aria-describedby={describedBy}
                   disabledReason={lockReason("paused") ?? (pauseActionResumes && !hasRecovery("paused") ? !isSuper ? "恢复只有超级管理员能操作" : resumeBlocked : undefined)}

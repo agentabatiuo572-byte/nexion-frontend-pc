@@ -266,6 +266,7 @@
 .g3m .g3-gap { display: grid; gap: 2px; }
 .g3m .g3-chart-note { display: flex; align-items: center; gap: 4px; margin: 8px 0 0 72px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }  /* 72 = 图的纵轴宽，和横轴第一格对齐 */
 .g3m .g3-subnote { margin-left: 8px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
+.g3m .g3-value > .g3-subnote { margin-left: 0; }
 /* 运行方式里的「排程执行情况」：排的时间和最近一次实际结果上下对照，和配置行之间一条分隔线。 */
 .g3m .g3-run { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--rd-line); }
 .g3m .g3-run-detail { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }

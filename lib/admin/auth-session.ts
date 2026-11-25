@@ -3,6 +3,7 @@ import { requestAdminLogout } from "./logout-request.ts";
 
 const ADMIN_AUTH_STORAGE_KEY = "nexion-admin-auth-v2";
 const AUTH_REQUIRED_MESSAGES = new Set(["ADMIN_AUTH_REQUIRED", "UNAUTHORIZED"]);
+export const ADMIN_SESSION_EXPIRED_EVENT = "nexion-admin-session-expired";
 
 let authResetScheduled = false;
 
@@ -14,6 +15,7 @@ export function resetAdminSession() {
   if (typeof window === "undefined" || authResetScheduled) return;
   authResetScheduled = true;
   beginAdminLogout();
+  window.dispatchEvent(new Event(ADMIN_SESSION_EXPIRED_EVENT));
 
   try {
     window.localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);

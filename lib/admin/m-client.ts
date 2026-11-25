@@ -7,7 +7,7 @@ import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-
 import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder, parseSupportEffectiveLanguage } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder, parseSupportEffectiveLanguage, parseSupportApiEnvelope, readSupportResponseText } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -16,7 +16,6 @@ import {
   MContentReadError,
   classifySupportAgentFailure,
   loadWithBoundedAbortRetry,
-  parseMContentApiEnvelope,
   parseM1SupportAgentOverview,
   parseTicketAssigneeCandidates,
   type M1SupportAgentOverviewPayload,
@@ -582,7 +581,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const { adminConversationCommand }=await import('./admin-conversation-realtime');
     const pending=adminConversationCommand(match[2]==='read'?'read':match[2]==='replies'?'reply':'create',match[1]?decodeURIComponent(match[1]):undefined,
       typeof init.body==='string'?JSON.parse(init.body):{},headers.get('Idempotency-Key')??undefined,init.signal??undefined);
-    if(pending){const result=await pending;return parseMContentApiEnvelope<T>(result.code===0?200:result.code,JSON.stringify(result),false);}
+    if(pending){const result=await pending;return parseSupportApiEnvelope<T>(result.code===0?200:result.code,JSON.stringify(result),false);}
   }
   const controller = new AbortController();
   const upstreamSignal = init?.signal;
@@ -603,7 +602,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       cache: "no-store",
       signal: controller.signal,
     });
-    text = await res.text();
+    text = await readSupportResponseText(res);
   } catch (error) {
     if (timedOut) throw new Error("CONTENT_API_TIMEOUT");
     throw error;
@@ -613,7 +612,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const method = (init?.method ?? "GET").toUpperCase();
   try {
-    return parseMContentApiEnvelope<T>(res.status, text, method === "GET");
+    return parseSupportApiEnvelope<T>(res.status, text, method === "GET");
   } catch (error) {
     if (error instanceof MContentReadError) {
       throw new MContentReadError(
