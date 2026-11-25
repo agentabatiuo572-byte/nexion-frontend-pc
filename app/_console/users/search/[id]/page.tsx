@@ -964,7 +964,7 @@ export default function UserDetailPage() {
     };
     const [listed, scanned] = await Promise.allSettled([fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10), scan()]);
     if (seq !== paymentReadSeq.current) return;
-    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentShownKey(`${includeUnbound}|${paymentPage}`); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
+    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentShownKey(`${userId}|${includeUnbound}|${paymentPage}`); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
     setRevokeScan(scanned.status === "fulfilled" ? scanned.value : null);
     setRevokeScanFailed(scanned.status === "rejected");
     setPaymentLoading(false);
@@ -992,7 +992,7 @@ export default function UserDetailPage() {
   // 超过 5 条只先列最近 5 条，其余收在「查看全部」后面（VS-109）；和时间线同样按时间排，再取前 5 条。
   const auditRecent = useMemo(() => [...auditEntries].sort((a, b) => parseBusinessTime(b.at) - parseBusinessTime(a.at)).slice(0, 5), [auditEntries]);
   // 不看 paymentLoading：换条件后的第一帧读取还没开始，也不能画旧条件的行。
-  const paymentConditionStale = paymentShownKey !== `${includeUnbound}|${paymentPage}`;
+  const paymentConditionStale = paymentShownKey !== `${userId}|${includeUnbound}|${paymentPage}`;
   const methods = useMemo(() => paymentConditionStale ? [] : paymentMethods?.items ?? [], [paymentConditionStale, paymentMethods]);
   const unfinishedRevokes = useMemo(() => (revokeScan ?? []).filter(revokeUnfinished), [revokeScan]);
   const devices = useMemo(() => asArray(detail?.devices?.records), [detail?.devices?.records]);
