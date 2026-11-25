@@ -69,7 +69,7 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
       {notPaying && <Notice tone="warn">{notPaying}</Notice>}
       {read.state === "failed" && <BlockState state="error" title="派奖预览加载失败"
         detail={<>{read.error}{approving ? " 批准时按那一刻的总榜重新计算。" : " 批准时按当时的总榜重新计算。"}</>}
-        onRetry={read.retry} retryLabel="重试派奖预览" />}
+        onRetry={read.retry} />}
       {preview && preview.rows.length > 0 && (
         <div className="f4-payout-list" data-long={preview.rows.length > 6 ? "" : undefined}>
           <Table label="这次派奖名单" className="f4-payout-table">

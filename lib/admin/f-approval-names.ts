@@ -14,5 +14,7 @@ export const F_APPROVAL_PERMISSION_NAMES: Readonly<Record<string, string>> = {
 };
 
 export function fApprovalPermissionText(...names: string[]) {
-  return [A2_APPROVE_PERMISSION, ...names].map(name => `「${name}」权限`).join("和");
+  const text = [A2_APPROVE_PERMISSION, ...names].map(name => `「${name}」权限`).join("和");
+  // 末尾几个字用不可见的连接符粘住，折行时最后一行不会只剩「权限」两个字（TL-01）。
+  return text.slice(0, -6) + text.slice(-6).split("").join("\u2060");
 }

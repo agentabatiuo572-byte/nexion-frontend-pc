@@ -1,6 +1,6 @@
 import { acknowledgeFReconfirmation, settleFReconfirmation } from "./f-reconfirmation";
 
-export const F5_ANOMALY_UNCHANGED = "现行异常标准已包含拟改值，无需提交。";
+export const F5_ANOMALY_UNCHANGED = "和现在的标准一样，无需提交。";
 
 export function f5AnomalyChanged(sigma: number, ratio: number, currentSigma: string, currentRatio: string) {
   return sigma !== Number(currentSigma) || ratio !== Number(currentRatio);
