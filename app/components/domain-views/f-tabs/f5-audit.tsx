@@ -552,7 +552,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       direct: record.kind === "anomaly",
       actions: <>
         <Button size="sm" onClick={() => { if (saved && !ticket) openOriginal(record); else void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
-        {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原请求重试</Button>}
+        {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原操作重试</Button>}
         {original.replayRejection
           && <FReleaseButton label={saved?.name ?? spec?.action ?? "奖励处置"} toast={ctx.toast} onRelease={() => ctx.recoverF5(record, "release")} />}
       </>,

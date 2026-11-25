@@ -348,7 +348,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     : original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
       : original.expiresAt <= Date.now()
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>;
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原操作重试，不会建第二张。">结果未知</StatusTag>;
   const release = (original: FDomainAttempt, label: ReactNode) => original.replayRejection
     ? <FReleaseButton label={label} toast={ctx.toast} onRelease={() => ctx.recoverF3(original, "release")} /> : null;
   const payoutDirects = F3_PAYOUT_KEYS.flatMap((key) => ctx.getF3PayoutControlPending(key).directWrite ?? []);
@@ -415,7 +415,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   };
   const recovery = recoveryCount + draftCount > 0 && (
     <Notice tone="warn" title={<>{draftCount ? recoveryCount ? "原操作与草稿" : "原操作未执行的草稿" : recoveryOpen ? `有 ${recoveryCount} 项原操作还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原操作怎么处理" content={<>
-      <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。</p>
+      <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原结果；24 小时内可以按原操作重试，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低全平台封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
       <ul className="f3-recovery" aria-label="还没有结论的原操作">

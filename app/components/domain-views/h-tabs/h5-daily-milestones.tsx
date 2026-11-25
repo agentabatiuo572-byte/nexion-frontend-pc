@@ -386,7 +386,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       amplifies: false,
       businessForm: {
         kind: "multi-field",
-        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原请求重试。
+        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原操作重试。
         requireAnyChange: multiplier ? hasChange : !original,
         amplifies,
         onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); setPowerDirection(directionOf(values)); return values; },
@@ -563,7 +563,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     ticket: record.ticket?.id,
     actions: <>
       <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
-      {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
+      {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原操作重试</Button>}
     </>,
   }));
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
@@ -573,7 +573,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     <H5RecoveryNotice title={[unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
         <p>原修改（改的是哪一项、从多少到多少、理由）保存在这个浏览器标签页里。</p>
-        <p>结果未知：提交时没收到确定结果。先「查询原结果」；查不到、又没过 24 小时，可以「按原请求重试」，不会重复执行或建第二张审批单。过了 24 小时只能查询。</p>
+        <p>结果未知：提交时没收到确定结果。先「查询原结果」；查不到、又没过 24 小时，可以「按原操作重试」，不会重复执行或建第二张审批单。过了 24 小时只能查询。</p>
         <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
         <p>结果确认之前，这页不能再改同一项。</p>
       </>}
@@ -598,10 +598,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   );
 
   const activeCommand = mc ? mutations.record(mc.target) : undefined;
-  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原请求重试时按原请求的路径写（OP-25、OP-37、OP-60）。
+  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原操作重试时按原请求的路径写（OP-25、OP-37、OP-60）。
   const powerEffectTag = (direction: "approval" | "direct", retry: boolean) => direction === "approval"
-    ? <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来提交的是审批申请，批准后才生效。" : `${FUND_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的设置。`}>批准后生效</StatusTag>
-    : <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来是直接保存，重发成功就生效。" : "不用审批，确认后就按新设置；已经激活的权益不收回。"}>立即生效</StatusTag>;
+    ? <StatusTag tone="progress" filled explain={retry ? "按原操作重试：原来提交的是审批申请，批准后才生效。" : `${FUND_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的设置。`}>批准后生效</StatusTag>
+    : <StatusTag tone="progress" filled explain={retry ? "按原操作重试：原来是直接保存，重发成功就生效。" : "不用审批，确认后就按新设置；已经激活的权益不收回。"}>立即生效</StatusTag>;
   const retryCommand = mc?.original ?? activeCommand;
   const confirmEffect = !mc?.target.startsWith("power:") ? mc?.effect
     : retryCommand ? powerEffectTag(retryCommand.request.kind === "direct" ? "direct" : "approval", true)

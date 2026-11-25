@@ -159,8 +159,8 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
         <Button size="sm" loading={submitting} disabledReason={expired ? EXPIRED_TEXT : writeBlockedReason} onClick={() => void submit(pending.reason)}>重试原校正</Button>
         {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>}>
-      {expired ? `${EXPIRED_TEXT}。` : "按原请求重试会用原证据和理由。"}原理由：{pending.reason}
-      <Explain label="技术信息" content={`原请求编号 ${pending.commandKey}`} />
+      {expired ? `${EXPIRED_TEXT}。` : "按原操作重试会用原证据和理由。"}原理由：{pending.reason}
+      <Explain label="技术信息" content={`操作编号 ${pending.commandKey}`} />
       {!expired && writeBlockedReason && <p className="rd-toolbar-note">{writeBlockedReason}</p>}
     </Notice>}
     {!data && !error && <BlockState state="loading" title="正在加载关联证据…" />}

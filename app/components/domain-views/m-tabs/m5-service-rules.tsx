@@ -313,7 +313,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: retry && <>
           {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
-          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原请求重试</Button>}
+          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原操作重试</Button>}
           {replayRefused && canRelease && <Button size="sm" variant="ghost" disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
         </>,
       }]} />}
@@ -378,7 +378,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
           {retry && canQuery && <Button variant={command.canReplay || replayRefused ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
           {retry && replayRefused ? canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>
             : <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} loadingText="提交中…" disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}
-              disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
+              disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原操作重试" : "确认保存"}</Button>}
         </>}>
         <DiffList rows={confirmedChanges.map((field) => ({ key: field, label: LABELS[field], before: beforeLabel(field), after: labelValue(field, confirmed[field]) }))} />
         <Facts>

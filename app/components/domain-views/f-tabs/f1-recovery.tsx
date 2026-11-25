@@ -103,7 +103,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
       key: original.commandKey, name, change, submittedAt: original.createdAt, state, canRetryProposal: canRetry,
       actions: <>
         <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原结果</Button>
-        {canRetry && <Button size="sm" onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原请求重试</Button>}
+        {canRetry && <Button size="sm" onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原操作重试</Button>}
         {original.replayRejection && <FReleaseButton label={name} toast={toast} onRelease={() => ctx.recoverF1(original.fingerprint, "release")} />}
       </>,
     });
@@ -215,9 +215,9 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
       </ul>}
       {rows.some((row) => row.submittedAt !== undefined) && <p className="f1-recovery-zone">提交时间为{businessZone().label}</p>}
     </Notice></div>
-    {retrying && <Modal title="按原请求重试" icon={RotateCcw} busy={busy} onClose={() => setRetrying(null)}
+    {retrying && <Modal title="按原操作重试" icon={RotateCcw} busy={busy} onClose={() => setRetrying(null)}
       footer={<Decision others={<Button disabled={busy} onClick={() => setRetrying(null)}>返回</Button>}
-        primary={<Button variant="primary" loading={busy} disabledReason={canRetryF1Proposal(retrying.original) ? undefined : isRetryExpired(retrying.original) ? RETRY_EXPIRED_TEXT : "原操作当前无法重试。"} onClick={() => void retry()}>按原请求重试</Button>} />}>
+        primary={<Button variant="primary" loading={busy} disabledReason={canRetryF1Proposal(retrying.original) ? undefined : isRetryExpired(retrying.original) ? RETRY_EXPIRED_TEXT : "原操作当前无法重试。"} onClick={() => void retry()}>按原操作重试</Button>} />}>
       <div className="rd-stack">
         <Facts>
           <Fact k="原操作">{retrying.name}</Fact>

@@ -94,7 +94,7 @@ export async function submitH2TrialApproval(
     }
     if (!ticket && mode === "lookup") return null;
     if (!ticket && previous.expiresAt <= Date.now()) {
-      throw new A2OutcomeUncertainError("原请求已过期，还没查到审批单。请继续核对原操作。", key);
+      throw new A2OutcomeUncertainError("原申请已过期，还没查到审批单。请继续核对原操作。", key);
     }
   }
 

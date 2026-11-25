@@ -124,7 +124,7 @@ async function send(original: I4SectionCommand, retry: boolean) {
     response = await guardedFetch("/api/admin/platform/audit/operations", { method: "POST", cache: "no-store",
       headers: { "Content-Type": "application/json", "Idempotency-Key": original.commandKey }, body: JSON.stringify(original.request) });
     envelope = await response.json();
-  } catch { throw new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"); }
+  } catch { throw new OutcomeUnknownError("结果未知，请查询原结果或按原操作重试。"); }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || !Number.isInteger(envelope.code)
     || envelope.message !== undefined && typeof envelope.message !== "string") throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(envelope.message);

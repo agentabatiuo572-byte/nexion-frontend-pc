@@ -548,10 +548,10 @@ function tightenReplayBlock(record: TightenRecord, params: D5ParamData | null) {
 
 /**
  * 只能查询的原请求（会打开 TRC20、改它的确认费，或读不到原值）：为什么不能重试和下一步写在行上常显（OP-126、OP-93），
- * 不只放在按钮提示里；共用状态里叫人按原请求重试的那句换成读现值和操作记录。
+ * 不只放在按钮提示里；共用状态里叫人按原操作重试的那句换成读现值和操作记录。
  */
 function queryOnlyStatus(reason: string, base: NonNullable<FundRecoveryRow["status"]>, canQuery: boolean, notFound = false) {
-  const head = /按原请求重试/.test(reason) ? `${reason}。` : `${reason}，不能按原请求重试。`;
+  const head = /按原操作重试/.test(reason) ? `${reason}。` : `${reason}，不能按原操作重试。`;
   const next = notFound ? "原审批单暂未查到；刷新页面读现在的值，到操作记录与审批核对。"
     : base.label === "已处理" ? "后台已处理，看不出成没成；刷新页面读现在的值，再到操作记录与审批核对。"
       : base.label === "结果未知" ? canQuery ? "先查询原结果，再刷新页面读现在的值，或到操作记录与审批核对。" : "刷新页面读现在的值，到操作记录与审批核对。"
@@ -1093,7 +1093,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         : loosenRecord.replayRejection ? "重试已被拒绝，请核实后解除"
           : processing ? WITHDRAWAL_COMMAND_PROCESSING.line : loosenReplayBlock ?? queryBlock;
       const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
-      const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
+      const copy = { missingOrigin: "只能按操作编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
       return { key, title: "放宽提现参数", record: loosenRecord, outcome, createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled && !confirmed,
         canQuery: canLookupOwn, copy,
         status: confirmed ? withdrawalApprovalLookupStatus(proposalLookups[key], undefined, expired, true)
@@ -1110,7 +1110,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
           {!expired && !confirmed && <Button size="sm" disabled={!!recovering}
             disabledReason={retryDisabled}
-            onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
+            onClick={() => void recoverLoosen("retry")}>按原操作重试</Button>}
           {!confirmed && loosenRecord.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: "放宽提现参数", slot: loosenRecord.fingerprint, commandKey: key, loosen: true })}>解除原操作记录</Button>}
         </>,
         detail: <>
@@ -1144,7 +1144,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
-          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={processing && !record.replayRejection ? WITHDRAWAL_COMMAND_PROCESSING.line : retryDisabled} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
+          {!expired && <Button size="sm" disabled={!!recovering} disabledReason={processing && !record.replayRejection ? WITHDRAWAL_COMMAND_PROCESSING.line : retryDisabled} onClick={() => void retryTighten(record)}>按原操作重试</Button>}
           {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>

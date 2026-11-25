@@ -1045,7 +1045,7 @@ export default function UserDetailPage() {
         if (!unknown && !retained) c1UserCommands.forget(slot, commandKey);
         syncPending();
         if (unknown) {
-          toast.warn("结果未知，不要重复操作", "到页面上方查询原结果，或按原请求重试。");
+          toast.warn("结果未知，不要重复操作", "到页面上方查询原结果，或按原操作重试。");
           return;
         }
         if (isPermissionDenied(cause)) throw cause;
@@ -1074,7 +1074,7 @@ export default function UserDetailPage() {
   };
 
   const busyReason = loading || referralRetrying ? PROFILE_REREAD_BLOCK : actionPending ? `正在执行：${actionPending}` : undefined;
-  // 先查原结果，明确查不到才开放「按原请求重试」（OP-93 第 7 条），设备和账户操作一样。
+  // 先查原结果，明确查不到才开放「按原操作重试」（OP-93 第 7 条），设备和账户操作一样。
   const pendingRetryBlock = (command: C1Command) => {
     if (isExplicitRejection(command.rejection)) return "重试被明确拒绝";
     const result = pendingFound[command.commandKey];
@@ -1473,7 +1473,7 @@ export default function UserDetailPage() {
   ].filter((item): item is [string, string] => Array.isArray(item));
 
   /** 结果未知的操作收成一个面板（和资金页同一个样子）：每条一行，通用说明只在标题问号里说一次；按钮和可用条件照旧。 */
-  // 哪些行有只因资料没刷新成功才点不了的「按原请求重试」「核查结案」：面板那句常显原因只点名这些按钮，一个都没有就不写。
+  // 哪些行有只因资料没刷新成功才点不了的「按原操作重试」「核查结案」：面板那句常显原因只点名这些按钮，一个都没有就不写。
   const staleButtons = new Set<string>();
   const recoveryItems: RecoveryItem[] = [
     ...pendingCommands.map((command): RecoveryItem => {
@@ -1498,7 +1498,7 @@ export default function UserDetailPage() {
         ? "这是升级前发出的操作，没有存下原理由，不能重试，先核对原操作有没有生效。"
         : !writable
           ? hasWrite ? "客服入口不能重试，到用户详情处理。" : "这个账号现在没有这项操作的权限，不能重试，请有权限的同事处理。"
-          : retryBlock ? `${retryBlock}。` : "按原请求重试只重发原请求，不会重复执行。";
+          : retryBlock ? `${retryBlock}。` : "按原操作重试只重发原请求，不会重复执行。";
       // 查到的结论和资金页同一个说法。有调查权限的超级管理员（也是原操作人，数据层只让原操作人查）在这里核查结案：
       // 仍未知随时可以，查到已处理、后台拒绝、记为失败的过了 24 小时才可以；其余指向操作记录与审批。
       const retryable = writable && !command.legacy && !expired && !retryBlock;
@@ -1506,20 +1506,20 @@ export default function UserDetailPage() {
       const outcome = refused ? undefined : pendingOutcomes[command.commandKey];
       const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
       const closable = canClose && !!receipt && (receipt.originalStatus === "UNKNOWN" || expired && (receipt.originalStatus === "SUCCEEDED" || receipt.originalStatus === "FAILED"));
-      if (retryable) staleButtons.add("按原请求重试");
+      if (retryable) staleButtons.add("按原操作重试");
       if (closable) staleButtons.add("核查结案");
       const elsewhere = expired && canClose ? "已过 24 小时，请核查结案。" : "到操作记录与审批核对。";
       const shown: { tone: StateTone; label: string; line: string } | undefined = found && {
         error: { tone: "danger" as const, label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" },
-        none: { tone: "warn" as const, label: "没有查到", line: retryable ? "按原请求重试只重发原请求，不会重复执行。"
+        none: { tone: "warn" as const, label: "没有查到", line: retryable ? "按原操作重试只重发原请求，不会重复执行。"
           : expired ? `${EXPIRED_TEXT}。` : "查不到不等于没执行，先到操作记录与审批核对，不要另做一次。" },
         PROCESSING: { tone: "progress" as const, label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE },
-        FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。"
+        FAILED: { tone: "neutral" as const, label: "记为失败", line: retryable ? "系统记录这次失败了；按原操作重试不会做两遍，已做成的直接拿回结果。"
           : expired && canClose ? FAILED_EXPIRED_LINE : "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起。" },
         UNKNOWN: { tone: "warn" as const, label: "仍未知", line: !canClose ? "系统也没有结果，到操作记录与审批核对。"
           : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE },
-        REJECTED: { tone: "warn" as const, label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${retryable ? "按原请求重试可看原因，不会重复执行。" : elsewhere}` },
-        PROCESSED: { tone: "warn" as const, label: "已处理", line: `后台已处理，看不出成没成；${retryable ? "按原请求重试可确认，不会重复执行。" : elsewhere}` },
+        REJECTED: { tone: "warn" as const, label: "后台拒绝", line: `后台拒绝了，不保证没有改动；${retryable ? "按原操作重试可看原因，不会重复执行。" : elsewhere}` },
+        PROCESSED: { tone: "warn" as const, label: "已处理", line: `后台已处理，看不出成没成；${retryable ? "按原操作重试可确认，不会重复执行。" : elsewhere}` },
       }[found];
       const more = found === "REJECTED" || found === "PROCESSED" ? receiptExplain(receipt) : undefined;
       return {
@@ -1531,12 +1531,12 @@ export default function UserDetailPage() {
         actions: <>
           <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原结果</Button>
           {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} disabledReason={busyReason ? undefined : staleWriteReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
-          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock ?? staleWriteReason} onClick={() => void retryPending(command)}>按原请求重试</Button>}
+          {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock ?? staleWriteReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
           {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
         detail: <><p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出{found === "FAILED" ? "。" : "，可能已经生效，不要重复操作。"}{nextStep}</p>{more && <p>{more}</p>}</>,
-        tech: <p><Explain label="技术信息" content={command.legacy ? `原请求编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `原请求编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
+        tech: <p><Explain label="技术信息" content={command.legacy ? `操作编号 ${command.commandKey} ｜ 升级前的记录，没有存操作人和理由` : `操作编号 ${command.commandKey} ｜ 操作人 ${command.operator} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
     ...corrections.map((command): RecoveryItem => {
@@ -1545,19 +1545,19 @@ export default function UserDetailPage() {
       return {
         key: command.fingerprint, object: `校正通知 ${id} 的时间`, createdAt: command.createdAt,
         tag: <StatusTag tone="warn">{expired ? "已过期" : "结果未知"}</StatusTag>,
-        line: expired ? "超过 24 小时不能再重试，打开时间证据核对。" : "可能已经生效，在时间证据里按原请求重试。",
+        line: expired ? "超过 24 小时不能再重试，打开时间证据核对。" : "可能已经生效，在时间证据里按原操作重试。",
         actions: canReadNotificationEvidence && <Button size="sm" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>打开时间证据</Button>,
         detail: <p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出，可能已经生效，不要重复操作。{expired ? `${EXPIRED_TEXT}。` : ""}</p>,
-        tech: <p><Explain label="技术信息" content={`原请求编号 ${command.commandKey} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
+        tech: <p><Explain label="技术信息" content={`操作编号 ${command.commandKey} ｜ 理由 ${command.reason}`}>技术信息</Explain></p>,
       };
     }),
   ];
   const openCount = pendingCommands.filter((command) => !isExplicitRejection(command.rejection) && ["FAILED", "REJECTED", "PROCESSED"].includes(pendingFound[command.commandKey] ?? "")).length;
   // 资料没刷新成功时，各行按钮上的原因只在悬停和聚焦时看得到：面板标题下常显一句，一处只说一次；同一次重读在途时和各写入口同一个说法（R30）。
-  const staleBlocked = ["按原请求重试", "核查结案"].filter((name) => staleButtons.has(name));
+  const staleBlocked = ["按原操作重试", "核查结案"].filter((name) => staleButtons.has(name));
   const recoveryNote = staleBlocked.length && (staleWriteReason || referralRetrying) ? loading || referralRetrying ? PROFILE_REREAD_BLOCK : recoveryStaleNote(staleBlocked) : undefined;
   const recoveryPanel = <RecoveryPanel title={recoveryTitle(recoveryItems.length - openCount, 0, 0, openCount)} explainLabel="结果未知怎么处理" note={recoveryNote}
-    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试不会重复执行。有结果前，相关对象不能再操作。"
+    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原操作重试不会重复执行。有结果前，相关对象不能再操作。"
     foot={canReadA2 ? <Link className="rd-link" href={{ pathname: "/platform/audit", query: { userCode: userNo, returnTo: selfHref } }} prefetch={false}>到操作记录与审批核对</Link> : undefined}
     items={recoveryItems} />;
 

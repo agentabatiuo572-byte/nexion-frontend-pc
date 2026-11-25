@@ -202,7 +202,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
           const revoked = !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review");
           return <Notice tone="warn" title={<>{pending.input.stage === "BUSINESS" ? "业务" : "财务"}核验结果未知{expired ? <StatusTag tone="neutral">已过期</StatusTag> : unknownTag("direct")}</>}
           action={<>
-            <Button size="sm" onClick={() => setConfirmation(pending.input)}>{materialRecovery.state(pending).replayBlock ? "查询原结果" : "按原请求重试"}</Button>
+            <Button size="sm" onClick={() => setConfirmation(pending.input)}>{materialRecovery.state(pending).replayBlock ? "查询原结果" : "按原操作重试"}</Button>
             {pending.replayRejection && <FReleaseButton label={`申请 #${application.id} 的核验`} toast={ctx.toast} onRelease={async () => {
               if (!materialRecovery.releaseRejectedReplay(pending)) throw new Error("PENDING_RELEASE_BLOCKED");
               pendingRef.current = undefined; setPending(undefined); setConfirmation(null);

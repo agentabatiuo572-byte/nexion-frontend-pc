@@ -14,6 +14,8 @@
  *   没有原因的场景才用原生 disabled。onBlockedClick 是这时点一下要做的事，比如把字段错误亮出来。
  * - 弹窗和抽屉的底栏（TipSide side="left"）里，原因气泡朝左开：按钮贴着右下角，朝上开会盖住上面理由框的字数
  *   （Ant Design Tooltip 的 placement="left"）。放不下时照常翻边。
+ * - 贴着窗口右边、朝上开的（抽屉底栏里旁边有别的按钮时）传 TipSide align="end"，气泡和按钮右边对齐（placement="topRight"）。
+ *   气泡离窗口边至少留 12px，不贴边。
  */
 import { createContext, forwardRef, useContext, useId, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
@@ -29,21 +31,21 @@ interface CommonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 type TipPlacement = "top" | "left";
-const TipSideContext = createContext<TipPlacement>("top");
+const TipSideContext = createContext<{ side: TipPlacement; align?: "center" | "end" }>({ side: "top" });
 
-/** 这一块里的按钮提示朝哪边开。弹窗和抽屉的底栏传 left。 */
-export function TipSide({ side, children }: { side: TipPlacement; children: ReactNode }) {
-  return <TipSideContext.Provider value={side}>{children}</TipSideContext.Provider>;
+/** 这一块里的按钮提示朝哪边开。弹窗和抽屉的底栏传 left；align="end" 时和按钮右边对齐。 */
+export function TipSide({ side, align, children }: { side: TipPlacement; align?: "center" | "end"; children: ReactNode }) {
+  return <TipSideContext.Provider value={{ side, align }}>{children}</TipSideContext.Provider>;
 }
 
 function WithReason({ reason, id, children }: { reason: ReactNode; id?: string; children: ReactNode }) {
-  const side = useContext(TipSideContext);
+  const { side, align } = useContext(TipSideContext);
   return (
     <Tooltip.Provider delayDuration={100}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
         <Tooltip.Portal>
-          <Tooltip.Content id={id} className="rd-tip" side={side} sideOffset={side === "left" ? 8 : 6}>{reason}</Tooltip.Content>
+          <Tooltip.Content id={id} className="rd-tip" side={side} align={align} sideOffset={side === "left" ? 8 : 6} collisionPadding={12}>{reason}</Tooltip.Content>
         </Tooltip.Portal>
       </Tooltip.Root>
     </Tooltip.Provider>

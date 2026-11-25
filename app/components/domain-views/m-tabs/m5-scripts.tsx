@@ -880,7 +880,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
             : `${statusName(body.expectedStatus)} → ${statusName(body.status)} · ${command.text}`;
     return { key: record.commandKey, name: command?.action.split(" · admin.")[0] ?? "结果未知", change, submittedAt: record.createdAt, expired: isRetryExpired(record), actions: <>
       <Button size="sm" disabled={writePending} onClick={() => void readCurrent()}>查询原结果</Button>
-      {command && !isRetryExpired(record) && <Button size="sm" variant="primary" disabled={writePending || !canRetry(command)} onClick={() => recover(record)}>按原请求重试</Button>}
+      {command && !isRetryExpired(record) && <Button size="sm" variant="primary" disabled={writePending || !canRetry(command)} onClick={() => recover(record)}>按原操作重试</Button>}
     </> };
   });
   return (
@@ -993,14 +993,14 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
       sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">{agent.name} · 账号 #{agent.adminId}</span></>}
       footer={<>
         <Button disabled={saving} onClick={onClose}>取消</Button>
-        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !pending && capProblem ? "同时接待上限要填 0–40 的整数" : !saving && !pending && !changed ? "还没有改动" : !saving && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{pending ? "按原请求重试" : "保存"}</Button>
+        <Button variant="primary" loading={saving} disabled={!canSave} disabledReason={!saving && !pending && !canSubmitNew ? "名册没读到，或这位客服已不在你的范围" : !saving && !pending && capProblem ? "同时接待上限要填 0–40 的整数" : !saving && !pending && !changed ? "还没有改动" : !saving && !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{pending ? "按原操作重试" : "保存"}</Button>
       </>}>
       <Facts>
         <Fact k="客服">{agent.name || "名称未同步"} · {agent.email || "—"}</Fact>
         <Fact k="客服类型"><span data-proof="m5-seat-position-field">{seatLabel(position)}</span></Fact>
         <Fact k="现在服务">{agent.assignedUserCount} 位客户</Fact>
       </Facts>
-      {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "上次保存可能已经生效。内容已锁定为原请求，按原请求重试不会重复执行。"}</Notice>}
+      {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能查询原结果。" : "上次保存可能已经生效。内容已锁定为原请求，按原操作重试不会重复执行。"}</Notice>}
       <p className="rd-note">接待资格和主管资格在账号管理里改。</p>
       <DiffField label="同时接待上限" explain={CAP_EXPLAIN} before={agent.maxConcurrent === null ? "不限" : String(agent.maxConcurrent)} unit={agent.maxConcurrent === null ? undefined : "位"} hint={unlimited ? undefined : "0–40 的整数"} error={capProblem && (capText !== "" || capLeft) ? capProblem : undefined} note={capNote}>
         {(control) => <>

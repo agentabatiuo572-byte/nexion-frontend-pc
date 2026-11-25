@@ -552,7 +552,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       return planNo ? `${network} 准备单里没找到原单 ${planNo}，请到操作记录核对；记录继续保留。`
         : `${network} 准备单里没找到业务参考号「${text(original?.businessReference)}」，请到操作记录核对；记录继续保留。`;
     }
-    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；重新读到的现状不能证明原操作的结果，记录继续保留。请按原请求重试取回原文。";
+    if (record.path.startsWith("/cregis/exception-ownership/challenges")) return "生成签名原文不动钱；重新读到的现状不能证明原操作的结果，记录继续保留。请按原操作重试取回原文。";
     if (record.path.startsWith("/cregis/addresses/policy")) {
       const policy = await financeAdminRequest<Record<string, unknown>>("/cregis/addresses/policy");
       return `读取结果：地址池配置现在是第 ${text(policy.version)} 版，自动补充${policy.enabled ? "开启" : "关闭"}，备用目标 ${text(policy.target)} 个。${kept}`;
@@ -592,8 +592,8 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       createdAt: record.createdAt,
       // 只能核对的原因写在行上（onlyCheck），展开后不再重复。
       onlyCheck: restriction ? trc20ReplayReason(record, restriction) : undefined,
-      hint: restriction ? null : (replayable ? "现在的值只能参考；按原请求重试不会重复执行。"
-        : "这项操作不能按原请求重试。重新读取只显示现在的状态，记录保留到关掉标签页。"),
+      hint: restriction ? null : (replayable ? "现在的值只能参考；按原操作重试不会重复执行。"
+        : "这项操作不能按原操作重试。重新读取只显示现在的状态，记录保留到关掉标签页。"),
       blocked: record.expiresAt <= Date.now() ? D1_COMMAND_EXPIRED_TEXT : canRetry ? undefined : "这个账号没有这项权限",
       auditHref: "/platform/audit?domain=D",
       verify: () => verifyCregisCommand(record),
@@ -1007,9 +1007,9 @@ function trc20ReplayReason(record: { path: string; body: string }, restriction: 
   const approve = decision || exceptionObject(JSON.parse(record.body || "{}")).action === "APPROVE";
   const what = route === "/cregis/addresses/provision" ? "原请求会补一个 TRC20 收款地址"
     : `原请求会${approve ? "复核通过" : "提交"}打开 TRC20 ${route.startsWith("/cregis/switch-cases") ? "充值" : "自动资金流程"}的提案`;
-  return restriction === TRC20_CLOSED ? `${what}，TRC20 ${TRC20_CLOSED}，不能按原请求重试`
-    : decision ? "读不到原提案，核对不了这次复核会不会打开 TRC20 充值，暂不能按原请求重试"
-      : "TRC20 自动资金流程的设置读不到或已经变了，核对不了原请求会不会打开它，暂不能按原请求重试";
+  return restriction === TRC20_CLOSED ? `${what}，TRC20 ${TRC20_CLOSED}，不能按原操作重试`
+    : decision ? "读不到原提案，核对不了这次复核会不会打开 TRC20 充值，暂不能按原操作重试"
+      : "TRC20 自动资金流程的设置读不到或已经变了，核对不了原请求会不会打开它，暂不能按原操作重试";
 }
 
 /** 写请求的名字，按路径认，不露路径（D1-A09）。 */

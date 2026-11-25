@@ -187,7 +187,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       rows={[...ctx.e4ReceiptAttempts.map((record): FundRecoveryRow => ({ key: record.commandKey, title: record.orderNo, expired: false, canRetry: false,
         status: { tone: "warn", label: "结果未知", line: ctx.canQueryE4 ? "可能已经建了审批单，查到之前不要重复处理。" : "可能已经建了审批单，请有操作记录读取权限的同事核对。" },
         actions: ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原结果</Button>,
-        tech: `原请求编号 ${record.commandKey}` })),
+        tech: `操作编号 ${record.commandKey}` })),
       ...ctx.e4Pending.map((record): FundRecoveryRow => {
         const recovery = ctx.e4RecoveryState(record);
         const expired = recovery.expired;
@@ -211,7 +211,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           actions: <>
             {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
             {!created && access.canSubmit && eCommandClosureOffer(outcome, expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
-            {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原请求重试</Button>}
+            {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
             {replayRejected && !created && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
           </>,
           detail: <>
@@ -220,7 +220,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
               : `可能已经提交，有结果前这单不能再操作。${!expired && writeBlock ? writeBlock : ""}`}</p>
             {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
           </>,
-          tech: `${created ? `原请求编号 ${record.commandKey} ｜ ` : ""}${record.receivedTicketId ? `审批单 ${record.receivedTicketId} ｜ ` : ""}订单 ${record.orderNo} ｜ 理由 ${record.spec.reason}` };
+          tech: `${created ? `操作编号 ${record.commandKey} ｜ ` : ""}${record.receivedTicketId ? `审批单 ${record.receivedTicketId} ｜ ` : ""}订单 ${record.orderNo} ｜ 理由 ${record.spec.reason}` };
       })]} />
 
     {ctx.e4CountsFailed

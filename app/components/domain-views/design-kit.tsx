@@ -690,13 +690,13 @@ type CopyExperimentVersionOption = {
 type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
-/** 提示末尾的「命令号：xxx」「请求号：xxx」不常显：收进句尾的「技术信息」问号，写成「原请求编号」（全站-结果未知叫法）。前面的话不变。 */
+/** 提示末尾的「命令号：xxx」「请求号：xxx」不常显：收进句尾的「技术信息」问号，写成「操作编号」（全站-结果未知叫法）。前面的话不变。 */
 function keepCommandKey(text: ReactNode): ReactNode {
   if (typeof text !== "string") return text;
   const at = Math.max(text.lastIndexOf("命令号："), text.lastIndexOf("请求号："));
   const key = at < 0 ? null : text.slice(at + 4).match(/^[\w.:-]+/)?.[0];
   if (!key) return text;
-  return <>{text.slice(0, at).replace(/[\s·]+$/, "")}{text.slice(at + 4 + key.length)}<Explain label="技术信息" content={<>原请求编号 <span data-mono className="rd-keep">{key}</span></>} /></>;
+  return <>{text.slice(0, at).replace(/[\s·]+$/, "")}{text.slice(at + 4 + key.length)}<Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{key}</span></>} /></>;
 }
 
 function initEditValue(spec?: EditSpec | null): string {
@@ -4105,7 +4105,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
         const message = getPendingRecovery?.() && error.queryMessage || (inlineApproval ? error.message
-          : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原请求重试，" : "按原请求重试，"}不会建第二张。`);
+          : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原操作重试，" : "按原操作重试，"}不会建第二张。`);
         setSubmitError(`${message} 命令号：${error.commandKey}`);
       } else {
         setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
@@ -4140,7 +4140,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     try {
       if (!await recoverApproval(reason.trim())) {
         setApprovalRecovery("retry");
-        setSubmitError(getPendingRecovery?.() || inlineApproval?.expired || inlineApproval?.queryOnly ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。");
+        setSubmitError(getPendingRecovery?.() || inlineApproval?.expired || inlineApproval?.queryOnly ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原操作重试，不会建第二张。");
       } else if (inlineApproval?.recoverLabel) {
         setSubmitError(null);
       }
@@ -4190,14 +4190,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   };
   const pendingReasonHelp = pendingRecovery?.statusText ?? (pendingRecovery?.state?.expired ? RETRY_EXPIRED_TEXT
     : pendingRecovery?.state && pendingRecovery.blockedReason ? pendingRecovery.blockedReason
-    : pendingRecovery?.state?.capability === "replay" ? "按原请求重试会重新发送一次。"
+    : pendingRecovery?.state?.capability === "replay" ? "按原操作重试会重新发送一次。"
     : inlineApproval?.expiredRequestRecovery === "reload"
     ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
     : inlineApproval?.expiredRequestRecovery === "query"
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
       : inlineApproval?.queryOnly ? "只能查询原结果，不能重发。"
         : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。");
-  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原请求重试" : needsEditPreview && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined, businessValue) ?? confirmLabel);
+  const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原操作重试" : needsEditPreview && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined, businessValue) ?? confirmLabel);
   // 放大提示固定在关键信息层，先于所有填写项。
   const coverageFirst = surface && (!approval || rdApproval);
   // 事实区随输入变（比如改基准价时买入价写「现在 → 改后」）：新值填好才交给页面。

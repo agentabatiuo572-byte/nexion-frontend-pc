@@ -113,6 +113,6 @@ export function useSupportManagementCommand<T, R>(options: {
   }
 
   const notice = expired ? `${message}${RETRY_EXPIRED_TEXT}`
-    : canReplay ? `${message}可稍后再查或按原请求重试。` : message;
+    : canReplay ? `${message}可稍后再查或按原操作重试。` : message;
   return { pending, busy, message: notice, canReplay, denied, run };
 }

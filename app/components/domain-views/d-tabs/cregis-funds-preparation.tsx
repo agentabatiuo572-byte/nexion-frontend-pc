@@ -127,7 +127,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
       request.assertOwner();
     } catch (failure) {
       if (isDOutcomeUnknownError(failure)) {
-        throw new DOutcomeUnknownError(failure.commandKey, "结果未知，可能已经生效。关闭后到页面上方「读取现在的值」核对，或「按原请求重试」。");
+        throw new DOutcomeUnknownError(failure.commandKey, "结果未知，可能已经生效。关闭后到页面上方「读取现在的值」核对，或「按原操作重试」。");
       }
       throw failure;
     }

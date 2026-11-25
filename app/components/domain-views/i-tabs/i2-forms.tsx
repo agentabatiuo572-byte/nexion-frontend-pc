@@ -37,7 +37,7 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
   locked?: boolean;
   saving?: boolean;
   blocked?: string;
-  /** 结果未知后冻结的原请求：主按钮改叫「按原请求重试」。 */
+  /** 结果未知后冻结的原请求：主按钮改叫「按原操作重试」。 */
   retry?: boolean;
   /** 后端明确拒绝时的原因，抽屉不关、输入保留。 */
   error?: string | null;
@@ -62,7 +62,7 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
         <p>系统按「多久找一次」扫描；有满足条件的业务事情、这个人又过了个人间隔，才给他发一条。</p>
         <p>点击率不用填，新频道从 0% 开始。</p>
       </>}
-      footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{retry ? "按原请求重试" : editing ? "保存" : "新增频道"}</Button>} />}>
+      footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{retry ? "按原操作重试" : editing ? "保存" : "新增频道"}</Button>} />}>
       <div className="rd-stack i2-form">
         {error && <Notice tone="danger" title={editing ? "没有保存" : "没有新增"}>{error}</Notice>}
         {retry && <Notice tone="warn" title={frozenTitle(requestBlocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(requestBlocked, "先在页面上方查询原结果")}</Notice>}

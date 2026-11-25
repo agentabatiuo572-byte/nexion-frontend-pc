@@ -338,8 +338,8 @@ export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
   line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
 } as const;
 
-export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，查到结论后才能决定是否按原请求重试。";
-export const WITHDRAWAL_REPLAY_RESEND = "按原请求重试会重发原内容，已成功的不会重复执行。";
+export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，查到结论后才能决定是否按原操作重试。";
+export const WITHDRAWAL_REPLAY_RESEND = "按原操作重试会重发原内容，已成功的不会重复执行。";
 
 /** 直接写只在尚未查询或查询失败时阻止重试，查到的回执按原有规则处理。 */
 export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean) {
@@ -351,7 +351,7 @@ export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | u
 /** 放宽须先按原号明确查不到审批单；能读命令回执的账号还要先查过一次（读失败不算）。查到回执后不另外挡：已建单、处理中由各自的标记挡，其余按原号重试取回当时的结果。 */
 export function withdrawalApprovalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing: boolean) {
   if (!proposalMissing && !(canInvestigate && outcome && "error" in outcome)) {
-    return "先查询原结果，确认查不到原审批单后才能按原请求重试。";
+    return "先查询原结果，确认查不到原审批单后才能按原操作重试。";
   }
   return withdrawalReplayQueryBlock(outcome, canInvestigate);
 }

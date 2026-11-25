@@ -27,6 +27,8 @@ export function Explain({ label, content, rows, side, align, children }: { label
   const [field, setField] = useState<HTMLElement | null>(null);
   const [fieldPlacement, setFieldPlacement] = useState<{ side: "top" | "left" | "right"; maxWidth?: number }>({ side: "top" });
   const pinned = useRef(false);
+  /** 点击或键盘打开的，关掉后焦点回到图标；悬停打开的不动焦点（CP-45）。pinned 在关的时候先被清掉，所以单独记。 */
+  const focusBack = useRef(false);
   const timer = useRef<number | undefined>(undefined);
   const clear = () => window.clearTimeout(timer.current);
   useEffect(() => clear, []);
@@ -67,13 +69,14 @@ export function Explain({ label, content, rows, side, align, children }: { label
           event.preventDefault();
           clear();
           if (open && pinned.current) { pinned.current = false; setOpen(false); }
-          else { pinned.current = true; setOpen(true); }
+          else { pinned.current = true; focusBack.current = true; setOpen(true); }
         }}
       >
         {children ?? <CircleHelp className="rd-explain-mark" size={14} strokeWidth={1.75} aria-hidden />}
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content ref={bubble} className="rd-pop" side={field ? fieldPlacement.side : side} align={align} style={field ? { maxWidth: fieldPlacement.maxWidth } : undefined} sideOffset={6} collisionPadding={12} {...hover} onOpenAutoFocus={(event) => { if (!pinned.current) event.preventDefault(); }}>
+        <Popover.Content ref={bubble} className="rd-pop" side={field ? fieldPlacement.side : side} align={align} style={field ? { maxWidth: fieldPlacement.maxWidth } : undefined} sideOffset={6} collisionPadding={12} {...hover} onOpenAutoFocus={(event) => { if (!pinned.current) event.preventDefault(); }}
+          onCloseAutoFocus={(event) => { if (!focusBack.current) event.preventDefault(); focusBack.current = false; }}>
           {content}
           {shown.length > 0 && (
             <dl className="rd-pop-rows" data-after={content ? "" : undefined}>

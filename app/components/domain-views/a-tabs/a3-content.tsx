@@ -25,7 +25,7 @@ export const contentCheckLine = (check: A3ContentComparison) =>
   check.contentMatches
     ? "内容和你提交的一样，但保存记录对不上，可能刚被别人改过。核对后可以解除。"
     : "现在的内容和你提交的不一样，可能没保存上，也可能刚被别人改过。核对后解除，再重新保存。";
-/** 「按原请求重试」可用时给原提交框的确认按钮；不可用（旧记录、已过期）时为 undefined。 */
+/** 「按原操作重试」可用时给原提交框的确认按钮；不可用（旧记录、已过期）时为 undefined。 */
 type ContentRetry = { disabledReason?: string; busy: boolean; run: () => void };
 type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; retry: (record: A3Command) => ContentRetry | undefined; restored: A3Restored | null; onRestored: () => void };
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
@@ -89,7 +89,7 @@ export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, t
 }
 
 /** 保存草稿和发布共用的确认框：理由 8–500 在框里填，点确认时才校验（旧写法）。 */
-/** locked：结果未知时打开的是原提交（内容、方式、理由都是原来的），只能查询、解除或按原请求重试。 */
+/** locked：结果未知时打开的是原提交（内容、方式、理由都是原来的），只能查询、解除或按原操作重试。 */
 function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, reasonMin, locked, retry, onCancel, onConfirm }: {
   mode: Mode; title: string; busy: boolean; error: string | null; facts: ReactNode; extra?: ReactNode;
   locked?: boolean; retry?: ContentRetry; reason: string; onReason: (value: string) => void; reasonMin: number; onCancel: () => void; onConfirm: () => void;
@@ -101,7 +101,7 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
     footer={<>
       <Button disabled={working} onClick={onCancel}>取消</Button>
       {locked && retry
-        ? <Button variant={publish ? "danger" : "primary"} loading={retry.busy} disabledReason={retry.disabledReason} onClick={retry.run}>按原请求重试</Button>
+        ? <Button variant={publish ? "danger" : "primary"} loading={retry.busy} disabledReason={retry.disabledReason} onClick={retry.run}>按原操作重试</Button>
         : <Button variant={publish ? "danger" : "primary"} loading={busy} disabledReason={locked ? "结果未知" : undefined} onClick={onConfirm}>{publish ? "发布" : "保存草稿"}</Button>}
     </>}>
     {error && <Notice tone={locked ? "warn" : "danger"} title={locked ? undefined : "没有保存"}>{error}</Notice>}
@@ -113,7 +113,7 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
   </Modal>;
 }
 
-const SAVE_UNKNOWN_NOTE = <>没收到结果时别再点一次：页面会留下这次提交，<KeepText text="24 小时内可以按原请求重试。" /></>;
+const SAVE_UNKNOWN_NOTE = <>没收到结果时别再点一次：页面会留下这次提交，<KeepText text="24 小时内可以按原操作重试。" /></>;
 /** 原提交框里还没有对比结果时：能重试的说重试会怎样，不能重试的说查询会怎样。 */
 function OriginalNote({ retryable }: { retryable: boolean }) {
   return retryable

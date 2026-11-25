@@ -129,8 +129,8 @@ function recoveryExplain(items: readonly D1PendingItem[]) {
   const legacy = items.some(item => !item.record);
   return <>
     <p>这些操作发出后没收到明确结果，可能已经生效。有结果前，相关对象不能再操作。</p>
-    {queryable && <p>先查询原结果；按原请求重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
-    {legacy && <p>查不了原结果的记录：现在的值只能参考，不能据此认定原操作成没成；按原请求重试，或到操作记录与审批核对。</p>}
+    {queryable && <p>先查询原结果；按原操作重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
+    {legacy && <p>查不了原结果的记录：现在的值只能参考，不能据此认定原操作成没成；按原操作重试，或到操作记录与审批核对。</p>}
   </>;
 }
 
@@ -144,7 +144,7 @@ function onlyCheckLine(item: D1PendingItem, reason: string, status: { label: str
 }
 
 /**
- * 结果未知的写操作，所在页签顶部常显（OP-93）。只能按原请求重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
+ * 结果未知的写操作，所在页签顶部常显（OP-93）。只能按原操作重试（OP-94）；重试被后端明确拒绝后才出现「解除待确认」，
  * 后端不按命令号去重的操作只读回事实，不给重试或解除，记录保留到关标签页（决定 03）。解除只清本地记录，不发请求（OP-153）。
  */
 export function PendingNotices({ items, disabled }: { items: readonly D1PendingItem[]; disabled?: boolean }) {
@@ -219,19 +219,19 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
             tag: <StatusTag tone={status?.tone ?? (refused ? "danger" : "warn")}>{status?.label ?? (refused ? "重试被拒绝" : item.expired ? "已过期" : "结果未知")}</StatusTag>,
-            // 没有「按原请求重试」的记录（这类操作不能重发，或被业务规则挡住）：查到已处理时不叫人去重试。
+            // 没有「按原操作重试」的记录（这类操作不能重发，或被业务规则挡住）：查到已处理时不叫人去重试。
             line: item.onlyCheck ? onlyCheckLine(item, item.onlyCheck, status)
-              : (status?.label === "已处理" && !item.retry && !expired ? `后台已处理，看不出成没成；这条不能按原请求重试，${item.verify ? "读取现在的值后" : ""}到操作记录与审批核对。` : status?.line) ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
+              : (status?.label === "已处理" && !item.retry && !expired ? `后台已处理，看不出成没成；这条不能按原操作重试，${item.verify ? "读取现在的值后" : ""}到操作记录与审批核对。` : status?.line) ?? (refused ? "重试被明确拒绝；核对原操作后可以解除。" : item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
             note: notes[item.key],
             actions: <>
               {item.record && <FundCheckButtons record={item.record} outcome={outcomes[item.key]} expired={expired} busy={disabled || !!running} checking={running === item.key}
                 onCheck={() => void check(item)} onClose={() => setClosing(item)} />}
               {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读取现在的值</Button>}
-              {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原请求重试</Button>}
+              {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
             </>,
             detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
-            tech: <p><Explain label="技术信息" content={`原请求编号 ${item.key}`}>技术信息</Explain></p>,
+            tech: <p><Explain label="技术信息" content={`操作编号 ${item.key}`}>技术信息</Explain></p>,
           };
         })} />
       {releasing && (

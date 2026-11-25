@@ -76,7 +76,7 @@ export async function executeG7DirectCommand<T>(paramKey: string, input: G7Direc
   if (saved && original?.commandKey !== saved.commandKey) throw new Error("原操作已结束，请重新读取当前状态。");
   const body = JSON.stringify(input);
   if (original && !saved && original.body !== body) {
-    throw new A2OutcomeUncertainError("这一项有结果未知的原操作，请核对或按原请求重试，不能改值或理由。", original.commandKey);
+    throw new A2OutcomeUncertainError("这一项有结果未知的原操作，请核对或按原操作重试，不能改值或理由。", original.commandKey);
   }
   if (!auth.session!.authorities.includes(g7DirectAuthority(paramKey))) throw new Error("当前账号没有此项修改权限；仍可只读核对原操作。");
   if (!original) {

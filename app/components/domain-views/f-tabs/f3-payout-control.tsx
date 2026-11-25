@@ -130,7 +130,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   const canPropose = ctx.can("platform_a2_write") || ctx.can("platform_a2_proposal_create");
   const savedDirect = () => adminId === undefined ? undefined : pendingF3ConfigWrite(adminId, key);
   const savedProposal = () => adminId === undefined ? undefined : listF3Proposals(adminId).find((row) => row.fingerprint === f3ConfigSlot(key));
-  // 新改动打开时已有的原记录（比如在等批准的调高）不算这次的，不让框锁成「按原请求重试」。
+  // 新改动打开时已有的原记录（比如在等批准的调高）不算这次的，不让框锁成「按原操作重试」。
   const [existing] = useState(() => ({ direct: savedDirect()?.commandKey, proposal: savedProposal()?.commandKey }));
   const ownDirect = () => {
     const row = savedDirect();
