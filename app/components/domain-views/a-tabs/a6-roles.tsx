@@ -449,9 +449,7 @@ export default function A6Roles() {
           const { ticket, readbackFailed } = current;
           if (readbackFailed) return;
           if (ticket.status === "pending") {
-            if (original.kind === "a6-status") setToast(`已提交${original.status === 1 ? "启用" : "停用"}审批，等另一位超级管理员批准 · 审批单 ${ticket.id}`, "success");
-            else if (original.kind === "a6-delete") setToast(`已提交删除审批，等另一位超级管理员批准 · 审批单 ${ticket.id}`, "success");
-            else setToast(`已提交权限修改审批，等另一位超级管理员批准 · 审批单 ${ticket.id}`, "success");
+            setToast(`已提交，等待审批后执行 · 审批单 ${ticket.id} · 由另一位超级管理员批准`, "success");
           } else setToast(displayAdminReadError(new Error(`A6_PROPOSAL_${ticket.status.toUpperCase()}`)));
         } catch (error) { throw new Error("A6_PROPOSAL_STATUS_UNKNOWN", { cause: error }); }
       } else {

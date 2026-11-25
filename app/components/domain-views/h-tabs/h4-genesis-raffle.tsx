@@ -14,10 +14,10 @@ import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4Pend
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
+import { useH4EditGuard, useH4Editor } from "./h4-edit-guard";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
 import { amountText, formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, h4ReadConflict, H4LeaveDialog, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, effectApproval, effectDirect, useH4DrawerFocus } from "./h4-legacy-parts";
+import { ApprovalFact, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, H4_UNKNOWN_SAVE, effectApproval, effectDirect, effectDraft, useH4DrawerFocus } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4CompareSection, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 
@@ -105,8 +105,6 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [base, setBase] = useState<AdminRaffle | null>(null), [draft, setDraft] = useState<RaffleDraft | null>(null);
   const [enabled, setEnabled] = useState(false), [saving, setSaving] = useState(false);
-  // 打开时的样子：关抽屉时和它比，改过就先问（OP-29）。
-  const opened = useRef<{ draft: RaffleDraft | null; enabled: boolean }>({ draft: null, enabled: false });
   const write = ctx.can("growth_h4_write"), locked = !!base && base.status !== "DRAFT";
   const [, pendingChanged] = useState(0);
   /** 保存被「别人先改过」拒绝、已重读后的提醒；只决定显示。 */
@@ -123,16 +121,17 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   }, []);
   const choose = (row: AdminRaffle | null, required = requiredLanguages) => {
     const initial = row ? editableRaffle(row, required) : empty();
-    opened.current = { draft: initial, enabled: row?.status === "OPEN" };
     setConflictFields(null); setStale(""); setMerged(0); setBase(row); setDraft(initial); setEnabled(row?.status === "OPEN"); setError("");
   };
-  const openRaffle = async (row: AdminRaffle | null, closeRetry?: () => void) => {
+  const openRaffle = async (row: AdminRaffle | null, closeRetry?: () => void, button?: HTMLElement) => {
     const required = await getRequiredContentLanguages();
     if (closeRetry) {
       if (!isActive()) return false;
       closeRetry();
     }
     setRequiredLanguages(required);
+    // 抽屉要等语言读完才开，焦点记的是点的那个按钮。
+    if (button) focus.from(button);
     choose(row, required);
     if (closeRetry) setError(H4_OLD_RECORD_REJECTED);
     return true;
@@ -140,6 +139,10 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);
   const saveBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || (base.status === "OPEN" && base.totalEntries > 0));
   const save = (restored?: { base: AdminRaffle | null; draft: RaffleDraft; enabled: boolean; rejection: PendingConfirmRejected }, after?: () => void) => {
+    // 要去的地方只属于这一次保存：被拒、结果未知就作废，之后的普通关闭只关这个抽屉。
+    let onward = after;
+    /** 有了确定的成功，发出去成功和查到原结果走同一个后续。 */
+    const finished = (message?: string) => { if (message) ctx.toast(message); onward?.(); };
     const previous = restored ? restored.base : base, savedDraft = restored?.draft ?? draft;
     const nextEnabled = restored?.enabled ?? (!!base && enabled);
     if (savedDraft && confirmedH4Saves().some(record => record.scope === `H/h4_genesis_raffle/${savedDraft.id}`)) return;
@@ -150,6 +153,8 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     const invalid = !restored && raffleDraftError(savedDraft, requiredLanguages); if (invalid) { setError(invalid); return; }
     const opening = nextEnabled && previous?.status === "DRAFT";
     const closing = !nextEnabled && previous?.status === "OPEN";
+    // 还是草稿、不开放：只存草稿（OP-25）。
+    const draftOnly = !nextEnabled && (!previous || previous.status === "DRAFT");
     const readVersion = h4ReadVersion("raffles");
     const rereadConflict = () => h4ReadConflict(async () => {
       const values = await load();
@@ -178,15 +183,17 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
         if (opening) await onApprovalCompleted?.();
         if (!await load(false, true)) throw new Error("已保存，但最新数据加载失败");
         ctx.openActionConfirm(null);
+        // 保存结果由 load 提示，这里只接后续。
+        finished();
       },
         rejected),
-      title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : previous ? "保存抽奖配置" : "保存抽奖草稿",
+      title: opening ? "开放抽奖报名" : closing ? "关闭报名回草稿" : draftOnly ? "保存抽奖草稿" : "保存抽奖配置",
       // 影响写这次保存的真实后果（OP-53）：开放、关闭、存草稿各不相同；开放中的一期后端不让直接改。
       statedBrief: opening ? { impact: "批准后这一期开放报名。", check: "核对时间、奖项和名额，理由写清依据。" }
         : closing ? { impact: "这一期马上停止报名。", check: "确认还没人报名，理由写清依据。" }
         : previous && previous.status !== "DRAFT" ? { impact: "开放中的一期不能直接改：先关闭报名回草稿，改好再申请开放。", check: "核对这一期现在的状态。" }
         : { impact: previous ? "只保存这一期的配置，仍是草稿，不对用户开放。" : "新的一期存成草稿，不对用户开放。", check: "核对时间、奖项和名额，理由写清依据。" },
-      effect: opening ? effectApproval("这一期") : effectDirect,
+      effect: opening ? effectApproval("这一期") : draftOnly ? effectDraft : effectDirect,
       detail: <>本期共 {seats(savedDraft.prizes)} 个中奖名额。{nextEnabled ? "开启后用户可按公布时段使用抽奖券报名；开奖时发放配置的奖品。" : "新建轮次保存为草稿，不会对用户开放。"}</>,
       facts: <>
         {merged > 0 && <H4StaleNote />}
@@ -201,7 +208,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
           {opening && <ApprovalFact amplify="开放报名" object="这一期" />}
         </Facts>
       </>,
-      confirmLabel: opening ? "提交审批" : previous ? "保存配置" : "保存草稿",
+      confirmLabel: opening ? "提交审批" : draftOnly ? "保存草稿" : "保存配置",
       blockedReason: unchanged ? "没有改动" : undefined,
       reasonPlaceholder: opening ? "例如：奖项和时间已确认，申请开放报名" : "例如：按活动方案配置这一期",
       run: async reason => {
@@ -218,7 +225,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
           }
           // A refresh started before the write response may have missed its receipt.
           await load(!approval, true);
-          after?.();
+          finished();
         };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
@@ -237,6 +244,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
           await complete(result);
         } catch (cause) {
           // 直接保存被判定要走审批：换成审批确认，内容和理由沿用（H-改走审批）。
+          if (!(cause instanceof HApprovalRequired)) onward = undefined;
           if (cause instanceof HApprovalRequired) {
             ctx.openActionConfirm(null);
             ctx.openConfirm(hApprovalReconfirm(cause, { action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, title: "保存抽奖配置", reason,
@@ -370,10 +378,20 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   const needsVerification = !!awaitingRead && h4RaffleSaveNeedsVerification(awaitingRead);
   const unchanged = base && draft
     && isUnchangedRaffle(base, raffleLocalizedDraft(draft, requiredLanguages, "submit"), enabled, requiredLanguages);
-  const dirty = !!draft && !savedUnread && (JSON.stringify(draft) !== JSON.stringify(opened.current.draft) || enabled !== opened.current.enabled);
-  const leaveSwitch = useRef<EditorSwitch | null>(null);
-  const guard = useLeaveGuard(dirty, close, leaveSwitch);
-  useH4DrawerFocus(!!draft, "h4l-raffle");
+  const focus = useH4DrawerFocus(!!draft, "h4l-raffle");
+  const leave = useH4EditGuard();
+  // 改过没有：和保存按钮同一个判断（同值的金额不算改动）；新建的和空白比。只能查看的一期不算。
+  const dirty = !!draft && !savedUnread && (base ? !saveBlocked && unchanged === false : JSON.stringify(draft) !== JSON.stringify(empty()));
+  const scope = draft ? `H/h4_genesis_raffle/${draft.id}` : "";
+  const draftOnly = !enabled && (!base || base.status === "DRAFT");
+  const saveLabel = draftOnly ? "保存草稿" : "保存配置";
+  const saveReason = !write ? "没有修改创世抽奖的权限" : savedUnread ? needsVerification ? "保存结果待核对；关掉后点「刷新」。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(scope) ?? (pendingSave ? H4_UNKNOWN_SAVE : unchanged ? "没有改动" : undefined) : undefined;
+  // 保存动作按真实路径命名（OP-29）：开放走审批，关闭报名立即生效，其余存成草稿。
+  useH4Editor(draft ? {
+    scope, dirty, saveReason, close,
+    saveName: base?.status === "DRAFT" && enabled ? "提交审批后继续" : base?.status === "OPEN" && !enabled ? "保存并立即生效" : "保存草稿后继续",
+    save: after => save(undefined, after),
+  } : null);
   if (!read) return <BlockState state="denied" title="没有查看创世抽奖的权限" detail="创世抽奖需要「活动中心查看」权限。" />;
 
   const showSaved = savedUnread && (!error || readFailed);
@@ -381,23 +399,20 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     : stale ? "没有保存：最新的这一期也没读到" : "没有保存";
   const formLocked = !write || saving || savedUnread || !!draft && h4Blocked(`H/h4_genesis_raffle/${draft.id}`) || !!review;
   const enableBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0);
-  const saveReason = !write ? "没有修改创世抽奖的权限" : savedUnread ? needsVerification ? "保存结果待核对；关掉后点「刷新」。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : saveBlocked ? "这一期不能再改" : review ? "先在上面选一种继续" : draft ? h4ApprovalLockedReason(`H/h4_genesis_raffle/${draft.id}`) ?? (unchanged ? "没有改动" : undefined) : undefined;
-  // 保存动作按真实路径命名（OP-29）：开放走审批，关闭报名立即生效，其余存成草稿。
-  const leaveSaveLabel = base?.status === "DRAFT" && enabled ? "提交审批后继续" : base?.status === "OPEN" && !enabled ? "保存并立即生效" : "保存草稿后继续";
   return <Panel id="h4l-raffle" title="创世抽奖" icon={Trophy} tone="role-4" sub={loading ? undefined : `最近 ${rows.length} 期`}
     explain={<><p>用户用创世抽奖券报名，到开奖时间系统自动开奖、发奖；这里没有人工开奖或补发。</p><p>从草稿开放报名要另一位超级管理员批准。还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定。只显示最近 50 期。</p></>}
-    actions={<><Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void load()}>刷新</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!write ? "没有修改创世抽奖的权限" : loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void openRaffle(null)}>新建一期</Button></>}>
+    actions={<><Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void load()}>刷新</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!write ? "没有修改创世抽奖的权限" : loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={event => { const button = event.currentTarget; leave.attempt(() => void openRaffle(null, undefined, button)); }}>新建一期</Button></>}>
     {loading ? <BlockState state="loading" title="正在加载抽奖设置" />
       : !rows.length && error && !draft ? <BlockState state="error" title="创世抽奖没有读到" detail={error} onRetry={() => void load()} />
       : !rows.length ? <BlockState state="empty" title="暂无抽奖轮次" detail="点右上角「新建一期」。" />
       : <ol className="h4l-draws" aria-label="抽奖期，最新的在上">{rows.map(row => {
         const status = STATUS[row.status];
-        return <li key={row.id} className="h4l-draw" data-state={row.status}>
+        return <li key={row.id} data-code={row.id} className="h4l-draw" data-state={row.status}>
           <span className="h4l-draw-dot" aria-hidden />
           <div className="h4l-draw-body">
             <header className="h4-card-head">
               <div className="h4-card-title"><h3>{row.titleZh || row.titleEn || "中文名称未配置"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.id}>{row.id}</span></span></div>
-              <span className="h4l-tags"><StatusTag tone={status.tone} explain={status.explain}>{status.label}</StatusTag><Button size="sm" disabledReason={saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void openRaffle(row)}>{row.status === "DRAFT" || (row.status === "OPEN" && row.totalEntries === 0) ? "查看和修改" : "查看"}</Button></span>
+              <span className="h4l-tags"><StatusTag tone={status.tone} explain={status.explain}>{status.label}</StatusTag><Button size="sm" disabledReason={saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={event => { const button = event.currentTarget; leave.attempt(() => void openRaffle(row, undefined, button)); }}>{row.status === "DRAFT" || (row.status === "OPEN" && row.totalEntries === 0) ? "查看和修改" : "查看"}</Button></span>
             </header>
             <Steps label={`${row.titleZh || row.titleEn || row.id} 走到哪`} items={["草稿", "开放报名", "开奖处理中", "已开奖"].map((label, index) => ({ label, state: index < status.step ? "done" as const : index === status.step ? "current" as const : "todo" as const }))} />
             <dl className="h4l-facts">
@@ -412,14 +427,14 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     {rows.length > 0 && error && !draft && <Notice tone="danger" title="创世抽奖没有读到最新的">{error}</Notice>}
     {stale && !draft && <Notice tone="warn" title={`没有保存：「${stale}」已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>{error ? "你这次改的没有提交。" : "已读到最新配置。你这次改的没有提交，关掉时已丢弃；要改就重新打开。"}</Notice>}
     {!loading && rows.length > 0 && <p className="h4l-note">时间为北京时间</p>}
-    <Drawer open={!!draft} onClose={guard.askClose} busy={saving} title={base ? "这一期的配置" : "新建一期抽奖"} sub={base ? base.id : undefined} icon={Trophy} tone="role-4"
+    <Drawer open={!!draft} onClose={leave.askClose} busy={saving} title={base ? "这一期的配置" : "新建一期抽奖"} sub={base ? base.id : undefined} icon={Trophy} tone="role-4"
       explain="保存前先在这里填完整：三语名称、时间和奖项。没保存的改动，关闭时会先问。"
       footer={<Decision note={!write ? "没有修改创世抽奖的权限" : saveBlocked ? (base?.status === "OPEN" ? "已有人报名：奖项和时间锁定，也不能关闭" : "已开奖或正在开奖，只能查看") : undefined}
-        others={<Button disabled={saving} onClick={guard.askClose}>取消</Button>}
-        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={saveReason} onClick={() => save()}>{base ? "保存配置" : "保存草稿"}</Button>} />}>
+        others={<Button disabled={saving} onClick={leave.askClose}>取消</Button>}
+        primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={saveReason} onClick={() => save()}>{saveLabel}</Button>} />}>
       {draft && <div className="h4-dialog-body">
         {review && <H4ConflictCompare groups={compareGroups} sections={prizeSections} mergeDisabledReason={mergeBlockedReason} onMerge={mergeConflict} />}
-        {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「保存配置」。`}</Notice>}
+        {merged > 0 && <Notice tone="neutral" title="已合并，还没保存" action={<Button size="sm" variant="ghost" onClick={() => setMerged(0)}>知道了</Button>}>{`表单是最新的这一期，放回了你改的 ${merged} 项。核对后点「${saveLabel}」。`}</Notice>}
         <fieldset disabled={formLocked} className="h4-fieldset">
         {base && <Field label="开放报名" explain={enableBlocked ? (base.totalEntries > 0 ? "已有人报名，不能再关闭。" : "已开奖或正在开奖。") : "开放要另一位超级管理员批准；还没人报名时可以关回草稿。"}>
           <Segments label="开放创世抽奖报名" value={String(enabled)} onChange={v => setEnabled(v === "true")} items={[
@@ -463,6 +478,5 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
         {(error || savedUnread) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={saveNoticeTitle}>{showSaved ? needsVerification ? "关掉后点「刷新」，读到这一期才能确认是否保存。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
       </fieldset></div>}
     </Drawer>
-    <H4LeaveDialog title="这一期还没保存" guard={guard} saveLabel={leaveSaveLabel} saveReason={saveReason} onSave={() => save(undefined, guard.saved)} />
   </Panel>;
 }

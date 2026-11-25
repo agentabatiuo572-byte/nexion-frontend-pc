@@ -18,6 +18,7 @@ import { ConfirmCommand, Dialog, Empty, Loading, Notice as OldNotice, PROMOTION_
 import { OPERATION_LABELS, PendingList, PromotionCard, PromotionOverview, RewardEntries, ZoneSwitch } from './h4-promotion-board';
 import { ArrowLeft, Gift, Megaphone, Plus } from 'lucide-react';
 import { BlockState, Button, FilterBar, FilterField, Input, IrreversibleTag, Notice, PageHeader, PageTabs, Panel, Select, StatusTag, useTabIds, type MoreMenuItem, type PageTabItem } from '@/app/components/rd';
+import { useH4EditHost } from './h4-edit-guard';
 import './h4-promotions.css';
 type Screen = 'list' | 'edit' | 'review' | 'detail' | 'rewards' | 'metrics';
 const SCREENS: Screen[] = ['list', 'edit', 'review', 'detail', 'rewards', 'metrics'];
@@ -38,7 +39,7 @@ function restoreReason(reason: string, kind: 'banner' | 'evidence') {
 }
 export default function H4Promotions({ ctx, legacy }: {
     ctx: HCtx;
-    legacy: (section: LegacySection, go: (section: LegacySection) => void) => ReactNode;
+    legacy: (section: LegacySection, go: (section: LegacySection, after?: () => void) => void) => ReactNode;
 }) {
     const routeSearch = useSearchParams().toString();
     const [,pendingChanged]=useState(0);
@@ -75,14 +76,16 @@ export default function H4Promotions({ ctx, legacy }: {
         screen === 'list' && list.error ? { target: '活动列表', error: list.error, retry: reloadList } : null,
         screen !== 'list' && activityError ? { target: '当前活动版本', error: activityError, retry: retryActivity } : null].filter((item): item is NonNullable<typeof item> => item !== null);
     const can = useCallback((capability: string) => ctx.can(capability) && (screen === 'list' || !activity?.deleted || capability.endsWith('_read') || capability.startsWith('growth_promotion_reward_') || capability === 'growth_promotion_metrics_export') && (capability.endsWith('_read') || (!catalog.loading && !catalog.error && (screen === 'list' ? !list.loading && !list.error : !activityBusy && !activityError))), [ctx.can, activity?.deleted, catalog.loading, catalog.error, activityBusy, activityError, screen, list.loading, list.error]);
-    const navigate = (next: Screen, target = id) => { setScreen(next); setId(target); const url = new URL(location.href); if (next === 'list') {
+    // 页面一级的离开守卫：换页签、换页面都先处理正在改的抽屉（OP-29）。
+    const edit = useH4EditHost();
+    const navigate = (next: Screen, target = id) => edit.attempt(() => { setScreen(next); setId(target); const url = new URL(location.href); if (next === 'list') {
         url.searchParams.delete('promotion');
         url.searchParams.delete('activity');
     }
     else {
         url.searchParams.set('promotion', next);
         url.searchParams.set('activity', target);
-    } history.pushState({}, '', url); };
+    } history.pushState({}, '', url); });
     useEffect(() => { const restore = () => { const p = new URLSearchParams(location.search), s = p.get('promotion'); setScreen(SCREENS.includes(s as Screen) ? s as Screen : 'list'); setId(p.get('activity') || '');setEditStep(Math.max(0,Math.min(3,Number(p.get('step'))||0)));setRouteReady(true);  }; if (screen !== 'edit' || !pageReady) restore(); window.addEventListener('popstate', restore); return () => window.removeEventListener('popstate', restore); }, [routeSearch]);
     useEffect(() => { if (!id) {
         setActivity(null);
@@ -116,7 +119,7 @@ export default function H4Promotions({ ctx, legacy }: {
     const acknowledgeUpload = (record: H4Command) => { void acknowledgeH4Upload(record).catch(cause => setNotice(displayAdminError(cause))); };
     const heading = screen === 'list' ? ['活动中心', '管理促销与邀请推广活动，跟进配置、投放及未完成奖励。'] : screen === 'edit' ? [`配置活动 · ${['基本信息', '参与资格', '购机赠奖', '预算与叠加'][editStep]}`, '设置参与条件、逐设备奖励与预算政策。'] : screen === 'review' ? ['试算、审核与发布', '先试算确认没有问题，再分别审核和发布。'] : screen === 'detail' ? [activity?.name || '活动详情', '已发布规则与改版草稿分开呈现，旧订单继续按原版本履行。'] : screen === 'rewards' ? ['奖励台账', '逐项核对奖励承诺与发放凭证；结果未知时先核账。'] : ['活动效果', '查看同一次统计的成交、退款与奖励成本。'];
     const listTab: ListTab = old ? `legacy-${legacySection}` : tab;
-    const chooseTab = (next: ListTab) => { if (next.startsWith('legacy-')) { setLegacySection(next.slice(7) as LegacySection); setOld(true); return; } setTab(next as typeof tab); setOld(false); };
+    const chooseTab = (next: ListTab) => edit.attempt(() => { if (next.startsWith('legacy-')) { setLegacySection(next.slice(7) as LegacySection); setOld(true); return; } setTab(next as typeof tab); setOld(false); });
     const tabItems: PageTabItem<ListTab>[] = [
         { value: 'promotions', label: '促销活动', count: list.data ? list.data.total : undefined },
         { value: 'rewards', label: '奖励台账', count: list.data ? list.data.summary.unresolved : undefined },
@@ -164,13 +167,13 @@ export default function H4Promotions({ ctx, legacy }: {
         {!old && list.data && pageReady && <PromotionOverview page={list.data} pendingCount={pendingItems.length} catalog={catalog.data} rewardsAllowed={can('growth_promotion_reward_read')} onOpenRewards={id => navigate('rewards', id)} onOpenDetail={id => navigate('detail', id)}/>}
         <PageTabs label="活动中心分区" value={listTab} items={tabItems} onChange={chooseTab} ids={tabIds}/>
         <div role="tabpanel" id={tabIds.panelId(listTab)} aria-labelledby={tabIds.tab(listTab)} className="h4-tabpanel">
-            {old ? legacy(legacySection, (next: LegacySection) => setLegacySection(next))
+            {old ? legacy(legacySection, (next, after) => edit.attempt(() => { setLegacySection(next); after?.(); }))
                 : listTab === 'policies' ? policiesPanel
                 : !pageReady && (pageLoading || readErrors.length > 0) ? <PromotionReadPanel title="活动中心" loading={readErrors.length === 0} errors={readErrors}/>
                 : listTab === 'rewards' ? rewardsPanel : promotionsPanel}
         </div>
     </>;
-    return <div className="h4-page" data-promotion-screen={screen}>
+    return edit.provide(<div className="h4-page" data-promotion-screen={screen}>
     <PageHeader pageId="H4" title={heading[0]} summary={heading[1]} back={screen !== 'list' && (screen !== 'edit' || !pageReady) ? <button type="button" className="rd-link h4-back" onClick={() => navigate('list')}><ArrowLeft size={14} aria-hidden/>返回活动列表</button> : undefined}
         actions={<>{screen !== 'list' && can('growth_promotion_policy_read') && catalog.data && <Button onClick={() => setPoliciesOpen(true)}>政策与原业务协议</Button>}{screen === 'list' && listTab === 'promotions' && <Button variant="primary" icon={<Plus size={14} aria-hidden/>} disabledReason={!can('growth_promotion_edit') ? '没有新建活动的权限' : !catalog.data ? '活动目录还没读到' : undefined} onClick={() => setCreating(true)}>新建活动</Button>}</>}/>
     {screen !== 'list' && activity?.deleted && <Notice tone="warn" title="活动已删除">活动配置仅供历史查阅，不能编辑、复制、试算或重新发布。历史订单和奖励继续履行，仍可查看奖励台账与活动效果。</Notice>}
@@ -214,6 +217,6 @@ export default function H4Promotions({ ctx, legacy }: {
         if (id) await refresh();
         else reloadList();
     }}><Summary rows={[['原操作', OPERATION_LABELS[pending.operation] || '促销操作'], ['对象', pending.targetId], ['提交时间', `${formatTime(new Date(pending.createdAt).toISOString(), 'Asia/Shanghai')}（北京时间）`]]}/><OldNotice title="原参数保留">本操作只核查或原样恢复之前的操作记录，不修改目标与原始参数。</OldNotice></ConfirmCommand>}
-  </div>;
+  </div>);
 }
 const TEMPLATE_HINTS: Record<Template, string> = { SKU_GIFT: '买指定设备，送设备或奖励', FIRST_PURCHASE: '第一次购机的用户得奖励', DIRECT_REFERRAL: '被直接邀请的人首购，双方都得奖励', MULTI_PRODUCT: '同一单买齐几种型号才给奖励', REPURCHASE: '上次购机后隔一段时间再买' };
