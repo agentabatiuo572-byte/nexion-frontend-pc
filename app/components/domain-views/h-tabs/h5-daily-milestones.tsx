@@ -655,7 +655,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="正在加载签到数据…" />{confirmModal}</div>;
+  // 读取失败后按「重试」：失败块留在原处写「重试中…」，不换成另一块加载占位，焦点不掉到整页（BUG-710）。
+  if (loading && !model && !error) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="正在加载签到数据…" />{confirmModal}</div>;
   if (error || !model) {
     return (
       <div className="h5-page">

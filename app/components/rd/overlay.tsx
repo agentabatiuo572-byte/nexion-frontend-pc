@@ -102,7 +102,10 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
     }
     // 打开者所在的框还开着（抽屉里点开的确认框）：回到那个框；那个框已经关了（离开框）：用那个框关掉时的去处。
     if (host.current?.isConnected) return host.current;
-    return hostHandoff.current?.() ?? null;
+    const inherited = hostHandoff.current?.() ?? null;
+    // 那个框的去处在还开着的抽屉外面（离开框是点侧栏链接、切页签打开的）：留在抽屉里，不跳出去（BUG-710）。
+    const drawer = document.querySelector<HTMLElement>('.rd-drawer[data-state="open"]');
+    return drawer && !(inherited && drawer.contains(inherited)) ? drawer : inherited;
   };
   const latest = useRef(target);
   latest.current = target;
