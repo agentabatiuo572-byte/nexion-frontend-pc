@@ -143,7 +143,7 @@ function staleText(failure: unknown) {
   return <><b>{conflict ? "刚被别人改过，这次没有保存，最新的规则也没读到。" : "这次没有保存，最新的规则也没读到。"}</b>{!conflict && <><br />{rejectionText(failure)}</>}<br />关掉这个框，在页面上重新加载后再打开。</>;
 }
 const STALE_TOAST = "最新的规则没读到，现在不能提交。关掉这个框，重新加载后再打开。";
-const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不能再重试，只能查询原操作。";
+const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不能再重试；只能读取当前规则，再到「操作记录与审批」核对原操作。";
 
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const reach = useReach();
@@ -248,7 +248,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       // 重试被 401／403／429 挡下：说这次为什么没执行，原操作仍是结果未知。
       const retryRefused = row && !rejected && retry && err instanceof UsersRequestError && [401, 403, 429].includes(err.status);
       const message = retryRefused ? `这次重试没有执行：${rejectionText(err)}原操作仍是结果未知，原请求已保留。`
-        : row && !rejected ? "结果未知 · 已保留原请求，在页面上方查询原操作或按原操作重试" : `操作失败 · ${errorMessage(err)}`;
+        : row && !rejected ? "结果未知 · 已保留原请求，在页面上方读取当前规则核对，或按原操作重试" : `操作失败 · ${errorMessage(err)}`;
       // 第一次提交被拒时原框还开着，原因写在框里，不再弹同一句；最新规则没读到时页面照旧停在「没有保存」。
       const keptOpen = Boolean(row && rejected && !retry);
       if (!keptOpen || !overviewRef.current) setError(message);
@@ -547,7 +547,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     },
     get content() { return (
       <>
-        {original.getPendingReason() !== undefined && <Notice tone="warn" title="结果未知，可能已经生效">理由已锁住。按原操作重试只发原来那一次，不会重复执行；也可以关掉后在页面上方查询原操作。</Notice>}
+        {original.getPendingReason() !== undefined && <Notice tone="warn" title="结果未知，可能已经生效">理由已锁住。按原操作重试只发原来那一次，不会重复执行；也可以关掉后在页面上方读取当前规则核对；现在的规则证明不了原操作成没成。</Notice>}
         {stale && <Notice tone="warn">{staleText(after.failure)}</Notice>}
         <Facts>
           <Fact k="人机验证"><Change from={basis.stats?.captchaTemporarilyDisabled ? "临时关闭" : "开启"} to="开启" /></Fact>
@@ -770,7 +770,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
                 what="注册和绑定时的多账户限制"
                 effect="当前值和修改都在「多账户风险排查」"
                 value={<span className="c6-elsewhere">在多账户风险排查设置</span>}
-                action={reach(text(guard.suggestedPath, k1Path)) ? <Button size="sm" onClick={() => k1Confirm(guard)}>去修改 →</Button> : undefined}
+                action={reach(text(guard.suggestedPath, k1Path)) ? <Button size="sm" onClick={() => k1Confirm(guard)}>查看修改位置</Button> : undefined}
               />
             ))}
           </ConfigList>

@@ -114,7 +114,7 @@ export function F3Placements() {
     </>}
     actions={!canWrite ? <StatusTag tone="neutral" icon={Eye}>只读</StatusTag> : undefined}>
     <FilterBar onSubmit={() => void load()} querying={busy} sort={<span className="rd-filter-result">一页 20 人，按成员编号排</span>}
-      action={<Button type="submit" variant="primary" disabledReason={pending ? "有一条分组结果未知，先查询原操作" : undefined} loading={busy} disabled={busy || !!pending}>查询成员</Button>}>
+      action={<Button type="submit" variant="primary" disabledReason={pending ? "有一条分组结果未知，先读取当前分组核对" : undefined} loading={busy} disabled={busy || !!pending}>查询成员</Button>}>
       <FilterField>
         <Input inputMode="numeric" value={owner} disabled={busy || !!pending} placeholder="邀请人用户编号" aria-label="邀请人用户编号" size={16}
           onChange={event => { setOwner(event.target.value); setData(null); selectIntent(null); setNotice(""); setError(""); }} />
@@ -124,8 +124,8 @@ export function F3Placements() {
           options={[{ value: "ALL", label: "全部成员" }, { value: "ASSIGNED", label: "已分组" }, { value: "UNASSIGNED", label: "未分组" }]} />
       </FilterField>
     </FilterBar>
-    {pending && <Notice tone="warn" title={<>分组结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经分好了。点「查询原操作」按原来的邀请人和成员重新读取；读到已在原来那一组就算完成，读到在另一组说明不能换。仍没分组时保留这条，不会自动再提交一次。" /></>}
-      action={<Button size="sm" disabled={busy} onClick={() => void checkPending()}>查询原操作</Button>}>
+    {pending && <Notice tone="warn" title={<>分组结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经分好了。点「读取当前分组」按原来的邀请人和成员读取现在的分组；读到已在原来那一组就算完成，读到在另一组说明不能换。仍没分组时保留这条，不会自动再提交一次。" /></>}
+      action={<Button size="sm" disabled={busy} onClick={() => void checkPending()}>读取当前分组</Button>}>
       邀请人 {pending.ownerUserId} · 成员 {pending.memberUserId} → {pending.leg} 组
       {original && isRetryExpired(original) && <p>{RETRY_EXPIRED_TEXT}</p>}
     </Notice>}

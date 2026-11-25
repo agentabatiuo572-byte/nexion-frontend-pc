@@ -1116,7 +1116,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         detail: <>
           <p>{`改动：${loosenRecord.values ? describeChanges(loosenRecord.values) : "原内容读不到"}。${confirmed ? "审批已提交，查到审批单状态后再提交放宽。" : "审批单可能已经提交，批准前现在的值不变。有结果前不能再提交放宽，收紧照常。"}`}</p>
           {expiredNote && <p>{expiredNote}</p>}
-          {loosenRecord.replayRejection && <p>重试没有成功：{errorText(new Error(loosenRecord.replayRejection))} {canQuery ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT}</p>}
+          {loosenRecord.replayRejection && <p>重试没有成功：{errorText(new Error(loosenRecord.replayRejection))} {reach("/platform/audit", "platform_a2_read") ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT}</p>}
           {notes[key] && <p>{notes[key]}</p>}
         </>,
         tech: loosenRecord.reason ? `理由 ${loosenRecord.reason}` : undefined };
@@ -1208,7 +1208,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
 
   const releaseModal = releasing && (
     <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain={releasing.loosen ? canQuery ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT : `重试被拒说明不了原操作的结果，${canQuery ? "先到操作记录核对" : "先请能看操作记录的同事核对"}它有没有生效。解除只清本页这条记录，不算核查结案；系统仍可能阻止再次提交。`} />
+      explain={releasing.loosen ? reach("/platform/audit", "platform_a2_read") ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT : `重试被拒说明不了原操作的结果，${canQuery ? "先到操作记录核对" : "先请能看操作记录的同事核对"}它有没有生效。解除只清本页这条记录，不算核查结案；系统仍可能阻止再次提交。`} />
   );
 
   const sections: SectionNavItem[] = [

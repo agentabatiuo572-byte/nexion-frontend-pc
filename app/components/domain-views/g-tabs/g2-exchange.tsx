@@ -542,7 +542,7 @@ function G2ExchangePage() {
           key: record.commandKey, name, change, submittedAt: record.createdAt, state: "direct-unknown",
           tag: expired ? expiredTag("direct") : unknownTag("direct"),
           actions: <>
-            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原操作`} onClick={query}>查询原操作</Button>
+            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={param || batch ? `查询${name}的原操作` : `读取${name}的当前配置`} onClick={query}>{param || batch ? "查询原操作" : "读取当前配置"}</Button>
             {!batch && canRetry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原操作重试${name}`} onClick={retry}>按原操作重试</Button>}
           </>,
         };
@@ -553,9 +553,9 @@ function G2ExchangePage() {
       title={`兑换的原操作 · ${rows.length} 项`}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
-        : `这些操作先只能查询原操作或在 24 小时内按原操作重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
+        : `这些操作先只能核对（参数和处理排队查询原操作，开关和取消排队读取当前配置），或在 24 小时内按原操作重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
       explain={<>
-        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。原操作只能查询，或在 24 小时内按原操作重试，不能改值。</p>
+        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。参数和处理排队可以查询原结果；紧急暂停和取消排队只能读取当前配置核对，现在的值证明不了原操作成没成。都可以在 24 小时内按原操作重试，不能改值。</p>
         <p>要改成别的值，等原操作有结论后再在「兑换参数」里发起新修改。处理排队的原批次在这里只能查原结果，不会重发。</p>
       </>} />;
   };

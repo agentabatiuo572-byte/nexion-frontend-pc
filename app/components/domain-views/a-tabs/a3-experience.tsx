@@ -423,7 +423,7 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       <dl className="a3-readonly">
         <div><dt>首页新手任务</dt><dd><StatusTag tone={config.homeNewcomerTasksEnabled ? "ok" : "neutral"} icon={config.homeNewcomerTasksEnabled ? undefined : CircleOff}>{config.homeNewcomerTasksEnabled ? "已开启" : "已关闭"}</StatusTag></dd></div>
         <div><dt>首页周促销</dt><dd><StatusTag tone={config.homeWeeklyPromoEnabled ? "ok" : "neutral"} icon={config.homeWeeklyPromoEnabled ? undefined : CircleOff}>{config.homeWeeklyPromoEnabled ? "已开启" : "已关闭"}</StatusTag></dd></div>
-        {h3 && <div><dt>去修改 →</dt><dd><Link className="rd-link" href="/growth/quest" prefetch={false}>去「用户任务管理」修改 →</Link></dd></div>}
+        {h3 && <div><dt>去修改</dt><dd><Link className="rd-link" href="/growth/quest" prefetch={false}>去「用户任务管理」修改 →</Link></dd></div>}
       </dl>
     </Panel>
 

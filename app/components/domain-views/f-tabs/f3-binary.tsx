@@ -469,7 +469,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="f3-recovery-change">邀请人 {placementOriginal.intent.ownerUserId} · 成员 {placementOriginal.intent.memberUserId} → {placementOriginal.intent.leg} 组</span>
           <span className="f3-recovery-time">{businessStamp(placementOriginal.createdAt)} 提交</span>
           <span className="f3-recovery-state"><StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经分好组。查询只读取现在的分组，有结论前不要换个组重分。">结果未知</StatusTag></span>
-          <span className="f3-recovery-actions"><Button size="sm" disabled={placementChecking} onClick={() => void checkPlacement()}>查询原操作</Button></span>
+          <span className="f3-recovery-actions"><Button size="sm" disabled={placementChecking} onClick={() => void checkPlacement()}>读取当前分组</Button></span>
         </li>}
       </ul>
       <p className="f3-recovery-zone">提交时间为{businessZone().label}</p>

@@ -311,7 +311,7 @@ export function M5Scripts({ ctx, tab, ids, showSeatOperations = true, showSeatPr
     if (isRetryExpired(record)) { toast(RETRY_EXPIRED_TEXT, "warn"); return false; }
     if (!mCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
       if (!recovered) { mCommands.forget(record.fingerprint, record.commandKey); syncPending(); }
-      toast(recovered ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。", "warn"); return false;
+      toast(recovered ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先读取当前内容核对。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。", "warn"); return false;
     }
     const owner = activeConfirm.current;
     const closeOwner = () => {
@@ -1000,7 +1000,7 @@ function AgentProfileModal({ agent, agents, ctx, pending, canSubmitNew, onClose 
         <Fact k="客服类型"><span data-proof="m5-seat-position-field">{seatLabel(position)}</span></Fact>
         <Fact k="现在服务">{agent.assignedUserCount} 位客户</Fact>
       </Facts>
-      {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试，只能查询原操作。" : "上次保存可能已经生效。内容已锁定为原请求，按原操作重试不会重复执行。"}</Notice>}
+      {pending && <Notice tone="warn" title="结果未知">{isRetryExpired(pending) ? "原请求超过 24 小时，不能再重试；只能读取当前内容核对，现在的内容证明不了原操作成没成。" : "上次保存可能已经生效。内容已锁定为原请求，按原操作重试不会重复执行。"}</Notice>}
       <p className="rd-note">接待资格和主管资格在账号管理里改。</p>
       <DiffField label="同时接待上限" explain={CAP_EXPLAIN} before={agent.maxConcurrent === null ? "不限" : String(agent.maxConcurrent)} unit={agent.maxConcurrent === null ? undefined : "位"} hint={unlimited ? undefined : "0–40 的整数"} error={capProblem && (capText !== "" || capLeft) ? capProblem : undefined} note={capNote}>
         {(control) => <>

@@ -321,8 +321,8 @@ export async function executeG3MarketChange(
     }
     const uncertain = new A2OutcomeUncertainError("", key);
     // The shared approval modal appends the number; do not append it twice here.
-    uncertain.message = runtimeProposal
-      ? "提交结果未知，可能已提交审批。请查询原操作，或在有效期内按原操作重试；过期后只能查询。"
+    uncertain.message = command.request.kind === "approval"
+      ? "提交结果未知，可能已经提交审批。请查询原操作，或在有效期内按原操作重试；过期后仍可查询原审批单。"
       : "提交结果未知，可能已经生效。请读取当前配置核对，或在有效期内按原操作重试；过期后只能核对。";
     throw uncertain;
   }

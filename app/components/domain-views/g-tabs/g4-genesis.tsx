@@ -1222,15 +1222,15 @@ function G4GenesisPage() {
       secondary: state,
       mark: current ? "当前档" : undefined,
       actions: canPriceTiers ? <span className="g4x-tier-actions">
-        <Button size="sm" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次操作结果未知，先查询原操作" : undefined} aria-label={`编辑 ${tier.id}`} onClick={() => editTier(tier, index)}>编辑</Button>
+        <Button size="sm" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : undefined} aria-label={`编辑 ${tier.id}`} onClick={() => editTier(tier, index)}>编辑</Button>
         {/* 唯一档不渲染删档入口(禁用态仍暗示「某些条件下可删」,GEN11 同款纪律)。 */}
-        {tiers.length > 1 && <Button size="sm" variant="danger-outline" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次操作结果未知，先查询原操作" : undefined} aria-label={`删除 ${tier.id}`} onClick={() => deleteTier(tier, index)}>删除</Button>}
+        {tiers.length > 1 && <Button size="sm" variant="danger-outline" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : undefined} aria-label={`删除 ${tier.id}`} onClick={() => deleteTier(tier, index)}>删除</Button>}
       </span> : undefined,
     };
   }) : [];
 
-  const marketDisabledReason = busy ? busyReason : directRecord("market-open-state") ? "上次操作结果未知，先查询原操作" : marketClosed && !overview.catalogAvailable ? "节点系列和价格档位不完整，补齐后才能恢复开放" : undefined;
-  const rerunDisabledReason = directRecord(`dividend-batches/${encodeURIComponent(dividend.batchNo)}/rerun`) ? "上次操作结果未知，先查询原操作" : busyKey ? "正在处理上一项，稍候再操作"
+  const marketDisabledReason = busy ? busyReason : directRecord("market-open-state") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : marketClosed && !overview.catalogAvailable ? "节点系列和价格档位不完整，补齐后才能恢复开放" : undefined;
+  const rerunDisabledReason = directRecord(`dividend-batches/${encodeURIComponent(dividend.batchNo)}/rerun`) ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : busyKey ? "正在处理上一项，稍候再操作"
     : !paramApproval.record(dividend.batchNo) && refreshError ? "页面要先重新读取成功，才能再发"
       : !paramApproval.record(dividend.batchNo) && !overview.emissionGate.open ? "「运营阶段设置」里的开始发放收益还没开，不能发放"
         : !paramApproval.record(dividend.batchNo) && !dividend.batchNo ? "今天的批次号还没有，暂时不能发放" : undefined;
@@ -1251,11 +1251,11 @@ function G4GenesisPage() {
         <Notice tone="warn" title={overview.seriesRecoveryRequired ? "要先恢复原系列" : overview.seriesInitializationAvailable ? "下一步：发布系列" : "下一步：创建第一档"}
           action={<>
             {overview.seriesInitializationAvailable && allowed("finprod_g4_write") && (
-              <Button size="sm" variant="primary" disabledReason={busy ? busyReason : directRecord("series/initialize") ? "上次操作结果未知，先查询原操作" : undefined} onClick={initializeSeries}>发布系列</Button>
+              <Button size="sm" variant="primary" disabledReason={busy ? busyReason : directRecord("series/initialize") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : undefined} onClick={initializeSeries}>发布系列</Button>
             )}
             {overview.seriesSetupRequired && !overview.seriesRecoveryRequired
               && overview.tradeBlockedReason === "GENESIS_TIERS_UNAVAILABLE" && canPriceTiers && tiers && (
-              <Button size="sm" variant="primary" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次操作结果未知，先查询原操作" : undefined} onClick={addTier}>创建第一档</Button>
+              <Button size="sm" variant="primary" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : undefined} onClick={addTier}>创建第一档</Button>
             )}
           </>}>
           <p>{overview.seriesRecoveryRequired
@@ -1280,7 +1280,7 @@ function G4GenesisPage() {
           explain="今天这一批（按业务日）真实发出去的节点数和金额，以批次实际入账为准。系统不保证每天会自动发；今天还没发时，在「每日分红」里手动发放。" />
         <Stat label="没处理完的申请" icon={ListOrdered} tone={pendingCount > 0 ? "warn" : "role-3"} value={fmtInt(pendingCount)} unit="项"
           sub={pendingCount > 0 ? "见上面的提醒" : "没有压着的申请"}
-          explain="你在这台电脑上提交、还没处理完的申请。待审批是在等另一位超级管理员批准；结果未知是可能已经生效，先查询原操作。别人发起的在「操作记录与审批」看。" />
+          explain="你在这台电脑上提交、还没处理完的申请。待审批是在等另一位超级管理员批准；结果未知是可能已经生效：走审批的点「查询原操作」查原审批单，直接修改的点「读取当前配置」核对现在的值。别人发起的在「操作记录与审批」看。" />
       </StatBand>
 
       <Panel title="销售进度与价格档位" icon={Layers} tone="role-2"
@@ -1291,7 +1291,7 @@ function G4GenesisPage() {
         </>}
         actions={tiers && canPriceTiers ? <span className="g4x-tiers-actions">
           {tierPending && <Button size="sm" disabledReason={busy ? busyReason : undefined} onClick={() => setTierConfirm({ epoch })}>查询原操作</Button>}
-          <Button size="sm" variant="primary" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次操作结果未知，先查询原操作" : undefined} onClick={addTier}>{tiers.length === 0 ? "+ 创建第一档" : "+ 新增档位"}</Button>
+          <Button size="sm" variant="primary" disabledReason={busy ? busyReason : directRecord("tiers") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : undefined} onClick={addTier}>{tiers.length === 0 ? "+ 创建第一档" : "+ 新增档位"}</Button>
         </span> : undefined}>
         <div className="g4x-sales">
           <div className="g4x-progress">
@@ -1434,7 +1434,7 @@ function G4GenesisPage() {
                 effect="只管入口显示；不影响已有持仓和收益、市场状态、紧急暂停和购买资格"
                 value={<span className="g4x-param"><span className="g4x-value"><span className="g4x-value-num">{g4ParamValueText("showcaseEnabled", showcaseEnabledParam.value)}</span></span><span className="g4x-dir">立即生效</span></span>}
                 action={allowed(paramAuthority(showcaseEnabledParam.key)) ? (
-                  <Button size="sm" disabledReason={busy ? busyReason : directRecord("params/showcaseEnabled") ? "上次操作结果未知，先查询原操作" : undefined} aria-label={showcaseEnabledParam.value === "true" ? "App 商城展示：改为隐藏" : "App 商城展示：改为展示"} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</Button>
+                  <Button size="sm" disabledReason={busy ? busyReason : directRecord("params/showcaseEnabled") ? "上次修改结果未知，先在页面上方读取当前配置核对，或按原操作重试" : undefined} aria-label={showcaseEnabledParam.value === "true" ? "App 商城展示：改为隐藏" : "App 商城展示：改为展示"} onClick={toggleShowcase}>{showcaseEnabledParam.value === "true" ? "隐藏" : "展示"}</Button>
                 ) : undefined} />
             )}
             {paramRow(royaltyParam)}

@@ -65,7 +65,7 @@ export function isC6ExplicitRejection(failure: unknown) {
 }
 
 export async function submitC6Command(row: C6Pending) {
-  if (!isCompleteC6Command(row) || row.expiresAt <= Date.now()) throw new Error("原请求已超过 24 小时或没有保存完整，不能再重试，只能查询原操作。");
+  if (!isCompleteC6Command(row) || row.expiresAt <= Date.now()) throw new Error("原请求已超过 24 小时或没有保存完整，不能再重试；只能读取当前规则，再到「操作记录与审批」核对原操作。");
   const result = await updateUserRegistrationRiskParam(row.target, row.value, row.reason, row.operator, row.version, row.commandKey);
   // 66ecdb47 OpsUserService.registrationRiskParamView / updateCaptchaOffWindow:
   // lock values echo the normalized request; disabling returns an ISO deadline,

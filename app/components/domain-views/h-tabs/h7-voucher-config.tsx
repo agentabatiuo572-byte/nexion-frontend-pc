@@ -52,7 +52,7 @@ const VOUCHER_TITLE = { get current() { return document.querySelector<HTMLElemen
 
 type OpsVoucher = H7Voucher;
 
-/** 谁来批：后端要另一位有效管理员，有审批权限和代金券修改权限，不限超级管理员。 */
+/** 谁来批：后端要另一位超级管理员，同时有审批批准权限和代金券修改权限。 */
 const APPROVER = "另一位超级管理员";
 const LOCAL_PENDING = "这张券有结果未知的删除或作废申请，先处理页面上方的提醒";
 
