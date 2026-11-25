@@ -162,8 +162,9 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
   const query = async (r: H3PendingCommand, quiet = false) => {
     requireActor(false);
     if (r.request.kind === "direct") {
-      await h3Recovery.query(r, async record => {
-        await settled(record.commandKey);
+      await h3Recovery.query(r, async () => {
+        // A readback refreshes the data without settling the original command.
+        await settled();
         return { conclusion: "unknown" };
       });
       if (!quiet) toast("已重新读取；当前值不能证明原操作是否执行，原请求继续保留，请到操作记录与审批核对。");
@@ -234,8 +235,7 @@ export function useH3Mutations(toast: (message: string) => void, settled: (comma
         throw error;
       }
       // Keep the key in storage, not in the shared A2 error renderer's operator copy.
-      throw new OutcomeUnknownError(isA2OutcomeUncertainError(error) ? "结果未知，请查询原结果。"
-        : error instanceof Error ? error.message : "结果未知，请查询原结果。");
+      throw new OutcomeUnknownError(isOutcomeUnknownError(error) ? error.message : "结果未知，请查询原结果。");
     }
     if (r.request.kind === "approval") {
       const acknowledged = { ...r, acknowledged: true, ticket: undefined };

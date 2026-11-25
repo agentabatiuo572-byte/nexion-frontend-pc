@@ -27,6 +27,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { RETRY_REJECTED_NEXT } from "@/lib/admin/retry-rejected";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { useHConflictDraft, type RejectedH4Draft } from "@/lib/admin/use-h-conflict-draft";
 import { isHGrowthReadConflict } from "@/lib/admin/h-write-conflict";
 import { HApprovalRequired } from "@/lib/admin/h-approval-required";
@@ -129,6 +130,28 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const regionObject = "growth.h3.weekly-region-policy";
   const recoveryDraftKey = (target: string, action: string) => JSON.stringify([useAdminAuth.getState().session?.adminId, target, action]);
   const confirmation = useRef<{ action: string; title: string; target?: string; editValue?: string; businessValue?: Record<string, string>; commandKey?: string; finish: () => void } | null>(null);
+  const recoveryFor = (record?: H3PendingCommand) => {
+    if (!record) return;
+    const state = mutations.recovery.state(record);
+    return { state, expiresAt: state.expiresAt, blockedReason: mutations.retryBlocked(record),
+      subscribe: mutations.recovery.subscribe, getRevision: mutations.recovery.getRevision,
+      query: async () => {
+        try { await mutations.query(record); }
+        catch (error) {
+          const failure = error as { status?: number; reasonCode?: string; backendMessage?: string } | null;
+          if (isAdminAuthFailure(failure?.status ?? 0, failure?.reasonCode ?? failure?.backendMessage)) {
+            const attempt = confirmation.current;
+            if (attempt?.commandKey === record.commandKey) attempt.finish();
+            resetAdminSession();
+          }
+          throw error;
+        }
+      } };
+  };
+  const originalFor = ({ target, commandKey }: { target?: string; commandKey?: string }) => {
+    const saved = target && commandKey ? mutations.record(target) : undefined;
+    return saved?.commandKey === commandKey ? saved : undefined;
+  };
   const openActionConfirm = (req: H3ActionConfirmReq | null) => {
     if (!req) { setMc(null); return; }
     if (!fresh.current || req.target && mutations.blocked(req.target)) {
@@ -141,9 +164,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
     const editor = creating;
-    const request: H3ActionConfirmReq = { ...req, getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
-      getPendingBusinessValue: () => (attempt.target ? mutations.record(attempt.target)?.change.businessValue : undefined) ?? req.getPendingBusinessValue?.(),
+    const request: H3ActionConfirmReq = { ...req, getPendingReason: () => originalFor(attempt)?.change.reason,
+      getPendingRecovery: () => recoveryFor(originalFor(attempt)),
+      getPendingBusinessValue: () => originalFor(attempt)?.change.businessValue ?? req.getPendingBusinessValue?.(),
       run: async (reason, value, businessValue) => {
+        const original = originalFor(attempt);
+        if (original) return mutations.retry(original);
         attempt.editValue = value; attempt.businessValue = businessValue;
         confirmation.current = attempt;
         await req.run(reason, value, businessValue);
@@ -165,13 +191,15 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     req = { ...req, ...conflictDraft.confirm(req, () => !!(confirmation.current?.target && mutations.record(confirmation.current.target))) };
     const attempt = { action: String(req.action), title: String(req.title ?? req.action), target: req.target } as NonNullable<typeof confirmation.current>;
     confirmation.current = attempt;
-    const request: ConfirmReq = { ...req, freezePendingInput: true,
-      getPendingReason: () => attempt.target ? mutations.record(attempt.target)?.change.reason : undefined,
-      getPendingBlockReason: () => {
-        const saved = attempt.target ? mutations.record(attempt.target) : undefined;
-        return saved ? mutations.retryBlocked(saved) : undefined;
+    const request: ConfirmReq = { ...req, freezePendingInput: true, replayPendingInput: true,
+      getPendingReason: () => originalFor(attempt)?.change.reason,
+      getPendingRecovery: () => recoveryFor(originalFor(attempt)),
+      run: async (reason) => {
+        const original = originalFor(attempt);
+        if (original) return mutations.retry(original);
+        confirmation.current = attempt;
+        await req.run(reason);
       },
-      run: async (reason) => { confirmation.current = attempt; await req.run(reason); },
     };
     attempt.finish = () => shellCtx.closeConfirm?.(request);
     shellCtx.openConfirm(request);
@@ -197,7 +225,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const tabIds = useTabIds();
 
 
-  const reload = async () => {
+  const reload = async (reportQueryError = false) => {
     fresh.current = false;
     setLoading(true);
     try {
@@ -207,6 +235,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       setReadAt(Date.now());
     } catch (err) {
       setError(displayAdminReadError(err));
+      if (reportQueryError) throw err;
     } finally {
       setLoading(false);
     }
@@ -239,7 +268,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           desired: params.mappings.map(({ callingCode, zoneId }) => ({ callingCode, zoneId })), revision: typeof params.expectedRevision === "number" ? params.expectedRevision : undefined });
       }
     }
-    await reload();
+    await reload(commandKey === undefined);
     await region.reload();
   }, record => fresh.current && (record?.store !== "region" || region.isReady()), model);
   const refresh = async () => {
@@ -968,14 +997,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   );
   const openRecovery = (original: H3PendingCommand) => {
     const c = original.change;
+    const saved = () => originalFor({ target: c.target, commandKey: original.commandKey });
     const request: H3ActionConfirmReq = { briefKind: "config", action: c.action, title: c.title, detail: changeOf(c),
       facts: <Facts><Fact k="改的是">{c.action}</Fact><Fact k="原请求">{changeOf(c)}</Fact></Facts>,
-      initialReason: c.reason, getPendingReason: () => mutations.record(c.target)?.change.reason,
-      inlineApproval: { pending: true, initialRecovery: "retry", expired: isRetryExpired(original), resolve: () => undefined,
-        expiredRequestRecovery: isRetryExpired(original)
-          ? original.request.kind === "direct" ? "reload" : "query" : undefined,
-        disabledReason: mutations.retryBlocked(original),
-        recover: async () => { await mutations.query(original); return true; }, retry: () => mutations.retry(original) },
+      initialReason: c.reason, getPendingReason: () => saved()?.change.reason,
+      getPendingRecovery: () => recoveryFor(saved()),
       run: async () => { await mutations.retry(original); },
     };
     confirmation.current = { action: c.action, title: c.title, target: c.target, commandKey: original.commandKey,
@@ -1054,13 +1080,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     你打开时是 {shownValue(stale.before)}，要改成 {shownValue(stale.after)}。{error || !model ? "最新值没读到；重试读取成功后，会带着你填的内容重新打开。" : "已读到最新值，你填的还在，核对后再提交。"}
   </Notice>;
 
-  const recoveryFor = (record: H3PendingCommand) => {
-    const state = mutations.recovery.state(record);
-    return { state, expiresAt: state.expiresAt, blockedReason: mutations.retryBlocked(record),
-      subscribe: mutations.recovery.subscribe, getRevision: mutations.recovery.getRevision,
-      query: async () => { await mutations.query(record); } };
-  };
-  const savedForConfirm = confirmation.current?.target ? mutations.record(confirmation.current.target) : undefined;
   // 固定 key：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
   const confirmModal = mc && (<Fragment key="h3-confirm">
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
@@ -1081,20 +1100,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           reasonPlaceholder={mc.reasonPlaceholder}
           blockedReason={mc.blockedReason}
           reasonPolicyOptional={mc.reasonPolicyOptional}
-          inlineApproval={mc.inlineApproval ?? {
-            pending: !!savedForConfirm, initialRecovery: "retry", resolve: () => undefined,
-            expired: savedForConfirm ? isRetryExpired(savedForConfirm) : false,
-            expiredRequestRecovery: savedForConfirm && isRetryExpired(savedForConfirm)
-              ? savedForConfirm.request.kind === "direct" ? "reload" : "query" : undefined,
-            disabledReason: savedForConfirm ? mutations.retryBlocked(savedForConfirm) : undefined,
-            recover: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.query(saved); return true; },
-            retry: async () => { const saved = confirmation.current?.target && mutations.record(confirmation.current.target); if (saved) await mutations.retry(saved); },
-          }}
+          inlineApproval={mc.inlineApproval}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
           initialReason={mc.initialReason}
           getPendingReason={mc.getPendingReason}
-          getPendingRecovery={() => savedForConfirm && recoveryFor(savedForConfirm)}
+          getPendingRecovery={mc.getPendingRecovery}
           getPendingBusinessValue={mc.getPendingBusinessValue}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setMc(current => current === mc ? null : current)}
