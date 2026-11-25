@@ -208,13 +208,14 @@ export function TemplateDrawer({ editing, form, setForm, channels, ctaOptions, s
   );
 }
 
-export function DistDrawer({ items, draft, setDraft, total, valid, unchanged, onClose, onSubmit }: {
+export function DistDrawer({ items, draft, setDraft, total, valid, unchanged, needsRecheck, onClose, onSubmit }: {
   items: readonly { key: string; name: string; pct: number }[];
   draft: Record<string, string>;
   setDraft: (next: Record<string, string>) => void;
   total: number;
   valid: boolean;
   unchanged: boolean;
+  needsRecheck: boolean;
   onClose: () => void;
   onSubmit: () => void;
 }) {
@@ -225,7 +226,7 @@ export function DistDrawer({ items, draft, setDraft, total, valid, unchanged, on
         <p>五类一起保存，合计必须是 100%；改一类不会自动调别的类。</p>
       </>}
       footer={<Decision note={<span className="rd-toolbar-note" data-tone={valid ? undefined : "warn"}>{`合计 ${total}%`}</span>}
-        primary={<Button variant="primary" disabledReason={valid ? (unchanged ? "五类都没有改动" : undefined) : `每项填 0–100 的整数，合计要等于 100%（现在 ${total}%）`} onClick={onSubmit}>保存概率</Button>} />}>
+        primary={<Button variant="primary" disabledReason={needsRecheck ? undefined : valid ? (unchanged ? "五类都没有改动" : undefined) : `每项填 0–100 的整数，合计要等于 100%（现在 ${total}%）`} onClick={onSubmit}>保存概率</Button>} />}>
       <div className="rd-stack i2-form">
         <DistEditor items={items} values={draft} onChange={setDraft} />
         <div className="i2-dist-rows">

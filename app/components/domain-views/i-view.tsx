@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./i-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { fetchIContentOverviews, iContentActions, type IContentData } from "@/lib/admin/i-client";
+import { fetchIContentOverviews, iContentActions, type IContentData, type IContentReadResult } from "@/lib/admin/i-client";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
@@ -129,12 +129,12 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const contentLoading = contentReadable ? contentSnapshot.loading : true;
   const contentError = contentSnapshot.errorScope === scopeKey ? contentSnapshot.error : null;
 
-  const reloadIContent = useCallback(async () => {
+  const reloadIContent = useCallback(async (): Promise<IContentReadResult> => {
     const requestSequence = ++contentRequestSequence.current;
     setContentSnapshot((current) => ({ ...current, loading: true }));
     try {
       const nextContent = await fetchIContentOverviews();
-      if (requestSequence !== contentRequestSequence.current) return;
+      if (requestSequence !== contentRequestSequence.current) return { ok: false, reason: "此轮读取已被更新的读取替代。" };
       const nextError = contentErrorForTab(tab, nextContent);
       setContentSnapshot((current) => {
         if (nextError && current.dataScope === scopeKey) {
@@ -153,14 +153,16 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           errorScope: scopeKey,
         };
       });
-    } catch (error) {
-      if (requestSequence !== contentRequestSequence.current) return;
+      return nextError ? { ok: false, reason: contentErrorText(nextError) } : { ok: true };
+    } catch {
+      if (requestSequence !== contentRequestSequence.current) return { ok: false, reason: "此轮读取已被更新的读取替代。" };
       setContentSnapshot((current) => ({
         ...current,
         loading: false,
         error: tab + " 数据加载失败，请刷新重试",
         errorScope: scopeKey,
       }));
+      return { ok: false, reason: contentErrorText(tab + " 数据加载失败，请刷新重试") };
     }
   }, [scopeKey, tab]);
 

@@ -141,7 +141,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         attempt.editValue = value; attempt.businessValue = businessValue;
         confirmation.current = attempt;
         await req.run(reason, value, businessValue);
-        if (draftKey) recoveryDrafts.current.delete(draftKey);
+        if (draftKey && draft && recoveryDrafts.current.get(draftKey) === draft) recoveryDrafts.current.delete(draftKey);
       },
     };
     attempt.finish = () => {
@@ -182,7 +182,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const [tab, setTab] = useState<Tab>("dayOne");
   const [detail, setDetail] = useState<{ list: ListKey; code: string } | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [creating, setCreating] = useState<{ type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2" } | null>(null);
+  const [creating, setCreating] = useState<{ type: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2"; resumed?: H3MissionForm } | null>(null);
+  const openMission = (type: NonNullable<typeof creating>["type"]) => setCreating({ type, resumed: missionDrafts.get(operatorId(), type) });
   const tabIds = useTabIds();
 
 
@@ -263,13 +264,22 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       attempt.commandKey = mutations.record(write.target)?.commandKey;
     }
   };
+  const openedRegionDraft = useRef<ReturnType<typeof regionDrafts.get>>(undefined);
   const region = useH3RegionPolicy(ctx, async (params, reason, before, after, regionBaseline) => {
     const owner = operatorId();
-    await runWrite({ store: "region", path: "", method: "POST", body: {}, target: regionObject,
-      before, after, regionParams: params, regionBaseline, success: "已提交审批" }, reason);
-    regionDrafts.forget(owner, regionObject);
+    const resumed = openedRegionDraft.current;
+    const consume = () => regionDrafts.consume(owner, regionObject, resumed);
+    try {
+      await runWrite({ store: "region", path: "", method: "POST", body: {}, target: regionObject,
+        before, after, regionParams: params, regionBaseline, success: "已提交审批" }, reason);
+      consume();
+    } catch (error) {
+      const record = mutations.record(regionObject);
+      if (record && record.commandKey === confirmation.current?.commandKey) consume();
+      throw error;
+    }
   }, () => ({ blocked: mutations.blocked(regionObject), pending: mutations.pendingApprovals.some(t => t.obj === regionObject && t.status === "pending") }),
-  () => regionDrafts.get(operatorId(), regionObject));
+  () => (openedRegionDraft.current = regionDrafts.get(operatorId(), regionObject)));
 
   region.submit = conflictDraft.register("weekly-region", region.submit);
 
@@ -412,11 +422,20 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const missionName = String(bv.missionName || "").trim();
         if (!missionCode || !missionName) return;
         const owner = operatorId();
-        await runWrite({ store: "mission", path: "/quest-events/missions", method: "POST", target: missionCode,
-          body: { missionCode, missionName, missionType, rewardPoints: Number(bv.rewardPoints), category: bv.category.trim(), actionRoute: bv.actionRoute.trim() },
-          before: "任务不存在", after: `${missionName} · ${bv.rewardPoints} UVT · 已停用`,
-          success: `任务「${missionName}」已新建（停用中，绑定完成条件后再启用）` }, reason);
-        missionDrafts.forget(owner, missionType);
+        const consume = () => {
+          if (editor?.resumed?.missionCode === missionCode) missionDrafts.consume(owner, missionType, editor.resumed);
+        };
+        try {
+          await runWrite({ store: "mission", path: "/quest-events/missions", method: "POST", target: missionCode,
+            body: { missionCode, missionName, missionType, rewardPoints: Number(bv.rewardPoints), category: bv.category.trim(), actionRoute: bv.actionRoute.trim() },
+            before: "任务不存在", after: `${missionName} · ${bv.rewardPoints} UVT · 已停用`,
+            success: `任务「${missionName}」已新建（停用中，绑定完成条件后再启用）` }, reason);
+          consume();
+        } catch (error) {
+          const record = mutations.record(missionCode);
+          if (record && record.commandKey === confirmation.current?.commandKey) consume();
+          throw error;
+        }
         setCreating(current => current === editor ? null : current);
       },
     } as H3ActionConfirmReq);
@@ -1078,7 +1097,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Fragment>);
   // 新建任务抽屉同理：旧操作收尾后的重读失败时不卸掉，提示没读到、读到前不能进下一步。
   const missionDrawer = creating && <H3MissionFormDrawer key="h3-mission-drawer" missionType={creating.type} onClose={() => setCreating(null)}
-    initial={missionDrafts.get(operatorId(), creating.type)}
+    initial={creating.resumed}
     readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) } : undefined}
     onReview={(bv) => runCreateMission(creating.type, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />;
 
@@ -1362,7 +1381,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Panel>
       <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
           explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的新手任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
-          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "DAY_ONE" })}>新建新手任务</Button> : undefined}>
+          actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => openMission("DAY_ONE")}>新建新手任务</Button> : undefined}>
           <H3CreationList rows={creationsOf(["DAY_ONE"])} typeLabel={typeLabel} auditHref={auditHref} />
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
@@ -1435,7 +1454,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Panel>
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
-          actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "WEEKLY_T1" })}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => setCreating({ type: "WEEKLY_T2" })}>新建二档</Button></> : undefined}>
+          actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => openMission("WEEKLY_T1")}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} onClick={() => openMission("WEEKLY_T2")}>新建二档</Button></> : undefined}>
           <H3CreationList rows={creationsOf(["WEEKLY_T1", "WEEKLY_T2"])} typeLabel={typeLabel} auditHref={auditHref} />
           <div className="h3-tasks-layout"><div className="h3-tier-groups">
           <div className="h3-sub-head">

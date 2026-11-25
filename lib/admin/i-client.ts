@@ -1947,8 +1947,10 @@ export type IContentData = {
 
 export type IContentErrorKey = "copyAb" | "nova" | "campaigns" | "trustDisclosure" | "disclosures" | "i18nLearning";
 
+export type IContentReadResult = { ok: true } | { ok: false; reason: string };
+
 export type IContentActions = {
-  reloadIContent: () => Promise<void>;
+  reloadIContent: () => Promise<IContentReadResult>;
   createI1Copy: (body: Record<string, unknown>, reason: string) => Promise<void>;
   createI1CopyPosition: (body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI1CopyPosition: (positionKey: string, reason: string) => Promise<void>;

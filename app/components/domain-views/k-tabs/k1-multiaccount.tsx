@@ -16,7 +16,7 @@ import { KeepText,
   type ExplainRow, type JudgmentRow, type SectionNavItem, useTabIds
 } from "@/app/components/rd";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1RequestError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey, updateK1RegistrationParam } from "@/lib/admin/k-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -746,6 +746,21 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     return () => { active = false; };
   }, [drafting]);
 
+  const locateCluster = async (id: string, active: () => boolean) => {
+    const pageSize = 50;
+    let page = 1;
+    while (active()) {
+      const result = await fetchK1MultiAccountOverview({
+        clusterPageNum: page, clusterPageSize: pageSize, clusterLayer: "all", clusterStatus: "all", clusterSort,
+        whitelistPageNum: 1, whitelistPageSize: 5,
+      });
+      const index = result.clusters.records.findIndex(cluster => cluster.id === id);
+      if (index >= 0) return { index: (page - 1) * pageSize + index, cluster: result.clusters.records[index] };
+      if (page * pageSize >= result.clusters.total) return null;
+      page += 1;
+    }
+    return null;
+  };
   useEffect(() => {
     if (!focusClusterId) {
       setFocusLookupState("idle");
@@ -759,36 +774,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setClusterStatusFilter("all");
     setSelId(null);
     void (async () => {
-      const searchPageSize = 50;
       for (let relocation = 0; active && relocation < MAX_FOCUS_RELOCATIONS; relocation += 1) {
-        let searchPage = 1;
-        let targetPage: number | null = null;
-        while (active) {
-          const result = await fetchK1MultiAccountOverview({
-            clusterPageNum: searchPage,
-            clusterPageSize: searchPageSize,
-            clusterLayer: "all",
-            clusterStatus: "all",
-            clusterSort,
-            whitelistPageNum: 1,
-            whitelistPageSize: 5,
-          });
-          const index = result.clusters.records.findIndex((cluster) => cluster.id === focusClusterId);
-          if (index >= 0) {
-            const absoluteIndex = (searchPage - 1) * searchPageSize + index;
-            targetPage = Math.floor(absoluteIndex / clusterPageSize) + 1;
-            break;
-          }
-          const totalPages = Math.max(1, Math.ceil(result.clusters.total / searchPageSize));
-          if (searchPage >= totalPages) break;
-          searchPage += 1;
-        }
+        const found = await locateCluster(focusClusterId, () => active);
         if (!active) return;
-        if (targetPage === null) {
+        if (!found) {
           focusPageLoad.current = false;
           if (active) setFocusLookupState("not-found");
           return;
         }
+        const targetPage = Math.floor(found.index / clusterPageSize) + 1;
         setFocusLookupState("positioning");
         setClusterPage(targetPage);
         const positioned = await ctx.reloadKRisk({
@@ -853,7 +847,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原结果。");
   };
   const queryClusterApproval = async (record: K1PendingCommand) => {
-    const note = (message: string) => setPendingNotes(current => ({ ...current, [record.fingerprint]: message }));
+    const note = (message: string) => setPendingNotes(current => ({ ...current, [record.commandKey]: message }));
     const current = (pendingCommands.list().find(row => row.commandKey === record.commandKey) ?? record);
     if (current.clusterReceipt?.pendingTicketId) retainApproval({ ...current, clusterReceipt: {} });
     note("");
@@ -875,9 +869,18 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       return ticket;
     }
     if (current.clusterProposal) retainApproval({ ...current, clusterReceipt: {} });
-    const latest = await ctx.reloadKRisk({ multiAccount: pageQuery });
-    if (!latest) throw new Error("已查到审批结果，账户组事实暂时读不到，请查询原结果重试。");
-    k1Recovery.settleFromQuery(current, result.conclusion);
+    try {
+      const latest = await ctx.reloadKRisk({ multiAccount: pageQuery });
+      if (!latest) throw new Error("当前账户组列表读取失败");
+      const exact = latest.clusters.records.find(cluster => cluster.id === current.target)
+        ?? (await locateCluster(current.target, () => true))?.cluster;
+      if (!exact) throw new Error(`当前数据里找不到原账户组 ${current.target}`);
+    } catch (error) {
+      const detail = displayAdminReadError(error);
+      note(`审批单${PROPOSAL_STATUS[ticket.status]}；原账户组事实未读回：${detail}。请查询原结果重试。`);
+      return ticket;
+    }
+    if (!k1Recovery.settleFromQuery(current, result.conclusion)) return ticket;
     syncPending();
     ctx.toast(`原审批单 ${ticket.id} ${PROPOSAL_STATUS[ticket.status]}，已重新读取账户组。`, "success");
     return ticket;
@@ -1023,7 +1026,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       retainApproval(acknowledged);
       if (!recovering) {
         try { await queryClusterApproval(acknowledged); }
-        catch (error) { setPendingNotes(current => ({ ...current, [scope]: `查询没有成功：${errorText(error)} 记录继续保留。` })); }
+        catch (error) { setPendingNotes(current => ({ ...current, [key]: `查询没有成功：${errorText(error)} 记录继续保留。` })); }
         finally { syncPending(); }
       }
       return;
@@ -1089,18 +1092,19 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const retryPending = async (record: K1PendingCommand) => {
     const blocked = retryBlocked(record);
     if (blocked) return;
+    const noteKey = record.kind === "cluster" ? record.commandKey : record.fingerprint;
     setRetrying(record.fingerprint);
-    setPendingNotes(current => ({ ...current, [record.fingerprint]: "" }));
+    setPendingNotes(current => ({ ...current, [noteKey]: "" }));
     try {
       await k1Recovery.replay(record, original => runRecord(original, true));
       const saved = pendingCommands.list().find(row => row.commandKey === record.commandKey);
       if (saved?.approval?.acknowledged) await queryReleaseApproval(saved);
       if (saved?.clusterReceipt) {
         try { await queryClusterApproval(saved); }
-        catch (error) { setPendingNotes(current => ({ ...current, [saved.fingerprint]: `查询没有成功：${errorText(error)} 记录继续保留。` })); }
+        catch (error) { setPendingNotes(current => ({ ...current, [noteKey]: `查询没有成功：${errorText(error)} 记录继续保留。` })); }
       }
     } catch (cause) {
-      setPendingNotes(current => ({ ...current, [record.fingerprint]: `重试没有完成：${errorText(cause)} 原请求继续保留。` }));
+      setPendingNotes(current => ({ ...current, [noteKey]: `重试没有完成：${errorText(cause)} 原请求继续保留。` }));
     } finally { syncPending(); setRetrying(""); }
   };
 
@@ -1178,7 +1182,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     try {
       await queryClusterApproval(record);
     } catch (cause) {
-      setPendingNotes(current => ({ ...current, [record.fingerprint]: `查询没有成功：${errorText(cause)} 记录继续保留。` }));
+      setPendingNotes(current => ({ ...current, [record.commandKey]: `查询没有成功：${errorText(cause)} 记录继续保留。` }));
     } finally { setChecking(""); }
   };
   const lookupPending = checkPending;
@@ -1803,7 +1807,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           const expired = record.expiresAt <= Date.now();
           const outcome = investigationResults[record.commandKey];
           const approval = record.approval;
-          const note = pendingNotes[record.fingerprint];
+          const note = pendingNotes[record.kind === "cluster" ? record.commandKey : record.fingerprint];
           const absent = k1Recovery.state(record).conclusion === "not-found";
           // 已建单的放行金额用审批单快照，收益列表只用于告知当前读取状态。
           const observed = record.kind === "entry" ? entryApprovalDisplay(record) : undefined;
@@ -1843,7 +1847,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               {note && !status?.line.includes(note) && !(expired && note.includes("重试")) && <p><KeepText text={note} /></p>}
             </> : <>
               <p><KeepText text={expired ? EXPIRED_TEXT : `${RECOVERY_HINT[record.kind]}${blocked ?? ""}`} /></p>
-              {pendingNotes[record.fingerprint] && !(expired && pendingNotes[record.fingerprint].includes("重试")) && <p><KeepText text={pendingNotes[record.fingerprint]} /></p>}
+              {note && !status?.line.includes(note) && <p><KeepText text={note} /></p>}
             </>,
             tech: approval ? approval.pendingTicketId ? `审批单 ${approval.pendingTicketId}` : undefined : `操作人 ${record.operator} ｜ 理由 ${record.reason}` };
         })} />

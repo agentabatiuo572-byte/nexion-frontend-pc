@@ -7,6 +7,18 @@ export function useTerminalDrafts<T>() {
   return {
     remember: (owner: number, object: string, draft: T) => drafts.set(key(owner, object), draft),
     get: (owner: number | undefined, object: string) => owner === undefined ? undefined : drafts.get(key(owner, object)),
+    entries: (owner: number | undefined): [string, T][] => {
+      if (owner === undefined) return [];
+      return [...drafts].flatMap(([identity, draft]) => {
+        const [savedOwner, object] = JSON.parse(identity) as [number, string];
+        return savedOwner === owner ? [[object, draft]] : [];
+      });
+    },
+    consume: (owner: number | undefined, object: string, draft: T | undefined) => {
+      if (owner === undefined || draft === undefined) return;
+      const identity = key(owner, object);
+      if (drafts.get(identity) === draft) drafts.delete(identity);
+    },
     forget: (owner: number | undefined, object: string) => owner !== undefined && drafts.delete(key(owner, object)),
   };
 }

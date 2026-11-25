@@ -290,7 +290,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       setReadAt(Date.now());
       if (data !== readBarrier.current) setRequiresReload(false);
       // Current ticket reads can both establish and revoke this page's local pending observation.
-      if (canQueryI3Cap()) void Promise.allSettled(pendingI3CapCommands().map(readCapOriginal)).then(syncPending);
+      if (canQueryI3Cap()) void Promise.allSettled(pendingI3CapCommands().map(record => readCapOriginal(record))).then(syncPending);
     }
   }, [data, contentLoading, errorText]);
   const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原结果。" : undefined)
@@ -318,24 +318,31 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       setScheduleRow(null); setSchedulePendingKey(null);
     }
     syncPending();
-    await actions.reloadIContent();
+    return actions.reloadIContent();
   };
-  async function observeCap(record: I3CapCommand, ticket: NonNullable<Awaited<ReturnType<typeof queryI3CapCommand>>>) {
+  const reportReadback = (message: string, read: Awaited<ReturnType<typeof refreshAfterMutation>>) => {
+    if (active.current && read) toast(read.ok ? message : `${message}；当前状态读取失败。请刷新通知数据。${read.reason}`, read.ok ? "success" : "warn");
+  };
+  const capStatusMessage = (ticket: NonNullable<Awaited<ReturnType<typeof queryI3CapCommand>>>) =>
+    ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`;
+  function observeCap(record: I3CapCommand, ticket: NonNullable<Awaited<ReturnType<typeof queryI3CapCommand>>>) {
     capQuery.clear(record.commandKey);
-    if (ticket.status !== "pending") {
-      if (ticket.status !== "approved" && record.request) capDrafts.current.set(capDraftKey(record.tier), record.after);
-      await refreshAfterMutation(record).catch(() => toast("审批状态已查到，最新通知规则尚未读到，请刷新核对。", "warn"));
-    }
+    if (ticket.status !== "pending" && ticket.status !== "approved" && record.request) capDrafts.current.set(capDraftKey(record.tier), record.after);
   }
-  async function readCapOriginal(record: I3CapCommand) {
+  async function readCapOriginal(record: I3CapCommand, announce = false) {
     const ticket = await capQuery.read(record.commandKey, () => queryI3CapCommand(record));
-    if (ticket) await observeCap(record, ticket);
+    if (ticket) {
+      observeCap(record, ticket);
+      if (ticket.status !== "pending") {
+        const read = await refreshAfterMutation(record);
+        if (announce || read && !read.ok) reportReadback(capStatusMessage(ticket), read);
+      } else if (announce) toast(capStatusMessage(ticket));
+    }
     return ticket;
   }
   const runBackend = async (task: Promise<void>, ok: string) => {
     await task;
-    await refreshAfterMutation();
-    if (active.current) toast(ok);
+    reportReadback(ok, await refreshAfterMutation());
     return true;
   };
   const replayReadProblem = (record: I3Command | I3CapCommand) => {
@@ -349,19 +356,20 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const replay = async (record: I3Command | I3CapCommand) => {
     const blocked = "tier" in record ? capRetryProblem(record) : campaignRetryProblem(record);
     if (blocked) throw new Error(blocked);
+    let message: string;
     try {
       if ("tier" in record) {
         const ticket = await retryI3CapCommand(record, observeCap).catch(error => {
           if (pendingI3CapCommands().some(row => row.commandKey === record.commandKey && row.receiptKnown)) capQuery.fail(record.commandKey, error);
           throw error;
         });
-        toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
+        message = capStatusMessage(ticket);
       } else {
         if (isI3DraftCommand(record) && !i3DraftRetryBlockedReason(record)) {
           setOutcomes(all => { const next = { ...all }; delete next[record.commandKey]; return next; });
         }
         await retryI3Command(record);
-        toast(`${I3_ACTION[record.action]} · ${record.name}`);
+        message = `${I3_ACTION[record.action]} · ${record.name}已写入`;
       }
     } catch (error) {
       syncPending();
@@ -372,7 +380,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       }
       throw new Error(displayAdminError(error));
     }
-    await refreshAfterMutation(record);
+    reportReadback(message, await refreshAfterMutation(record));
     return true;
   };
   const openActionConfirm = (req: ActionConfirmReq, restored?: I3Command | I3CapCommand, cap = false,
@@ -639,14 +647,18 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     },
     run: async (reason, v) => {
       if (!v) return false;
-      const ticket = await proposeI3Cap(tier, cap, v, reason, observeCap).catch(error => {
+      let original: I3CapCommand | undefined;
+      const ticket = await proposeI3Cap(tier, cap, v, reason, (record, row) => {
+        original = record;
+        observeCap(record, row);
+      }).catch(error => {
         const key = (error as { commandKey?: string }).commandKey;
         if (key && pendingI3CapCommands().some(row => row.commandKey === key && row.receiptKnown)) capQuery.fail(key, error);
         throw error;
       });
       if (ticket.status === "pending" || ticket.status === "approved") capDrafts.current.delete(capDraftKey(tier));
       syncPending();
-      toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
+      if (original) reportReadback(capStatusMessage(ticket), await refreshAfterMutation(original));
       return true;
     },
   }, restored, true);
@@ -987,10 +999,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     recoveryInFlight.current = true; setRecovering(record.commandKey);
     try {
       if ("tier" in record) {
-        const ticket = await readCapOriginal(record);
-        if (ticket) {
-          toast(ticket.status === "pending" ? "已提交，等待审批后执行" : `审批单${I3_TICKET[ticket.status]}`);
-        } else if (ticket === null) {
+        const ticket = await readCapOriginal(record, true);
+        if (ticket === null) {
           toast("没有查到原审批单，原操作记录继续保留。");
         }
       } else {
@@ -1009,8 +1019,8 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         setOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
         if ("receipt" in outcome && fundCommandSettled(outcome.receipt)) {
           if (isConfirmedNonExecution(outcome.receipt)) { retainSchedule(record); retainCampaignDraft(record); }
-          toast(settledText({ status: outcome.receipt!.originalStatus }));
-          await refreshAfterMutation(record); return;
+          reportReadback(settledText({ status: outcome.receipt!.originalStatus }), await refreshAfterMutation(record));
+          return;
         }
         await fetchI3CampaignOverview();
         await actions.reloadIContent();
@@ -1137,8 +1147,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
           if (rejection) await recoverDraftRejection(record, rejection);
           else if (fundCommandSettled(receipt)) {
             if (isConfirmedNonExecution(receipt)) { retainSchedule(record); retainCampaignDraft(record); }
-            toast(settledText({ status: receipt!.originalStatus }));
-            await refreshAfterMutation(record);
+            reportReadback(settledText({ status: receipt!.originalStatus }), await refreshAfterMutation(record));
           }
           else toast(CLOSURE_KEPT_TEXT, "warn");
         }} />}

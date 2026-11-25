@@ -90,6 +90,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const session = useAdminAuth((state) => state.session);
   const channelDrafts = useTerminalDrafts<TerminalDraft<NovaForm> & { key: string }>();
   const templateDrafts = useTerminalDrafts<TerminalDraft<TemplateForm> & { revision?: string }>();
+  const newChannelDrafts = useTerminalDrafts<{ key: string; form: NovaForm }>();
+  const newTemplateDrafts = useTerminalDrafts<TemplateForm>();
   const distributionDrafts = useTerminalDrafts<TerminalDraft<Record<string, string>>>();
   const canWriteI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_write");
   const canReadI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_read");
@@ -146,7 +148,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       setDistDrawer(false);
     }
     syncPending();
-    await actions.reloadIContent();
+    return actions.reloadIContent();
   };
   /** 结果未知不是失败，不加「操作失败」。 */
   const failText = (error: unknown) => isOutcomeUnknownError(error) ? displayAdminError(error) : `操作失败：${displayAdminError(error)}`;
@@ -175,20 +177,22 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     if (others.length) toast(`别人改过：${describe(others, latest)}。你的拟改：${describe(mine, saved.desired) || "无"}。请在最新内容上重新核对。`, "warn");
     return value;
   };
-  const retainDraft = ({ original, target }: I2Command) => {
+  const retainDraft = ({ original, target, commandKey }: I2Command) => {
     if (!original || !["PATCH", "POST"].includes(original.method)) return;
     const input = JSON.parse(original.body);
     if (/^\/nova\/channels(?:\/[^/]+)?$/.test(original.path)) {
       const tick = parseNovaDuration(input.tick, "minutes"), cooldown = parseNovaDuration(input.cooldown, "hours");
       const key = target.slice("channel:".length);
-      channelDrafts.remember(original.owner, original.method === "POST" ? "new" : key, { key, before: original.before as NovaForm | undefined,
-        desired: { name: input.name, runtimeSource: input.trigger.startsWith("a4:") ? input.trigger : "", tickValue: tick.value, tickUnit: tick.unit, cooldownValue: cooldown.value, cooldownUnit: cooldown.unit } });
+      const form = { name: input.name, runtimeSource: input.trigger.startsWith("a4:") ? input.trigger : "", tickValue: tick.value, tickUnit: tick.unit, cooldownValue: cooldown.value, cooldownUnit: cooldown.unit };
+      if (original.method === "POST") newChannelDrafts.remember(original.owner, commandKey, { key, form });
+      else channelDrafts.remember(original.owner, key, { key, before: original.before as NovaForm | undefined, desired: form });
     } else if (/^\/nova\/templates(?:\/[^/]+)?$/.test(original.path)) {
       const fields = Object.keys(EMPTY_TEMPLATE) as (keyof TemplateForm)[];
       if (!fields.every(key => typeof input[key] === "string")) return;
       const desired = Object.fromEntries(fields.map(key => [key, input[key]])) as TemplateForm;
       if (original.method === "PATCH" && desired.channel !== decodeURIComponent(original.path.split("/").at(-1)!)) return;
-      templateDrafts.remember(original.owner, original.method === "POST" ? "new" : `edit:${desired.channel}`, { desired,
+      if (original.method === "POST") newTemplateDrafts.remember(original.owner, commandKey, desired);
+      else templateDrafts.remember(original.owner, `edit:${desired.channel}`, { desired,
         before: original.before as TemplateForm | undefined, revision: input.expectedRevision });
     } else if (original.path === "/nova/social-distribution") {
       const fields = (items: { key: string; pct: number }[]) => Object.fromEntries(items.map(row => [row.key, String(row.pct)]));
@@ -209,7 +213,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     } catch (error) {
       setOutcomes((current) => ({ ...current, [record.commandKey]: { error: displayAdminError(error) } }));
     } finally { setChecking(null); }
-    if (settled) { await refreshAfterMutation(record); return; }
+    if (settled) {
+      const read = await refreshAfterMutation(record);
+      if (!read.ok) toast(`原操作已核对；当前状态读取失败。请刷新推送数据。${read.reason}`, "warn");
+      return;
+    }
     await actions.reloadIContent();
     toast("已重新读取；现在的状态不能证明原操作的结果，记录继续保留。");
   };
@@ -239,8 +247,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       }
       throw new Error(failText(error));
     }
-    await refreshAfterMutation(record);
-    toast(`${record.action} · ${record.object}`);
+    const read = await refreshAfterMutation(record);
+    toast(read.ok ? `${record.action} · ${record.object}` : `原请求已写入；当前状态读取失败。请刷新推送数据。${read.reason}`, read.ok ? "success" : "warn");
   };
   const pendingRecovery = (record?: I2Command) => {
     if (!record) return;
@@ -279,7 +287,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     recoveryConfirm.current = { key: () => pendingKey, close: () => ctx.closeActionConfirm(confirmation) };
     ctx.openActionConfirm(confirmation);
   };
-  const openConfirm = (req: ConfirmReq) => {
+  const openConfirm = (req: ConfirmReq, onStale?: (reason: string) => void) => {
     if (newMutationBlocked.current) { toast(newMutationBlocked.current); return; }
     const openedData = data;
     let pendingKey: string | undefined;
@@ -294,6 +302,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         }
         if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
         if (newMutationBlocked.current || latestRead.current !== openedData) {
+          if (!newMutationBlocked.current) onStale?.(reason);
           ctx.closeConfirm();
           throw new Error(newMutationBlocked.current ?? "数据已更新，请重新核对原操作。");
         }
@@ -360,11 +369,16 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   // 失败时确认框或抽屉还开着，错误写在那里，不再弹一遍。
   const runBackend = (task: Promise<void>, ok: string, onSuccess?: () => void) => task
       .then(() => refreshAfterMutation())
-      .then(() => { toast(ok); onSuccess?.(); });
+      .then(read => {
+        toast(read.ok ? ok : `${ok}；当前状态读取失败。请刷新推送数据。${read.reason}`, read.ok ? "success" : "warn");
+        onSuccess?.();
+      });
 
   // ── 频道抽屉(新增 / 编辑复用同一抽屉)──
   const [novaDrawer, setNovaDrawer] = useState(false);
   const [editNovaKey, setEditNovaKey] = useState<string | null>(null);
+  const [openedChannelDraft, setOpenedChannelDraft] = useState<string | null>(null);
+  const openedChannelEdit = useRef<ReturnType<typeof channelDrafts.get>>(undefined);
   const [form, setForm] = useState<NovaForm>(EMPTY_FORM);
   const [drawerPendingKey, setDrawerPendingKey] = useState<string | null>(null);
   recoveryEditors.current = { drawer: drawerPendingKey };
@@ -377,19 +391,23 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     return { name: n.name, runtimeSource: n.trigger.startsWith("a4:") ? n.trigger : "",
       tickValue: tick.value, tickUnit: tick.unit, cooldownValue: cooldown.value, cooldownUnit: cooldown.unit };
   };
-  const openNewNova = () => {
+  const openNewNova = (draftKey?: string) => {
     const blocked = lockReason("channel-create");
     if (blocked) { toast(blocked); return; }
+    const saved = draftKey ? newChannelDrafts.get(session?.adminId, draftKey) : undefined;
     drawerSource.current = data;
     setDrawerPendingKey(null); setEditNovaKey(null);
-    setForm(channelDrafts.get(session?.adminId, "new")?.desired ?? EMPTY_FORM); setNovaDrawer(true);
+    setOpenedChannelDraft(saved && draftKey ? draftKey : null);
+    setForm(saved?.form ?? EMPTY_FORM); setNovaDrawer(true);
   };
   const openEditNova = (n: OpsNova) => {
     const blocked = lockReason(`channel:${n.key}`);
     if (blocked) { toast(blocked); return; }
     drawerSource.current = data;
     setDrawerPendingKey(null); setEditNovaKey(n.key);
-    setForm(restoreFields(channelDrafts.get(session?.adminId, n.key), channelForm(n), {
+    setOpenedChannelDraft(null);
+    openedChannelEdit.current = channelDrafts.get(session?.adminId, n.key);
+    setForm(restoreFields(openedChannelEdit.current, channelForm(n), {
       name: "频道名称", runtimeSource: "触发来源", tickValue: "扫描间隔", tickUnit: "扫描单位", cooldownValue: "个人间隔", cooldownUnit: "个人间隔单位",
     }));
     setNovaDrawer(true);
@@ -428,15 +446,24 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const cooldown = formatNovaDuration(form.cooldownValue, form.cooldownUnit);
     const prev = novas.find((row) => row.key === editNovaKey);
     if (editNovaKey && !prev) return;
-    const draftKey = editNovaKey ?? "new";
-    const saved = channelDrafts.get(session?.adminId, draftKey);
+    const saved = openedChannelDraft ? newChannelDrafts.get(session?.adminId, openedChannelDraft) : undefined;
+    const editDraft = openedChannelEdit.current;
+    const consume = () => {
+      if (openedChannelDraft) newChannelDrafts.consume(session?.adminId, openedChannelDraft, saved);
+      if (editNovaKey) channelDrafts.consume(session?.adminId, editNovaKey, editDraft);
+    };
     const key = editNovaKey ?? saved?.key ?? `${slug(name).slice(0, 50)}-${Date.now().toString(36).slice(-6)}`;
     const body = { name, trigger: form.runtimeSource || prev?.trigger || "", tick, cooldown, ctr: prev?.ctr ?? 0, enabled: prev?.on ?? false };
     setDrawerError(null);
     openActionConfirm({
       briefKind: "config", action: prev ? "编辑消息频道" : "新增消息频道",
       title: prev ? "保存消息频道" : "新增消息频道", detail: "", effect: LIVE,
-      facts: <Facts><Fact k="频道">{name}</Fact><Fact k="扫描间隔">{tick}</Fact><Fact k="个人间隔">{cooldown}</Fact></Facts>,
+      facts: <Facts>
+        <Fact k="频道">{prev ? <Change from={prev.name} to={name} /> : name}</Fact>
+        <Fact k="触发来源">{prev ? <Change from={prev.trigger || "—"} to={body.trigger || "—"} /> : body.trigger || "—"}</Fact>
+        <Fact k="扫描间隔">{prev ? <Change from={prev.tick} to={tick} /> : tick}</Fact>
+        <Fact k="个人间隔">{prev ? <Change from={prev.cd} to={cooldown} /> : cooldown}</Fact>
+      </Facts>,
       statedBrief: { impact: prev ? "保存后按新配置运行。" : "新增的频道先停用。", check: "核对频道、触发来源和间隔，填写本次理由。" },
       confirmLabel: prev ? "确认保存" : "确认新增",
       run: async (reason) => {
@@ -448,9 +475,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           await runBackend(prev ? actions.updateI2NovaChannel(key, body, reason, channelForm(prev))
             : actions.createI2NovaChannel({ key, ...body }, reason),
           prev ? `消息频道已更新:${prev.name} → ${name}` : `消息频道已新增:${name}`,
-          () => channelDrafts.forget(session?.adminId, draftKey));
+          consume);
         } catch (error) {
-          if (isOutcomeUnknownError(error)) setDrawerPendingKey((error as { commandKey?: string }).commandKey ?? null);
+          if (isOutcomeUnknownError(error)) {
+            const commandKey = (error as { commandKey?: string }).commandKey;
+            setDrawerPendingKey(commandKey ?? null);
+            if (pendingI2Commands().some(row => row.commandKey === commandKey && row.original)) consume();
+          }
           else setDrawerError(displayAdminError(error));
           throw error;
         } finally {
@@ -595,16 +626,22 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   useEffect(() => { void getRequiredContentLanguages().then(setRequiredLanguages); }, []);
   const [tplDrawer, setTplDrawer] = useState(false);
+  const [openedTemplateDraft, setOpenedTemplateDraft] = useState<string | null>(null);
   const [editTplSnapshot, setEditTplSnapshot] = useState<NovaTemplateView | null>(null);
+  const openedTemplateEdit = useRef<ReturnType<typeof templateDrafts.get>>(undefined);
   const editTplChannel = editTplSnapshot?.channel ?? null;
   const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
-  const newTpl = async () => {
+  const newTpl = async (draftKey?: string) => {
     setRequiredLanguages(await getRequiredContentLanguages());
     const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
+    const saved = draftKey ? newTemplateDrafts.get(session?.adminId, draftKey) : undefined;
+    if (saved && (!novas.some(n => n.key === saved.channel) || NOVA_TPLS.some(t => t.ch === saved.channel) || lockReason(`channel:${saved.channel}`))) {
+      toast("当前频道不能新建这份模板，请刷新并核对原频道。", "warn");
+      return;
+    }
     setEditTplSnapshot(null);
-    const saved = templateDrafts.get(session?.adminId, "new");
-    const available = saved && novas.some(n => n.key === saved.desired.channel) && !NOVA_TPLS.some(t => t.ch === saved.desired.channel);
-    setTplForm(available ? saved.desired : { ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
+    setOpenedTemplateDraft(saved && draftKey ? draftKey : null);
+    setTplForm(saved ?? { ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
     setTplDrawer(true);
   };
   const editTpl = async (t: (typeof NOVA_TPLS)[number]) => {
@@ -613,8 +650,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const required = await getRequiredContentLanguages();
     setRequiredLanguages(required);
     setEditTplSnapshot(snapshot);
+    setOpenedTemplateDraft(null);
     const current = { channel: t.ch, name: t.name, cta: t.cta, version: t.v, ...mapContentTitleBody(t, required, "edit") };
     const saved = templateDrafts.get(session?.adminId, `edit:${t.ch}`);
+    openedTemplateEdit.current = saved;
     setTplForm(restoreFields(saved, current, { name: "模板名称", cta: "点击后去哪", version: "版本", titleZh: "中文标题", bodyZh: "中文正文",
       titleVi: "越南语标题", bodyVi: "越南语正文", titleEn: "英语标题", bodyEn: "英语正文" }, saved?.revision !== undefined && saved.revision === snapshot?.revision));
     setTplDrawer(true);
@@ -622,6 +661,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const closeTplDrawer = () => { setTplDrawer(false); setEditTplSnapshot(null); setTplForm(EMPTY_TEMPLATE); };
   const submitTpl = () => {
     const n = novas.find((x) => x.key === tplForm.channel);
+    const editKey = editTplChannel ? `edit:${editTplChannel}` : undefined;
+    const editDraft = openedTemplateEdit.current;
+    const newDraft = openedTemplateDraft ? newTemplateDrafts.get(session?.adminId, openedTemplateDraft) : undefined;
+    const consume = () => {
+      if (editKey) templateDrafts.consume(session?.adminId, editKey, editDraft);
+      if (openedTemplateDraft && newDraft?.channel === tplForm.channel) newTemplateDrafts.consume(session?.adminId, openedTemplateDraft, newDraft);
+    };
     return openConfirm({ briefKind: "config",
       errorHandled: true,
       action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
@@ -659,8 +705,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           ? actions.updateI2Template(editTplSnapshot.channel, body, reason, editTplSnapshot, { channel: editTplSnapshot.channel, name: editTplSnapshot.name, cta: editTplSnapshot.cta, version: editTplSnapshot.version, ...mapContentTitleBody(editTplSnapshot, requiredLanguages, "edit") })
           : actions.createI2Template(body, reason),
         `模板 ${tplForm.name} 已保存为草稿`, () => {
-          templateDrafts.forget(session?.adminId, editTplChannel ? `edit:${editTplChannel}` : "new");
+          consume();
           closeTplDrawer();
+        }).catch(error => {
+          const key = (error as { commandKey?: string }).commandKey;
+          if (isOutcomeUnknownError(error) && pendingI2Commands().some(row => row.commandKey === key && row.original)) consume();
+          throw error;
         });
       },
     });
@@ -689,13 +739,25 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const [distDrawer, setDistDrawer] = useState(false);
   const [distDraft, setDistDraft] = useState<Record<string, string>>({});
   const [distReason, setDistReason] = useState("");
+  const [distBase, setDistBase] = useState<Record<string, string>>({});
+  const openedDistribution = useRef<ReturnType<typeof distributionDrafts.get>>(undefined);
+  const distributionValues = (rows: typeof SOCIAL_DIST) => Object.fromEntries(rows.map(item => [item.key, String(item.pct)]));
+  const distributionLabels = (rows: typeof SOCIAL_DIST) => Object.fromEntries(rows.map(item => [item.key, operatorCopyText(item.name)]));
   const openDistDrawer = () => {
     setDistReason("");
     const saved = distributionDrafts.get(session?.adminId, "distribution");
-    const latest = Object.fromEntries(SOCIAL_DIST.map(item => [item.key, String(item.pct)]));
-    setDistDraft(restoreFields(saved, latest, Object.fromEntries(SOCIAL_DIST.map(item => [item.key, operatorCopyText(item.name)]))));
+    openedDistribution.current = saved;
+    const latest = distributionValues(SOCIAL_DIST);
+    setDistBase(latest);
+    setDistDraft(restoreFields(saved, latest, distributionLabels(SOCIAL_DIST)));
     setDistDrawer(true);
   };
+  const recheckDistribution = (rows: typeof SOCIAL_DIST) => {
+    const latest = distributionValues(rows);
+    setDistDraft(restoreFields({ before: distBase, desired: distDraft }, latest, distributionLabels(rows)));
+    setDistBase(latest);
+  };
+  const distributionMoved = SOCIAL_DIST.some(item => distBase[item.key] !== String(item.pct));
   const distDraftTotal = SOCIAL_DIST.reduce((sum, item) => sum + Number(distDraft[item.key] ?? 0), 0);
   const distDraftValid = SOCIAL_DIST.length > 0
     && SOCIAL_DIST.every((item) => {
@@ -705,7 +767,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     && distDraftTotal === 100;
   const distributionChanged = SOCIAL_DIST.some(item => Number(distDraft[item.key]) !== Number(item.pct));
   const submitDistribution = () => {
+    if (newMutationBlocked.current) { toast(newMutationBlocked.current, "warn"); return; }
+    if (distributionMoved) { recheckDistribution(SOCIAL_DIST); return; }
     if (!distDraftValid || !distributionChanged) return;
+    const saved = openedDistribution.current;
     openConfirm({ briefKind: "config",
     initialReason: distReason,
     errorHandled: true,
@@ -725,13 +790,21 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     okLabel: "确认保存",
     run: (reason) => {
       const items = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(distDraft[item.key] ?? 0) }));
-      const expectedItems = latestRead.current?.socialDistribution.map((item) => ({ key: item.key, pct: Number(item.pct) }));
-      if (!expectedItems || !items.some((item) => item.pct !== expectedItems.find(row => row.key === item.key)?.pct)) throw new Error("五类都没有改动");
+      const expectedItems = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(distBase[item.key]) }));
+      if (!items.some((item, index) => item.pct !== expectedItems[index].pct)) throw new Error("五类都没有改动");
+      const consume = () => distributionDrafts.consume(session?.adminId, "distribution", saved);
       return runBackend(actions.updateI2Distribution(items, expectedItems, reason), "事件出现概率已更新", () => {
-        distributionDrafts.forget(session?.adminId, "distribution");
+        consume();
         setDistDrawer(false);
+      }).catch(error => {
+        const key = (error as { commandKey?: string }).commandKey;
+        if (isOutcomeUnknownError(error) && pendingI2Commands().some(row => row.commandKey === key && row.original)) consume();
+        throw error;
       });
     },
+    }, reason => {
+      const latest = latestRead.current?.socialDistribution;
+      if (latest) { recheckDistribution(latest); setDistReason(reason); }
     });
   };
 
@@ -752,7 +825,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           rows={orderDist(latest).map((item) => conflictRow(operatorCopyText(item.name), `${Number(item.pct)}%`, distDraft[item.key] === undefined ? "—" : `${Number(distDraft[item.key])}%`))}
           note="理由会带进确认框；核对后再点「保存概率」。"
           onReread={() => void conflictReview.reread()} onClose={conflictView.hide}
-          onRebuild={() => finish(() => { setDistReason(conflict.requested.reason); setDistDrawer(true); })} onDiscard={() => finish(() => setDistDrawer(false))} />
+          onRebuild={() => finish(() => { recheckDistribution(latest); setDistReason(conflict.requested.reason); setDistDrawer(true); })} onDiscard={() => finish(() => setDistDrawer(false))} />
       : <IConflictPending subject={subject} onOpen={conflictView.show} />;
   })();
 
@@ -940,7 +1013,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={contentLoading} onClick={() => void actions.reloadIContent()}>刷新</Button>
       </span> : undefined}
-      actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={lockReason("channel-create")} onClick={openNewNova}>新增频道</Button> : undefined} />
+      actions={canWriteI2 ? <Button variant="primary" icon={<Plus size={14} aria-hidden />} disabledReason={lockReason("channel-create")} onClick={() => openNewNova()}>新增频道</Button> : undefined} />
   );
   // 恢复行写频道名字，不写频道键；新增、编辑频道的两个间隔写成中文。
   const unknownObject = (row: I2Command) => {
@@ -980,7 +1053,14 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     };
   });
   const unknownNotice = <>
-    <FundRecoveryPanel rows={recoveryRows} settled={settledRows} onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />
+    <FundRecoveryPanel rows={[]} settled={settledRows.filter(row => newChannelDrafts.get(session?.adminId, row.key) || newTemplateDrafts.get(session?.adminId, row.key))}
+      settledAction={row => <Button size="sm" disabledReason={newMutationReason} onClick={() => {
+        if (newChannelDrafts.get(session?.adminId, row.key)) openNewNova(row.key);
+        else void newTpl(row.key);
+      }}>继续编辑</Button>} />
+    <FundRecoveryPanel rows={recoveryRows}
+      settled={settledRows.filter(row => !newChannelDrafts.get(session?.adminId, row.key) && !newTemplateDrafts.get(session?.adminId, row.key))}
+      onDismissSettled={(key) => setSettledRows((current) => current.filter((item) => item.key !== key))} />
     {closing && <FundClosureModal label={`${closing.action} · ${unknownObject(closing)}`} createdAt={closing.createdAt} offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={unknownChange(closing) ? <Fact k="改动">{unknownChange(closing)}</Fact> : undefined}
       onClose={() => setClosing(null)} onSubmit={async (evidence: FundCommandEvidence) => {
@@ -1170,7 +1250,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <div {...lowerIds.panel("templates")} hidden={lower !== "templates"} className="rd-tab-pane">
       <Panel title="消息模板" icon={FileText} tone="role-4" sub={`${templatePager.total} 个 · 每个频道一个`}
         explain="模板就是用户收到的标题和正文。英文和运营区域语言必填；草稿 → 发布 → 归档。点一行看三种语言并排和 App 里的样子。"
-        actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason || (templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined)} onClick={newTpl}>新建模板</Button> : undefined}>
+        actions={canWriteI2 ? <Button icon={<Plus size={14} aria-hidden />} disabledReason={newMutationReason || (templateChannelOptions.length === 0 ? "每个频道都有模板了；要换内容，先删掉旧模板" : undefined)} onClick={() => void newTpl()}>新建模板</Button> : undefined}>
         {retiredBrandChannels.length > 0 && <Notice tone="warn" title={`${retiredBrandChannels.length} 个频道的已发布模板里还有退役的品牌名，现在发不出去`}>
           <p>{retiredBrandChannels.map(displayOf).join("、")}：系统发送时会跳过这些模板。要恢复推送：归档模板，删掉后用现在的名称新建、发布，再启用频道。</p>
         </Notice>}
@@ -1380,7 +1460,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       </Drawer>
 
       {distDrawer && (
-        <DistDrawer items={orderDist(SOCIAL_DIST)} draft={distDraft} setDraft={setDistDraft} total={distDraftTotal} valid={distDraftValid} unchanged={!distributionChanged}
+        <DistDrawer items={orderDist(SOCIAL_DIST)} draft={distDraft} setDraft={setDistDraft} total={distDraftTotal} valid={distDraftValid} unchanged={!distributionChanged} needsRecheck={distributionMoved}
           onClose={() => setDistDrawer(false)} onSubmit={submitDistribution} />
       )}
       {novaDrawer && (

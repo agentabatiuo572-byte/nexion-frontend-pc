@@ -134,9 +134,9 @@ async function readSubmittedI4Section(original: I4SectionCommand, observe?: (rec
     const ticket = await queryI4SectionCommand(original);
     if (ticket) { observe?.(original, ticket); return ticket; }
   } catch (error) {
-    throw new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`);
+    throw Object.assign(new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`), { commandKey: original.commandKey });
   }
-  throw new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+  throw Object.assign(new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。"), { commandKey: original.commandKey });
 }
 
 export async function retryI4SectionCommand(original: I4SectionCommand, observe?: (record: I4SectionCommand, ticket: A2OperationRow) => void) {
