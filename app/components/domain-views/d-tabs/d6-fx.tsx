@@ -289,15 +289,8 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const rejection = explicitRejectionCode(cause);
       if (rejection) {
-        const reason = retryRejectedReason(cause);
-        if (record.proposal) {
-          pendingFx.forget(record.fingerprint, record.commandKey);
-          syncPending();
-          toast(reason, "warn");
-        } else {
-          pendingFx.markReplayRejected(record.fingerprint, record.commandKey, rejection);
-          syncPending();
-        }
+        pendingFx.markReplayRejected(record.fingerprint, record.commandKey, rejection);
+        syncPending();
       } else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
@@ -342,12 +335,12 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     } finally { setRetrying(false); }
   };
   const releasePending = (record: PendingFx) => {
-    if (!pendingFx.list().some(row => row.commandKey === record.commandKey && !row.proposal && row.replayRejection)) return;
+    if (!pendingFx.list().some(row => row.commandKey === record.commandKey && row.replayRejection)) return;
     setReleasing(false);
     // Legacy manual release is separate from evidence-based command closure.
     pendingFx.forget(record.fingerprint, record.commandKey);
     syncPending(); setPendingNote("");
-    toast("已解除本页这条原操作记录；原操作没有结案时系统仍会阻止新提交", "success");
+    toast(record.proposal ? "已解除本页这条原操作记录；已经建的审批单不受影响" : "已解除本页这条原操作记录；原操作没有结案时系统仍会阻止新提交", "success");
   };
 
   /** 查原审批单只收尾这次提交的未知结果，不把待批当成已生效。 */
@@ -498,13 +491,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
         {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>}
-        {retryRejected && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
+        {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>
         <p>{failed ? "" : "这次修改可能已经提交，"}已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
         {expired && !outcome && (pending.proposal && !canQueryOriginal ? <p>{EXPIRED_NO_QUERY}</p> : !fundInvestigationAccess(target).unavailableReason && <p>{fundInvestigationAccess(target).canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER}</p>)}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
-        {retryRejected && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
+        {retryRejected && <p>重试没有成功：{retryRejected} {pending.proposal ? "先到操作记录与审批核实有没有建单；「解除原操作记录」只清本页这条记录，已经建的审批单不受影响。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
         {pendingNote && <p>{pendingNote}</p>}
       </>,
       tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}` };
