@@ -850,7 +850,9 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     items={visibleQueueRows.map((ticket) => {
       const stale = approvals.queueRowStale(ticket.id);
       return { key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="warn">{stale ? "上次待审批" : "待审批"}</StatusTag>,
-        line: `${proposalLine(ticket)}${stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine}`, detail: proposalFacts(ticket) };
+        line: `${proposalLine(ticket)}${stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine}`,
+        // 读不懂时这一行已经写了「拟改值没读到」，展开后不再写一遍（DT-12）。
+        detail: ticketValues(ticket.before) && ticketValues(ticket.after) ? proposalFacts(ticket) : undefined };
     })} />;
   const queueReadNotice = (queueState === "failed" || approvals.queueRetrying)
     && <Notice tone="warn" title="待批列表加载失败" action={<InlineRetry onRetry={() => void loadQueue()} retrying={approvals.queueRetrying} />}>{approvals.queueError}</Notice>;
