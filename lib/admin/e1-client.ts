@@ -6,8 +6,10 @@ import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-erro
 import { fromPurchaseGate, toPurchaseGate, type BackendPurchaseGate } from "@/lib/admin/e1-purchase-gate";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import {
+  e1SkuDisplayControlInvalidFields,
   e1SkuQuotaInvalidFields,
   inspectE1SkuPage,
+  isE1DisplaySoldBase,
   parseE1GenerationGateData,
   parseE1SkuPage,
   type E1InvalidSku,
@@ -62,6 +64,8 @@ interface BackendSku {
   shareYieldMax?: number | string | null;
   baseRate?: string | null;
   sold?: number | null;
+  displaySoldBase?: unknown;
+  liveActivityVisible?: unknown;
   rating?: number | string | null;
   reviews?: number | null;
   generation?: number | null;
@@ -131,6 +135,8 @@ export interface E1GenerationRelease {
 export interface E1GenerationGateData {
   domain: "E1";
   skuReviewContractVersion?: number;
+  taskClassPolicySupported?: boolean;
+  storeDisplayControlsSupported?: boolean;
   phaseOrder: string[];
   phases: E1Phase[];
   platformMonth: number;
@@ -239,7 +245,7 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
 /**
  * 单行 → OpsSku。
  *
- * 目录由 `inspectE1SkuPage` 逐行校验；单条写后读回由 `fromSkuWriteResponse` 校验配额字段。
+ * 目录行先按 `inspectE1SkuPage` 校验，展示设置待能力响应后核对。写回执允许缺少旧版没有的字段。
  */
 function fromSku(sku: BackendSku): OpsSku {
   const inventoryMode = sku.inventoryMode;
@@ -278,6 +284,8 @@ function fromSku(sku: BackendSku): OpsSku {
     shareYieldMax: toOptionalNumber(sku.derivedShareYieldMaxPct ?? sku.shareYieldMax),
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
+    displaySoldBase: isE1DisplaySoldBase(sku.displaySoldBase) ? sku.displaySoldBase : undefined,
+    liveActivityVisible: typeof sku.liveActivityVisible === "boolean" ? sku.liveActivityVisible : undefined,
     rating: toOptionalNumber(sku.rating),
     reviews: sku.reviews ?? undefined,
     generation: sku.generation ?? undefined,
@@ -312,7 +320,7 @@ function fromSku(sku: BackendSku): OpsSku {
   return { ...mapped, baseRate: skuBaseRateText(mapped) };
 }
 
-function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
+function toSkuPayload(sku: OpsSku, reason: string, operator: string, displayControlsSupported: boolean) {
   const hasTarget = sku.monthlyTargetUsdt != null;
   const inventoryMode = sku.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE";
   const productType = sku.productType ?? (sku.tier === "Share" ? "SHARE" : "DEVICE");
@@ -354,6 +362,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     tradeinDiscount: sku.tradeinDiscount ?? null,
     inventoryMode,
     stock: inventoryMode === "UNLIMITED" ? null : String(sku.stock ?? "0"),
+    ...(displayControlsSupported ? { displaySoldBase: sku.displaySoldBase, liveActivityVisible: sku.liveActivityVisible } : {}),
     trialEligible: sku.trialEligible === true,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? null,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? null,
@@ -426,6 +435,22 @@ export async function fetchE1Products(): Promise<Pick<E1CatalogSnapshot, "skus" 
   return { skus, invalidSkus: invalid };
 }
 
+/** Recheck the catalog whenever either the SKU data or the capability response changes. */
+export function inspectE1StoreDisplayControls(
+  products: Pick<E1CatalogSnapshot, "skus" | "invalidSkus">,
+  gates: E1GenerationGateData | null,
+): Pick<E1CatalogSnapshot, "skus" | "invalidSkus"> {
+  if (gates?.storeDisplayControlsSupported !== true) return products;
+  const invalidSkus = [...products.invalidSkus];
+  const skus = products.skus.filter(sku => {
+    const invalidFields = e1SkuDisplayControlInvalidFields(sku, true);
+    if (!invalidFields.length) return true;
+    invalidSkus.push({ skuId: sku.id, name: sku.name, invalidFields });
+    return false;
+  });
+  return { skus, invalidSkus };
+}
+
 export async function fetchE6OnboardingSkuCandidates(): Promise<OpsSku[]> {
   const { skus } = await fetchE1Products();
   // E1 does not expose store visibility. The A2 backend rechecks eligibility.
@@ -444,7 +469,7 @@ export async function fetchE1Discount(): Promise<E1BundleDiscount> {
 
 export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
   const [products, gates, bundleDiscount] = await Promise.all([fetchE1Products(), fetchE1GenerationGates(), fetchE1Discount()]);
-  return { ...products, gates, bundleDiscount };
+  return { ...inspectE1StoreDisplayControls(products, gates), gates, bundleDiscount };
 }
 
 export function parseE1BundleDiscount(value: unknown): E1BundleDiscount {
@@ -492,14 +517,14 @@ export async function updateE1BundleDiscount(
 }
 
 function fromSkuWriteResponse(sku: BackendSku): OpsSku {
-  const invalidFields = e1SkuQuotaInvalidFields(sku);
+  const invalidFields = [...e1SkuQuotaInvalidFields(sku), ...e1SkuDisplayControlInvalidFields(sku, false)];
   if (sku.taglineTranslations != null && !isSkuTaglineTranslations(sku.taglineTranslations)) invalidFields.push("taglineTranslations");
   if (invalidFields.length) throw new Error(`E1_SKU_RESPONSE_INVALID:${invalidFields.join(",")}`);
   return fromSku(sku);
 }
 
-export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, reason: string, operator: string) {
-  const body = JSON.stringify(toSkuPayload(sku, reason, operator));
+export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, reason: string, operator: string, displayControlsSupported = false) {
+  const body = JSON.stringify(toSkuPayload(sku, reason, operator, displayControlsSupported));
   const saved = previousSkuId
     ? await e1Request<BackendSku>(`/skus/${encodeURIComponent(previousSkuId)}`, {
         method: "PUT",
