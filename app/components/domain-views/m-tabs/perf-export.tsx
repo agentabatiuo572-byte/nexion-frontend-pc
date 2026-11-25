@@ -72,6 +72,11 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     ports.invalidateAccess();
   };
 
+  const applyData = (next: ExportDialogData) => {
+    setData(next); setMonth(next.month); setScope(next.scope); setItems(next.items); setSelected(next.selected);
+    setLoadError(""); setPreview("ready");
+  };
+
   const load = () => {
     editedConditions.current = false;
     setData(null);
@@ -80,8 +85,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
     const generation = ++checkGeneration.current;
     ports.open(initial).then(next => {
       if (generation !== checkGeneration.current) return;
-      setData(next); setMonth(next.month); setScope(next.scope); setItems(next.items); setSelected(next.selected);
-      setPreview("ready");
+      applyData(next);
     }, error => {
       if (generation !== checkGeneration.current || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
@@ -158,7 +162,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
         setDownloadFailed({ taskId, outcome });
         setResult(rows => rows?.map(row => row.taskId !== taskId ? row : {
           ...row, ...outcome.task, state: outcome.task?.state ?? (outcome.kind === "expired" ? "EXPIRED" : row.state),
-          canDownload: outcome.kind === "retry",
+          canDownload: outcome.kind === "unconfirmed" ? outcome.task?.canDownload : outcome.kind === "retry",
           rows: outcome.task ? outcome.task.rows : outcome.kind === "forbidden" ? null : row.rows,
         }) ?? null);
       });
@@ -225,7 +229,12 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
         setQuerying(true); setLookupText(null); setQueriedScopeLabel(null);
         ports.lookupSubmit().then(outcome => {
-          setQueriedScopeLabel(outcome.originalScopeLabel ?? null);
+          const verified = outcome.originalView;
+          setQueriedScopeLabel(verified?.scopes.find(choice => choice.value === verified.scope)?.label ?? null);
+          if (verified && (outcome.kind === "pending" || outcome.kind === "partial")) {
+            checkGeneration.current++;
+            applyData(verified);
+          }
           if (outcome.kind === "check-failed") {
             setLookupText("这次查询失败。");
             return;
@@ -244,7 +253,7 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
           if (outcome.kind === "cleared") {
             // 原范围已经不能选：只说结论，不把原来的月份、范围和理由铺回表单（和导出记录的待确认区一样）。
             setConfirmedNotExecuted(true);
-            if (outcome.originalScopeLabel === undefined) {
+            if (!verified) {
               checkGeneration.current++;
               setOriginal(undefined);
               return;

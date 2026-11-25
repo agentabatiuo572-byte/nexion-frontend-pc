@@ -239,7 +239,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
       return next;
     });
     ports.lookupSubmit().then(found => {
-      const visible = found.originalScopeLabel !== undefined;
+      const visible = found.originalView !== undefined;
       setReceiptVisibility({ key, refreshKey, visible });
       if (found.kind === "matched") {
         setSettled(list => [{ key, label: "提交导出", text: exportReceiptSummary(found.rows), mine: true }, ...list]);

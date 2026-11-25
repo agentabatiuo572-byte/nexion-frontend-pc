@@ -138,7 +138,8 @@ export type ExportDialogData = {
   minReasonChars: number; maxReasonChars: number;
 };
 export type ExportQuery = { month: string; scope: string; types: ExportType[] };
-export type ExportSubmitted = Pick<ExportTask, "type" | "taskId" | "state" | "rows" | "canDownload" | "mine" | "decidedBy" | "decidedAt" | "failure" | "scopeLost">;
+export type ExportSubmitted = Pick<ExportTask, "type" | "taskId" | "state" | "rows" | "mine" | "decidedBy" | "decidedAt" | "failure" | "scopeLost">
+  & { canDownload?: boolean };
 
 export type ExportTaskState = "PENDING_GENERATION" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "WITHDRAWN" | "READY" | "FAILED" | "EXPIRED";
 /** 导出记录里的一条。scope、month、rows 为 null 时这些现在看不到（申请人已没有这个范围）。 */
@@ -195,7 +196,7 @@ export type SubmitLookup = (
   | { kind: "check-failed" }
   | { kind: "cleared" }
   | { kind: "missing" }
-) & { originalScopeLabel?: string };
+) & { originalView?: ExportDialogData };
 
 export type ExportDownload =
   | { kind: "downloaded" }
@@ -228,7 +229,8 @@ export function exportStatus(task: ExportSubmitted): { tone: "ok" | "warn" | "pr
     case "PENDING_APPROVAL": return { tone: "warn", label: "待审批", line: task.mine ? "等另一位有审批权的管理员审批" : "等你审批" };
     case "APPROVED": return task.failure === "GENERATE_FAILED" ? { tone: "danger", label: "已批准，执行失败", line: `${task.decidedAt ? `${task.decidedAt} ` : ""}批准，文件没生成出来` }
       : { tone: "progress", label: "已批准", line: "文件生成中，生成好才能下载" };
-    case "READY": return task.canDownload ? { tone: "ok", label: "可下载", line: "CSV 文件" } : { tone: "neutral", label: "已生成", line: "你现在不能下载" };
+    case "READY": return task.canDownload ? { tone: "ok", label: "可下载", line: "CSV 文件" }
+      : { tone: "neutral", label: "已生成", line: task.canDownload === undefined ? "暂时无法确认能否下载" : "你现在不能下载" };
     case "REJECTED": return { tone: "neutral", label: "已驳回", line: "审批人驳回，理由见详情" };
     case "WITHDRAWN": return { tone: "done", label: "已撤回", line: task.mine ? "你撤回的" : "申请人撤回的" };
     case "EXPIRED": return { tone: "neutral", label: "已过期", line: "文件已过保留期，不能再下载" };

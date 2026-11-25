@@ -429,7 +429,6 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [exportScopeRevision, setExportScopeRevision] = useState(0);
   const [exportRecordsRefresh, setExportRecordsRefresh] = useState(0);
   const [exportRecordsRefreshing, setExportRecordsRefreshing] = useState(false);
-  const exportsPorts = usePerformanceExportPorts(exportScopeRevision);
   const [exportOpen, setExportOpen] = useState(false);
   const [eventsOpen, setEventsOpen] = useState(false);
   const [events, setEvents] = useState<Awaited<ReturnType<typeof analytics.events>> | null>(null);
@@ -443,6 +442,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const tabIds = useTabIds();
   const pendingTabFocus = useRef<M1Tab | null>(null);
   const [scope, setScope] = useState<SupportAnalyticsResponse | null>(null), [scopeError, setScopeError] = useState(""), [scopeDenied, setScopeDenied] = useState(false);
+  const noStatisticsMode = authSession?.supportReadModes?.length === 0;
+  const statisticsUnavailable = noStatisticsMode || scopeDenied;
+  const exportsPorts = usePerformanceExportPorts(exportScopeRevision, statisticsUnavailable ? exportRecordsRefresh : 0);
   const teamChanged = useRef(false);
   const targetedRefresh = useRef(false);
   const [scopeRetry, setScopeRetry] = useState(0), [queryState, setQueryState] = useState(initialAnalyticsQuery("PERSONAL"));
@@ -494,8 +496,6 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const readModes = authSession?.supportReadModes;
   const canMine = scope?.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL"));
   const noScopedContent = scope?.scopeSummary.mode === "MANAGED" && scope.scopeSummary.groups.length === 0 && !canMine;
-  const noStatisticsMode = readModes?.length === 0;
-  const statisticsUnavailable = noStatisticsMode || scopeDenied;
   const exportViews = statisticsUnavailable ? exportsPorts?.persona.verifiedViews : exportsPorts?.persona.views;
   const hasMyExports = exportViews?.includes("MINE");
   const hasExportApprovals = exportViews?.includes("APPROVALS");
