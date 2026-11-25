@@ -655,7 +655,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" />{confirmModal}</div>;
+  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="正在加载签到数据…" />{confirmModal}</div>;
   if (error || !model) {
     return (
       <div className="h5-page">

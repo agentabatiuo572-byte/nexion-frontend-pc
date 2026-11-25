@@ -58,14 +58,14 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
   const busy = state === "loading" || !!retrying;
   const box = useRef<HTMLDivElement>(null);
   const retryButton = useRef<HTMLButtonElement>(null);
-  /** 按过「重试」、这次重读还没有结果：at 是按下的时间，started 是已经看到重读开始（这一块变成忙）。 */
-  const armed = useRef<{ at: number; started: boolean } | null>(null);
+  /** 按过「重试」、这次重读还没有结果：at 是按下的时间，started 是已经看到重读开始（这一块变成忙），target 是按下时给的标题（重读中换成不带标题的加载占位时还用它）。 */
+  const armed = useRef<{ at: number; started: boolean; target?: RefObject<HTMLElement | null> } | null>(null);
   const focusAfter = useRef(afterRetryFocus);
   focusAfter.current = afterRetryFocus;
   /** 按「重试」那一刻这一块的外框，由近到远；这一块卸下后从里面找还挂着的一层接焦点。 */
   const frames = useRef<HTMLElement[]>([]);
   const retry = onRetry && (() => {
-    armed.current = { at: Date.now(), started: false };
+    armed.current = { at: Date.now(), started: false, target: afterRetryFocus };
     pendingRetry = { at: Date.now() };
     frames.current = [];
     for (let frame = box.current?.parentElement; frame && frame !== document.body; frame = frame.parentElement) frames.current.push(frame);
@@ -99,11 +99,12 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
     const run = armed.current;
     if (!run || Date.now() - run.at > RETRY_FOCUS_MS) return;
     // 这一块卸下（读到了，或重读时换成了别的占位）：焦点交给调用方给的标题；没给、或标题接不到，就交给还挂着的最近一层外框，接不到再往外一层。
-    const target = focusAfter.current;
+    const target = focusAfter.current ?? run.target;
     const outer = frames.current;
     // 卸下时就记区域（这时节点已经摘掉）：同一轮里在这里挂上的新失败块马上就能认出来。
     if (pendingRetry) pendingRetry.region = outer.find((frame) => frame.isConnected);
-    window.requestAnimationFrame(() => {
+    // 这一轮的副作用跑完就交接（新内容已经挂上），不等下一帧：浏览器忙或窗口被遮住时一帧要等几百毫秒，这段时间焦点停在页面上。
+    queueMicrotask(() => {
       if (!focusLost()) return;
       const heading = target?.current;
       const landing = [heading, ...outer].find((frame): frame is HTMLElement => !!frame && focusFrame(frame));

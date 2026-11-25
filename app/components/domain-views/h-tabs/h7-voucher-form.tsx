@@ -7,9 +7,10 @@
  */
 import { useMemo, useState } from "react";
 import { BellOff, CircleSlash, Layers, Lock, Ticket } from "lucide-react";
-import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Modal, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
+import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
 import { h7DateFacts, h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { validateH7VoucherMoneyPrecision } from "@/lib/admin/h7-voucher-money";
+import { LeaveDialog } from "../i-tabs/i5-writes";
 import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, WHEEL_ONLY_TEXT, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
@@ -346,10 +347,10 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
           </aside>
         </div>
       </Drawer>
-      {leaving && <Modal title="放弃这次填写？" onClose={() => setLeaving(false)} footer={<>
-        <Button onClick={() => setLeaving(false)}>继续填写</Button>
-        <Button variant="danger-outline" onClick={() => { setLeaving(false); onClose(); }}>放弃并关闭</Button>
-      </>}><p>填的内容还没保存，关闭后不保留。</p></Modal>}
+      {/* 离开框三个选项（OP-29）：保存走抽屉同一个「核对并保存」，确认和理由照旧；保存成功后抽屉才关，取消或被拒留在抽屉里。 */}
+      <LeaveDialog guard={{ asking: leaving, stay: () => setLeaving(false), discard: () => { setLeaving(false); onClose(); }, startSave: () => { setLeaving(false); return () => {}; } }}
+        saveName="保存并立即生效" saveBlocked={readFailed ? "最新数据读到后才能继续" : missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
+        onSave={() => review()} />
     </>
   );
 }
