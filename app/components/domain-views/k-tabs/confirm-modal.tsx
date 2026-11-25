@@ -145,12 +145,12 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       footer={
         <>
           <Btn disabled={submitting || readingConflict} onClick={onClose}>取消</Btn>
-          {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原结果</Btn>}
+          {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原操作</Btn>}
           {finalConflict ? null : surface ? (
             <RdButton
               variant={req.confirmTone ?? "primary"}
               loading={submitting || readingConflict}
-              loadingText={readingConflict ? "正在读取…" : "提交中…"}
+              loadingText={readingConflict ? "正在加载…" : "提交中…"}
               disabledReason={can || submitting || readingConflict ? undefined : pendingBlockReason ?? policyMessage ?? [!inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}

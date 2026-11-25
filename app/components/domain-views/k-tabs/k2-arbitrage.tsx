@@ -501,7 +501,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     if (!commandAttempt.isDurablyStored(scope, commandKey)) {
       if (!retained) commandAttempt.forget(scope, commandKey);
       throw new Error(retained
-        ? "浏览器存不下原操作，这次没有发送，原操作结果仍未知。原记录继续保留，请查询原结果。"
+        ? "浏览器存不下原操作，这次没有发送，原操作结果仍未知。原记录继续保留，请查询原操作。"
         : "浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     // A later new submission can itself become unknown; this frame owns its new key too.
@@ -873,28 +873,28 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       tag,
       state: verified ? "pending" : expired ? "expired" : "unknown",
       actions: <>
-        <Button size="sm" onClick={query}>查询原结果</Button>
+        <Button size="sm" onClick={query}>查询原操作</Button>
         {!record.proposed && <Button size="sm" disabledReason={!retry ? "这是旧版本留下的记录，没有保存原请求，只能查询" : expired ? "原请求超过 24 小时，不能再重试，只能查询" : undefined} onClick={retry}>按原操作重试</Button>}
       </>,
     };
   });
   const pendingNotices = (
     <KRecoveryNotice key="k2-recovery" title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>结果未知有两种：提交时没收到确定结果的，可能已经生效（审批类是申请可能已经提交），先查询原结果，24 小时内也可以按原操作重试，不会重复执行；申请已经提交、但还没查到审批状态的，只能查询原结果。</p><p>待审批：你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。别的管理员提交的冻结不列在这里，表里同样标「待审批」，详情里写谁、什么时候提交。</p><p>已过期：超过 24 小时，只能查询。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
+      explain={<><p>结果未知有两种：提交时没收到确定结果的，可能已经生效（审批类是申请可能已经提交），先查询原操作，24 小时内也可以按原操作重试，不会重复执行；申请已经提交、但还没查到审批状态的，只能查询原操作。</p><p>待审批：你提交的冻结或首次配置还在等批准，批准或驳回前对应的按钮先锁住。别的管理员提交的冻结不列在这里，表里同样标「待审批」，详情里写谁、什么时候提交。</p><p>已过期：超过 24 小时，只能查询。</p><p>原请求只保存在这个浏览器标签页里。</p></>}
       lead={reach("/platform/audit", "platform_a2_read") ? <>也可以<Link className="rd-link" href="/platform/audit">到「操作记录与审批」核对</Link>。</> : undefined} />
   );
   const rereadNotice = rereadPending && overview && !ctx.contentError
     ? <Notice tone="progress" title="原操作已有结果，正在重新读取">读完后命中和参数按最新数据显示；这期间不能发起新的操作。</Notice> : null;
 
   if (ctx.contentLoading && !overview) {
-    return <>{header}{pendingNotices}<BlockState state="loading" title="正在读取并检测命中" /></>;
+    return <>{header}{pendingNotices}<BlockState state="loading" title="正在加载并检测命中" /></>;
   }
 
   if (ctx.contentError) {
     return (
       <>{header}{pendingNotices}
         <div data-module-health-state="error">
-          <BlockState state="error" title="套利与刷量数据加载失败" detail={errorText(ctx.contentError).includes("已隐藏数据") ? errorText(ctx.contentError) : `${errorText(ctx.contentError)} 为避免误操作，已隐藏数据和操作按钮。`} onRetry={reload} retrying={ctx.contentLoading} retryLabel="重新加载" />
+          <BlockState state="error" title="套利与刷量数据加载失败" detail={errorText(ctx.contentError).includes("已隐藏数据") ? errorText(ctx.contentError) : `${errorText(ctx.contentError)} 为避免误操作，已隐藏数据和操作按钮。`} onRetry={reload} retrying={ctx.contentLoading} />
         </div>
       </>
     );
@@ -1088,7 +1088,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
         <Panel plain headingLevel={3} title="相关设置" explain="这两项归别的页面管，这里只读。">
           <ConfigList label="相关设置">
             <ConfigRow name="升级置换首档抵扣" explainLabel="升级置换首档抵扣" what="升级置换第一档的抵扣比例，和置换套利有关。" where="在「设备使用与升级置换」设置，这里只读。"
-              value={ladderReference.status === "loading" ? "读取中…"
+              value={ladderReference.status === "loading" ? "正在加载…"
                 : ladderReference.status === "error" ? <span className="k2-ref-failed" role="alert" title={ladderReference.message}>抵扣比例加载失败 · 请稍后重试<Button size="sm" aria-label="重试加载升级置换首档抵扣" onClick={() => setLadderReferenceAttempt((attempt) => attempt + 1)}>重试</Button></span>
                 : <>{ladderReference.value === null ? "未提供" : `${ladderReference.value}%`}{reach("/devices/trade-in", "device_e3_read") && <> · <Link className="rd-link" href="/devices/trade-in">设备使用与升级置换</Link></>}</>} />
             <ConfigRow name="新人礼金额与发放规则" explainLabel="新人礼金额与发放规则" what="新人礼和邀请奖励发多少、怎么发。" where="在「新人礼与邀请奖励」设置，本页不改金额。"
@@ -1119,7 +1119,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
             ]} />
             {freezeBlocked && (
               <Notice tone="warn" title="冻结前要先标记可疑"
-                action={reach("/risk/multi-account", "risk_k1_read") ? <Link className="rd-link" href="/risk/multi-account">去多账户风险排查</Link> : undefined}>
+                action={reach("/risk/multi-account", "risk_k1_read") ? <Link className="rd-link" href="/risk/multi-account">去多账户风险排查 →</Link> : undefined}>
                 这组账户在「多账户风险排查」标记为可疑后，才能在这里提交冻结。
               </Notice>
             )}

@@ -204,7 +204,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   const conclusion = failed.length === D1_SECTIONS.length
     ? <Conclusion state="danger" explain={explain} action={retryAll}>读取失败，不知道有没有要处理的事</Conclusion>
     : loadingCount && !usdtAlert
-      ? <Conclusion state="unknown" explain={explain}>正在读取要处理的事</Conclusion>
+      ? <Conclusion state="unknown" explain={explain}>正在加载要处理的事</Conclusion>
       : total > 0
         ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : "点页签上带数字的区处理"} action={failed.length ? retryAll : undefined}>
           {alertLead && `${alertLead}；`}有 <b>{totalText}</b> 项要处理{failed.length ? `，${failedNames}读取失败，这个数不全` : ""}
@@ -520,8 +520,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     record: command.commandOrigin ? command : undefined,
     label: pendingLabel(command.path),
     createdAt: command.createdAt,
-    hint: command.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原操作重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原操作重试不会重复执行。",
-    blocked: command.expiresAt <= Date.now() ? command.commandOrigin ? "已超过 24 小时，不能再按原操作重试，先查询原结果" : D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
+    hint: command.commandOrigin ? "结论以查询原操作为准，现在的值只能参考。按原操作重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原操作重试不会重复执行。",
+    blocked: command.expiresAt <= Date.now() ? command.commandOrigin ? "已超过 24 小时，不能再按原操作重试，先查询原操作" : D1_COMMAND_EXPIRED_TEXT : permitted ? undefined : "这个账号没有这项权限",
     expired: command.expiresAt <= Date.now(),
     auditHref: "/platform/audit?domain=D",
     verify: () => verifyCommand(command.path),
@@ -530,16 +530,16 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
     after: () => { void refreshAfterWrite(); setBankKey(value => value + 1); },
   });
   const bankItems: D1PendingItem[] = [
-    ...bankPending.map(command => ({ ...pendingItem({ ...command, method: "POST", body: "" }, () => retryD1PendingBankOrderCommand(command.commandKey), canBankReconcile), hint: command.commandOrigin ? "结论以查询原结果为准，下面列表的订单和钱包只能参考。按原操作重试不会重复入账。" : "升级前留下的记录，查不了原结果。先在下面的列表核对订单和用户钱包；按原操作重试不会重复入账。" })),
+    ...bankPending.map(command => ({ ...pendingItem({ ...command, method: "POST", body: "" }, () => retryD1PendingBankOrderCommand(command.commandKey), canBankReconcile), hint: command.commandOrigin ? "结论以查询原操作为准，下面列表的订单和钱包只能参考。按原操作重试不会重复入账。" : "升级前留下的记录，查不了原结果。先在下面的列表核对订单和用户钱包；按原操作重试不会重复入账。" })),
     ...bankSettingsPending.map(command => pendingItem(command, () => command.path === "/vietqr/config" ? retryD1PendingCommand(command.commandKey) : retryD1PendingTopupCommand(command.commandKey),
       command.path === "/vietqr/config" ? canManageBankConfig : canManageChannels)),
   ];
   const ledgerItems = ledgerPending.map(command => pendingItem(command, () => retryD1PendingTopupCommand(command.commandKey), canReconcile));
 
-  const readingReason = overviewLoading ? "正在读取最新数据" : busy ? "正在提交" : undefined;
+  const readingReason = overviewLoading ? "正在加载最新数据" : busy ? "正在提交" : undefined;
   const bankChannels = (overview?.channels ?? []).filter((channel) => ["vietqr", "hdpay"].includes(channel.code));
   const perTxLimit = vietQr?.config.perTxLimitUsd;
-  const bankSummary = overviewLoading && !overview ? "正在读取"
+  const bankSummary = overviewLoading && !overview ? "正在加载"
     : !overview && !vietQr ? "读取失败"
       : [bankChannels.length ? (bankChannels.every(channel => channel.enabled) ? "启用" : bankChannels.some(channel => channel.enabled) ? "部分停用" : "停用") : null,
         perTxLimit != null ? `单笔上限 ${perTxLimit.toLocaleString("en-US")} USDT` : null].filter(Boolean).join(" · ") || "—";
@@ -547,7 +547,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   const reconRows = overview?.reconciliation ?? [];
   const hasDiff = (overview?.diffCount ?? 0) > 0;
   const registered = reconRows.filter(row => row.reconciled && mismatched(row)).length;
-  const reconSummary = overviewLoading && !overview ? "正在读取" : !overview ? "读取失败"
+  const reconSummary = overviewLoading && !overview ? "正在加载" : !overview ? "读取失败"
     : reconRows.length === 0 ? "今天还没有支付商流水或入账记录"
       : hasDiff ? "有通道没对上，要挂账"
         : registered ? `没有待挂账的差异；${registered} 个通道的差异已挂账，金额仍对不上` : "今天的通道金额与笔数都一致";
@@ -567,8 +567,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         onManualCredit={(order, onSettled) => openBankManualCredit(order, async () => { await Promise.all([onSettled(), loadOverview()]); })} />
       <Fold title="银行卡支付设置" icon={Settings2} tone="role-4" summary={bankSummary}
         alert={!!overviewError || !!vietQrError || bankChannels.some(channel => !channel.enabled)} alertTone={overviewError || vietQrError ? "danger" : "warn"}>
-        {overviewError && <BlockState state="error" compact title="充值通道读取失败" detail={overviewError} onRetry={() => void loadOverview()} />}
-        {vietQrError && <BlockState state="error" compact title="银行卡支付参数读取失败" detail={vietQrError} onRetry={() => void loadOverview()} />}
+        {overviewError && <BlockState state="error" compact title="充值通道加载失败" detail={overviewError} onRetry={() => void loadOverview()} />}
+        {vietQrError && <BlockState state="error" compact title="银行卡支付参数加载失败" detail={vietQrError} onRetry={() => void loadOverview()} />}
         <ConfigList label="银行卡支付设置">
           {bankChannels.map(channel => {
             const name = depositChannelText(channel.code) ?? channel.id;
@@ -589,7 +589,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
             action={canManageBankConfig ? <Button size="sm" disabledReason={readingReason ?? (vietQr ? d1PendingObjectReason("/vietqr/config") : "银行卡支付参数没读到，刷新后再试")} onClick={editPerTxLimit}>调整</Button> : undefined} />
           <ConfigRow name="最低充值金额" what="银行卡充值的最低金额" where="App 充值页 › 银行卡支付「单笔限额」" effect="只限制充值，不限制订单付款"
             value="在「订单付款 › 付款手续费」里设置"
-            action={<Button size="sm" onClick={() => onGo("payments")}>去设置</Button>} />
+            action={<Button size="sm" onClick={() => onGo("payments")}>去设置 →</Button>} />
           <ConfigRow name="USDT 链上充值" what="收款地址分配、入账和异常处理由 USDT 收款开关控制"
             value="在「USDT 充值」看" sub="BEP20、ERC20、TRC20"
             action={<Button size="sm" onClick={() => onGo("usdt")}>查看实际状态</Button>} />
@@ -607,7 +607,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         </Notice>
       )}
       {overviewError && !overview
-        ? <BlockState state="error" title="今日入账和对账差异读取失败" detail={overviewError} onRetry={() => void loadOverview()} />
+        ? <BlockState state="error" title="今日入账和对账差异加载失败" detail={overviewError} onRetry={() => void loadOverview()} />
         : <StatBand label="今日充值">
           <Stat tone="role-1" icon={Coins} label="今日入账" value={overview ? usdt(overview.ledgerTotal) : "—"} unit={overview ? "USDT" : undefined}
             explain="今天对账记录里平台已入账的充值合计，只算 USDT，按业务日算。和上面的历史累计无关。" />
@@ -620,8 +620,8 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         </StatBand>}
       <Fold title="对账差异" icon={Scale} tone="role-2" summary={reconSummary} alert={hasDiff} open={reconOpen ?? hasDiff} onOpenChange={setReconOpen}
         explain="支付商记录和平台账目按通道比对，今天的数。有数据后会自动对比；没有数据不代表已经对上。">
-        {overviewLoading && !overview ? <BlockState state="loading" title="正在读取对账差异…" />
-          : !overview ? <BlockState state="error" title="对账差异读取失败" detail={overviewError} onRetry={() => void loadOverview()} />
+        {overviewLoading && !overview ? <BlockState state="loading" title="正在加载对账差异…" />
+          : !overview ? <BlockState state="error" title="对账差异加载失败" detail={overviewError} onRetry={() => void loadOverview()} />
             : reconRows.length === 0 ? <BlockState state="empty" title="今天还没有支付商流水或入账记录。有数据后会自动对比；没有数据不代表已经对上。" />
               : <Table label="对账差异">
                 <thead><tr><Th>通道</Th><Th align="right">支付商（USDT）</Th><Th align="right">平台（USDT）</Th><Th>差异</Th>{canReconcile && <Th sticky="end" align="right">操作</Th>}</tr></thead>

@@ -252,7 +252,7 @@ export interface FViewCtx {
   f4Loading: boolean;
   f4Error: string | null;
   f4Proposals: FDomainAttempt[];
-  /** 恢复区每一行最近一次查询原结果查到了什么，按操作编号。 */
+  /** 恢复区每一行最近一次查询原操作查到了什么，按操作编号。 */
   f4QueryNotes: Record<string, { tone: "warn" | "danger"; text: string }>;
   f4PolicyWrites: FDirectAttempt[];
   /** 这项操作有超过 24 小时的原记录时给原因：入口按禁用显示，和 I3 一样（BUG-684）。只看记录，不改原有拦截。 */

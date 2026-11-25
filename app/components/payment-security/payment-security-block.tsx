@@ -99,7 +99,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             <div className="rd-toolbar">
               <Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>
               {record.state === "ACTIVE" && canRelease && <Button size="sm" variant="primary"
-                disabledReason={pending ? "有一笔解除结果未知，先查询原结果" : record.capabilities.releaseAllowed ? writeBlockedReason : record.capabilities.disabledReason || "现在不能解除"}
+                disabledReason={pending ? "有一笔解除结果未知，先查询原操作" : record.capabilities.releaseAllowed ? writeBlockedReason : record.capabilities.disabledReason || "现在不能解除"}
                 onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}
             </div>
             {/* 不能解除的原因常显在按钮下（OP-126）：后端不让解除优先，其次是资料正在重读；结果未知由下面的提示条说。 */}
@@ -108,7 +108,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
           {summary && !record && <p className="rd-detail-empty">历史处置记录仍保留。</p>}
           {summary && <p className="rd-toolbar-note">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}</p>}
           {showPending && <Notice tone="warn" title="有一笔解除结果未知。"
-            action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原结果</Button>} />}
+            action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</Button>} />}
         </div>
       </Fold>
       {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} retryMissingRelease={retryMissingRelease} writeBlockedReason={writeBlockedReason} onWriteBusy={onWriteBusy} onClose={() => { setSelected(null); setPending(!!pendingPaymentRelease(owner, port.userId)); }} />}

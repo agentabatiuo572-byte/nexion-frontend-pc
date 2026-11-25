@@ -485,7 +485,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   const wheelCommandBlocks = (_op: string, _tierName?: string) => {
     if (!h4Blocked(HI_WHEEL_SCOPE)) return false;
-    toast("原操作结果未知，请先在本页顶部查询原结果。", "warn");
+    toast("原操作结果未知，请先在本页顶部查询原操作。", "warn");
     return true;
   };
 
@@ -498,7 +498,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   // ===== 既有活动 =====
   const openEventReward = (event: LegacyEvent) => {
-    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const current = text(event.reward);
     // Rule existence and fixed-code support are independent backend conditions.
     // Unknown reads must not be interpreted as a rule-less event.
@@ -621,7 +621,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   /** 旧页面一个「上架 / 下架」框里选新状态；这里拆成「开放」「结束」两个入口，提交的状态值和旧框选中的一样。 */
   const openEventStatus = (event: LegacyEvent, value: "ongoing" | "ended") => {
-    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const missing = missingFor(event);
     const opening = value === "ongoing";
     const reopened = conflictDraft.reopenedAfterConflict;
@@ -728,7 +728,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openEventFeatured = (event: LegacyEvent) => {
-    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const next = conflictDraft.intent === undefined ? !Boolean(event.featured) : conflictDraft.intent === "true";
     if (next === Boolean(event.featured) && !conflictDraft.rejection) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
     openConfirm({ rebaseValue: String(next), briefKind: "record",
@@ -754,7 +754,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
-    if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const required = requiredLanguages;
     const expectedValue = eventContent[code]?.[locale]?.[field];
     const current = text(expectedValue, "");
@@ -1029,7 +1029,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openWheelBudget = (guard: { key: string; label: string; value: string }) => {
-    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const current = text(guard.value);
     const raises = (value?: string) => value !== undefined && h4WheelGuardAmplifies("budget", value, current);
     openActionConfirm({ briefKind: "config",
@@ -1056,7 +1056,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openWheelKill = (guard: { key: string; label: string; value: string }) => {
-    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const current = text(guard.value);
     const on = killOn(current);
     const next = conflictDraft.intent ?? (on ? "关" : "开");
@@ -1523,7 +1523,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
           {record.approvalTicket ? <StatusTag tone={pending ? "warn" : "done"}>{h4TicketResult(record.approvalTicket)}</StatusTag> : pending ? pendingTag(subject) : rejection ? <StatusTag tone="warn">{record.rejectedReceipt?.state === "REJECTED" ? "已拒绝" : "未执行"}</StatusTag> : record.replayRejection ? rejectedTag() : lookup ? <StatusTag tone={lookup.tone}>{lookup.label}</StatusTag> : expired ? expiredTag() : media ? <StatusTag tone="warn">结果未知</StatusTag> : unknownTag("proposal" in record.request ? "approval" : "direct")}
           <span className="h4-pending-actions">
-            {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => terminal ? void refreshSavedCommands([record], record.approvalTicket?.status === "approved") : void lookupH4Command(record)}>{terminal ? "重新读取" : rejection ? "继续处理" : "查询原结果"}</Button>}
+            {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => terminal ? void refreshSavedCommands([record], record.approvalTicket?.status === "approved") : void lookupH4Command(record)}>{terminal ? "重新读取" : rejection ? "继续处理" : "查询原操作"}</Button>}
             {!expired && !record.acknowledged && !rejection && (media ? <>
               <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原操作重试</Button>
               <span className="h4-pending-change">重新发送同一个文件，不会重复保存。</span>
@@ -1554,7 +1554,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
             <span className="h4-pending-what"><b>{row.action} · {subject}</b></span>
             <span className="h4-pending-when">{row.mine ? "你发起的" : "别人发起的"}</span>
             {pendingTag(subject)}
-            <a className="rd-link" href="/platform/audit">去操作记录与审批</a>
+            <a className="rd-link" href="/platform/audit">去操作记录与审批 →</a>
           </li>;
         })}
       </ul>}>
@@ -1663,7 +1663,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         sub={wheelEvOthers.length ? `另有 ${wheelEvOthers.map(([asset, value]) => `${amountText(value)} ${asset === "NEX" ? "UVT" : asset}`).join("、")}` : model?.wheelEvByAsset && Object.keys(model.wheelEvByAsset).length === 0 ? "没有发真钱的档" : "按概率估算，不是实发"}
         explain={<><p>只算发真钱的档：每档「每次发放 × 概率」算到 6 位小数再相加，币种分开算。</p><p>这是按概率的估算，不计库存用完和改发安慰奖；实际发了多少看「今天已发真钱」。</p></>} />
       <Stat label="今天已发真钱" value={usedPayout === null ? "—" : amountText(usedPayout)} unit={usedPayout === null ? undefined : "USDT"} icon={Disc3} tone="role-2"
-        sub={wheelDailyUsageError ? "今天的用量没读到" : !wheelDailyUsage ? "正在读取…" : <>抽奖 <span className="h4-num">{wheelDailyUsage.spinCount}</span> 次 · UTC <span className="h4-num">{wheelDailyUsage.serverDate.slice(5)}</span></>}
+        sub={wheelDailyUsageError ? "今天的用量没读到" : !wheelDailyUsage ? "正在加载…" : <>抽奖 <span className="h4-num">{wheelDailyUsage.spinCount}</span> 次 · UTC <span className="h4-num">{wheelDailyUsage.serverDate.slice(5)}</span></>}
         explain={<><p>转盘今天发出的 USDT 真钱奖合计，和每日预算比的就是这个数。抽奖次数含每日免费抽奖和签到加抽，也含今天已移出奖池的奖项被抽到的次数。</p><p>{USAGE_DAY}</p></>}
         onOpen={() => go("wheel", "h4l-guards")} openLabel="看预算和各档今天的用量" />
     </StatBand>

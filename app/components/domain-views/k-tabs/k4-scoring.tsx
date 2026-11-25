@@ -311,7 +311,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         ctx.toast(`操作失败 · ${errorText(error)}`);
         throw error;
       }
-      ctx.toast("结果未知 · 可能已经生效，可以在框里按原操作重试，或在页面上方查询原结果");
+      ctx.toast("结果未知 · 可能已经生效，可以在框里按原操作重试，或在页面上方读取当前值核对");
       throw new K1OutcomeUncertainError(errorText(error), commandKey);
     } finally {
       syncPending();
@@ -327,11 +327,11 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const openOperation = (operation: K4Operation) => {
     const retained = pendingFor(operation);
     if (retained && !retained.operation) {
-      ctx.toast("原记录没有保存完整请求，只能查询原结果，或到「操作记录与审批」核对");
+      ctx.toast("原记录没有保存完整请求，只能读取当前值，或到「操作记录与审批」核对");
       return;
     }
     if (retained?.operation && k4Slot(retained.operation) !== k4Slot(operation)) {
-      ctx.toast("这个对象有结果未知的原操作，先在页面上方查询原结果或按原操作重试");
+      ctx.toast("这个对象有结果未知的原操作，先在页面上方读取当前值核对，或按原操作重试");
       return;
     }
     const original = retained?.operation ?? operation;
@@ -512,15 +512,15 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       tag: record.alertId ? unknownTag("noRetry") : expired ? expiredTag("direct") : unknownTag("direct"),
       state: expired ? "expired" : "unknown",
       actions: <>
-        <Button size="sm" loading={record.alertId ? alertsReading : undefined} onClick={() => queryOriginal(record)}>查询原结果</Button>
-        {!record.alertId && <Button size="sm" disabledReason={!operation ? "这是旧版本留下的记录，没有保存原请求，只能查询" : expired ? "原请求超过 24 小时，不能再重试，只能查询" : undefined}
+        <Button size="sm" loading={record.alertId ? alertsReading : undefined} onClick={() => queryOriginal(record)}>{record.alertId ? "读取当前告警" : "读取当前值"}</Button>
+        {!record.alertId && <Button size="sm" disabledReason={!operation ? "这是旧版本留下的记录，没有保存原请求，只能读取当前值核对" : expired ? "原请求超过 24 小时，不能再重试，只能读取当前值核对" : undefined}
           onClick={() => { if (operation) openOperation(operation); }}>按原操作重试</Button>}
       </>,
     };
   });
   const pendingBars = (
     <KRecoveryNotice title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-      explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果：看现在的评分规则、用户分数或告警状态。读到的是现在的值，不能单凭它认定原操作成没成。</p><p>24 小时内可以按原操作重试：打开原来的确认框，内容和理由都不变，不会重复执行。告警标为已读不提供重试。</p><p>原请求只保存在这个浏览器标签页里。</p></>} />
+      explain={<><p>提交时没收到确定结果，可能已经生效。先读取当前值：看现在的评分规则、用户分数或告警状态。读到的是现在的值，不能单凭它认定原操作成没成。</p><p>24 小时内可以按原操作重试：打开原来的确认框，内容和理由都不变，不会重复执行。告警标为已读不提供重试。</p><p>原请求只保存在这个浏览器标签页里。</p></>} />
   );
 
   const inboundNotice = INBOUND_USER && (
@@ -535,7 +535,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       <>
         {header}
         {pendingBars}
-        <div className="k4-loading" aria-label="正在读取风险评分">
+        <div className="k4-loading" aria-label="正在加载风险评分">
           <div className="rd-skeleton k4-skel-line" />
           <div className="rd-skeleton k4-skel-tabs" />
           <div className="k4-skel-grid"><div className="rd-skeleton" /><div className="rd-skeleton" /></div>
@@ -553,7 +553,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         {pendingBars}
         <Panel title="风险评分">
           <BlockState state="error" title="风险评分加载失败" detail={<><p>{ctx.contentError}</p><p>为避免误判，不显示旧数据，也不能保存、发布或改分。</p></>}
-            retryLabel="重新加载" onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
+            onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
         </Panel>
       </>
     );
@@ -567,7 +567,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         {pendingBars}
         <Panel title="风险评分">
           <BlockState state="error" title="没有拿到当前生效的评分规则" detail="生效的评分规则暂时读不到，这页不拿默认值代替。请重新加载，仍然没有就联系值班人员。"
-            retryLabel="重新加载" onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
+            onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
         </Panel>
       </>
     );
@@ -797,7 +797,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       explain="修改只在这个页面里，保存后成为草稿，线上评分不变；关掉抽屉修改还在，页面上会提示。"
       footer={<Decision note={issueCount > 0 ? `有 ${issueCount} 处要改正` : modelDirty ? `改了 ${editChanged} 项` : undefined}
         others={<Button variant="ghost" disabledReason={modelDirty ? undefined : "没有改动"} onClick={() => setModelDraft(editableModel(sourceModel))}>放弃修改</Button>}
-        primary={<Button variant="primary" disabledReason={pendingModel && pendingModel.fingerprint !== "model-draft" ? "这个对象有结果未知的原操作，先在页面上方查询原结果或按原操作重试" : issueCount > 0 ? "先改正标出的项" : !modelDirty && !pendingModel ? "没有改动" : undefined} onClick={saveModel}>保存草稿</Button>} />}>
+        primary={<Button variant="primary" disabledReason={pendingModel && pendingModel.fingerprint !== "model-draft" ? "这个对象有结果未知的原操作，先在页面上方读取当前值核对，或按原操作重试" : issueCount > 0 ? "先改正标出的项" : !modelDirty && !pendingModel ? "没有改动" : undefined} onClick={saveModel}>保存草稿</Button>} />}>
       <section className="k4-edit-section" aria-labelledby="k4-edit-weights">
         <h3 id="k4-edit-weights" className="k4-edit-title">五维权重 <span className={issues.weightTotal ? "k4-sum" : "k4-sum k4-quiet"} data-bad={issues.weightTotal ? "" : undefined}>合计 {weightTotal}%</span></h3>
         {issues.weightTotal && <div className="rd-form-error" role="alert">{issues.weightTotal}</div>}
@@ -979,7 +979,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         sub={alertsLoaded && !withdrawalAlertError ? `最近 ${withdrawalAlerts.length} 条 · 未读 ${unreadAlerts}` : undefined}
         explain={<><p>新提现时用户的风险分达到当时的自动升级线，就给当时有改分权限的管理员和超级管理员各发一条；这笔提现怎么走，「提现风险规则」的冻结和延迟优先，其余转人工审核。</p><p>这里只有发给你本人的最近 50 条；标为已读只改你自己的收件状态，不影响提现，也不影响别人的未读。</p><p>时间为{businessZone().label}。</p></>}
         actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={alertsReading} onClick={() => void readWithdrawalAlerts()}>重新读取</Button>}>
-        {!alertsLoaded ? <BlockState state="loading" title="正在读取告警" />
+        {!alertsLoaded ? <BlockState state="loading" title="正在加载告警" />
           : withdrawalAlertError ? <BlockState state="error" title="告警加载失败" detail={withdrawalAlertError} onRetry={() => void readWithdrawalAlerts()} />
             : withdrawalAlerts.length === 0 ? <BlockState state="empty" title="暂无提现升级告警" detail="有新提现的风险分达到自动升级线时，会在这里提醒你。" />
               : (
@@ -997,7 +997,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                           <Td>{alert.read ? <StatusTag tone="done">已读</StatusTag> : unknown ? <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag> : <StatusTag tone="warn" icon={BellDot}>未读</StatusTag>}</Td>
                           <Td align="right" data-fit="">
                             {alert.read ? <span className="k4-quiet">—</span>
-                              : unknown ? <Button size="sm" loading={alertsReading} onClick={() => void readWithdrawalAlerts()}>查询原结果</Button>
+                              : unknown ? <Button size="sm" loading={alertsReading} onClick={() => void readWithdrawalAlerts()}>读取当前告警</Button>
                                 : <Button size="sm" loading={alertBusy === alert.id} onClick={() => void markAlertRead(alert)}>标为已读</Button>}
                           </Td>
                         </Tr>
@@ -1006,7 +1006,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                   </tbody>
                 </Table>
               )}
-        {alertUnknown.length > 0 && !withdrawalAlertError && <div className="k4-panel-note"><Notice tone="warn">标为已读结果未知。这个操作不提供原样重试；点「查询原结果」看系统记下的状态。</Notice></div>}
+        {alertUnknown.length > 0 && !withdrawalAlertError && <div className="k4-panel-note"><Notice tone="warn">标为已读结果未知。这个操作不提供原样重试；点「读取当前告警」看系统记下的状态。</Notice></div>}
       </Panel>
     </div>
   );

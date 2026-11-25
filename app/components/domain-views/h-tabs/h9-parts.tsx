@@ -164,7 +164,7 @@ export function h9Status(record: H9Command, outcome: FundInvestigationOutcome | 
 
 /**
  * 结果未知的提醒：逐条写改的是哪一块、从多少到多少、什么时候提交的，按钮在每条的右边。
- * 页面传入「查询原结果」「按原操作重试」，由原请求记录决定可用性；本件不解除记录。
+ * 页面传入「查询原操作」「按原操作重试」，由原请求记录决定可用性；本件不解除记录。
  */
 export function H9RecoveryNotice({ rows, explain }: { rows: readonly H9RecoveryRow[]; explain: ReactNode }) {
   if (rows.length === 0) return null;

@@ -32,7 +32,7 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
     setDraftOwner(actorId);
     const saved = randomAssignmentCommands.list().find(r => r.actorId === actorId);
     setPending(saved ?? null); setPreview(saved?.preview ?? null); setResult(null); setAck(false); setNotReceived(false);
-    if (saved) { setReason(saved.payload.reason); setError("原分配结果未知，请先查询原结果，不能重新抽签。"); }
+    if (saved) { setReason(saved.payload.reason); setError("原分配结果未知，请先查询原操作，不能重新抽签。"); }
   }, [actorId, epoch]);
   useEffect(() => { if (draftOwner === actorId && actorId) { try { sessionStorage.setItem(`nexion-random-reason:${actorId}`, reason); } catch { setError("理由暂不能保留，请在本页完成核对。"); } } }, [reason, actorId, draftOwner]);
   async function generatePreview() {
@@ -96,7 +96,7 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
   const selected = pending?.customers ?? customers, expired = pending && !canReplayGroupCommand(pending), reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   return <Modal title={result ? "逐客随机分配结果" : "随机分配客户"} wide busy={busy} onClose={onClose} footer={<>
     <Button disabled={busy} onClick={onClose}>{result ? "关闭结果" : "返回客户池"}</Button>
-    {pending ? <>{notReceived && !expired && <Button disabled={busy} onClick={() => void send(pending, true)}>按原操作重试</Button>}<Button variant="primary" loading={busy} onClick={() => void query()}>查询原结果</Button></> : !result && <Button variant="primary" disabled={!preview?.count || !ack || !reasonOk || busy || Date.parse(preview.expiresAt) <= Date.now()} onClick={() => void confirm()}>确认随机分配 {preview?.count ?? "—"} 位</Button>}
+    {pending ? <>{notReceived && !expired && <Button disabled={busy} onClick={() => void send(pending, true)}>按原操作重试</Button>}<Button variant="primary" loading={busy} onClick={() => void query()}>查询原操作</Button></> : !result && <Button variant="primary" disabled={!preview?.count || !ack || !reasonOk || busy || Date.parse(preview.expiresAt) <= Date.now()} onClick={() => void confirm()}>确认随机分配 {preview?.count ?? "—"} 位</Button>}
   </>}>
     <div className="m1-command-form">
     {pending && <Notice tone="warn">原操作结果未知，名单和理由已锁定，不能重新抽签。{expired && "已超过 24 小时，只能查询和核对，不能重新发送。"}</Notice>}

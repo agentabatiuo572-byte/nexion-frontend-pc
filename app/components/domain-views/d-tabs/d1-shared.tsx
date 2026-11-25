@@ -110,7 +110,7 @@ export type D1PendingItem = {
   auditHref?: string;
   /** 读回这条对象的现状，返回写给人看的一句话。 */
   verify?: () => Promise<ReactNode>;
-  /** 按原请求重发。后端不按命令号去重的操作不给：再发可能再执行一次，只能读回核对（OP-94）。 */
+  /** 按原操作重发。后端不按命令号去重的操作不给：再发可能再执行一次，只能读回核对（OP-94）。 */
   retry?: () => Promise<unknown>;
   /** 原样重试被明确拒绝后，人核实过原操作再放开本页的锁，不发请求。 */
   release: () => void;
@@ -121,7 +121,7 @@ const unknownOutcome = (error: unknown) => isDOutcomeUnknownError(error)
   || (typeof error === "object" && error !== null && (error as { unknownOutcome?: unknown }).unknownOutcome === true);
 
 /**
- * 面板问号里的说明：带原请求出处的记录先查询原结果、过了时限核查结案；
+ * 面板问号里的说明：带原请求出处的记录先查询原操作、过了时限核查结案；
  * 没有出处的（升级前留下的、这类操作查不了的）只能读现在的值参考，不能据此认定原操作的结果。
  */
 function recoveryExplain(items: readonly D1PendingItem[]) {
@@ -129,7 +129,7 @@ function recoveryExplain(items: readonly D1PendingItem[]) {
   const legacy = items.some(item => !item.record);
   return <>
     <p>这些操作发出后没收到明确结果，可能已经生效。有结果前，相关对象不能再操作。</p>
-    {queryable && <p>先查询原结果；按原操作重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
+    {queryable && <p>先查询原操作；按原操作重试只发原内容，不会重复执行。不能再重试时，按查到的结果核查结案。</p>}
     {legacy && <p>查不了原结果的记录：现在的值只能参考，不能据此认定原操作成没成；按原操作重试，或到操作记录与审批核对。</p>}
   </>;
 }
@@ -138,7 +138,7 @@ function recoveryExplain(items: readonly D1PendingItem[]) {
 function onlyCheckLine(item: D1PendingItem, reason: string, status: { label: string; line: string } | undefined) {
   const head = /[。；]$/.test(reason) ? reason : `${reason}。`;
   if (!status) return head + (item.verify ? "点「读取现在的值」核对现状，再到操作记录与审批看它执行没有。" : "到操作记录与审批看它执行没有。");
-  if (status.label === "结果未知") return `${head}先查询原结果${item.verify ? "，再点「读取现在的值」核对现状" : ""}，或到操作记录与审批核对。`;
+  if (status.label === "结果未知") return `${head}先查询原操作${item.verify ? "，再点「读取现在的值」核对现状" : ""}，或到操作记录与审批核对。`;
   if (status.label === "已处理") return `${head}后台已处理，看不出成没成；${item.verify ? "点「读取现在的值」后" : ""}到操作记录与审批核对。`;
   return head + status.line;
 }

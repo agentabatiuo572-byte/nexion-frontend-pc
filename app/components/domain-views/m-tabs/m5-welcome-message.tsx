@@ -291,7 +291,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         key: pending.commandKey, name: "新用户欢迎语", submittedAt, expired: retryExpired, change: changeText,
         status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: retry && <>
-          {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
+          {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}
           {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原操作重试</Button>}
           {loadExpired && <Button size="sm" variant="primary" loading={saving && !querying} loadingText="提交中…" disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>}
           {replayRefused && canRelease && <Button size="sm" variant="ghost" disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
@@ -306,7 +306,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       <Panel icon={MessageCircleHeart} tone="role-3" title="新用户欢迎语" sub={current && !readUnavailable ? `第 ${current.version} 版` : undefined}
         explain="新用户注册后在客服对话里收到的第一条消息：已经有专属客服的以这位客服的名义发，还没有的显示「待分配」。用户语言是中文收中文、越南语收越南语，其他语言都收英语。">
         {permission !== "superadmin" && <Notice tone="neutral">只有超级管理员能改欢迎语，你现在只能查看。</Notice>}
-        {loading && !current && <BlockState state="loading" title="正在读取欢迎语…" />}
+        {loading && !current && <BlockState state="loading" title="正在加载欢迎语…" />}
         {saved && <Notice tone="ok">已保存。之后注册的用户会收到新内容。</Notice>}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="新用户欢迎语加载失败" detail={`${error ? `${error} ` : ""}暂时不能查看和修改。`}
           onRetry={loadExpired ? () => void reloadAfterExpiry() : () => setReload((n) => n + 1)}
@@ -347,7 +347,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           </div>
         </div>}
         {(conflict || externalChanges.length > 0) && <Notice tone="warn" title="欢迎语已被别人改过" actionBelow
-          action={conflict ? latest ? <Button size="sm" onClick={reviewLatest}>按最新内容重新核对</Button> : <Button size="sm" loading={rereadBusy} loadingText="正在读取…" onClick={() => void refreshLatest()}>加载最新内容</Button> : undefined}>
+          action={conflict ? latest ? <Button size="sm" onClick={reviewLatest}>按最新内容重新核对</Button> : <Button size="sm" loading={rereadBusy} loadingText="正在加载…" onClick={() => void refreshLatest()}>加载最新内容</Button> : undefined}>
           <p>{comparisonAfter && comparisonBefore ? `现在是第 ${comparisonAfter.version} 版，你改的是第 ${comparisonBefore.version} 版。` : "还没读到最新内容。"}{conflict ? "你填的内容还在。" : "你改过的文字已带到最新内容，请核对后重新确认。"}</p>
           {conflict && !latest && error && <p>{error}</p>}
           {comparisonAfter && <ul className="m5-plain-list">{externalChanges.map((key) => <li key={key}>{LANGUAGES.find((item) => item.key === key)?.label}：已被改为「{comparisonAfter.texts[key]}」</li>)}</ul>}
@@ -363,7 +363,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
           <Button disabled={saving} onClick={closeConfirm}>取消</Button>
-          {retry && canQuery && <Button variant={command.canReplay || replayRefused || retryExpired ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
+          {retry && canQuery && <Button variant={command.canReplay || replayRefused || retryExpired ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}
           {retry && replayRefused && canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
           {retry && retryExpired ? loadExpired && <Button variant="primary" loading={saving && !querying} disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>
             : !(retry && replayRefused) && <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} loadingText="提交中…" disabled={!canWrite || (retry ? !command.canReplay : !canConfirm) || saving} disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原操作重试" : "确认保存"}</Button>}

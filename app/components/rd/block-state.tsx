@@ -1,7 +1,7 @@
 /**
  * BlockState 区块状态（CP-72）、Notice 页内提示（CP-70、CP-71）。
  *
- * <BlockState state="loading" title="正在读取到期预测…" />
+ * <BlockState state="loading" title="正在加载到期预测…" />
  * <BlockState state="error" title="资金流历史暂不可用" detail={error} onRetry={reload} />
  * <BlockState state="empty" title="未来 7 天没有到期" />
  * <BlockState state="denied" title="无权限访问" detail="这个账号没有这块内容的读取权限。" />

@@ -114,7 +114,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
   const history = rows.filter((row) => row.status !== "PUBLISHED" && row.status !== "DRAFT");
   const shown = viewing === null ? null : rows.find((row) => row.id === viewing) ?? null;
   const scopeText = `${localeName(locale)} · ${jurisdiction}`;
-  const writeBlocked = !scopeReady ? "先填好适用法律地区并读取" : busy ? "正在读取最新数据，读完再操作" : error ? "这个范围的条款没读到，先点「重试」。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
+  const writeBlocked = !scopeReady ? "先填好适用法律地区并读取" : busy ? "正在加载最新数据，读完再操作" : error ? "这个范围的条款没读到，先点「重试」。" : writes.isLocked(target) ? WRITE_LOCKED : undefined;
 
   /** 节数比现行版本少的草稿不发布：会用少的几节换掉线上全部条款。 */
   const sectionsBlocked = (row: LegalTermsVersion) => published && row.sections.length < published.sections.length

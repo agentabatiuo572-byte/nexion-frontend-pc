@@ -124,7 +124,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
     blocks.devices ? 2 : 1,
     blocks.devices && deviceAttention > 0 ? 3 : 1,
   );
-  const meta = !summary ? (clock ? `截至 ${clock} · ${businessZone().label}` : "正在读取…")
+  const meta = !summary ? (clock ? `截至 ${clock} · ${businessZone().label}` : "正在加载…")
     : period === "all" ? `${summary.statisticsStart} 起 · 按天汇总到 ${formatBusinessTimeCompact(summary.asOf)} · ${businessZone().label}`
       : `${formatBusinessTimeCompact(summary.range.from)} 起 · 截至 ${formatBusinessTimeCompact(summary.asOf)} · ${businessZone().label}`;
 
@@ -304,7 +304,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
           icon={Gift}
           value={reward.block.data === null ? "—" : fmtNum(reward.block.data)}
           unit={reward.unit}
-          compare={<>{NOW}<span data-noread={rewardEmpty ? "" : undefined}>{rewardState === "loading" ? `${reward.label}读取中…` : reward.label}</span></>}
+          compare={<>{NOW}<span data-noread={rewardEmpty ? "" : undefined}>{rewardState === "loading" ? `${reward.label}正在加载…` : reward.label}</span></>}
           explain={rewardDetail ? "显示现在等着结算新人礼和邀请奖励的新人人数（有没有邀请人都算），和尚未办结的活动奖励项数，不随时段变。"
             : referral ? "显示现在等着结算新人礼和邀请奖励的新人人数，有没有邀请人都算，不随时段变。"
               : "显示现在尚未办结的活动奖励项数，不随时段变。"}

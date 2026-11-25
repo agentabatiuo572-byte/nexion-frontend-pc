@@ -128,7 +128,7 @@ export default function A7Menus() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [mode, setMode] = useState<FormMode>(null);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
-  /** 查询原结果后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
+  /** 查询原操作后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
   const [outcomes, setOutcomes] = useState<Record<string, RbacOutcome>>({});
   const [closing, setClosing] = useState<RbacCommand | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -333,7 +333,7 @@ export default function A7Menus() {
     }, recovery, rechecked);
   };
 
-  // 恢复区「按原操作重试」接这里：打开原操作的确认框，按原请求重发。
+  // 恢复区「按原操作重试」接这里：打开原操作的确认框，按原操作重发。
   const restoreOriginal = (record: RbacCommand) => {
     const original = record.original;
     if (original.kind === "a7-delete") openDelete(original.node, original.parent, record);
@@ -395,10 +395,10 @@ export default function A7Menus() {
                   <span className="a7-recovery-change" data-mono>{record.change}</span>
                   <span className="a7-recovery-time">{businessStamp(record.createdAt)} 提交</span>
                   {shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : expired
-                    ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试，仍可以查询原结果。">已过期</StatusTag>
+                    ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试，仍可以查询原操作。">已过期</StatusTag>
                     : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行。">结果未知</StatusTag>}
                   <span className="a7-recovery-actions">
-                    <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
+                    <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原操作</Button>
                     {closable && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
                     {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
                   </span>
@@ -416,7 +416,7 @@ export default function A7Menus() {
           <Panel title="菜单树" icon={FolderTree} tone="role-other" sub={overview ? `${overview.domainCount + overview.pageCount} 个` : undefined}
             explain="一级菜单下面是页面，最多两级。点一行在右边看详情和动作；排序数字小的排前面。"
             actions={parents.length > 0 ? <Button variant="ghost" onClick={() => setExpanded(allOpen ? new Set() : new Set(parents))}>{allOpen ? "全部收起" : "全部展开"}</Button> : undefined}>
-            {loading ? <BlockState state="loading" title="加载中…" />
+            {loading ? <BlockState state="loading" title="正在加载…" />
               : loadError ? <BlockState state="error" title="菜单列表加载失败，请重试。" detail={readDetail} onRetry={() => void refresh()} />
               : tree.length === 0 ? <BlockState state="empty" title="暂无菜单" detail={canWrite ? "点页头「新建一级菜单」开始。" : undefined} />
               : (

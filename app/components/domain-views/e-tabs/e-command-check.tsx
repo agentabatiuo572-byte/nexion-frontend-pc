@@ -193,12 +193,12 @@ export const PROPOSAL_END: Record<string, { tag: string; tone: StateTone; text: 
 export const RECOVERY_LINE = {
   unknown: "不知道审批单建没建成；先查询，重试不会重复建单。",
   absent: "现在查不到这张审批单，可以按原操作重试。",
-  expired: "超过 24 小时不能重试，先查询原结果。",
+  expired: "超过 24 小时不能重试，先查询原操作。",
   created: "审批单已建，进度没查到；只查询，不会再建。",
   missing: "按原请求查不到，说明没建成；核对后可以解除。",
   refused: "重试被明确拒绝；核对原因后可以解除。",
   pending: "等另一位管理员批准，批准前不生效。",
-  direct: "现在的状态不代表原操作的结果，先查询原结果。",
+  direct: "现在的状态不代表原操作的结果，先查询原操作。",
 } as const;
 
 /** Device pages use the shared recovery panel, so their rows look exactly like the fund pages' rows. */

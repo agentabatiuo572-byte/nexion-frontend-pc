@@ -90,7 +90,7 @@ export function TaskStatusTag({ task, unknown }: { task: LExportTask; unknown?: 
   return (
     <span className="l5-status">
       <StatusTag tone={status.tone} icon={status.icon} explain={<><p>{status.explain}</p><p>最近一次说明：{task.chain}</p></>}>{status.label}</StatusTag>
-      {unknown && <StatusTag tone="warn" icon={CircleHelp} explain="放行或重新发起时没收到确定结果，可能已经生效。先看页面上方「结果未知」里这一条，查询原结果。">结果未知</StatusTag>}
+      {unknown && <StatusTag tone="warn" icon={CircleHelp} explain="放行或重新发起时没收到确定结果，可能已经生效。先看页面上方「结果未知」里这一条，查询原操作。">结果未知</StatusTag>}
     </span>
   );
 }
@@ -154,7 +154,7 @@ export function L5RecoveryNotice({ rows }: { rows: L5RecoveryItem[] }) {
   return (
     <Notice tone="warn" title={<>有 {rows.length} 项操作结果未知<Explain label="结果未知怎么处理" content={<>
       <p>放行或重新发起时没收到确定结果，任务可能已经变了状态。</p>
-      <p>先点「查询原结果」看任务现在的状态。24 小时内也可以按原操作重试，不会放行两次；超过 24 小时只能查询。</p>
+      <p>先点「查询原操作」看任务现在的状态。24 小时内也可以按原操作重试，不会放行两次；超过 24 小时只能查询。</p>
       <p>任务变成可下载，也可能是另一位管理员放行的，不能据此认定是你这一次生效。</p>
     </>} /></>}>
       <ul className="l5-recovery" aria-label="结果未知的操作">

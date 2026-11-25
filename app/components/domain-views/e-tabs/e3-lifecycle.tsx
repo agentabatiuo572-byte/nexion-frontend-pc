@@ -173,7 +173,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const zone = businessZone().label;
   const what = (p: Shown) => `修改「${p.label.replace(/ 调整$/, "")}」`;
   const busy = !!e3Proposals.busy;
-  const query = (p: Shown, label = "查询原结果") => E3_RECOVERY.lookup && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void E3_RECOVERY.lookup!(p)}>{label}</Button>;
+  const query = (p: Shown, label = "查询原操作") => E3_RECOVERY.lookup && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void E3_RECOVERY.lookup!(p)}>{label}</Button>;
   const changed = (p: Shown) => <p>{changeText(p)} · {p.at} 提交（{zone}）<br /><span className="e3p-sub">理由：{p.reason}</span></p>;
   const pendingList = E3_PROPOSALS.filter(p => p.state === "pending");
   const items: RecoveryItem[] = [
@@ -187,7 +187,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       return { key: p.state === "pending" ? `waiting:${p.id}` : p.id, object: what(p), createdAt: p.createdAt, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
         note: e3Proposals.queryErrorsByKey[p.original.commandKey], noteKey: e3Proposals.queryErrorsByKey[p.original.commandKey],
         actions: p.state === "rejected" ? undefined : <>
-          {query(p, p.state === "pending" ? "查询审批结果" : "查询原结果")}
+          {query(p, p.state === "pending" ? "查询审批结果" : "查询原操作")}
           {p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy || !!recoveryState.replayBlock} onClick={() => void E3_RECOVERY.retry(p)}>按原操作重试</Button>}
           {recoveryState.replayRejection && !p.original.ticketId && <Button size="sm" disabled={busy} onClick={() => setReleasing(p)}>解除原操作记录</Button>}
         </>,
@@ -197,7 +197,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       const names = [...new Set(r.fingerprint.split("|")[1].split(",").map(keyName))];
       return { key: r.commandKey, object: `${names.slice(0, 3).join("、")}${names.length > 3 ? ` 等 ${names.length} 项` : ""}`, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
         line: "早期提交缺原请求，只能查询，不能重试。",
-        actions: E3_RECOVERY.legacy && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原结果</Button>,
+        actions: E3_RECOVERY.legacy && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原操作</Button>,
         detail: <p>{businessStamp(r.createdAt)} 提交（{zone}）</p> };
     }),
   ];
@@ -222,10 +222,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     return <div className="e3p">
       {header}
       {recovery}
-      {e3Loading && !e3Ready ? <BlockState state="loading" title="正在读取规则和统计…" />
-        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={e3Error} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
-        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系技术同事核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
-        : <BlockState state="loading" title="正在读取规则和统计…" />}
+      {e3Loading && !e3Ready ? <BlockState state="loading" title="正在加载规则和统计…" />
+        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={e3Error} retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系技术同事核对配置。`} retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : <BlockState state="loading" title="正在加载规则和统计…" />}
       {manual}
     </div>;
   }
@@ -247,7 +247,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   };
   const devicesStored = pE("E.tradein.maxDevicesPerOrder");
   const devicesOff = devicesStored !== "—" && num(devicesStored) !== 1;
-  const LEGACY_LOCKED = "这一项有一次早期版本的提交结果未知，先在页面上方查询原结果";
+  const LEGACY_LOCKED = "这一项有一次早期版本的提交结果未知，先在页面上方查询原操作";
 
   const effect = (batch: boolean) => <StatusTag tone="progress" filled explain={batch ? E3_APPROVER_BATCH : E3_APPROVER_SINGLE}>批准后生效</StatusTag>;
   const open = (spec: McSpec) => { if (!e3Loading && !e3Error) ctx.openActionConfirm(spec); };
@@ -290,13 +290,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     const p = pendingFor(keys), u = unsettledFor(keys);
     const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
       `${changeText(p)}。等另一位管理员批准，批准前按现在的值执行。`).join("\n");
-    if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? "审批单已建成，现在批没批还没查到，先在页面上方查询原结果。" : "这一项有一次提交结果未知，先在页面上方查询原结果。"}>结果未知</StatusTag>;
+    if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? "审批单已建成，现在批没批还没查到，先在页面上方查询原操作。" : "这一项有一次提交结果未知，先在页面上方查询原操作。"}>结果未知</StatusTag>;
     if (p) return <StatusTag tone="warn" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
     return e3Proposals.locked(keys) && <StatusTag tone="warn" explain={`${LEGACY_LOCKED}。`}>结果未知</StatusTag>;
   };
   const adjust = (keys: readonly string[], onClick: () => void, batch = false, label = "调整") => ctx.canWriteE3
     ? (describedBy: string | undefined) => <Button size="sm" aria-describedby={describedBy} onClick={onClick}
-        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原结果" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? "没有发起审批的权限，修改要先提交审批" : undefined}>{label}</Button>
+        disabledReason={e3Loading || e3Error ? "规则和统计没有读到" : e3Proposals.locked(keys) ? unsettledFor(keys) ? "这一项有一次提交结果未知，先在页面上方查询原操作" : pendingFor(keys) ? "这一项有一张待批准的申请，批准或驳回后才能再改" : LEGACY_LOCKED : !e3Proposals.allowed(batch) ? "没有发起审批的权限，修改要先提交审批" : undefined}>{label}</Button>
     : undefined;
 
   // ── 产能的预览：改后第几个月是多少 ──

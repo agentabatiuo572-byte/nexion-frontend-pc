@@ -696,7 +696,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const page = (
     <>
       {tab !== "M3" && tab !== "M1" && tab !== "M4" && tab !== "M5" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
-      {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">去专属会话处理</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
+      {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">去专属会话处理 →</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
       {tab === "M3" && !safeMData && !hasM3Recovery && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
 
       {tab !== "M3" && tab !== "M4" && tab !== "M5" && mError && (
@@ -1555,7 +1555,7 @@ function SessionDock({ ctx, hidden, onScopeInvalidated, snapshotRevision }: { sn
       <div className="ChatBody" style={{ flex: 1, minHeight: 0 }}>
         {conv.detailReady ? <MessageThread messages={threadMessages} relWhen={dockRelWhen} resetKey={conv.id} /> : <div role={detailError ? "alert" : "status"} className="itint">{detailError ? `会话详情加载失败：${detailError}` : "正在加载会话消息…"} {detailError && <button type="button" className="btn btn-sec btn-sm" onClick={() => { setDetailError(""); setDetailRetry((value) => value + 1); }}>重新加载详情</button>}</div>}
       </div>
-      {dockBlocked && <div role="status" className="m-dock-blocked"><span>{blockedHere ? DOCK_BLOCKED : DOCK_BLOCKED_OTHER}</span><Link className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`}>去专属会话处理</Link></div>}
+      {dockBlocked && <div role="status" className="m-dock-blocked"><span>{blockedHere ? DOCK_BLOCKED : DOCK_BLOCKED_OTHER}</span><Link className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(conv.id)}`}>去专属会话处理 →</Link></div>}
       {dockError && <div role="alert" className="m-dock-error">{dockError}{sendError.startsWith("消息已发送") && <button type="button" className="btn btn-ghost btn-sm" onClick={() => void ctx.refreshConversations().then(() => setSendError("")).catch(() => setSendError("消息已发送，但会话列表刷新失败。请稍后再试。"))}>刷新会话</button>}</div>}
       {!canWriteM3 && <div role="status" style={{ padding: "8px 11px", fontSize: 12 }}>你只能查看会话，发消息需要会话操作权限。</div>}
       {canWriteM3 && owned && conv.writeState?.canReply === false && <div role="status" className="m-dock-note">这不是客户当前的会话，不能在这里回复；到「专属会话」查看。</div>}

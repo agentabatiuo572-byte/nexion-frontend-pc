@@ -55,7 +55,7 @@ const BLOCK_REASONS: Record<string, string> = {
 /** 系统拦下的两个原因码；列表里加「系统拦下：」，分得清是系统拦的还是运营拒的。 */
 const SYSTEM_BLOCKS = ["UNSETTLED_FUNDS_OR_ORDERS", "UNSETTLED_STATE_UNAVAILABLE"];
 const PAGE_SIZE = 20;
-const LOCKED = "这张申请有一次操作结果未知，先到页面上方查询原结果";
+const LOCKED = "这张申请有一次操作结果未知，先到页面上方查询原操作";
 const SUBMITTING = "正在提交，稍候";
 /** 状态已被别人或系统改了：框不关，读回写最新状态（D2-C89）。 */
 const MOVED_CODES = ["ACCOUNT_DELETION_VERSION_CONFLICT", "ACCOUNT_DELETION_INVALID_STATE_TRANSITION", "ACCOUNT_DELETION_CONCURRENT_UPDATE"];

@@ -144,8 +144,8 @@ export function H9GlobeDisplay({ ctx, data, appDisplay, refreshing, blocked, rea
     });
   };
 
-  const saveBlock = blocked ? formatAdminApiError(pendingH9Command("main") ? "H9_ORIGINAL_UNRESOLVED" : "H9_CURRENT_READ_REQUIRED", "H9_SAVE_FAILED") : refreshing ? "正在读取最新数据，读完再保存" : saving ? "正在保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : shareError ? "8 个中心的占比合计要等于 100%" : !next ? "有填错的项，按提示改" : undefined;
-  const note = refreshing ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : shareError || !next ? "有要改的地方" : "有改动，还没保存";
+  const saveBlock = blocked ? formatAdminApiError(pendingH9Command("main") ? "H9_ORIGINAL_UNRESOLVED" : "H9_CURRENT_READ_REQUIRED", "H9_SAVE_FAILED") : refreshing ? "正在加载最新数据，读完再保存" : saving ? "正在保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : shareError ? "8 个中心的占比合计要等于 100%" : !next ? "有填错的项，按提示改" : undefined;
+  const note = refreshing ? "正在加载…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : shareError || !next ? "有要改的地方" : "有改动，还没保存";
   const jitter = draft ? h9DraftNumber(draft.latencyJitterMs) : Number.NaN;
   const shareGap = Number((100 - shareTotal).toFixed(2));
   // 各中心在线节点是 App 显示用的推算（APP_DISPLAY_SIMULATION），合计等于首页在线设备；读不到写「—」并说原因，不当 0。
@@ -154,7 +154,7 @@ export function H9GlobeDisplay({ ctx, data, appDisplay, refreshing, blocked, rea
   const nodesOf = (id: string) => centerNodes?.find(row => row.id === id)?.onlineNodes ?? null;
   const nodesTotal = centerNodes && app?.homeDisplay ? app.homeDisplay.onlineDevices : null;
   const nodesReason = app?.unavailable.find(item => item.field === "centerNodes[].onlineNodes")?.reason;
-  const nodesNote = appDisplay.state === "loading" ? "正在读取 App 显示的在线节点…"
+  const nodesNote = appDisplay.state === "loading" ? "正在加载 App 显示的在线节点…"
     : appDisplay.state === "error" ? <>App 显示的在线节点没读到<Explain label="失败原因" content={appDisplay.message} /></>
       : app!.centerNodesSource === undefined ? "各中心的在线节点现在没有"
         : nodesTotal == null ? `App 显示的在线节点读不到：${CENTER_REASON[nodesReason ?? ""] ?? "原因不明"}`

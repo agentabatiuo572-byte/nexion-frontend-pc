@@ -85,7 +85,7 @@ function isK1PendingCommand(record: PendingMutationRecord): record is K1PendingC
       && value.commandOrigin?.originalMethod === "POST" && value.commandOrigin.originalPath === "/api/admin/platform/audit/operations"
       && value.commandOrigin.originalAdminId === String(record.commandOwnerId) && value.commandOrigin.readAuthority === "risk_k1_read");
 }
-/** 全部写操作共用一张表，刷新后还能用同一命令号按原内容重试。 */
+/** 全部写操作共用一张表，刷新后还能用同一命令号按原操作重试。 */
 const commandEvidence = createPendingMutationStore<K1PendingCommand | PendingMutationRecord>({
   storageKey: "nexion-admin-k1-multiaccount-commands-v1",
   retainExpiredRecords: true, // 过期不能重试，但记录和对象锁都留着（OP-96）
@@ -497,7 +497,7 @@ function DraftModal({ title, icon, effect, explain, wide, busy, reading, busyLab
   explain?: readonly ExplainRow[];
   wide?: boolean;
   busy: boolean;
-  /** 正在读取最新。没读到之前旧版本不能再提交（OP-97）。 */
+  /** 正在加载最新。没读到之前旧版本不能再提交（OP-97）。 */
   reading?: boolean;
   busyLabel?: string;
   saveLabel: string;
@@ -521,7 +521,7 @@ function DraftModal({ title, icon, effect, explain, wide, busy, reading, busyLab
   const [reasonLeft, setReasonLeft] = useState(false);
   const problem = reasonProblem(reason, policy, policyFailed);
   const length = visibleReasonLength(reason);
-  const missing = error?.conflict ? (reading ? "正在读取最新" : "这项刚被别人改过，先读取最新") : [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
+  const missing = error?.conflict ? (reading ? "正在加载最新" : "这项刚被别人改过，先读取最新") : [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
   return (
     <Modal title={<>{title}{explain && <Explain label={`${title}的说明`} rows={explain} />}</>} icon={icon} sub={effect} wide={wide} busy={busy} dirty={dirty} onClose={onClose} footer={<>
       <Button disabled={busy} onClick={onClose}>取消</Button>
@@ -848,7 +848,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const retainApproval = (record: K1PendingCommand) => {
     pendingCommands.remember(record.fingerprint, record.commandKey, record);
     syncPending();
-    if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原结果。");
+    if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原操作。");
   };
   const queryClusterApproval = async (record: K1PendingCommand) => {
     const note = (message: string) => setPendingNotes(current => ({ ...current, [record.commandKey]: message }));
@@ -881,7 +881,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       if (!exact) throw new Error(`当前数据里找不到原账户组 ${current.target}`);
     } catch (error) {
       const detail = displayAdminReadError(error);
-      note(`审批单${PROPOSAL_STATUS[ticket.status]}；原账户组事实未读回：${detail}。请查询原结果重试。`);
+      note(`审批单${PROPOSAL_STATUS[ticket.status]}；原账户组事实未读回：${detail}。请查询原操作重试。`);
       return ticket;
     }
     if (!k1Recovery.settleFromQuery(current, result.conclusion)) return ticket;
@@ -947,8 +947,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     requireReleaseMaker();
     const scope = `${extra.kind}|${extra.target}`;
     const retained = pendingCommands.list().find(record => record.fingerprint === scope);
-    if (!recovering && retained) throw new Error("这一项有未结束的原操作，请先查询原结果。");
-    if (recovering && !retained?.approval) throw new Error("原申请记录读不到，不能重发，请查询原结果。");
+    if (!recovering && retained) throw new Error("这一项有未结束的原操作，请先查询原操作。");
+    if (recovering && !retained?.approval) throw new Error("原申请记录读不到，不能重发，请查询原操作。");
     if (!retained) {
       const key = createA2CommandKey(extra.approval!.request.command.op);
       pendingCommands.remember(scope, key, { ...extra, commandOrigin: fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "risk_k1_read") });
@@ -979,7 +979,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           || error.backendMessage === "K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED")) await refreshProtectedEntries();
         throw cause;
       }
-      ctx.toast("结果未知，不要重复操作。到页面上方查询原结果或按原操作重试。", "warn");
+      ctx.toast("结果未知，不要重复操作。到页面上方查询原操作或按原操作重试。", "warn");
       return;
     }
     if (recovering) return;
@@ -1000,7 +1000,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const sendCommand = async (extra: K1PendingExtra, send: (key: string) => Promise<unknown>, done: () => Promise<void>, recovering: boolean) => {
     const scope = `${extra.kind}|${extra.target}`;
     const retained = pendingCommands.get(scope);
-    if (!!retained !== recovering) throw new Error("原操作待确认，请查询原结果。");
+    if (!!retained !== recovering) throw new Error("原操作待确认，请查询原操作。");
     const key = retained ?? newK1CommandKey();
     const original = pendingCommands.list().find(row => row.fingerprint === scope && row.commandKey === key);
     const base = "/api/admin/risk/multi-account/", target = encodeURIComponent(extra.target);
@@ -1020,7 +1020,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       if (!unknown && !recovering) pendingCommands.forget(scope, key);
       syncPending();
       if (!unknown) throw cause;
-      ctx.toast("结果未知，不要重复操作。到页面上方查询原结果或按原操作重试。", "warn");
+      ctx.toast("结果未知，不要重复操作。到页面上方查询原操作或按原操作重试。", "warn");
       return;
     }
     if (extra.kind === "cluster") {
@@ -1051,7 +1051,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     switch (record.kind) {
       case "cluster": {
         const proposal = record.clusterProposal;
-        if (!proposal) throw new Error("原申请记录读不到，不能重发，请查询原结果。");
+        if (!proposal) throw new Error("原申请记录读不到，不能重发，请查询原操作。");
         return sendOriginal(async key => {
           const ticket = await createA2OperationProposal(proposal, key, "proposal");
           if (!ticket.mine || ticket.obj !== proposal.obj || ticket.operationCode !== proposal.command.op) throw new A2OutcomeUncertainError("审批单和原操作对不上。", key);
@@ -1122,7 +1122,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const readProblem = retryReadProblem(record);
     if (readProblem) return readProblem;
     if (!k1CanReplay(record)) return "这个账号没有这项权限，不能重试，请有权限的同事核对。";
-    return state.replayBlock ? "先查询原结果，明确查不到才能按原操作重试。" : undefined;
+    return state.replayBlock ? "先查询原操作，明确查不到才能按原操作重试。" : undefined;
   };
 
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
@@ -1224,7 +1224,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (!record) return undefined;
     if (!record.approval?.pendingTicketId) return record.approval?.acknowledged
       ? <StatusTag tone="neutral" icon={Clock3} explain="审批单已建，进度没查到；到页面上方查询原审批单。">已建单</StatusTag>
-      : <StatusTag tone="warn" explain="这次提交的结果还没确认，先到页面上方查询原结果。">结果未知</StatusTag>;
+      : <StatusTag tone="warn" explain="这次提交的结果还没确认，先到页面上方查询原操作。">结果未知</StatusTag>;
     return <>
       <StatusTag tone="warn" icon={Clock3} explain={kind === "entry" ? PENDING_ENTRY_TIP : PENDING_PARAM_TIP}>待审批</StatusTag>{change && ` ${change}`}
       <span className="rd-approval-meta">{record.operator} · <time dateTime={new Date(record.createdAt).toISOString()}>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}</time> 提交</span>
@@ -1249,7 +1249,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         await reloadAfter(`已找回原审批单 ${receipt.id}`, `已找回原审批单 ${receipt.id}，但页面刷新失败；请重新加载核对。`);
         return;
       }
-      ctx.toast("暂未找到原审批单，请稍后再查询原结果。", "warn");
+      ctx.toast("暂未找到原审批单，请稍后再查询原操作。", "warn");
     } catch (cause) {
       ctx.toast(errorText(cause), "error");
     } finally {
@@ -1261,7 +1261,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     group === "cluster" && clusters.some((cluster) => cluster.id === target && cluster.pendingApproval) ? "这组已有待审批操作，审批结束后才能再次处理"
       : group === "cluster" && retainedEvidence.some((record) => Object.keys(LEGACY_CLUSTER_RECEIPTS).some((action) => record.fingerprint.startsWith(`cluster-${action}:${target}:`))) ? "有结果未知的原操作，先在账户组详情找回提交结果"
         : pending.some(record => (record.approval?.pendingTicketId || record.clusterReceipt?.pendingTicketId) && `${PENDING_GROUP[record.kind]}:${record.target}` === `${group}:${target}`) ? group === "entry" ? "这笔已提交审批，审批结束前不能再提交" : "这项已提交审批，审批结束前不能再改"
-          : pendingBlocks.has(`${group}:${target}`) ? "有结果未知的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
+          : pendingBlocks.has(`${group}:${target}`) ? "有结果未知的操作，先到页面上方处理" : loading ? "正在加载最新数据" : undefined;
 
   /** 已冻结组里账户是冻结状态是应该的，不算异常。 */
   const expectedFrozen = (c: K1Cluster, n: K1Cluster["nodes"][number]) => c.status === "frozen" && /FROZEN/i.test(n[5]);
@@ -1662,7 +1662,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   // 待审收益和账户组是两件事，但同一屏只留一条结论：收益写进结论第二行，按钮跟在结论右边（VS-23）。
   const earningsTodo = pendingEntries.length > 0 ? (entriesAtLimit ? `已读到的 ${PROTECTED_ENTRY_LIMIT} 条里有 ${pendingEntries.length} 笔等人工审核，实际可能更多` : `${pendingEntries.length} 笔收益等人工审核`) : undefined;
   const earningsTip = <Explain label="待审核收益怎么处理" content="这些收益要人工放行，不会到期自动放行。" />;
-  const earningsAction = <Button size="sm" onClick={() => setTab("earnings")}>{canRelease ? "去处理" : "去查看"}</Button>;
+  const earningsAction = <Button size="sm" onClick={() => setTab("earnings")}>{canRelease ? "去处理 →" : "去查看 →"}</Button>;
   const conclusionHint = (next?: string) => earningsTodo ? <>{next} {earningsTodo}{earningsTip}</> : next;
   const conclusionAction = earningsTodo ? earningsAction : undefined;
   const conclusion = !statKnown("activeClusters") || !statKnown("frozenClusters")
@@ -1826,7 +1826,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             ...(approval ? { canQuery: canQueryProposal } : {}), ...(status ? { status } : {}),
             actions: <>
               {(record.approval || record.kind === "cluster" && canQueryProposal) && !fundInvestigationAccess(record).canRead
-                ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>{record.approval ? "查询原审批单" : "查询原结果"}</Button>
+                ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>{record.approval ? "查询原审批单" : "查询原操作"}</Button>
                 : <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {record.kind === "registration-param" && canReadAudit && <Link className="rd-link" href={auditLink(record.target)}>到操作记录与审批核对</Link>}
@@ -1921,7 +1921,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               {clusterPageData.total > 0 && <Pager label="关联账户组列表" total={clusterPageData.total} page={clusterPage} pageSize={clusterPageSize} sizes={CLUSTER_PAGE_SIZE_OPTIONS} loading={ctx.contentLoading}
                 onPage={setClusterPage} onPageSize={(next) => { setClusterPageSize(next); setClusterPage(1); }} />}
             </Panel>
-            {cur && !rowsStale ? selectedPanel(cur) : clusters.length > 0 && <BlockState state="loading" title={rowsStale ? "正在读取这些条件下的账户组" : "定位完成后显示这组的详情"} />}
+            {cur && !rowsStale ? selectedPanel(cur) : clusters.length > 0 && <BlockState state="loading" title={rowsStale ? "正在加载这些条件下的账户组" : "定位完成后显示这组的详情"} />}
           </div> : overviewState}
         </>
       )}
@@ -1931,7 +1931,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           sub={protectedEntries.length ? `待审核 ${pendingEntries.length} 笔 · 已锁定 ${lockedEntries} 笔${entriesAtLimit ? ` · 最多显示 ${PROTECTED_ENTRY_LIMIT} 条` : ""} · 时间均为${businessZone().label}` : undefined}
           explain="人工放行要写理由，另一位超级管理员批准后才放行。追回过的，金额下面写原金额和已追回。">
           {protectedEntriesError ? (
-            <BlockState state="error" title="收益记录读取失败" detail={`${protectedEntriesError}当前不提供人工放行入口。`} onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
+            <BlockState state="error" title="收益记录加载失败" detail={`${protectedEntriesError}当前不提供人工放行入口。`} onRetry={() => void refreshProtectedEntries()} retrying={protectedEntriesLoading} />
           ) : (
             <Table label="待审核或已锁定的收益">
               <thead>

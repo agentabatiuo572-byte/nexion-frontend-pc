@@ -217,7 +217,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   const commands = session ? pendingH8RewardCommands(session.adminId) : [];
   const policyUnknown = session ? unresolvedH8Policy(session.adminId) : undefined;
-  const policyBlocked = policyUnknown ? isRetryExpired(policyUnknown) ? RETRY_EXPIRED_TEXT : "奖励配置有原操作结果待确认，请先查询原结果。" : undefined;
+  const policyBlocked = policyUnknown ? isRetryExpired(policyUnknown) ? RETRY_EXPIRED_TEXT : "奖励配置有原操作结果未知，请先查询原操作。" : undefined;
   const queue = approvalQueue.current;
   const queueError = queue.owner === session?.adminId ? queue.error : undefined;
   const pendingPolicy = queue.owner === session?.adminId && queue.pending || hasPendingH8Policy(commands);
@@ -225,7 +225,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     : queueError ? "可能存在待批单，读不到审批队列。" : undefined;
   const settlementBlocked = commands.find(record => record.kind === "settlement");
   const settlementPermission = !!session?.authorities.some(code => code === "platform_a2_proposal_create" || code === "platform_a2_write");
-  const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作待确认，请先查询原结果。"
+  const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作待确认，请先查询原操作。"
     : !settlementPermission ? "当前账号没有提交审批的权限。" : undefined;
   const freshBlocked = !readReady || loading ? displayAdminError(new Error("H8_OVERVIEW_REQUIRED")) : undefined;
 
@@ -625,8 +625,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
         actions: <>
           {isRetryExpired(record) && <span>{RETRY_EXPIRED_TEXT}</span>}
-          <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原结果`}
-            onClick={() => { recover(); }}>查询原结果</Button>
+          <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原操作`}
+            onClick={() => { recover(); }}>查询原操作</Button>
           {canRetryH8RewardCommand(record) && (record.kind === "settlement" ? canSettle : canWrite)
             && <Button size="sm" onClick={() => recover()}>按原操作重试</Button>}
           {record.replayRejection && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>核实后解除</Button>}
@@ -733,10 +733,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   if (loading && !data) return <div className="h8-page">
     {header}
-    <Conclusion state="unknown">正在读取奖励设置和结算情况…</Conclusion>
+    <Conclusion state="unknown">正在加载奖励设置和结算情况…</Conclusion>
     {recoveryNotice}
     {savedUnreadNotice}
-    <BlockState state="loading" title="正在读取新人礼与邀请奖励…" />
+    <BlockState state="loading" title="正在加载新人礼与邀请奖励…" />
     {confirmModal}
   </div>;
   if (!data) return <div className="h8-page">
@@ -834,7 +834,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
       <Panel title="每位发多少" icon={Gift} tone="role-4" sub={`第 ${data.rhythmMonth} 月加成`}
           explain="新人两项乘运营阶段设置里当月的新用户加成，邀请人一项乘当月的邀请加成。加成换月或在运营阶段设置被改后，实际发放跟着变。"
-          actions={phaseHref ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置看加成</Link> : undefined}>
+          actions={phaseHref ? <Link className="rd-link" href="/growth/phase" prefetch={false}>去运营阶段设置看加成 →</Link> : undefined}>
           <div className="h8-cards" data-long={longAmounts ? "" : undefined}><StatBand cards label="三项奖励">{AMOUNT_PARAMS.map(amountCard)}</StatBand></div>
         </Panel>
         <Panel title="开关和发放方式" icon={SlidersHorizontal} tone="role-4">
@@ -916,7 +916,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {error && <div className="h8-more-error"><Notice tone="danger" title="更早的记录没读到">已读到的记录还在，列表还不完整。<Explain label="失败原因" content={error} /></Notice></div>}
         {(data.settlementHasMore || auditHref || eventsHref || ledgerHref) && (
           <div className="h8-records-foot">
-            {data.settlementHasMore && <Button size="sm" loading={loadingMore} loadingText="读取中…" onClick={() => void load(data.settlementNextCursor, true)}>{error ? "重试读取更早记录" : "读取更早记录"}</Button>}
+            {data.settlementHasMore && <Button size="sm" loading={loadingMore} loadingText="正在加载…" onClick={() => void load(data.settlementNextCursor, true)}>{error ? "重试读取更早记录" : "读取更早记录"}</Button>}
             {(auditHref || eventsHref || ledgerHref) && <div className="rd-links" aria-label="相关页面">
               <span>相关页面</span>
               {auditHref && <Link className="rd-link" href="/platform/audit" prefetch={false}>操作记录与审批</Link>}

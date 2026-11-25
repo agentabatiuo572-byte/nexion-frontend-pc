@@ -4004,7 +4004,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
   const editIssue = !emptyChosen && !numberBad && isEditValueValid(spec, newVal) ? spec?.validate?.(newVal) : undefined;
   const editValueOk = !editIssue && (emptyChosen || (!numberBad && isEditValueValid(spec, newVal)));
-  const reviewBlock = editReview?.kind === "loading" ? "正在读取…" : editReview?.kind === "conflict" ? "请先读取最新" : editReview?.kind === "error" ? editReview.message : undefined;
+  const reviewBlock = editReview?.kind === "loading" ? "正在加载…" : editReview?.kind === "conflict" ? "请先读取最新" : editReview?.kind === "error" ? editReview.message : undefined;
   const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && compareEditDecimals(newVal, spec.current ?? "") === 0));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   // 对象状态变了或已不在：框里只留橙黄提示和「取消」（VS-107），不再画过期的改动和理由框。
@@ -4105,7 +4105,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if ((approval || retryApproval) && isA2OutcomeUncertainError(error)) {
         setApprovalRecovery(recoverApproval ? "lookup" : "retry");
         const message = getPendingRecovery?.() && error.queryMessage || (inlineApproval ? error.message
-          : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原结果；查不到再按原操作重试，" : "按原操作重试，"}不会建第二张。`);
+          : `结果未知，可能已经建了审批单。${recoverApproval ? "先查询原操作；查不到再按原操作重试，" : "按原操作重试，"}不会建第二张。`);
         setSubmitError(`${message} 命令号：${error.commandKey}`);
       } else {
         setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
@@ -4194,8 +4194,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     : inlineApproval?.expiredRequestRecovery === "reload"
     ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
     : inlineApproval?.expiredRequestRecovery === "query"
-      ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
-      : inlineApproval?.queryOnly ? "只能查询原结果，不能重发。"
+      ? surface ? "原操作已过期，不能重发；请用「查询原操作」核对。" : "原操作已过期，不能重发，请查询原操作。"
+      : inlineApproval?.queryOnly ? "只能查询原操作，不能重发。"
         : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。");
   const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原操作重试" : needsEditPreview && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined, businessValue) ?? confirmLabel);
   // 放大提示固定在关键信息层，先于所有填写项。
@@ -4241,14 +4241,14 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     <Modal title={title ?? action} icon={confirmTone === "danger" ? "alert" : titleIcon ?? (spec ? "sliders" : "shield")} tone={confirmTone === "danger" ? "danger" : "neutral"} sub={finalConflict ? undefined : readyReview?.effect ?? (rdApproval ? effectiveEffect ?? <RdStatusTag tone="progress" filled explain={completionCopy}>批准后生效</RdStatusTag> : effectiveEffect)} onClose={handleClose} returnFocus={returnFocus} className={["rd-confirm", inlineApproval?.dialogClassName, dialogClass].filter(Boolean).join(" ")} busy={submitting || readingConflict} dirty={JSON.stringify([newVal, businessValue]) !== openedForm}
       footer={<>
         <Btn disabled={submitting || readingConflict} onClick={handleClose}>取消</Btn>
-        {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>{pendingRecovery.queryLabel ?? "查询原结果"}</Btn>}
+        {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>{pendingRecovery.queryLabel ?? "查询原操作"}</Btn>}
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
-            {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
+            {submitting ? inlineApproval?.recoverLabel ? "正在加载…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原操作"}
           </Btn>
         )}
         {!approvalOnlyLookup && !pendingRecovery?.queryOnly && pendingRecovery?.state?.capability !== "readback" && !finalConflict && (surface ? (
-          <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
+          <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在加载…" : "提交中…"}
             disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
             {submitLabel}
@@ -4274,8 +4274,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
         : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (surface
-        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上次提交结果未知，可能已经建了审批单，先查询原结果。</RdNotice></div>
-        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上次提交结果未知，可能已经建了审批单，先查询原结果。</div>
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上次提交结果未知，可能已经建了审批单，先查询原操作。</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上次提交结果未知，可能已经建了审批单，先查询原操作。</div>
       )}
       {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (surface
         ? <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><RdNotice tone="warn">{reasonPolicyError ?? "正在加载，稍候即可提交。"}</RdNotice></div>
@@ -4366,7 +4366,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           </DiffField>
         </div>
       )}
-      {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在读取…" />}
+      {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在加载…" />}
       {/* 核对只读不写：读不到用读取的说法和区块错误（标题 + 原因 + 重试），不说「结果未知、可能已生效」（OP-84，复审 V02）。 */}
       {review && editReview?.kind === "error" && !editReview.rejected && <RdBlockState state="error" title={review.readFailTitle ?? "预览没读到"} detail={editReview.message} onRetry={() => void loadEditReview(editReview.attempt)} />}
       {review && editReview?.kind === "conflict" && review.conflictNote(() => void loadEditReview({ refresh: true }))}

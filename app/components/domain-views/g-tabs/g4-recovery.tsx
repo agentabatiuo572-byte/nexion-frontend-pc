@@ -111,7 +111,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
         key: record.commandKey, name, submittedAt: record.createdAt, tag: g4RecoveryTag(record, batch, obj), ticket: record.ticket?.id,
         change: batch ? <>批次 <span data-mono>{obj}</span></> : from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
         actions: <>
-          <Button size="sm" disabled={busy} aria-label={`查询${name}${batch ? ` ${obj}` : ""}的原结果`} onClick={() => void recover(obj, false)}>查询原结果</Button>
+          <Button size="sm" disabled={busy} aria-label={`查询${name}${batch ? ` ${obj}` : ""}的原操作`} onClick={() => void recover(obj, false)}>查询原操作</Button>
           {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原操作重试${name}${batch ? ` ${obj}` : ""}`} onClick={() => void recover(obj, true)}>按原操作重试</Button>}
         </>,
       };
@@ -120,9 +120,9 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
   ];
   return <GRecoveryNotice label="原操作" rows={rows}
     title={`${waiting ? "在等审批的原申请" : "还没有结论的原操作"} · ${total} 项`}
-    lead={waiting ? waitingLead : `这些操作先只能查询原结果或在 24 小时内按原操作重试，不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}；其他照常可改。`}
+    lead={waiting ? waitingLead : `这些操作先只能核对（走审批的查询原操作，直接修改的读取当前配置），或在 24 小时内按原操作重试，不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}；其他照常可改。`}
     explain={<>
-      <p>这里列你在这台电脑上提交过、还没处理完的原操作：参数修改、每日收益比例、补发收益、价格档位，以及直接生效但没收到结果的修改。原操作只能查询原结果，或在 24 小时内按原操作重试，不能改值。</p>
+      <p>这里列你在这台电脑上提交过、还没处理完的原操作：参数修改、每日收益比例、补发收益、价格档位，以及直接生效但没收到结果的修改。走审批的可以查询原审批单；直接修改的只能读取当前配置核对，现在的值证明不了原操作成没成。两种都可以在 24 小时内按原操作重试，不能改值。</p>
       <p>补发收益按原批次号恢复，不会换成今天的批次。要改成别的值，等原操作有结论后再发起新修改。</p>
     </>} />;
 }

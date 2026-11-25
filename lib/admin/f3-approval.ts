@@ -158,7 +158,7 @@ export async function sendF3Proposal(adminId: number, slot: string, spec?: Propo
       throw new Error("F3_PROPOSAL_STORAGE_UNAVAILABLE");
     }
   }
-  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原结果。", original.commandKey);
+  if (isRetryExpired(original)) throw new A2OutcomeUncertainError("原操作已超过 24 小时，只能查询原操作。", original.commandKey);
   if (!original.request || !durable(original)) throw new Error("F3_PROPOSAL_ORIGINAL_INCOMPLETE");
   if (original.received || original.ticket) return queryReceivedF3Proposal(adminId, original);
   let ticket: A2OperationRow;

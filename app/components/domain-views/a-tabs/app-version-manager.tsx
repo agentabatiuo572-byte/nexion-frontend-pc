@@ -191,7 +191,7 @@ export function AppVersionManager() {
             <Td sticky="end"><Button size="sm" variant="ghost" aria-label={`查看 ${platforms[key]} 策略`} aria-pressed={platform === key} onClick={() => setPlatform(key)}>{platform === key ? "当前平台" : "查看策略"}</Button></Td>
           </Tr>; })}</tbody></Table>
       </Panel>
-      {loading ? <BlockState state="loading" title="正在读取平台版本…" /> : state
+      {loading ? <BlockState state="loading" title="正在加载平台版本…" /> : state
         ? <VersionDetails key={platform} state={state} refresh={refresh} onSaved={value => setRecords(old => ({ ...old, [value.platform]: value }))} />
         : <BlockState state="error" title={`${platforms[platform]} 版本读取失败`} detail={errors[platform]} onRetry={refresh} />}
     </>}

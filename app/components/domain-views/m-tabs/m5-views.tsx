@@ -71,7 +71,7 @@ export type M5PendingRow = { key: string; name: ReactNode; change: ReactNode; su
   /** 这一行的标签和结论句；不传时按有没有过期写。 */
   status?: { tone: StateTone; label: string }; note?: ReactNode };
 
-/** 结果未知的写操作逐条列出（和 G 域、M4 同一个排法）：改的是什么、从什么改成什么、什么时候提交、查询原结果、按原操作重试。 */
+/** 结果未知的写操作逐条列出（和 G 域、M4 同一个排法）：改的是什么、从什么改成什么、什么时候提交、查询原操作、按原操作重试。 */
 export function M5PendingWrites({ rows, explain, submitting = false }: { rows: readonly M5PendingRow[]; explain?: ReactNode; submitting?: boolean }) {
   if (rows.length === 0) return null;
   return (

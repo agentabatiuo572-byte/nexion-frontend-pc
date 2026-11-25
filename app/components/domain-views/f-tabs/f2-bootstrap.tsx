@@ -64,7 +64,7 @@ export function F2Bootstrap({ ctx, openConfirm, draft, setDraft, cap }: {
   const canAudit = ctx.can("platform_a2_read");
   const pending = ctx.f2BootstrapPending;
   const original = ctx.f2ProposalRecord(F2_BOOTSTRAP_SLOT);
-  const auditLink = canAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看</Link> : undefined;
+  const auditLink = canAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看 →</Link> : undefined;
 
   if (pending) {
     const rows = parseF2BootstrapAfter(pending.after);
@@ -76,7 +76,7 @@ export function F2Bootstrap({ ctx, openConfirm, draft, setDraft, cap }: {
       {rows ? <BootstrapGrid rows={rows} ranked={f2BootstrapUsesRank(rows[0].usdtPct, rows[1].usdtPct) ? f2Ranked(ctx) ? ctx.f2RankPurchaseRange : null : undefined} /> : <p className="f2-boot-note">七层各是多少，到「操作记录与审批」的这张单里看。</p>}
     </div>;
   }
-  if (original && !original.ticket) return <Notice tone="warn" title="首次配置的申请还没有结论">先在页面上方查询原结果，有结论前不能再提交。</Notice>;
+  if (original && !original.ticket) return <Notice tone="warn" title="首次配置的申请还没有结论">先在页面上方查询原操作，有结论前不能再提交。</Notice>;
   if (!canWrite) return <Notice tone="warn" title="还没有配置团队购买奖励">首次配置需有「团队奖励比例」和「发起审批」权限，这个账号只能查看。</Notice>;
   if (!draft) return (
     <Notice tone="warn" title="还没有配置团队购买奖励"

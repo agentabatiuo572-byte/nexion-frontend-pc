@@ -239,7 +239,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const registryObjectBlock = (eventName: string) => registryActor && pendingA4RegistryObject(registryActor.adminId, eventName)
     ? displayAdminError("OBJECT_LOCKED_BY_A2") : undefined;
   const registryWriteBlock = (eventName: string) => registryObjectBlock(eventName)
-    ?? (commands.find(`lifecycle:${eventName.trim().toLowerCase()}`) ? "请先查询原结果" : undefined);
+    ?? (commands.find(`lifecycle:${eventName.trim().toLowerCase()}`) ? "请先查询原操作" : undefined);
   const directEditorBusy = useRef(false);
   directEditorBusy.current = !!(ctx.actionConfirmOpen || registryConfirm || naBatch || mutating);
   useEffect(() => {
@@ -307,7 +307,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   useSyncExternalStore(a4RegistryRecovery.subscribe, a4RegistryRecovery.getRevision, () => 0);
   const registryRecoveryState = pendingRegistry ? a4RegistryRecovery.state(pendingRegistry) : undefined;
   const registryRetryBlock = !canWrite ? "你只有查看权限" : registryRecoveryState?.expired ? RETRY_EXPIRED_TEXT
-    : registryRecoveryState?.replayBlock ? "先查询原结果，查不到才能重试" : undefined;
+    : registryRecoveryState?.replayBlock ? "先查询原操作，查不到才能重试" : undefined;
   const openRegistryRecovery = (retry = false) => {
     if (!pendingRegistry) return false;
     openRegistryConfirm({
@@ -1093,9 +1093,9 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       submittedAt: pendingRegistry.createdAt,
       tag: expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原操作重试，不会建第二张。">结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原操作；24 小时内也可以按原操作重试，不会建第二张。">结果未知</StatusTag>,
       actions: <>
-        <Button size="sm" onClick={() => openRegistryRecovery()}>查询原结果</Button>
+        <Button size="sm" onClick={() => openRegistryRecovery()}>查询原操作</Button>
         {!expired && !pendingRegistry.received && <Button size="sm" disabledReason={registryRetryBlock} onClick={() => openRegistryRecovery(true)}>按原操作重试</Button>}
         {registryRecoveryState?.replayRejection && !pendingRegistry.received && <Button size="sm" onClick={() => releaseRejectedRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>}
       </>,
@@ -1277,13 +1277,13 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : isRetryExpired(record)
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain={record.original.kind === "redrive"
-          ? "提交时没收到确定结果，可能已经重新排队。先查询原结果，核对这条事件现在的状态；按原操作重试不会再排一次。" : undefined}>结果未知</StatusTag>,
+          ? "提交时没收到确定结果，可能已经重新排队。先查询原操作，核对这条事件现在的状态；按原操作重试不会再排一次。" : undefined}>结果未知</StatusTag>,
       line: recovery.replayRejection ? "按原操作重试被明确拒绝" : recovery.expired ? RETRY_EXPIRED_TEXT : shown?.line,
       actions: <>
-        <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+        <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原操作</Button>
         {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setRetentionClosing(record)}>核查结案</Button>}
         <Button size="sm" disabledReason={recovery.expired ? RETRY_EXPIRED_TEXT
-          : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined}
+          : recovery.replayBlock ? "先查询原操作，查不到才能重试" : undefined}
           onClick={() => recoverOriginal(record)}>按原操作重试</Button>
         {recovery.replayRejection && <Button size="sm" onClick={() => releaseDirect(record)}>解除原操作记录</Button>}
       </>,
@@ -1306,7 +1306,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           : item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认这次清理没有执行，记录已解除。" : "核查确认这次清理已正常结束，记录已解除。"}
         onDismiss={() => setRetentionSettled((all) => all.filter((row) => row.key !== item.key))} />)}
       <A4RecoveryNotice title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原操作重试，不会重复执行。</p><p>记录存在这个浏览器标签页里，刷新后还在，关掉就没有了。</p><p>登记：查到审批单后清掉。</p><p>清理：按原操作重试拿到结果，或核查结案后清掉。</p><p>调参数、推进生命周期、重新排队：查到做成了就清掉；没有结论的，24 小时内按原操作重试，过期后核查结案。旧记录只能读现在的数据。</p></>} />
+        explain={<><p>提交时没收到确定结果，可能已经生效。先查询原操作；24 小时内可以按原操作重试，不会重复执行。</p><p>记录存在这个浏览器标签页里，刷新后还在，关掉就没有了。</p><p>登记：查到审批单后清掉。</p><p>清理：按原操作重试拿到结果，或核查结案后清掉。</p><p>调参数、推进生命周期、重新排队：查到做成了就清掉；没有结论的，24 小时内按原操作重试，过期后核查结案。旧记录只能读现在的数据。</p></>} />
       {retentionClosing && <FundClosureModal label={retentionClosing.original.kind === "retention" ? "立即清理" : retentionClosing.name} createdAt={retentionClosing.createdAt} known={closureKnown(closingOutcome)}
         facts={<>
           <Fact k={retentionClosing.original.kind === "retention" ? "清理范围" : "改动"}>{retentionClosing.change}</Fact>
@@ -1350,7 +1350,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
     }[t.status];
     return (
       <Notice key={original?.commandKey ?? t.id} tone={tone} title={`登记审批单 ${t.id}`}
-        action={<>{original && <Button size="sm" onClick={() => void refreshRegistryTicket(original)}>查询原结果</Button>}{registryActor?.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit">查看操作记录与审批</Link>}</>}>
+        action={<>{original && <Button size="sm" onClick={() => void refreshRegistryTicket(original)}>查询原操作</Button>}{registryActor?.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit">查看操作记录与审批</Link>}</>}>
         <span data-mono>{t.obj}</span> · {text}
       </Notice>
     );
@@ -1370,8 +1370,8 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {ticketNotice}
         {registryModal}
         <Panel title="用户行为事件">
-          <BlockState state="error" title="事件数据读取失败" detail={<><p>{loadError}</p><p>为避免误判，页面已停止展示和写入。</p></>}
-            retryLabel="重新读取" onRetry={() => void refreshOverview()} />
+          <BlockState state="error" title="事件数据加载失败" detail={<><p>{loadError}</p><p>为避免误判，页面已停止展示和写入。</p></>}
+            onRetry={() => void refreshOverview()} />
         </Panel>
       </div>
     );
@@ -1383,7 +1383,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {recoveryNotice}
         {ticketNotice}
         {registryModal}
-        <div className="a4-loading" aria-label="正在读取用户行为事件">
+        <div className="a4-loading" aria-label="正在加载用户行为事件">
           <div className="rd-skeleton a4-skel-line" />
           <div className="a4-skel-stats">{[0, 1, 2, 3].map((index) => <div key={index} className="rd-skeleton" />)}</div>
           <div className="rd-skeleton a4-skel-tabs" />

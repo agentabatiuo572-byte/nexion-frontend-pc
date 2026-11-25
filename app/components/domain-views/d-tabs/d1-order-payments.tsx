@@ -55,7 +55,7 @@ function deliveryNote(record: PurchasePaymentRecord) {
 
 /** 重新核对到账为什么不能点，按顺序写第一条（OP-126）。 */
 function revalidateBlock(record: PurchasePaymentRecord | null, pending: boolean) {
-  if (!record) return "正在读取这笔付款";
+  if (!record) return "正在加载这笔付款";
   if (pending) return "这笔有一次操作结果未知";
   if (purchaseWasDelivered(record)) return "已完成";
   if (record.receipt) return "已有业务确认记录，请核对原业务记录";
@@ -155,14 +155,14 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       createdAt: row.createdAt,
       // 原请求里有 TRC20 付款手续费：只能查询和读现值，写明为什么和下一步（OP-93、OP-126）。
       onlyCheck: restricted ? `原请求改了 USDT（TRC20）的付款手续费，TRC20 ${TRC20_CLOSED}，不能按原操作重试` : undefined,
-      hint: restricted ? null : row.commandOrigin ? "结论以查询原结果为准，现在的值只能参考。按原操作重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原操作重试不会重复执行。",
-      blocked: !canRetryPurchasePayment(row) ? row.commandOrigin ? "已超过 10 分钟，不能再重试，先查询原结果" : RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
+      hint: restricted ? null : row.commandOrigin ? "结论以查询原操作为准，现在的值只能参考。按原操作重试不会重复执行。" : "升级前留下的记录，查不了原结果。现在的值只能参考；按原操作重试不会重复执行。",
+      blocked: !canRetryPurchasePayment(row) ? row.commandOrigin ? "已超过 10 分钟，不能再重试，先查询原操作" : RETRY_WINDOW_TEXT : permitted ? undefined : "这个账号没有这项权限",
       auditHref: isPolicy ? "/platform/audit?domain=D" : `/platform/audit?domain=D&object=${encodeURIComponent(row.scope)}`,
       verify: async () => {
         if (isPolicy) {
           const current = await fetchPurchasePaymentPolicy();
           if (owns()) { setPolicy(current); if (!changed) setDraft(current.channels.map(item => ({ ...item }))); }
-          return `读到：手续费现在是第 ${current.version} 版。那次修改是否生效，${row.commandOrigin ? "以查询原结果为准" : "请到操作记录与审批确认"}。记录继续保留。`;
+          return `读到：手续费现在是第 ${current.version} 版。那次修改是否生效，${row.commandOrigin ? "以查询原操作为准" : "请到操作记录与审批确认"}。记录继续保留。`;
         }
         const current = await fetchPurchasePaymentRecord(row.scope);
         if (owns()) setSelected(current.intentNo);
@@ -218,9 +218,9 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
     if (!before.configured && row[field] === null) return [field, undefined];
     return [field, feeIssue(field, row[field], policy)];
   })) as Record<FeeField, string | undefined>) : [];
-  const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在读取最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未知，先在本页上方核对"
+  const saveBlock = !canEdit ? "只有超级管理员能改" : policyLoading ? "正在加载最新数据" : busy ? "正在提交" : policyPending ? "上次保存结果未知，先在本页上方核对"
     : !policy?.constraints ? "暂时拿不到可填范围，只能查看" : !changed ? "还没有修改" : !valid ? "有填错的项，按框下的提示改" : undefined;
-  const feeSummary = policyLoading ? "正在读取" : policyError ? "读取失败" : policy
+  const feeSummary = policyLoading ? "正在加载" : policyError ? "读取失败" : policy
     ? `${policy.channels.filter(row => row.paymentMethod !== CLOSED_METHOD).length + missingMethods.filter(method => method !== CLOSED_METHOD).length} 种付款方式${unconfigured ? `，${unconfigured} 种未配置 · 用户付款时看不到` : "，都已配置"}，${methodText[CLOSED_METHOD]}${TRC20_CLOSED}${changed ? "，有修改没保存" : ""}` : "—";
   const feeFoldOpen = feeOpen ?? (unconfigured > 0 || changed || !!policyError);
   const doRefreshPolicy = () => { setRefreshAsk(false); void loadPolicy(); };
@@ -275,8 +275,8 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
       open={feeFoldOpen} onOpenChange={setFeeOpen}
       explain={<><p>用户实付 = 订单金额 + 订单金额 × 手续费比例 + 每笔固定费 + 网络费（仅 USDT）。全部填 0 表示免费。</p><p>新手续费只用于之后发起的付款，已下单的按原费用。没配置的付款方式，用户在付款弹窗里看不到。</p><p>USDT 手续费只用于试用转购买、升级置换、扩容等；普通购买的 USDT 先充值再用余额付，只收充值手续费。</p><p>银行卡和 USDT 付款不需要支付密码。钱包余额付款不收手续费，要输入支付密码。</p></>}
       actions={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=D">修改历史</Link> : undefined}>
-      {policyLoading && !policy ? <BlockState state="loading" title="正在读取付款手续费…" />
-        : policyError ? <BlockState state="error" title="付款手续费读取失败" detail={policyError} onRetry={() => void loadPolicy()} />
+      {policyLoading && !policy ? <BlockState state="loading" title="正在加载付款手续费…" />
+        : policyError ? <BlockState state="error" title="付款手续费加载失败" detail={policyError} onRetry={() => void loadPolicy()} />
           : policy && <div className="rd-stack">
             {!canEdit && <p className="rd-note">只有超级管理员能改付款手续费。</p>}
             {canEdit && !policy.constraints && <p className="rd-note">暂时拿不到可填范围，只能查看，不能修改。</p>}
@@ -356,7 +356,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
   const firstTick = useRef(reloadTick);
   useEffect(() => { if (reloadTick !== firstTick.current) void load(); }, [reloadTick, load]);
   const canReconcile = allowed("finance_d1_bank_reconcile");
-  const block = loading ? "正在读取最新数据" : busy ? "正在提交" : error ? "这笔付款读取失败，刷新后再试" : revalidateBlock(record, pending);
+  const block = loading ? "正在加载最新数据" : busy ? "正在提交" : error ? "这笔付款读取失败，刷新后再试" : revalidateBlock(record, pending);
   function revalidate() {
     if (!record || block || !intentNo || !canReconcile) return;
     const current = record;
@@ -395,7 +395,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
         {auditReachable && intentNo && <Link className="rd-link" href={`/platform/audit?domain=D&object=${encodeURIComponent(intentNo)}`}>到「操作记录与审批」查看处理过程</Link>}
       </>}
       primary={canReconcile ? <Button variant="primary" disabledReason={block} onClick={revalidate}>重新核对到账</Button> : undefined} />}>
-    {error ? <BlockState state="error" title="付款详情读取失败" detail={error} onRetry={() => void load()} />
+    {error ? <BlockState state="error" title="付款详情加载失败" detail={error} onRetry={() => void load()} />
       : <JudgmentPoints loading={loading || !r} rows={r ? [
         { label: "用户实付", icon: Coins, tone: "money", value: `${usdt(r.totalUsdt)} USDT`, reason: `订单 ${usdt(r.subtotalUsdt)} · 手续费 ${usdt(r.channelFeeUsdt)} · 网络费 ${usdt(r.networkConfirmFeeUsdt)}` },
         { label: "用户", icon: User, tone: "users", value: r.userId, reason: `${kindText[r.kind] ?? "用途待确认"} · ${methodText[r.paymentMethod]}` },

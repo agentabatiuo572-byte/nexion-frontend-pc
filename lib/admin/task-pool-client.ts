@@ -73,8 +73,8 @@ const POOL_ERRORS: Record<string, string> = {
   IDEMPOTENCY_RESPONSE_DESERIALIZE_FAILED: "原请求的结果暂时读不到，请保留原记录，不要重新发起。",
   IDEMPOTENCY_RESPONSE_SERIALIZE_FAILED: "原请求的结果暂时无法确认，请保留原记录，不要重新发起。",
   IDEMPOTENCY_SCOPE_REQUIRED: "缺少操作标识，请保留原记录并联系值班人员核对。",
-  IDEMPOTENCY_KEY_CONFLICT: "原请求和这次的内容对不上，请先查询原结果，不要另发一批。",
-  TASK_POOL_IDEMPOTENCY_CONFLICT: "这次的内容和原请求不一致，请先查询原结果，不要重新发起。",
+  IDEMPOTENCY_KEY_CONFLICT: "原请求和这次的内容对不上，请先查询原操作，不要另发一批。",
+  TASK_POOL_IDEMPOTENCY_CONFLICT: "这次的内容和原请求不一致，请先查询原操作，不要重新发起。",
 };
 
 export function validTaskWeight(value: unknown): value is string {
@@ -274,7 +274,7 @@ export async function sendTaskPoolCommand(command: TaskPoolCommand): Promise<Ran
     if (new Set(created.map(row => row.taskTypeId)).size !== created.length
       || created.some(row => !row.enabled || row.durationMinutes <= 0 || row.durationMinutes > 120)) throw new Error("新增任务结果不完整。");
     return { created, pool };
-  } catch { throw new TaskPoolApiError("任务操作的结果没读全，原操作已保留，请先查询原结果。"); }
+  } catch { throw new TaskPoolApiError("任务操作的结果没读全，原操作已保留，请先查询原操作。"); }
 }
 export async function fetchDisableImpact(code: string, ids: string[]): Promise<DisableImpact> {
   const raw = record(await request(`/task-pools/${encodeURIComponent(code)}/disable-impact?${new URLSearchParams({ taskTypeIds: ids.join(",") })}`));

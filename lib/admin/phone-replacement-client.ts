@@ -122,7 +122,7 @@ export async function submitPhoneCommand(row: PendingPhoneCommand): Promise<Phon
             result = row.type === "PHONE_VERIFY" ? verification(data) : parsePhoneReceipt(data);
         }
         catch {
-            throw new PhoneApiError("结果未知，请先查询原结果，不要重新提交。", 502, true);
+            throw new PhoneApiError("结果未知，请先查询原操作，不要重新提交。", 502, true);
         }
         matchPhoneResult(row, result);
         if (!("status" in result) || result.status !== "PENDING")
