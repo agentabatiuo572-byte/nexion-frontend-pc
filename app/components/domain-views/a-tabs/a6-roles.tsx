@@ -114,11 +114,11 @@ const ROLE_DESC: Record<string, { desc: string; scope: string }> = {
 const ADMIN_COUNT_EXPLAIN = "绑定到这个角色的账号记录数：不排除已停用的账号，也不是在线人数。账号分配在「运营账号与权限」。";
 const CARD_COUNT_EXPLAIN = "卡片上的权限数、菜单数是角色里绑定的条数，不等于实际生效的权限或导航里能看到的菜单；「启用」是其中启用中的账号数。";
 const approvalTag = (note: string, extra?: string) => (
-  <StatusTag tone="progress" filled explain={`提交到「操作记录与审批」，另一位管理员批准后执行。${note}${extra ?? ""}`}>批准后生效</StatusTag>
+  <StatusTag tone="progress" filled explain={`提交到「操作记录与审批」，另一位超级管理员批准后执行。${note}${extra ?? ""}`}>批准后生效</StatusTag>
 );
 const directTag = () => <StatusTag tone="progress" filled explain="填写理由并确认后立即生效，保留操作记录。">立即生效</StatusTag>;
 const approverFacts = (permission: string) => <>
-  <Fact k="谁来批">另一位管理员</Fact>
+  <Fact k="谁来批">另一位超级管理员</Fact>
   <Fact k="需有权限">{aApprovalPermissionText(permission)}</Fact>
 </>;
 const roleFact = (name: string, code: string) => <Fact k="角色">{name} <span className="a6-code" data-mono>{code}</span></Fact>;
@@ -449,9 +449,9 @@ export default function A6Roles() {
           const { ticket, readbackFailed } = current;
           if (readbackFailed) return;
           if (ticket.status === "pending") {
-            if (original.kind === "a6-status") setToast(`已提交${original.status === 1 ? "启用" : "停用"}审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
-            else if (original.kind === "a6-delete") setToast(`已提交删除审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
-            else setToast(`已提交权限修改审批，等另一位管理员批准 · 审批单 ${ticket.id}`, "success");
+            if (original.kind === "a6-status") setToast(`已提交${original.status === 1 ? "启用" : "停用"}审批，等另一位超级管理员批准 · 审批单 ${ticket.id}`, "success");
+            else if (original.kind === "a6-delete") setToast(`已提交删除审批，等另一位超级管理员批准 · 审批单 ${ticket.id}`, "success");
+            else setToast(`已提交权限修改审批，等另一位超级管理员批准 · 审批单 ${ticket.id}`, "success");
           } else setToast(displayAdminReadError(new Error(`A6_PROPOSAL_${ticket.status.toUpperCase()}`)));
         } catch (error) { throw new Error("A6_PROPOSAL_STATUS_UNKNOWN", { cause: error }); }
       } else {
@@ -737,7 +737,7 @@ export default function A6Roles() {
   ) : loadError ? (
     <Conclusion state="danger" icon={TriangleAlert} hint="点角色目录里的「重试」再读一次。">角色列表没读到，这部分没有判断</Conclusion>
   ) : tempRoles.length > 0 ? (
-    <Conclusion state="warn" icon={TriangleAlert} hint="确认没人用后删除，删除要另一位管理员批准。"
+    <Conclusion state="warn" icon={TriangleAlert} hint="确认没人用后删除，删除要另一位超级管理员批准。"
       explain="名字像自动验收建的、没有绑定账号的角色会被标成测试残留。只是按名字判断，不会自动删除。">
       有 {tempRoles.length} 个测试残留角色，建议删除
     </Conclusion>
@@ -1038,7 +1038,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
 
         {!!detail.legacyNonReadPermissionCodes?.length && <Notice tone="warn" title={`还存着 ${detail.legacyNonReadPermissionCodes.length} 项历史留下的修改权限`}>
           <p>默认职责是只读；这几项是早期授权留下的，不是现行职责，现在仍然有效：{detail.legacyNonReadPermissionCodes.slice(0, 5).map((code) => permLabel(code, permByCode.get(code))).join("、")}{detail.legacyNonReadPermissionCodes.length > 5 ? ` 等 ${detail.legacyNonReadPermissionCodes.length} 项` : ""}。</p>
-          <p>要收回，点下面「改权限和菜单」去掉，另一位管理员批准后生效；这页不会自动收回。</p>
+          <p>要收回，点下面「改权限和菜单」去掉，另一位超级管理员批准后生效；这页不会自动收回。</p>
         </Notice>}
 
 
@@ -1074,7 +1074,7 @@ function RoleDetail({ detail, summary, canWrite, canGrant, writeReason, approval
               </div>
             )}
             <div className="a6-action-group">
-              <span className="a6-action-cap">要另一位管理员批准</span>
+              <span className="a6-action-cap">要另一位超级管理员批准</span>
               <div className="a6-action-row">
                 {canGrant && <Button variant="primary" disabledReason={grantReason} onClick={onGrants}>改权限和菜单</Button>}
                 {canWrite && <Button variant="secondary" disabledReason={isSuperRole ? "超级管理员角色不能停用" : approvalReason} onClick={onStatus}>{detail.status === 1 ? "停用" : "启用"}</Button>}
