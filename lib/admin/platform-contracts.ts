@@ -1,3 +1,9 @@
+export class PlatformReadError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 /**
  * Mutation responses are resource-shaped (node/void), not overview-shaped.
  * Always re-read the authoritative overview after the write succeeds.

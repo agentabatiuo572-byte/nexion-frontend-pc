@@ -1,6 +1,6 @@
 "use client";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { G_PARAM_APPROVAL_RECOVERY, G_PARAM_RECOVERY, operatorCopyText } from "@/lib/admin/operator-copy";
 
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -34,7 +34,7 @@ import {
 import type { ActionConfirmReq } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
+import { gParamApprovalFeedback, gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { canRetryG7DirectCommand, g7DirectCommandExpired, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands, type G7DirectCommand } from "@/lib/admin/g7-direct-command";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { amountDisplay } from "@/lib/format";
@@ -217,7 +217,7 @@ function orderStatus(status: string) {
 
 /** 原申请记录的状态：标签、色调和气泡（G 域五页同一写法）。 */
 function recoveryTag(record: GParamRecovery) {
-  if (record.status === "unknown") return unknownTag("approval");
+  if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
   if (record.status === "pending") return pendingTag();
   if (record.status === "expired") return expiredTag("approval");
   return resolvedTag(record.status);
@@ -369,7 +369,7 @@ function G7RepurchasePage() {
         if (retry) await paramApproval.retry(obj);
         else if (!await paramApproval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
       } catch (err) {
-        toast(displayAdminError(err));
+        toast(gParamApprovalFeedback(err) ?? displayAdminError(err));
       } finally {
         setRecoverBusy(false);
       }
@@ -413,9 +413,9 @@ function G7RepurchasePage() {
       title={`参数修改的原操作 · ${rows.length} 项`}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
-        : "这些参数先只能核对（走审批的查询原操作，直接修改的读取当前配置），或在 24 小时内按原操作重试，不能改成别的值；其他参数照常可改。"}
+        : "走审批的先查询原操作，查无且符合条件才可重试。直接修改可读取当前配置核对。有结论前不能改成别的值，其他参数照常可改。"}
       explain={<>
-        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，和直接生效但没收到结果的修改。走审批的可以查询原审批单；直接修改的只能读取当前配置核对，现在的值证明不了原操作成没成。两种都可以在 24 小时内按原操作重试，不能改值。</p>
+        <p>这里列你在这台电脑上提交过、还没有结论的参数修改。{G_PARAM_RECOVERY}现在的配置值证明不了原直接修改是否生效。</p>
         <p>要改成别的值，等原操作有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
       </>} />;
   };
@@ -467,6 +467,8 @@ function G7RepurchasePage() {
       businessForm={mc.businessForm}
       reasonMax={mc.reasonMax}
       getPendingReason={mc.getPendingReason}
+      getPendingRecovery={() => mc.approvalObject === undefined ? undefined
+        : paramApproval.getPendingRecovery(mc.approvalObject, () => openActionConfirm(null))}
       getPendingBusinessValue={mc.getPendingBusinessValue}
       effect={mc.effect}
       facts={mc.facts}
@@ -543,9 +545,7 @@ function G7RepurchasePage() {
             <Fact k="什么时候生效">{directRecovery
               ? "提交结果未知，可能已经执行。可以在页面上方读取当前配置核对（现在的值证明不了原操作成没成），或在 24 小时内按原操作重试，不会重复执行。"
               : original
-              ? original.ticket?.status === "pending"
-                ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
-                : "原申请结果还没确认：有效期内按原操作重试，不会重复建单"
+              ? "已查不到原审批单，确认后按保存的原申请重试。"
               : !copy?.loosen
                 ? "确认后立即生效"
                 : loose === true
@@ -601,6 +601,7 @@ function G7RepurchasePage() {
         fields: [{ key: "g4Ref", label: "创世奖池核对编号", inputKind: "text", placeholder: "例如 POOL-2026-07", required: true, wide: true }],
       } : undefined,
       getPendingReason: () => directRecord(param.key)?.input.reason ?? paramApproval.getPendingReason(param.key),
+      approvalObject: param.key,
       getPendingBusinessValue: () => {
         const saved = directRecord(param.key);
         return saved ? { g4Ref: saved.input.g4Ref } : undefined;
@@ -763,7 +764,7 @@ function G7RepurchasePage() {
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
       : originalCount > 0
       ? <Conclusion state="warn" icon={Clock3}
-          hint="在下面逐条核对：走审批的查询原操作，直接修改的读取当前配置；24 小时内也可以按原操作重试。"
+          hint="在下面逐条核对。走审批的先查询原操作，直接修改的读取当前配置。"
           explain="提交过的参数修改还没有确定结论：有的在等另一位超级管理员审批，有的没收到结果。有结论之前这几项不能改成别的值，其他参数照常可改。">
           有 {fmtCount(originalCount)} 项参数修改还没有结论</Conclusion>
       : <Conclusion state="neutral" icon={Lock}
