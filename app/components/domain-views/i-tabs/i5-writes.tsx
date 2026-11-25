@@ -191,24 +191,15 @@ export function withConflict(ctx: Pick<ICtx, "openActionConfirm" | "closeActionC
 export type EditorSwitch = { attempt: (next: () => void) => void };
 
 /**
- * 有未保存内容时拦离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示；
- * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。
- * 有草稿时加一条同地址历史记录，后退先回到编辑器再询问；离开前退回原记录，继续原导航。
+ * 有未保存内容时浏览器后退先问（OP-29、OP-30）：加一条同地址历史记录，后退先回到这里，再交给 onBack 问。
+ * 返回的函数先退回原记录，再做接下来的事；放弃改动、保存后继续原导航都要经过它，不然会被这次退回抵消。
  */
-export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>) {
-  const router = useRouter();
-  const [asking, setAsking] = useState(false);
-  const nextAction = useRef<(() => void) | null>(null);
+export function useHistoryBackGuard(active: boolean, onBack: (resume: () => void) => void) {
+  const ask = useRef(onBack);
+  ask.current = onBack;
   const releaseHistory = useRef<((next?: () => void) => void) | null>(null);
   useEffect(() => {
-    switcher.current = { attempt: (next) => {
-      if (dirty) { nextAction.current = next; setAsking(true); }
-      else { close(); next(); }
-    } };
-    return () => { switcher.current = null; };
-  }, [dirty, close, switcher]);
-  useEffect(() => {
-    if (!dirty) return;
+    if (!active) return;
     let phase: "armed" | "restoring" | "releasing" = "armed";
     let afterRelease: (() => void) | undefined;
     // 保留 Next 的路由状态；副本只用来先拦住后退，不改 URL 和编辑器内容。
@@ -231,14 +222,39 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
         phase = "armed";
         // 上面还开着确认框（填理由、提交中）或离开框：后退先留在这里，由那个框处理完再走。
         if (document.querySelector('.rd-modal[data-state="open"]')) return;
-        nextAction.current = () => window.history.back();
-        setAsking(true);
+        ask.current(() => window.history.back());
       } else {
         phase = "restoring";
         window.history.forward();
       }
     };
     window.addEventListener("popstate", back, true);
+    return () => release();
+  }, [active]);
+  return useCallback((next: () => void) => {
+    if (releaseHistory.current) releaseHistory.current(next);
+    else next();
+  }, []);
+}
+
+/**
+ * 有未保存内容时拦离开（OP-29）：侧栏、面包屑、命令面板都是链接，抓在捕获阶段；关窗口走浏览器提示；
+ * 抽屉不挡列表，换草稿、新建、看别的版本要走 switcher，不能绕过这个框。浏览器后退走 useHistoryBackGuard。
+ */
+export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefObject<EditorSwitch | null>) {
+  const router = useRouter();
+  const [asking, setAsking] = useState(false);
+  const nextAction = useRef<(() => void) | null>(null);
+  const leaveHistory = useHistoryBackGuard(dirty, (resume) => { nextAction.current = resume; setAsking(true); });
+  useEffect(() => {
+    switcher.current = { attempt: (next) => {
+      if (dirty) { nextAction.current = next; setAsking(true); }
+      else { close(); next(); }
+    } };
+    return () => { switcher.current = null; };
+  }, [dirty, close, switcher]);
+  useEffect(() => {
+    if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -255,15 +271,12 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
     return () => {
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", intercept, true);
-      release();
     };
   }, [dirty, router]);
   const leave = (next: (() => void) | null, discard: boolean) => {
     nextAction.current = null;
     setAsking(false);
-    const go = () => { if (discard) close(); next?.(); };
-    if (releaseHistory.current) releaseHistory.current(go);
-    else go();
+    leaveHistory(() => { if (discard) close(); next?.(); });
   };
   return {
     asking,

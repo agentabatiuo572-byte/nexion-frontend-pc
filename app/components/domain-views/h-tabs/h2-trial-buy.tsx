@@ -17,6 +17,7 @@ import { buyProductReason, LISTING_BLOCKED, type BuyDevice, type BuyList, type B
 import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
+import { useHistoryBackGuard } from "../i-tabs/i5-writes";
 
 export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> & {
   added: string[];
@@ -186,6 +187,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const draftBlock = blocked ?? (invalidPicked ? INVALID_PICKED : changed ? undefined : "勾选和现在一样，没有要保存的改动");
 
   const dirty = !!draftBase && changed;
+  // 浏览器后退和换页一样先问（OP-29）；放弃或保存后要去的地方，等退回原记录再去。
+  const leaveHistory = useHistoryBackGuard(dirty, (resume) => { afterLeave.current = resume; setLeaving(true); });
   const openDrawer = () => {
     // 抽屉开着时「调整」仍可用键盘点到：有改动先问，不重置勾选。
     if (dirty) { afterLeave.current = undefined; setLeaving(true); return; }
@@ -195,7 +198,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const continueEditing = () => { afterLeave.current = undefined; setLeaving(false); };
   // 关闭、Esc、点抽屉外、取消：有改动先问（OP-29）。
   const leaveDrawer = () => { if (leaving) continueEditing(); else if (changed) { afterLeave.current = undefined; setLeaving(true); } else closeDrawer(); };
-  const discard = () => { const next = afterLeave.current; closeDrawer(); next?.(); };
+  const discard = () => { const next = afterLeave.current; leaveHistory(() => { closeDrawer(); next?.(); }); };
   useEffect(() => {
     if (!dirty) return;
     const leaveThen = (next: () => void) => { afterLeave.current = next; setLeaving(true); };
@@ -311,9 +314,11 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       }
       // 从「还没保存」里选了保存：存好后接着做原来要做的（换页，或整页刷新，刷新自带读回）。
       const proceed = afterLeave.current;
-      closeDrawer();
-      if (proceed) proceed();
-      else await onReload().catch(() => undefined);
+      if (proceed) leaveHistory(() => { closeDrawer(); proceed(); });
+      else {
+        closeDrawer();
+        await onReload().catch(() => undefined);
+      }
       ctx.toast(BUY_SAVED, "success");
     };
     ctx.openActionConfirm({

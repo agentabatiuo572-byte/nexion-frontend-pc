@@ -21,6 +21,7 @@ import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
+import { useHistoryBackGuard } from "../i-tabs/i5-writes";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pending } from "./e2-pending";
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
@@ -288,6 +289,8 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       next();
     }
   }, [editorDirty]);
+  // 浏览器后退和点链接一样先问（OP-29）；放弃或保存后要去的地方，等退回原记录再去。
+  const leaveHistory = useHistoryBackGuard(editorDirty, leaveEditorThen);
 
   useEffect(() => {
     if (!editorDirty) return;
@@ -313,8 +316,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   function finishEditor() {
     const next = afterEditorLeave.current;
     afterEditorLeave.current = null;
-    setEditor(null);
-    next?.();
+    leaveHistory(() => { setEditor(null); next?.(); });
   }
 
   function selectPool(code: string, focus = false) {
