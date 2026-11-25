@@ -70,9 +70,10 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       expiry: "load-latest",
       onLocalRelease: () => { setReason(""); setConfirm(false); setError(""); },
       readAfterExpiry: async record => {
-        const value = await supportWelcomeMessageClient.read();
+        const [value, required] = await Promise.all([supportWelcomeMessageClient.read(), getRequiredContentLanguages()]);
         return () => {
           refused.current = undefined;
+          setRequiredLanguages(required);
           setCurrent(value);
           setDraft({ ...record.payload.texts, ...record.before?.editedTexts });
           setReason(""); setLatest(null); setSaved(false); setConflict(false);

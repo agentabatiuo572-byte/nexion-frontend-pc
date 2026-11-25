@@ -100,7 +100,8 @@ function rebaseFaqDraft(before: SupportFaq, proposed: SupportFaq, latest: Suppor
 export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: string; summary: string; loadError: string | null }) {
   const { pget, toast, openActionConfirm } = ctx;
   const actorId = useAdminAuth((state) => state.session?.adminId);
-  const [needsRead, setNeedsRead] = useState(false);
+  const [knowledgeRead, setKnowledgeRead] = useState<"idle" | "reading" | "failed">("idle");
+  const needsRead = knowledgeRead !== "idle";
   const [pendingCommands, setPendingCommands] = useState<MCommandRecord[]>([]);
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState<MCommandRecord | null>(null);
@@ -173,14 +174,15 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   useEffect(() => { closeWriteDialogs(); }, [actorId]);
   const readCurrent = async (reportError = true) => {
     const epoch = useAdminAuth.getState().authEpoch;
+    setKnowledgeRead("reading");
     try {
       const rows = await ctx.refreshKnowledge();
       if (epoch !== useAdminAuth.getState().authEpoch) return;
-      setNeedsRead(false);
+      setKnowledgeRead("idle");
       return rows;
     } catch (error) {
       if (epoch !== useAdminAuth.getState().authEpoch) return;
-      setNeedsRead(true);
+      setKnowledgeRead("failed");
       if (reportError) toast(displayAdminError(error), "warn");
     }
   };
@@ -214,7 +216,6 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         if (rejected) {
           mCommands.forget(fingerprint, commandKey);
           syncPending();
-          setNeedsRead(true);
           await readCurrent();
         } else setRecovery(record);
         const refusedReplay = original && m4FaqRecovery.state(original).replayRejection;
@@ -226,7 +227,6 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
       if (!stillCurrent()) return false;
       // The validated write receipt settles the command. The overview separately
       // gates new writes until the current data can be read.
-      setNeedsRead(true);
       m4FaqRecovery.settleAcknowledged(record);
       syncPending();
       closeWriteDialogs();
@@ -374,7 +374,6 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
     const command = record.faq;
     if (!command) return;
     const epoch = useAdminAuth.getState().authEpoch;
-    setNeedsRead(true);
     const latest = await readCurrent();
     if (!latest || epoch !== useAdminAuth.getState().authEpoch || !faqSession(command.actorId)) return;
     if (conclusion === "succeeded" && !faqWriteReadBack(command, latest)) return;
@@ -471,8 +470,8 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const unreachable = published.filter((faq) => !reachesUsers(faq));
   const byLanguage = M4_LANGUAGES.map((language) => ({ name: language.name, count: published.filter((faq) => faq.language === language.code).length })).filter((row) => row.count > 0);
   const otherLanguage = published.filter((faq) => !M4_LANGUAGES.some((language) => language.code === faq.language)).length;
-  const loading = !knowledgeAvailable && ctx.contentLoading;
-  const failed = !knowledgeAvailable && !ctx.contentLoading;
+  const loading = !knowledgeAvailable && (knowledgeRead === "reading" || ctx.contentLoading);
+  const failed = !knowledgeAvailable && !loading;
   const toggleStatus = (status: SupportFaq["status"]) => setStatusFilter((current) => current === status ? "all" : status);
   const languageOptions = [...M4_LANGUAGES.map((language) => language.code), ...new Set(visibleFaqs.map((faq) => faq.language).filter((code) => !M4_LANGUAGES.some((language) => language.code === code)))];
 
