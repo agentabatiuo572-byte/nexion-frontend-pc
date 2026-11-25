@@ -148,7 +148,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
       if (controller.signal.aborted || isSupportSessionExpired(error)) return;
       if (isExportPermissionDenied(error)) { permissionLost(); return; }
       setRows(null);
-      setReadError(displayAdminReadError(error));
+      setReadError(displayAdminReadError(error) || "导出记录没加载出来，请重试。");
     }).finally(() => {
       if (controller.signal.aborted) return;
       setRefreshing(false);
