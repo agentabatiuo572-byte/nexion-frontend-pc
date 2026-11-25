@@ -536,7 +536,7 @@ export default function DualLedgerPage() {
     finally { syncPending(); }
   };
   const unregisteredNotices = unregistered.map(({ record, why }) => <Notice key={record.commandKey} tone="warn" title="没有登记储备注入" actionBelow
-    action={<>{reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link>}
+    action={<>{reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link>}
       <Button size="sm" variant="ghost" onClick={() => setUnregistered(rows => rows.filter(row => row.record.commandKey !== record.commandKey))}>知道了</Button></>}>
     <p>{why}要登记的，到资金储备与应付款重新登记。</p>
     <Facts>
@@ -566,7 +566,7 @@ export default function DualLedgerPage() {
       onRelease: record.kind !== "injection" && recovery.replayRejection ? () => setReleasing(record) : undefined,
       queryLabel: record.kind !== "injection" ? READ_CURRENT_VALUE : undefined,
       queryHref: injectionPage ? "/finance/pool" : undefined,
-      queryHrefLabel: "去资金储备与应付款 →",
+      queryHrefLabel: "去资金储备与应付款 →",
       onQuery: injection ? canReadInjectionReceipt ? () => void queryInjection(record) : undefined
         : () => void readCurrentForWrite(record),
     };
@@ -610,7 +610,7 @@ export default function DualLedgerPage() {
   // ---------- 结论 ----------
   const alertActive = valuationReliable && zone !== "success";
   const withdrawalsLink = reach("/finance/withdrawals") && !alertAcked && (
-    <Link href="/finance/withdrawals" prefetch={false} className="rd-btn" data-variant={zone === "danger" ? "danger-outline" : "secondary"} data-size="md"><span className="rd-btn-face">去提现审核 →</span></Link>
+    <Link href="/finance/withdrawals" prefetch={false} className="rd-btn" data-variant={zone === "danger" ? "danger-outline" : "secondary"} data-size="md"><span className="rd-btn-face">去提现审核 →</span></Link>
   );
   const ackButton = alertActive && !alertAcked && canAcknowledge && (
     <Button disabledReason={newWriteBlocked || pendingWrites.some(record => record.kind === "ack") ? "请先重新读取并核对原操作，再发起新修改。" : undefined} onClick={() => setActionConfirm(command("ack"))}>标记已处理</Button>
@@ -738,10 +738,10 @@ export default function DualLedgerPage() {
           },
         ]} />
         {reserveLink && (
-          <nav className="rd-links" aria-label="储备注入"><span>储备注入</span><Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link></nav>
+          <nav className="rd-links" aria-label="储备注入"><span>储备注入</span><Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link></nav>
         )}
         {reach("/emergency/kill-switch") && (
-          <nav className="rd-links" aria-label="紧急处理"><span>紧急处理</span><Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关 →</Link></nav>
+          <nav className="rd-links" aria-label="紧急处理"><span>紧急处理</span><Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关 →</Link></nav>
         )}
       </div>
     </Panel>

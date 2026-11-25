@@ -729,7 +729,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       <p>异常样本从最近 200 条奖励里挑出来；待追回、已冻结算全部记录，这三项不跟下方筛选变。等价格跟着类型、用户和注册月份筛选变，选了状态时不显示。</p>
       <p>提交的处置要{APPROVER}在「操作记录与审批」批准；这页显示读到的本人待审批申请。</p>
     </>;
-    const approvals = awaiting && canReadA2 ? <span className="f5-awaiting">{awaiting} 条处置待审批 · <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>去操作记录与审批 →</Link></span> : undefined;
+    const approvals = awaiting && canReadA2 ? <span className="f5-awaiting">{awaiting} 条处置待审批 · <Link className="rd-link" href="/platform/audit?domain=F" prefetch={false}>去操作记录与审批 →</Link></span> : undefined;
     if (!parts.length) return <Conclusion state="ok" hint={hint} explain={explain} action={approvals}>没有异常样本、待追回和冻结中的奖励</Conclusion>;
     return <Conclusion state="warn" hint={hint} explain={explain}
       action={<>{anomalies ? <Button size="sm" onClick={() => setTab("anomalies")}>看异常样本</Button> : null}

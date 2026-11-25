@@ -129,7 +129,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
     {Number.isFinite(draft[key].usdtSharePct) && draft[key].usdtSharePct >= 0 && draft[key].usdtSharePct <= 100 &&
       <RatioBar label={`${label}币种比例`} value={draft[key].usdtSharePct} total={100} tone="role-2" valueText={`USDT ${num(draft[key].usdtSharePct)}%，UVT ${num(100 - draft[key].usdtSharePct)}%`} quiet />}
   </>;
-  const f1Link = canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : null;
+  const f1Link = canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : null;
 
   return (
     <Panel id="f2-friend" aria-label="好友奖励设置" title="好友奖励政策" icon={HandCoins} tone="role-2"

@@ -336,7 +336,7 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
                   {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
                 </span></Td>
                 <Td align="right"><span className="f2-row-actions">
-                  {noRateSource(level) && direct ? <span className="f2-fixed">—</span> : byRank ? canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : <span className="f2-fixed">在团队等级晋升设置</span>
+                  {noRateSource(level) && direct ? <span className="f2-fixed">—</span> : byRank ? canOpenF1 ? <Link className="rd-link" href="/network/v-rank" prefetch={false}>去团队等级晋升 →</Link> : <span className="f2-fixed">在团队等级晋升设置</span>
                     : direct ? <span className="f2-fixed">比例固定<Explain label="第 1 层比例为什么改不了" content="第 1 层 USDT 比例固定 10%，后台不能改；启用整体结算时要求它是 10%。" /></span>
                     : m.canRoyaltyRate && <Button size="sm" aria-label={`调整 ${level} USDT 比例`} disabledReason={missingRuleReason ?? (usdtPending ? "等另一位超级管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.${level}`))} onClick={() => openRate(level)}>{rate ? "改比例" : "设置比例"}</Button>}
                   {m.canRoyaltyRate && (!nexLocked ? <Button size="sm" aria-label={`调整 ${level} UVT 系数`} disabledReason={missingRuleReason ?? (nexPending ? "等另一位超级管理员批准" : ctx.f2WriteBlocked(`f-config:F.unilevel.nex.${level}`))} onClick={() => openNex(level)}>改系数</Button>

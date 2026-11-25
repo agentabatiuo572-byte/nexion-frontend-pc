@@ -274,7 +274,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   const tabBar = <>
     <div className="f1-tabs-row"><PageTabs label="团队等级晋升" value={view} items={tabs} onChange={setView} ids={ids} /></div>
-    {v8Ready && <p className="f1-tabs-note">有 V7 已满足 V8 数值条件，等审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
+    {v8Ready && <p className="f1-tabs-note">有 V7 已满足 V8 数值条件，等审核 · <button type="button" className="rd-link" onClick={() => setView("v8")}>去 V8 审核 →</button></p>}
   </>;
 
   if (rows.length === 0) {
@@ -776,7 +776,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
       sub={`${fmt(row.pop)} 人 · 占 ${pct(row.pop, total)}`} icon={Layers3} tone="role-3"
       explain={top ? "左边是升到 V8 要满足什么，右边是 V8 拿什么。V8 不自动晋级，审核后人工升级。" : "左边是升到这一级要满足什么，右边是升到这一级拿什么。用户每次被评估最多升一级，所以不能跳过这一级。"}>
       {hasPendingApproval && <Notice tone="warn" title={`${row.v} 有一张待审批的申请`}
-        action={canOpenA2 ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看 →</Link> : undefined}>批准、驳回或撤回前，这一级的条件、权益和晋级奖励都改不了。</Notice>}
+        action={canOpenA2 ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批查看 →</Link> : undefined}>批准、驳回或撤回前，这一级的条件、权益和晋级奖励都改不了。</Notice>}
       <div className="rd-split f1-detail-split">
         <Panel plain headingLevel={3} title="晋升条件" icon={Lock} tone="role-4" sub={top ? "4 项数值 · 2 项人工审核" : `${needCount} 项`}
           explain={top
@@ -821,7 +821,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
             })()}
             {top && <ConfigRow name="审核时另看" what="两项都是 App 展示的固定文案，系统不记录。" where="App 我的等级 › V8 晋升条件"
               note="推荐信来自哪位 V8、官方审核的依据，写进「审核通过」的理由。" value={<span className="f1-text-value">{V8_TERMS.join("、")}</span>}
-              action={onGoV8 ? <span className="f1-row-actions"><button type="button" className="rd-link" onClick={onGoV8}>去 V8 审核 →</button></span> : undefined} />}
+              action={onGoV8 ? <span className="f1-row-actions"><button type="button" className="rd-link" onClick={onGoV8}>去 V8 审核 →</button></span> : undefined} />}
           </ConfigList>
         </Panel>
         <Panel plain headingLevel={3} className="f1-benefits" title="等级权益" icon={Sparkles} tone="role-1" sub={`${(salaryPresent ? 3 : 2) + (top ? 1 : 0)} 项`}

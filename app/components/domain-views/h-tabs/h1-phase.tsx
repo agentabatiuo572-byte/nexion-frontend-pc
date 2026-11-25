@@ -946,7 +946,7 @@ export default function H1Phase({ ctx,
 
   return <>
     <PageHeader pageId="H1" title="运营阶段设置" summary={`安排运营月份和每月生效的参数。${!canWrite && !canControl && !canRevoke ? "你只能查看。" : ""}`} meta={readAt ? `${formatBusinessTimeCompact(readAt)} 读取（${businessZone().label}）` : undefined}
-      actions={<>{reach("/overview/rhythm", "overview_b4_read") ? <Link className="rd-link" href="/overview/rhythm" prefetch={false}>去运营阶段状态 →</Link> : <span className="h1-access-note">运营阶段状态 · 无访问权限</span>}<Button icon={<RefreshCw size={14} />} loading={loading} onClick={async () => {
+      actions={<>{reach("/overview/rhythm", "overview_b4_read") ? <Link className="rd-link" href="/overview/rhythm" prefetch={false}>去运营阶段状态 →</Link> : <span className="h1-access-note">运营阶段状态 · 无访问权限</span>}<Button icon={<RefreshCw size={14} />} loading={loading} onClick={async () => {
         if (await reload()) ctx.toast("已刷新",
           "success");
       }}>刷新数据</Button>
