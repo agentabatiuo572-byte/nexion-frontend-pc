@@ -15,6 +15,7 @@ import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
+import { isSupportSessionExpired } from "@/lib/admin/m-support-client";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { businessZone } from "@/lib/admin/business-time";
@@ -260,8 +261,9 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         else await sendM4FaqCommand(command, commandKey);
       } catch (error) {
         if (!stillCurrent()) return false;
-        const rejected = !original && error instanceof MContentReadError && !error.backendMessage?.startsWith("IDEMPOTENCY_")
-          && isDeterministicRejection(error.status, error.apiCode);
+        // 登录过期说明不了原操作有没有执行，保留原记录（和客服其他入口一致）。
+        const rejected = !original && error instanceof MContentReadError && !isSupportSessionExpired(error)
+          && !error.backendMessage?.startsWith("IDEMPOTENCY_") && isDeterministicRejection(error.status, error.apiCode);
         let latest: SupportFaq[] | undefined;
         if (rejected) {
           mCommands.forget(fingerprint, commandKey);
@@ -356,7 +358,16 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
   const changeFaqStatus = async (id: string, status: SupportFaq["status"], onFailure: (error: Error) => void) => {
     if (recovery) return retryOriginal(recovery, onFailure);
     const before = faqs.find((faq) => faq.id === id);
-    if (!before || !actorId || !statusTarget || before.version !== statusTarget.version || before.status !== statusTarget.status) return false;
+    if (!actorId || !statusTarget) return false;
+    if (!before || before.status !== statusTarget.status) {
+      onFailure(new Error(before ? "这条问答的状态刚变过，请关闭后看最新状态。" : GONE_TEXT));
+      return false;
+    }
+    if (before.version !== statusTarget.version) {
+      setStatusTarget(before);
+      onFailure(new Error("这条问答刚被别人改过，已换成最新内容，核对后重新确认。"));
+      return false;
+    }
     const row = { ...before, status };
     return commitM4Write(buildM4FaqCommand(status === "published" ? "publish" : "unpublish", row, before,
       status === "published" ? "常见问答 发布例行审核留档" : "常见问答 下架例行审核留档", actorId),
@@ -416,8 +427,13 @@ export function M4KbSla({ ctx, title, summary, loadError }: { ctx: MCtx; title: 
         const onFailure = (error: Error) => { deleteFailure.current = error; };
         if (saved) return retryOriginal(saved, onFailure);
         const fresh = currentFaq();
-        if (!actorId || blocked(faq.id, mCommands.list()) || !fresh) return false;
+        if (!actorId || blocked(faq.id, mCommands.list())) return false;
+        if (!fresh) {
+          onFailure(new Error(GONE_TEXT));
+          return false;
+        }
         if (fresh.version !== faq.version || fresh.status !== faq.status) {
+          onFailure(new Error("这条问答刚被别人改过，已换成最新内容，核对后重新确认。"));
           requestDeleteFaq(fresh);
           return false;
         }

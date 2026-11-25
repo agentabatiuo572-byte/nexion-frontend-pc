@@ -14,7 +14,7 @@ import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messa
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { userNicknameText } from "@/lib/admin/brand-copy";
-import { supportClient, isSupportScopeDenial, supportAssignmentChanged, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { supportClient, isSupportScopeDenial, isSupportSessionExpired, supportAssignmentChanged, supportCustomerNotFound, querySupportMessage, SupportClientError, readSupportPoolCustomer, isIndeterminateSupportError, supportAttachmentUnavailableText, supportSessionBusy, agentSwitchText, SUPPORT_SESSION_ROLE_LABEL, type SupportAttachmentPolicy, type SupportCustomerDetail, type SupportReadMode, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { fetchMConversationDetail, markM3MessagePageRead, resolveMConversationContinuation, fetchMConversationTimeoutPolicy, updateMConversationTimeoutPolicy, parseMConversationTimeoutPolicy, type ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 import { businessClock, businessStamp, businessZone, parseBusinessTime } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -102,8 +102,6 @@ const rejectedSupportWrite = (cause: unknown) => cause instanceof SupportClientE
   && cause.status !== 404
   && isExplicitRejection(cause)
   && !isIndeterminateSupportError(cause);
-const supportCustomerNotFound = (cause: unknown) => cause instanceof SupportClientError
-  && cause.status === 404 && cause.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND";
 const conversationPeerChanged = (cause: unknown) => cause instanceof SupportClientError
   && cause.status === 409 && cause.backendMessage === "CONVERSATION_PEER_CHANGED";
 
@@ -151,7 +149,7 @@ function PrivateImage({ id, onRevoked }: { id: string; onRevoked: () => void }) 
       if (controller.signal.aborted) return;
       objectUrl = URL.createObjectURL(blob);
       setUrl(objectUrl);
-    }).catch((cause: unknown) => { if (!controller.signal.aborted) { if (lostPermission(cause)) onRevokedRef.current(); else setError(displayAdminError(cause)); } });
+    }).catch((cause: unknown) => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) { if (lostPermission(cause)) onRevokedRef.current(); else setError(displayAdminError(cause)); } });
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [id, retry]);
   if (error) return <span role="alert">图片暂无法查看：{error} <Button size="sm" onClick={() => setRetry((value) => value + 1)}>重试</Button></span>;
@@ -513,9 +511,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     setRestoredId(current => current === no ? "" : current);
     ctx.invalidateScope(no, customerId, notice ? { text: notice, page: "M3" } : undefined);
   }, [ctx.invalidateScope]);
-  const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, (no, customerId, status) => {
-    if (status === 401) ctx.invalidateScope(no, customerId);
-    else leaveUnavailableConversation(no, customerId, CONTINUATION_REASSIGNED);
+  const messagePages = useM3MessagePages(qualificationUnknown || !conversationsAvailable ? null : selectedSummary, pageScope, messageOpening, (no, customerId) => {
+    leaveUnavailableConversation(no, customerId, CONTINUATION_REASSIGNED);
   }, ctx.loadConversationDetail);
   const pageConversation = messagePages.page?.conversation.id === selectedSummary?.id ? messagePages.page?.conversation : null;
   const selected = selectedSummary ? { ...selectedSummary, ...(pageConversation ?? {}),
@@ -1194,7 +1191,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       }
       setFirstDetail({ ...result, revision: snapshotRevision });
     }).catch((cause: unknown) => {
-      if (controller.signal.aborted || requestStamp !== identityRef.current) return;
+      if (controller.signal.aborted || requestStamp !== identityRef.current || isSupportSessionExpired(cause)) return;
       if (lostPermission(cause)) {
         revokeCustomer(requestedCustomerId, true);
       }
@@ -1218,9 +1215,11 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       }
       setProfileDetail({ ...detail, revision: snapshotRevision });
     }).catch((cause: unknown) => {
-      if (controller.signal.aborted || requestStamp !== identityRef.current) return;
+      if (controller.signal.aborted || requestStamp !== identityRef.current || isSupportSessionExpired(cause)) return;
       if (checkingContinuation.current === selected.id && supportCustomerNotFound(cause)) {
         leaveUnavailableConversation(selected.id, selected.customerId, CONTINUATION_REASSIGNED);
+      } else if (supportCustomerNotFound(cause)) {
+        ctx.invalidateScope(selected.id, String(selected.customerId), { text: "你没有查看这位客户的权限", page: "M3" });
       } else if (lostPermission(cause)) {
         ctx.invalidateScope(selected.id, String(selected.customerId));
       } else setProfileError(displayAdminError(cause));
@@ -1930,7 +1929,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
       if (stamp !== timeoutIdentityRef.current) return false;
       setTimeoutPolicy(next); setTimeoutInput(undefined); pendingTimeoutPolicies.forget(timeoutSlot); return true;
     } catch (cause) {
-      if (stamp !== timeoutIdentityRef.current) return false;
+      if (stamp !== timeoutIdentityRef.current || isSupportSessionExpired(cause)) return false;
       const status = cause instanceof SupportClientError ? (cause.status >= 200 && cause.status < 300 ? cause.apiCode : cause.status) : undefined;
       if (submitted) {
         setTimeoutPending(null); setTimeoutInput(undefined);

@@ -1,3 +1,5 @@
+import { isAdminAuthFailure } from "./auth-session.ts";
+
 export type MTicketAssigneeCandidate = {
   adminId: number;
   name: string;
@@ -166,7 +168,7 @@ export function parseMContentApiEnvelope<T>(status: number, text: string, requir
   }
   const code = Number.isSafeInteger(rawPayload.code) ? Number(rawPayload.code) : undefined;
   const backendMessage = typeof rawPayload.message === "string" ? rawPayload.message : undefined;
-  if (!httpOk || (code !== undefined && code >= 400)) {
+  if (!httpOk || isAdminAuthFailure(status, backendMessage) || (code !== undefined && code >= 400)) {
     throw new MContentReadError(status, code, backendMessage, `CONTENT_API_${status}`, rawPayload.data);
   }
   if (code !== 0 || (requireData && !Object.prototype.hasOwnProperty.call(rawPayload, "data"))) {

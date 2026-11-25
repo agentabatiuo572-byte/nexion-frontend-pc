@@ -281,7 +281,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         {permission === "supervisor" && <Notice tone="neutral">只有超级管理员能改服务规则，你现在只能查看。</Notice>}
         {loading && !current && <BlockState state="loading" title="正在读取服务规则…" />}
         {saved && <Notice tone="ok">已保存。</Notice>}
-        {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则读不到，暂时不能查看和保存" detail={error || undefined} onRetry={() => setReload((n) => n + 1)} />}
+        {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则加载失败" detail={`${error ? `${error} ` : ""}暂时不能查看和保存。`} onRetry={() => setReload((n) => n + 1)} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
         {draft && current && !(readUnavailable && !retry) && <div className="m5-form">
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"

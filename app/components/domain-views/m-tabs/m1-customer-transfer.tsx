@@ -280,7 +280,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       {view && <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={recoveryState?.replayRejection || recoveryState?.expired ? <MAuditLink /> : undefined}><p>{view.line}</p><p>原转绑已锁定，不能修改。</p></Notice>}
       <Facts><Fact k="客户">{pending.customerName ?? customerId}</Fact><Fact k="专属客服变更"><Change from={pending.fromName ?? "原专属客服"} to={pending.targetName ?? `专属客服 ${pending.payload.targetAgentAdminId}`} /></Fact><Fact k="理由">{pending.payload.reason}</Fact></Facts><Fold inset title="技术信息" summary="原请求编号与绑定版本"><Facts><Fact k="原请求编号"><span data-mono>{pending.commandKey}</span></Fact><Fact k="绑定版本">{String(pending.payload.customers[0].expectedVersion)}</Fact></Facts></Fold>
     </> : denied ? <Notice tone="danger">{denied}</Notice>
-      : loadError ? <BlockState state="error" title={loadError} onRetry={() => setReload((value) => value + 1)} />
+      : loadError ? <BlockState state="error" title="客户归属加载失败" detail={loadError} onRetry={() => setReload((value) => value + 1)} />
       : !detail || !targets ? <BlockState state="loading" title="正在加载客户归属和可接待的专属客服…" />
       : <>
         <Facts><Fact k="客户">{detail.displayName || detail.customerNo || detail.customerId}</Fact><Fact k="用户编码"><span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact><Fact k={chosen ? "专属客服变更" : "当前专属客服"}>{chosen ? <Change from={detail.agentName ?? "当前专属客服"} to={<span className="s5a-transfer-effect"><SupportAvatar name={chosen.name} path={chosen.avatarAssetId ? advisorAvatarPath(chosen.adminId) : undefined} version={chosen.avatarVersion} size={20} />{chosen.name}</span>} /> : detail.agentName ?? "资料未知"}</Fact></Facts>

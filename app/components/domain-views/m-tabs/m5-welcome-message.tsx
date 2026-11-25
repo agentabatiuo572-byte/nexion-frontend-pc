@@ -158,7 +158,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       }
       setError(""); setReadUnavailable(false);
       setReason(pending?.payload.reason ?? "");
-    }).catch(() => { if (!controller.signal.aborted) { setReadUnavailable(true); setError("新用户欢迎语暂时加载不了，请重试。"); } })
+    }).catch((cause: unknown) => { if (!controller.signal.aborted) { setReadUnavailable(true); setError(displayAdminReadError(cause)); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [permission, reload, adminId]);
@@ -259,7 +259,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
         {permission !== "superadmin" && <Notice tone="neutral">只有超级管理员能改欢迎语，你现在只能查看。</Notice>}
         {loading && !current && <BlockState state="loading" title="正在读取欢迎语…" />}
         {saved && <Notice tone="ok">已保存。之后注册的用户会收到新内容。</Notice>}
-        {!loading && (!current || readUnavailable) && <BlockState state="error" title="新用户欢迎语读不到" detail="暂时不能查看和修改。"
+        {!loading && (!current || readUnavailable) && <BlockState state="error" title="新用户欢迎语加载失败" detail={`${error ? `${error} ` : ""}暂时不能查看和修改。`}
           onRetry={loadExpired ? () => void reloadAfterExpiry() : () => setReload((n) => n + 1)}
           retryLabel={loadExpired ? "加载最新内容" : undefined} retrying={loadExpired && saving} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={errorTone}>{command.message || error}</Notice>}
