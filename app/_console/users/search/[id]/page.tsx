@@ -957,7 +957,7 @@ export default function UserDetailPage() {
       }
     };
     const [listed, scanned] = await Promise.allSettled([fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10), scan()]);
-    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentError(null); } else setPaymentError(displayAdminError(listed.reason));
+    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
     setRevokeScan(scanned.status === "fulfilled" ? scanned.value : null);
     setRevokeScanFailed(scanned.status === "rejected");
     setPaymentLoading(false);

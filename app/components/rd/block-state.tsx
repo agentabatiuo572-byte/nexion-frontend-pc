@@ -89,6 +89,8 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
     armed.current = null;
     pendingRetry = null;
     if (failed && (inside || focusLost())) retryButton.current?.focus({ preventScroll: true });
+    // 这一块还在，但结果换成了没有「重试」的样子（重读后变成无权限）：焦点留在这一块，不掉到页面上。
+    else if (!failed && focusLost()) box.current?.focus({ preventScroll: true });
   });
   useLayoutEffect(() => {
     // 重读时这一块被换掉、仍失败时在同一区域重新挂上：新的这一块接住焦点。

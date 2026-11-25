@@ -139,6 +139,9 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
       // 关掉的时候焦点已经在另一个还开着的框里（旧抽屉退出动画还没完，新抽屉已经打开并接了焦点）：不动它。
       const holder = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>(".rd-modal, .rd-drawer") : null;
       if (holder && holder !== self && holder.getAttribute("data-state") === "open") return;
+      // 关掉的时候焦点已经在页面上别的控件里（抽屉开着时 Tab 到页面，在那里按 Esc）：留在那里，不拉回原来那一行（ST-56）。
+      const elsewhere = document.activeElement;
+      if (elsewhere instanceof HTMLElement && elsewhere !== document.body && elsewhere.isConnected && !holder) return;
       const top = openOverlay(self);
       // 都找不到时回到还开着的最上层框，不落到页面上。
       const next = latest.current() ?? top;
@@ -345,8 +348,15 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           }}
           onPointerUp={(event) => notePick(event.target)}
           onKeyDown={(event) => {
-            // 回车、空格选中；分段用方向键直接选中，下拉里的方向键只是移动高亮，不算。
-            if (event.key === "Enter" || event.key === " " || event.key.startsWith("Arrow") && event.target instanceof Element && event.target.closest('[role="radio"]')) notePick(event.target);
+            // 回车、空格选中；分段用方向键、Home、End 直接选中，下拉里的方向键只是移动高亮，不算。
+            const target = event.target instanceof Element ? event.target : null;
+            if (event.key === "Enter" || event.key === " " || (event.key.startsWith("Arrow") || event.key === "Home" || event.key === "End") && target?.closest('[role="radio"]')) notePick(target);
+            // 这两种选中不落在选项上：搜索选择在输入框里按回车选中高亮的候选；收起的下拉按字母直接换值。
+            if (event.key === "Enter" && target?.matches('input[role="combobox"][aria-expanded="true"]')
+              || event.key.length === 1 && event.key !== " " && !event.ctrlKey && !event.metaKey && !event.altKey && target?.matches('button[role="combobox"]')) {
+              picked.current = typed.current = true;
+              setEscHinted(false);
+            }
           }}
           onBlur={(event) => { focusTarget.current = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null; }}
           onFocus={(event) => {
