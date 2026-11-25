@@ -2697,7 +2697,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />,
     };
     const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
-    const belowRedline = !!coverage && coverage.coverageRatio < coverage.redlinePct;
+    const belowRedline = !!coverage && (coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct);
     return {
       briefKind,
       title: "批准审批单",

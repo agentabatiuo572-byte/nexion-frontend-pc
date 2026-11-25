@@ -46,11 +46,12 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
   const session = useAdminAuth(state => state.session);
   const bDomain = useBDomainDashboard(tab === "A2" && B_DASHBOARD_READ_AUTHORITIES.every(authority => session?.authorities.includes(authority)));
   const coverage = bDomain.hasData && !bDomain.error && bDomain.ledger.valuationReliable
-    ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, healthyPct: bDomain.ledger.healthyPct }
+    ? { coverageRatio: bDomain.ledger.coverageRatio, redlinePct: bDomain.ledger.redlinePct, healthyPct: bDomain.ledger.healthyPct, redlineBreached: bDomain.ledger.redlineBreached }
     : undefined;
   const h5CoverageBlock = bDomain.loading || !coverage || coverage.coverageRatio <= 0 || coverage.redlinePct <= 0
     ? "兑付覆盖率还没读到，刷新后才能批准。"
-    : coverage.coverageRatio < coverage.redlinePct ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined;
+    // 是否突破红线以后端按原额比较的 redlineBreached 为准，两位百分比贴线时会四舍五入成「达线」。
+    : coverage.redlineBreached || coverage.coverageRatio < coverage.redlinePct ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined;
 
   const ctx: ACtx = {
     toast: setToast,
