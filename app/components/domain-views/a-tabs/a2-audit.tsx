@@ -275,8 +275,9 @@ function F2LayerLimitNotice({ level, after }: { level: string; after: string }) 
     let active = true;
     void fetchF2RatesOverview().then((overview) => {
       if (!active) return;
-      const rates = overview.unilevel;
-      setRead({ readerId, known: rates.length === 7, issue: rates.length === 7 ? f2AppLimitIssue(rates.map((row) => row.l === level ? after.trim().replace(/%$/, "") : row.usdtText ?? "0")) : undefined });
+      const rates = overview.unilevel, next = after.trim().replace(/%$/, "").trim();
+      const known = rates.length === 7 && next !== "" && Number.isFinite(Number(next));
+      setRead({ readerId, known, issue: known ? f2AppLimitIssue(rates.map((row) => row.l === level ? next : row.usdtText ?? "0")) : undefined });
     }).catch(() => { if (active) setRead({ readerId, known: false }); });
     return () => { active = false; };
   }, [readerId, level, after]);
@@ -452,9 +453,9 @@ const PAGE_COVERAGE_COPY = "页面读到的兑付覆盖率低于红线时不能�
 const F2_POLICY_COVERAGE = "批准时先查兑付覆盖率：读不到或低于红线就不执行，审批单留着待审批。";
 // F3 自动发放、全平台封顶：批准时读不到覆盖率也拦（BinarySettlementPolicyProvider.currentCoverageBlock）；其余放宽类 F 键只比红线（OpsTeamService.coverageBelowRedline），读不到不拦。
 const F3_PAYOUT_COVERAGE = "批准时先查兑付覆盖率：读不到或低于红线就不改，审批单留着待审批。";
-/** 开启自动发放：没有「调高、调低」的方向，不按「多付钱」写。 */
 /** 改 F2 单层 USDT 比例的单：返回是哪一层。 */
 const f2RateLevel = (fund: FundTicket | undefined) => fund?.kind === "fConfig" ? /^F\.unilevel\.(L[1-7])$/.exec(fund.key)?.[1] : undefined;
+/** 开启自动发放：没有「调高、调低」的方向，不按「多付钱」写。 */
 const enablesAutoPayout = (fund: FundTicket | undefined) => fund?.kind === "fConfig" && fund.spec?.payoutControlAmplification === "enable";
 function coverageFacts(w: { operationCode?: string | null; obj?: string; after?: string; action?: string }) {
   const fund = fundTicket(w);
