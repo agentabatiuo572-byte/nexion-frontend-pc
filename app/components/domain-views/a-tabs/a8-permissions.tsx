@@ -146,7 +146,8 @@ export default function A8Permissions() {
     if (!card) return;
     failFocus.current = null;
     const active = document.activeElement;
-    if (active && active !== document.body && active.isConnected) return;
+    // 焦点还停在触发这次读取的页头「刷新」上也交给「重试」（刷新现在一直挂着，R2F01）；用户已移到别处就不动。
+    if (active && active !== document.body && active.isConnected && active !== refreshButtonRef.current) return;
     (card.querySelector<HTMLElement>("button") ?? card).focus({ preventScroll: true });
   }, [loadError, loading, view]);
 
@@ -306,7 +307,7 @@ export default function A8Permissions() {
     <RdPage className="a8-page">
       <PageHeader pageId="A8" title="权限清单" summary="查一个权限管什么、风险多大、哪些角色有它。"
         guideContent={getA8PageGuide(canReadRoles)}
-        actions={(result || loadError) && <Button ref={refreshButtonRef} variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />}
+        actions={(result || loadError || loading) && <Button ref={refreshButtonRef} variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />}
           loading={loading || (matrixOpen && matrixLoading)} onClick={refreshPage}>刷新</Button>}
         readOnly="这页只能查看；登记和授权在别的页面" />
       {conclusion}
@@ -466,7 +467,8 @@ export default function A8Permissions() {
             <JudgmentPoints rows={[
               { label: "允许做什么", value: <span className="a8-allow"><TypeTag type={detail.permType} />{operatorCopyText(detail.description ?? detail.menuCodePath)}</span> },
               { label: "资金风险", value: detail.amplifies ? <StatusTag tone="warn" icon={Coins} explain={AMPLIFIES_EXPLAIN}>可能多付钱</StatusTag> : "没有标记", state: detail.amplifies ? "warn" : undefined },
-              { label: "已绑定角色", value: rolesReady && unreadableRoles.length === 0
+              // 角色授权在重读：不拿旧授权说「没有角色」，先用这次详情读到的启用角色数（RF02 / R2F02）。
+              { label: "已绑定角色", value: rolesReady && !matrixLoading && unreadableRoles.length === 0
                 ? <span className="a8-roles">{rolesWith(detail.permissionCode).length === 0 ? <span className="a8-muted">没有角色</span> : rolesWith(detail.permissionCode).map(roleChip)}</span>
                 : <span className="a8-allow">{detail.boundRoleCount} 个（启用中的角色）{canReadRoles && !matrixOpen && <Button size="sm" onClick={() => setMatrixRequested(true)}>看是哪几个</Button>}</span> },
             ]} />
