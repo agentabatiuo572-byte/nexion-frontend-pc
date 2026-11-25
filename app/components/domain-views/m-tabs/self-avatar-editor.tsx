@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchSelfAvatar, saveSelfAvatar, type SelfAvatarSnapshot } from "@/lib/admin/a1-client";
+import { currentAdminSession } from "@/lib/admin/auth-client";
 import { avatarDrafts, avatarDraftFingerprint, selfAvatarCommands, selfAvatarSaveRecovery, type SelfAvatarPending } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -95,7 +96,14 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     try {
       const current = await fetchSelfAvatar(abort.signal); if (!active(token)) return;
       const record = selfAvatarCommands.list().find(row => row.actorId === actorId); setPending(record ?? null);
-      if (!hydrate && record && isCurrentAvatar(record, current)) complete(record, current);
+      // 只凭版本（图不是原来选的那张）结案前先核对登录账号：读头像接口不带账号，另一个标签页换了账号时读到的是别人的头像（RR01）。
+      const byVersionOnly = !!record && current.assetId !== record.input.assetId;
+      const sameAccount = !hydrate && record && isCurrentAvatar(record, current) && byVersionOnly
+        ? await currentAdminSession({ signal: abort.signal }).then(result => result?.session.adminId === record.actorId, () => false)
+        : true;
+      if (!active(token)) return;
+      if (!hydrate && record && isCurrentAvatar(record, current) && sameAccount) complete(record, current);
+      else if (!sameAccount) setError("登录账号可能已经变化，原保存记录先保留；请刷新页面核对。");
       else {
         setSnapshot(current); setGender(current.avatarGender ?? "UNSPECIFIED"); setAllowed(true); onSnapshot?.(current);
         if (!hydrate && record?.acknowledged) setError("读到的头像资料版本早于保存回执，请刷新核对。");

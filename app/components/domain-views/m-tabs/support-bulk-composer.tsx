@@ -172,7 +172,8 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
         recipientsScope.current=recipientKey;
         setRecipients(items.value.records);setRecipientTotal(items.value.total);
       }else{
-        if(!keepRecipients)setRecipients(null);
+        // 批次读回说可见范围收窄了（客户转绑、内容受限），或逐客读取被明确拒绝：旧的逐客行不再留（RR02）。暂时读失败且范围没变才沿用。
+        if(!keepRecipients||currentBatch?.contentRestricted||isExplicitRejection(items.reason))setRecipients(null);
         failure ||= displayAdminError(items.reason);
       }
       if(currentBatch)keepRecipients=false;
