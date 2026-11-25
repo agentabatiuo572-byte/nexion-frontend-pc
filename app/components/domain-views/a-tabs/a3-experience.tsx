@@ -194,6 +194,11 @@ export function A3Experience({ commands, recovery, onRecovered, nonce, toast }: 
       } else if (saved) { setSuccess(`已保存，当前版本 v${saved.version}。`); toast(`App 分享与下载已保存，当前版本 v${saved.version}`, "success"); }
       else toast(`已保存，但页面刷新失败，正在重新加载。请不要重复提交。`, "warn");
     } catch (cause) {
+      if (commands.find("experience")) {
+        setConfirmOpen(false);
+        toast("原操作已保留，请在页面上方查询原操作。", "warn");
+        return;
+      }
       setError(displayAdminError(cause));
       if (!original && (cause as { reasonCode?: string }).reasonCode === "PLATFORM_EXPERIENCE_VERSION_CONFLICT" && !commands.find("experience")) {
         // Keep the intended values and reason; only a successful GET supplies a new CAS baseline.

@@ -3,7 +3,7 @@ import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { A3FeatureFlag, A3PlatformParam } from "@/lib/admin/a3-client";
 import { parseBusinessCalendar, type BusinessCalendarView, type BusinessCalendarVersion, type BusinessZoneOption } from "@/lib/admin/business-calendar-client";
 import { isOperatingLanguageList, matchesSavedDownload, parsePlatformExperienceConfig, type PlatformExperienceConfig } from "@/lib/admin/platform-experience-client";
@@ -12,6 +12,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { FundCommandOrigin, FundCommandEvidence } from "./fund-command-investigation";
 import { a3ParamCommandOrigin, a3ParamCommandRoutes, queryA3ParamCommand, queryA3ConfigCommand } from "./a3-command-query";
 import { isOriginalCommandOrigin } from "./original-command-query";
+import { currentRecoveryActor } from "./abe-recovery-access";
 
 export type A3Original =
   | { kind: "flag"; row: A3FeatureFlag; value: string }
@@ -40,6 +41,8 @@ const PATHS: Record<A3Original["kind"], string> = {
 };
 export const a3Deduplicates = (record: Pick<A3Command, "original" | "contentCommandActor">) => record.original.kind !== "docs" && record.original.kind !== "how"
   || record.contentCommandActor !== undefined;
+export const a3HasOriginalReceipt = (record: A3Command) => ["param", "flag", "experience"].includes(record.original.kind);
+export const canReleaseA3Content = (record: A3Command) => !isRetryExpired(record) && !a3Deduplicates(record);
 export type A3ContentComparison = {
   revision: { submitted: number; expected: number; current: number; matches: boolean };
   version: { submitted: string; current: string; matches: boolean };
@@ -110,6 +113,16 @@ const commands = createPendingMutationStore<A3Command>({
   },
 });
 
+const recovery = createPendingRecovery(commands, {
+  capability: () => "receipt",
+  canReplay: record => {
+    const actor = currentRecoveryActor(record.commandOwnerId);
+    return !!actor && (record.original.kind === "experience"
+      ? actor.role === "superadmin" || actor.authorities.includes("platform_a3_write") : actor.role === "superadmin");
+  },
+  explicitRejectionCode: () => undefined,
+});
+
 export function useA3Commands() {
   const actorId = useAdminAuth(state => state.session?.adminId);
   const [pending, setPending] = useState<A3Command[]>([]);
@@ -146,9 +159,14 @@ export function useA3Commands() {
     const original = record.original;
     if (original.kind !== "param" && original.kind !== "flag" && original.kind !== "experience"
       || find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
-    const result = original.kind === "param"
-      ? await queryA3ParamCommand(record, "A3", String(actorId), original.row.key, evidence)
-      : await queryA3ConfigCommand(record, original, String(actorId), evidence);
+    const read = async () => {
+      const result = original.kind === "param"
+        ? await queryA3ParamCommand(record, "A3", String(actorId), original.row.key, evidence)
+        : await queryA3ConfigCommand(record, original, String(actorId), evidence);
+      return { ...result, conclusion: result.receipt ? "unknown" : "not-found" } as const;
+    };
+    const result = evidence ? await read() : await recovery.query(record, read);
+    if (!result) throw new Error("A3_ORIGINAL_UNRESOLVED");
     if (result.settled) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return result;
   };
@@ -164,21 +182,22 @@ export function useA3Commands() {
       contentMatches: contentJSON("locales" in current ? current.locales : current.contents)
         === contentJSON(original.kind === "docs" ? original.document.locales : original.document.contents),
     };
-    // Keyed or not: the document one revision past the submitted one with identical content is what this save asked for.
-    // Without it a keyed record past the 24h retry window could never be closed (no A3 receipt lookup, A3-BE-03).
-    const matched = comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
+    // An expired record needs evidence about the original operation, beyond a current-value comparison.
+    const matched = !isRetryExpired(record) && comparison.revision.matches && comparison.version.matches && comparison.status.matches && comparison.contentMatches;
     if (matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { current, comparison, matched };
   };
   // The visual worker must obtain confirmation before calling this. Read failure retains the record.
   const releaseContent = async (record: A3Command, confirmed: boolean) => {
-    // Inside the retry window the original request can still land; only the keyed retry settles it then.
-    if (!confirmed || a3Deduplicates(record) && !isRetryExpired(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
+    if (!confirmed || !canReleaseA3Content(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     const result = await queryContent(record);
+    if (!result.matched && !canReleaseA3Content(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
     if (!result.matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { ...result, released: !result.matched };
   };
-  const send = async (record: A3Command, retry = false) => {
+  const send = (record: A3Command, retry = false) => retry && a3HasOriginalReceipt(record)
+    ? recovery.replay(record, saved => submit(saved, true)) : submit(record, retry);
+  const submit = async (record: A3Command, retry: boolean) => {
     if (!isPendingCommandOwnedBy(record)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (record.commandOrigin && record.commandOrigin.originalAdminId !== String(useAdminAuth.getState().session?.adminId)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (record.original.kind === "param" && find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
@@ -250,7 +269,7 @@ export function useA3Commands() {
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN", { cause: error });
     }
   };
-  return { pending, find, capture, send, queryOriginal, queryContent, releaseContent, sync };
+  return { pending, find, capture, send, queryOriginal, queryContent, releaseContent, sync, recoveryState: recovery.state };
 }
 export type A3Commands = ReturnType<typeof useA3Commands>;
 export type A3RecoveryProps = { commands: A3Commands; recovery: A3Command | null; onRecovered: () => void; nonce: number };

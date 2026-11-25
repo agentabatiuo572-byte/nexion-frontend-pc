@@ -9,9 +9,10 @@ import { userNicknameText, platformSessionDeviceText } from "@/lib/admin/brand-c
 import { businessZoneText, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { formatAccountStatus } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { canReadOwnRecoveryProposal, nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
 import { c5CommandRecords, prepareC5Command, submitC5Command, forgetC5Command, isCompleteC5Command, type C5CommandKind, type C5Pending } from "@/lib/admin/c5-security-commands";
-import { listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation } from "@/lib/admin/session-revocation-approval";
+import { canProposeSessionRevocation, listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation, sessionRevocationRecovery } from "@/lib/admin/session-revocation-approval";
 import { fetchUserProfilesPage, fetchUserSecurityOverview, type User360Profile, type UserCredentialParam, type UserSecurityOverview, type UserSecurityUserRow, type UserSession } from "@/lib/admin/user360-client";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { sessionTimeAnomaly } from "@/lib/admin/session-time";
@@ -32,6 +33,7 @@ const userIdOf = (row?: UserSecurityUserRow | null) => row?.userId == null ? "" 
 const userLabel = (row?: UserSecurityUserRow | null) => { if (!row) return "未选择用户"; const name = userNicknameText(text(row.nickname, ""), row.phoneMasked); return name ? `${name} · ${text(row.userNo)}` : text(row.userNo); };
 const maskSessionId = (id: string) => id.length <= 10 ? `${id.slice(0, 3)}•••${id.slice(-2)}` : `${id.slice(0, 6)}••••${id.slice(-4)}`;
 const sessionLabel = (state: unknown) => ({ ACTIVE: "活跃", REVOKED: "已撤销", EXPIRED: "已过期" }[String(state)] ?? "状态未知");
+const approvalStatus = { pending: "待审批，批准后生效", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 // 类型未确认的锁：后端给的原因是一句内部规则，按锁的来源写；截止时间是北京时间存的，去掉秒、按业务时区写。
 const lockReasonText = (row: UserSecurityUserRow) => row.lockKind === "UNKNOWN" ? "连续输错" : text(row.lockReason);
 const lockUntilText = (row: UserSecurityUserRow) => { const at = /^锁定至 (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(text(row.lockLeft)); return at ? time(`${at[1]}T${at[2]}+08:00`) : text(row.lockLeft); };
@@ -59,7 +61,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const rights = session?.authorities ?? [], owner = session?.adminId ?? 0;
   const canRead = rights.includes("user_c5_read"), canFind = rights.includes("user_c1_read");
   const canRevokeOne = rights.includes("user_c5_session_revoke_one");
-  const canRevokeAll = rights.some(code => ["user_c2_session_revoke_all", "user_c5_session_revoke_all"].includes(code)) && rights.some(code => ["platform_a2_write", "platform_a2_proposal_create"].includes(code));
+  const canRevokeAll = canProposeSessionRevocation(rights);
+  const canQueryRevocation = canReadOwnRecoveryProposal(rights);
   const canReset = rights.includes("user_c5_password_reset"), canDisable = rights.includes("user_c5_2fa_disable"), canConfig = rights.includes("user_c5_write");
   const canUnlock = (row: UserSecurityUserRow) => (row.lockKind === "SHORT" || row.lockKind === "LONG")
     && rights.includes(row.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short")
@@ -70,6 +73,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [overview, setOverview] = useState<UserSecurityOverview | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [profile, setProfile] = useState<User360Profile | null>(null), [lookup, setLookup] = useState("");
   const [pendingAll, setPendingAll] = useState(false);
+  const [revocationNotes, setRevocationNotes] = useState<Record<string, string>>({});
   const [users, setUsers] = useState<User360Profile[]>([]), [usersLoading, setUsersLoading] = useState(true), [usersError, setUsersError] = useState("");
   const [userPage, setUserPage] = useState(1), [userSize, setUserSize] = useState(20), [userTotal, setUserTotal] = useState(0), [userRetry, setUserRetry] = useState(0);
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(10), [busy, setBusy] = useState(false);
@@ -130,6 +134,12 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const commandRecords = useMemo(() => owner && canRead ? c5CommandRecords(owner) : [], [owner, canRead, pendingTick]);
   const pending = commandRecords.filter(row => !row.rejection);
   const logoutPending = useMemo(() => owner && canRead ? listSessionRevocationApprovals(owner) : [], [owner, canRead, pendingTick]);
+  useEffect(() => {
+    const next = nextRecoveryDeadline(logoutPending);
+    if (next === undefined) return;
+    const timer = window.setTimeout(refreshPending, Math.max(1, next - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [logoutPending, refreshPending]);
   const policyPending = owner ? pendingPaymentPolicy(owner) : null;
   const paymentRecords = owner && canRead ? paymentReleaseRecords(owner).filter(row => row.portKey === `global:${row.userId}`
     && !(tab === "payment" && (params?.get("paymentTab") !== "exceptions" ? !row.rejection && row.userId === userId : row.recordId === shownPaymentRecord))) : [];
@@ -187,10 +197,39 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   }
   function revokeAll() {
     if (!session || !selectedUser || !canRevokeAll) return;
-    ctx.openActionConfirm({ briefKind: "security", action: `退出全部设备 · ${userLabel(selectedUser)}`, title: "退出全部设备", detail: "提交后由另一位超级管理员批准，以批准时在线设备为准。", completionCopy: "批准后生效；提交审批不会立即退出设备。", reasonMin: 8, reasonMax: 200, effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>, confirmLabel: "提交全部设备登出审批", getPendingReason: () => pendingSessionRevocationApproval(owner, userId)?.reason,
+    ctx.openActionConfirm({ briefKind: "security", action: `退出全部设备 · ${userLabel(selectedUser)}`, title: "退出全部设备", detail: "提交后由另一位超级管理员批准，以批准时在线设备为准。", completionCopy: "批准后生效；提交审批不会立即退出设备。", reasonMin: 8, reasonMax: 200, effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>, confirmLabel: "提交全部设备登出审批",
       facts: <Facts><Fact k="用户">{userLabel(selectedUser)}</Fact><Fact k="当前在线设备">{activeCount ?? "—"}</Fact></Facts>, statedBrief: { impact: "另一位超级管理员批准后，退出该用户批准时的全部在线设备", check: "提交时检查退出全部设备和发起审批两项权限" },
-      run: async reason => { setBusy(true); try { await proposeSessionRevocation(session, userId, userLabel(selectedUser), reason); ctx.toast("已提交全部设备登出审批，批准后生效"); } finally { setBusy(false); refreshPending(); } },
+      run: async reason => {
+        setBusy(true);
+        try {
+          await proposeSessionRevocation(session, userId, userLabel(selectedUser), reason, true);
+          ctx.toast("已提交全部设备登出审批，批准后生效");
+        } catch (error) {
+          if (!pendingSessionRevocationApproval(owner, userId)) throw error;
+          ctx.toast("原操作已保留，请在页面上方查询原操作。", "warn");
+        } finally {
+          setBusy(false);
+          refreshPending();
+        }
+      },
     });
+  }
+  async function recoverRevocation(row: ReturnType<typeof listSessionRevocationApprovals>[number], retry: boolean) {
+    if (!session || mutation.current || (retry ? sessionRevocationRecovery.state(row).replayBlock : !canQueryRevocation)) return;
+    mutation.current = true;
+    setBusy(true);
+    const note = (message: string) => setRevocationNotes(current => ({ ...current, [row.commandKey]: message }));
+    try {
+      const ticket = retry ? await sessionRevocationRecovery.retry(row) : (await sessionRevocationRecovery.query(session, row))?.ticket;
+      if (ticket) ctx.toast(`审批单 ${ticket.id} · ${approvalStatus[ticket.status]}`);
+      else if (ticket === null) note("没有查到原审批单，原操作记录保留。");
+    } catch (failure) {
+      note(retry ? `重试没有成功。${displayAdminError(failure)}` : `原审批单加载失败。${displayAdminReadError(failure)}`);
+    } finally {
+      mutation.current = false;
+      setBusy(false);
+      refreshPending();
+    }
   }
   function adjust(param: UserCredentialParam) {
     if (!param.key || param.readOnly || !canConfig || pending.some(row => row.kind === "credential")) return;
@@ -227,7 +266,15 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       // 页面上方的待确认：一笔时是一条提示；多笔时并成一块，每笔一行，各自的入口不变，不把页签挤到下面很远。
       const items: { key: string; title: ReactNode; meta: ReactNode; action: ReactNode }[] = [
         ...commandRecords.map(row => ({ key: row.commandKey, title: row.label ?? "旧登录处置结果未知", action: <Button size="sm" disabled={busy} onClick={() => { setRecovery(row); setRelease(false); setRecoveryMessage(""); }}>查询原结果</Button>, meta: <span>{row.userNo || "原对象见恢复记录"} · {time(new Date(row.createdAt).toISOString())} · {row.rejection ? "已明确拒绝" : row.returned ? "操作已返回，页面尚未刷新" : row.expiresAt <= Date.now() ? "已过 24 小时，只能查询原结果" : "结果未知"}</span> })),
-        ...logoutPending.map(row => ({ key: row.commandKey, title: `全部设备登出审批结果未知 · ${row.label}`, action: <Button size="sm" disabledReason={busy ? "正在提交" : undefined} onClick={async () => { if (!session) return; setBusy(true); try { await proposeSessionRevocation(session, row.userId, row.label, row.reason); ctx.toast("已查到原审批单，批准后生效"); } catch (failure) { ctx.toast(displayAdminError(failure), "warn"); } finally { setBusy(false); refreshPending(); } }}>查询原结果</Button>, meta: <span>{time(new Date(row.createdAt).toISOString())} · 可能已建审批单<Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{row.commandKey}</span></>} /></span> })),
+        ...logoutPending.map(row => {
+          const state = sessionRevocationRecovery.state(row);
+          return {
+            key: row.commandKey, title: `全部设备登出审批结果未知 · ${row.label}`,
+            action: <><Button size="sm" disabledReason={busy ? "正在处理" : !canQueryRevocation ? "当前账号无法查询原审批单" : undefined} onClick={() => void recoverRevocation(row, false)}>查询原操作</Button>
+              {!state.replayBlock && <Button size="sm" disabled={busy} onClick={() => void recoverRevocation(row, true)}>按原操作重试</Button>}</>,
+            meta: <span>{time(new Date(row.createdAt).toISOString())} · {state.expired && "已超过 24 小时，不能再重试。"}{revocationNotes[row.commandKey] || "可能已建审批单"}<Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{row.commandKey}</span></>} /></span>,
+          };
+        }),
         ...(policyPending && (tab !== "payment" || params?.get("paymentTab") === "exceptions") ? [{ key: "payment-policy", title: "支付密码规则调整结果未知", action: <Button size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "policy" })}>查询原结果</Button>, meta: "原调整记录已保留，请先核对结果。" }] : []),
         ...paymentRecords.map(row => ({ key: row.commandKey, title: `支付密码解除${row.rejection ? "已拒绝" : "结果未知"} · ${row.userId === userId ? userLabel(selectedUser) : `user:${row.userId}`}`, action: <Button size="sm" onClick={() => { setPaymentRecovery(row); setUrl({ tab: "payment", paymentTab: "exceptions" }); }}>查询原结果</Button>, meta: <>原记录 {row.recordId} · {row.rejection ? "已保留拒绝详情。" : "只能查询原结果。"}</> })),
         ...((phonePending.length > 0 || modelPending.length > 0) && tab !== "phone" ? [{ key: "phone", title: `手机处置结果未知 · ${userLabel(selectedUser)}`, action: <Button size="sm" onClick={() => setUrl({ tab: "phone" })}>查询原结果</Button>, meta: <>{phonePending.length + modelPending.length} 项操作结果未知，先查询原结果。</> }] : []),

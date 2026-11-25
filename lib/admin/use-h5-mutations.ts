@@ -3,7 +3,7 @@
 import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
@@ -12,6 +12,7 @@ import { H5_MAX_SORT_ORDER, h5RuleWriteRefusal, h5Amount, parseH5Model, type H5M
 import { isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
+import { displayAdminReadError } from "./error-messages";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 export const EARN_CREATE_TARGET = "earn-create:new";
@@ -141,6 +142,7 @@ function normalizeGrowthRejection(error: unknown) {
 export function useH5Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean) {
   const adminId = useAdminAuth(s => s.session?.adminId);
   const [, update] = useReducer(n => n + 1, 0);
+  const [ticketReadErrors, setTicketReadErrors] = useState<Record<string, string>>({});
   useEffect(() => { update(); }, [adminId]);
   const records = () => pending.list().filter(r => r.adminId === adminId);
   const record = (target: string) => records().find(r => r.change.target === target);
@@ -173,6 +175,18 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       throw new Error("审批单与保存的原申请不符，原操作继续保留，请查询原结果。");
     }
   };
+  const readTicket = async (original: H5PendingCommand) => {
+    try {
+      const ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
+      if (ticket) checkTicket(original, ticket);
+      else if (original.ticket || original.acknowledged) throw new Error("暂未读到已提交的审批单，保留上次读到的状态。");
+      setTicketReadErrors(({ [original.commandKey]: _, ...rest }) => rest);
+      return ticket;
+    } catch (error) {
+      setTicketReadErrors(current => ({ ...current, [original.commandKey]: displayAdminReadError(error) }));
+      throw error;
+    }
+  };
   const query = async (original: H5PendingCommand, feedback: "lookup" | "refresh" | "submitted" = "lookup") => {
     requireActor(original.change.target, false);
     if (original.request.kind === "direct") {
@@ -180,14 +194,12 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       if (feedback !== "refresh") toast("已重读当前配置；当前值不能证明原操作是否执行，记录继续保留，请到操作记录与审批核对。");
       return undefined;
     }
-    if (original.ticket) retain({ ...original, acknowledged: true, ticket: undefined });
-    const ticket = await fetchA2ProposalByKey(original.commandKey, true);
+    const ticket = await readTicket(original);
     if (!ticket) {
       // 过期后不能重试，下一步是去操作记录与审批核对（OP-152、OP-153）；没过期的照旧可以按原操作重试。
       if (feedback !== "refresh") toast(isRetryExpired(original) ? "没查到原审批单。原申请已过期，记录和修改锁保留，请到操作记录与审批核对。" : "暂未查到原审批单，原操作继续保留。");
       return null;
     }
-    checkTicket(original, ticket);
     if (ticket.status === "pending") retain({ ...original, acknowledged: true, ticket });
     else forget(original);
     if (feedback === "submitted" && ticket.status === "pending") {
@@ -303,16 +315,13 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
   };
 
   return {
-    records: records(), record, query,
+    records: records(), record, query, ticketReadErrors,
     canRetry(original: H5PendingCommand) {
       if (isRetryExpired(original) || original.acknowledged || original.ticket) return false;
       try { requireActor(original.change.target, true); return true; } catch { return false; }
     },
     async refreshTickets() {
-      const results = await Promise.allSettled(records().filter(r => r.request.kind !== "direct").map(r => query(r, "refresh")));
-      // A failed lookup must not promote a historical POST receipt to a current pending status.
-      update();
-      return results;
+      await Promise.allSettled(records().filter(r => r.request.kind !== "direct").map(r => query(r, "refresh")));
     },
     async retry(original: H5PendingCommand) {
       const current = record(original.change.target);

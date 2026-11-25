@@ -165,8 +165,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const refresh = async () => {
     setMc(null);
-    const results = await mutations.refreshTickets();
-    for (const result of results) if (result.status === "rejected") toast(displayAdminError(result.reason));
+    await mutations.refreshTickets();
     await reload();
   };
   useEffect(() => {
@@ -548,24 +547,30 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const queryOriginal = async (original: H5PendingCommand) => {
     try {
       await mutations.query(original);
-    } catch (err) { toast(displayAdminError(err)); }
+    } catch (err) {
+      if (original.request.kind === "direct") toast(displayAdminError(err));
+    }
   };
 
   // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
   const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
-  const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => ({
-    key: record.commandKey,
-    name: record.change.name,
-    change: h5OriginalNonMultiplierPowerUpSummary(record) ?? `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`,
-    submittedAt: record.createdAt,
-    tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
-      : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
-    ticket: record.ticket?.id,
-    actions: <>
-      <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
-      {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原操作重试</Button>}
-    </>,
-  }));
+  const recoveryRows: H5RecoveryRow[] = mutations.records.map((record) => {
+    const readError = mutations.ticketReadErrors[record.commandKey];
+    return {
+      key: record.commandKey,
+      name: record.change.name,
+      change: <>{h5OriginalNonMultiplierPowerUpSummary(record) ?? `${shownReward(record.change.before)} → ${shownReward(record.change.after)}`}
+        {readError && <span className="rd-note"> · 原审批单加载失败。{readError}{record.ticket && " 显示上次读到的审批状态。"}</span>}</>,
+      submittedAt: record.createdAt,
+      tag: record.ticket ? pendingTag(...(record.change.target.startsWith("rule:") ? [RULE_APPROVER, RULE_PENDING_NOTE] : [FUND_APPROVER, FUND_PENDING_NOTE]) as [string, string])
+        : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
+      ticket: record.ticket?.id,
+      actions: <>
+        <Button size="sm" onClick={() => void queryOriginal(record)}>{readError ? "重试" : "查询原操作"}</Button>
+        {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原操作重试</Button>}
+      </>,
+    };
+  });
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
   const pendingCount = mutations.records.filter(r => r.ticket).length;
   const builtCount = mutations.records.filter(r => !r.ticket && r.acknowledged).length;

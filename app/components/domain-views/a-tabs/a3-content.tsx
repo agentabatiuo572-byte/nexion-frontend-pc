@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Change, DiffList, Explain, Fact, Facts, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
 import { type A3Command, type A3ContentComparison, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
+import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
@@ -115,7 +116,8 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
 
 const SAVE_UNKNOWN_NOTE = <>没收到结果时别再点一次：页面会留下这次提交，<KeepText text="24 小时内可以按原操作重试。" /></>;
 /** 原提交框里还没有对比结果时：能重试的说重试会怎样，不能重试的说查询会怎样。 */
-function OriginalNote({ retryable }: { retryable: boolean }) {
+function OriginalNote({ expired, retryable }: { expired: boolean; retryable: boolean }) {
+  if (expired) return <>已超过 24 小时，不能再重试。当前内容供核对，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
   return retryable
     ? <>重试按原提交的内容、方式和理由再发一次：<KeepText text="已经保存过的不会重复保存，也不会盖掉别人后来的修改。" /></>
     : <>查询原结果会和现在的内容对比：一致就算已保存，<KeepText text="对不上时可以核对后解除。" /></>;
@@ -324,7 +326,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
       extra={check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-        : <Notice tone="neutral">{original ? <OriginalNote retryable={Boolean(retry(original))} /> : SAVE_UNKNOWN_NOTE}</Notice>} />}
+        : <Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : SAVE_UNKNOWN_NOTE}</Notice>} />}
   </div>;
 }
 
@@ -642,7 +644,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="规则引用块发布不了">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，系统会拒绝这次发布。先删掉这些块，或改成「正文」写上实际文字。</Notice>}
         {check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-          : <Notice tone="neutral">{original ? <OriginalNote retryable={Boolean(retry(original))} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
+          : <Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
       </>} />}
   </div>;
 }

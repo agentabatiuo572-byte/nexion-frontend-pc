@@ -21,7 +21,7 @@ import {
   fetchH7Vouchers, type H7Overview,
 } from "@/lib/admin/h-client";
 import {
-  H7_VOUCHER_ACTIONS, type H7VoucherApprovalAttempt,
+  H7_VOUCHER_ACTIONS, H7_VOUCHER_APPROVER as APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, type H7VoucherApprovalAttempt,
   pendingH7VoucherApprovals,
   releaseRejectedH7VoucherApproval, h7ApprovalRecovery,
   submitH7VoucherApproval,
@@ -52,8 +52,6 @@ const VOUCHER_TITLE = { get current() { return document.querySelector<HTMLElemen
 
 type OpsVoucher = H7Voucher;
 
-/** 谁来批：后端要另一位有效管理员，有审批权限和代金券修改权限，不限超级管理员。 */
-const APPROVER = "另一位管理员";
 const LOCAL_PENDING = "这张券有结果未知的删除或作废申请，先处理页面上方的提醒";
 
 type Filter = "all" | "active" | "paused";
@@ -540,7 +538,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           </> : <Fact k="已使用">{`${countText(v.redeemedCount)} 张，不变`}</Fact>)}
           {v && <Fact k="券模板">{deletion ? <Change from={v.status === "active" ? "投放中" : "已暂停"} to="删除（批准后）" tone="danger" /> : `${v.status === "active" ? "投放中" : "已暂停"}，批准后不变`}</Fact>}
           <Fact k="谁来批">{`${APPROVER}，不能是提交人`}</Fact>
-          <Fact k="需有权限">审批权限和代金券修改权限</Fact>
+          <Fact k="需有权限">{H7_VOUCHER_APPROVAL_PERMISSIONS}</Fact>
         </Facts>
       ),
       initialReason: pending?.reason,
