@@ -68,6 +68,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const [draftOwner,setDraftOwner]=useState(0);
   const [image,setImage]=useState<{file:File;url:string;id:string;key:string;hash:string;assetId?:string;ttlSeconds:number|null;assetExpiresAt?:number}|null>(null),[uploading,setUploading]=useState(false),[uploadError,setUploadError]=useState("");
   const [job,setJob]=useState<BulkJob|null>(null),[jobs,setJobs]=useState<BulkJob[]|null>(null),[jobsTotal,setJobsTotal]=useState(0),[jobsPage,setJobsPage]=useState(1),[jobsError,setJobsError]=useState("");
+  const [recoveryBatchId,setRecoveryBatchId]=useState<string|null>(null),[mutationFailure,setMutationFailure]=useState("");
   const [recipients,setRecipients]=useState<BulkRecipient[]|null>(null),[recipientTotal,setRecipientTotal]=useState(0),[recipientPage,setRecipientPage]=useState(1),[resultRetry,setResultRetry]=useState(0),[jobsRetry,setJobsRetry]=useState(0),[resultError,setResultError]=useState("");
   const [pending,setPending]=useState<Stored|null>(null),[mutationAction,setMutationAction]=useState<"cancel"|"retry"|null>(null),[mutationReason,setMutationReason]=useState("");
   const generation=useRef(0),stamp=useRef("");stamp.current=`${scopeKey}:${generation.current}`;
@@ -112,7 +113,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       window.removeEventListener("m3-assignment-invalidated", handle);
     };
   }, [actorId, scopeKey, selected, selection, pending, onClose]);
-  useEffect(()=>{if(scopeOwner===scopeKey)return;setScopeOwner(scopeKey);setPreviewIntent(null);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setJob(null);setRecipients(null);setJobs(null);setPending(null);setStep(1);setBusy(false);setUploading(false);setFilters({});setFilterDraft({});setPage(1);setChoice(null);setReason("");setAck(false);setUploadError("");imageSelection.current++;if(imageRef.current)URL.revokeObjectURL(imageRef.current.url);setImage(null);},[scopeKey]);
+  useEffect(()=>{if(scopeOwner===scopeKey)return;setScopeOwner(scopeKey);setPreviewIntent(null);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setJob(null);setRecoveryBatchId(null);setMutationFailure("");setRecipients(null);setJobs(null);setPending(null);setStep(1);setBusy(false);setUploading(false);setFilters({});setFilterDraft({});setPage(1);setChoice(null);setReason("");setAck(false);setUploadError("");imageSelection.current++;if(imageRef.current)URL.revokeObjectURL(imageRef.current.url);setImage(null);},[scopeKey]);
   useEffect(()=>{const old=commands.list().find(r=>r.actorId===actorId);if(old){setPending(old);setStep(3);setError(isRetryExpired(old)?RETRY_EXPIRED_TEXT:"原操作结果未知，请先查询原操作。");}},[scopeKey]);
   useEffect(()=>{if(!actorId)return;try{const saved=JSON.parse(sessionStorage.getItem(`nexion-bulk-draft:${actorId}`)??"{}");setText(typeof saved.text==="string"?saved.text:"");setIntent(saved.intent==="MAINTENANCE"?"MAINTENANCE":"SERVICE");}catch{setError("群发草稿暂不能恢复，请在本页核对。");}setDraftOwner(actorId);},[actorId,epoch]);
   useEffect(()=>{if(!actorId||draftOwner!==actorId)return;try{sessionStorage.setItem(`nexion-bulk-draft:${actorId}`,JSON.stringify({text,intent}));}catch{setError("群发草稿无法保存在浏览器里，请在本页一次完成。");}},[actorId,draftOwner,text,intent]);
@@ -138,13 +139,14 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     supportEnhancements.bulkJobs(jobsPage,controller.signal).then(p=>{if(!controller.signal.aborted&&owner===stamp.current){setJobs(p.records);setJobsTotal(p.total);}}).catch(e=>{if(!controller.signal.aborted&&owner===stamp.current)setJobsError(displayAdminReadError(e));});
     return()=>controller.abort();
   },[jobsPage,resultRetry,jobsRetry,scopeKey]);
+  const resultBatchId=recoveryBatchId??job?.batchId;
   useEffect(()=>{
-    if(!job)return;const controller=new AbortController(),owner=stamp.current;let timer:ReturnType<typeof setTimeout>|undefined;
-    const read=async()=>{const results=await Promise.allSettled([supportEnhancements.bulkJob(job.batchId,controller.signal),supportEnhancements.bulkRecipients(job.batchId,recipientPage,controller.signal)]);if(controller.signal.aborted||owner!==stamp.current)return;
+    if(!resultBatchId)return;const controller=new AbortController(),owner=stamp.current;let timer:ReturnType<typeof setTimeout>|undefined;
+    const read=async()=>{const results=await Promise.allSettled([supportEnhancements.bulkJob(resultBatchId,controller.signal),supportEnhancements.bulkRecipients(resultBatchId,recipientPage,controller.signal)]);if(controller.signal.aborted||owner!==stamp.current)return;
       let failure="";if(results[0].status==="fulfilled"){setJob(results[0].value);if(["QUEUED","RUNNING"].includes(results[0].value.state))timer=setTimeout(()=>void read(),3000);}else failure=displayAdminError(results[0].reason);
       if(results[1].status==="fulfilled"){setRecipients(results[1].value.records);setRecipientTotal(results[1].value.total);}else{setRecipients(null);failure=displayAdminError(results[1].reason);}setResultError(failure);
     };setRecipients(null);void read();return()=>{controller.abort();if(timer)clearTimeout(timer);};
-  },[job?.batchId,recipientPage,resultRetry,scopeKey]);
+  },[resultBatchId,recipientPage,resultRetry,scopeKey]);
   // 逐客结果只给客户编号，名字用已有资料，缺的按这一页去读。
   useEffect(()=>{
     const missing=(recipients??[]).map(r=>r.customerId).filter(id=>!identities[id]);if(!missing.length)return;
@@ -236,6 +238,21 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   }
   const input:BulkContent|undefined=selection?{selectionId:selection.selectionId,intent,kind:image?"IMAGE":choice?.kind??"TEXT",content:text.trim(),skuId:choice?.kind==="SKU"?choice.skuId:undefined,linkTarget:choice?.kind==="LINK"?choice.linkTarget:undefined,assetId:image?.assetId,reason:reason.trim()}:undefined;
   const ready=Boolean(!uploads.list().some(r=>r.actorId===actorId)&&input&&selection?.count&&Date.parse(selection.expiresAt)>Date.now()&&reasonRule.ok(reason)&&ack&&(image?image.assetId&&image.assetExpiresAt!==undefined&&Date.now()<image.assetExpiresAt:text.trim()));
+  function rejectSubmission(record:Stored, reason:string) {
+    commands.forget(record.fingerprint,record.commandKey);
+    setPending(null);setNotReceived(false);
+    if(record.action&&record.batchId){
+      const label=record.action==="cancel"?"取消未提交项":"核对并重试失败项";
+      setMutationFailure(`${label}失败。${reason}`);
+      if(job?.batchId!==record.batchId){
+        setJob(null);setRecoveryBatchId(record.batchId);setRecipientPage(1);
+      }
+      setError("");setHistoryOpen(false);setStep(4);setResultRetry(n=>n+1);
+      return;
+    }
+    setSubmitFailed(true);setError(reason);
+  }
+
   async function submit(recover=false,replay=false,original?:Stored){
     if(!recover&&!original&&image?.assetId&&image.assetExpiresAt!==undefined&&Date.now()>=image.assetExpiresAt){setError("图片已过有效期，请返回编写内容移除旧图并重新准备。");return;}
     if(busy||!recover&&!original?.action&&!ready)return;
@@ -255,7 +272,10 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       if(saved!==stamp.current)return;
       if(recovered&&recovered.status!=="SUCCEEDED"&&recovered.status!=="FAILED"){setError("发送结果仍未知，请稍后再查询原操作。");return;}
       if(record.readOnlyRecovery&&recovered?.status!=="SUCCEEDED"&&recovered?.status!=="FAILED"){setError("原操作结果未知；客户归属变了，只能查询原操作，不能重新创建或发送。");return;}
-      if(recovered?.status==="FAILED"){commands.forget(record.fingerprint);setPending(null);setSubmitFailed(true);setError("原操作确认失败，输入已保留，请重新核对。");return;}
+      if(recovered?.status==="FAILED"){
+        rejectSubmission(record,record.action?"请核对原批次的最新状态后再操作。":"原操作确认失败，输入已保留，请重新核对。");
+        return;
+      }
       if(recover&&!recovered&&!replay){setNotReceived(!isRetryExpired(record));setError(isRetryExpired(record)?RETRY_EXPIRED_TEXT:"还没查到原结果，原名单和内容仍保留；24 小时内可以按原操作重试。");return;}
       if(!recovered&&isRetryExpired(record)){setError(RETRY_EXPIRED_TEXT);return;}
       if(!recovered&&(!canWrite||createBlocked)){setError("原操作结果未知；这个账号没有群发资格，只能查询原操作，不能重新发送。");return;}
@@ -268,8 +288,8 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       }
       if(!recovered)submitted=true;
       const next=recovered?parseBulkJob(recovered.result):record.action&&record.batchId&&record.mutation?await supportEnhancements.bulkMutate(record.batchId,record.action,record.mutation,record.commandKey):await supportEnhancements.bulkCreate(record.payload,record.commandKey);
-      if(saved!==stamp.current)return;commands.forget(record.fingerprint);setPending(null);setJob(next);setStep(4);setHistoryOpen(false);setRecipientPage(1);setMutationAction(null);setMutationReason("");setResultRetry(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));
-    }catch(e){if(saved===stamp.current){setError(displayAdminError(e));if(submitted&&!recover&&isExplicitRejection(e)){commands.forget(record.fingerprint);setPending(null);setSubmitFailed(true);}}}finally{if(saved===stamp.current)setBusy(false);}
+      if(saved!==stamp.current)return;commands.forget(record.fingerprint,record.commandKey);setPending(null);setJob(next);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setHistoryOpen(false);setRecipientPage(1);setMutationAction(null);setMutationReason("");setResultRetry(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));
+    }catch(e){if(saved===stamp.current){if(submitted&&!recover&&isExplicitRejection(e))rejectSubmission(record,displayAdminError(e));else setError(displayAdminError(e));}}finally{if(saved===stamp.current)setBusy(false);}
   }
   async function mutate(){if(!job||!mutationAction||!reasonRule.ok(mutationReason)||busy||pending)return;const payload=input??{selectionId:"result",intent:"SERVICE" as const,kind:"TEXT" as const,content:"",reason:mutationReason.trim()};const record:Stored={fingerprint:`${actorId}:${job.batchId}:${mutationAction}`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload,batchId:job.batchId,action:mutationAction,mutation:{expectedVersion:job.version,reason:mutationReason.trim()}};commands.remember(record.fingerprint,record.commandKey,{actorId,payload,batchId:record.batchId,action:record.action,mutation:record.mutation});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError("浏览器存不下这次操作，没有提交；请允许浏览器保存网站数据后查询原操作。");return;}await submit(false,false,record);}
 
@@ -316,11 +336,12 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       <div className="m-bulk-counts"><span>总数 <b>{job.counts.total}</b></span>{job.counts.failed>0&&<StatusTag tone="danger">失败 {job.counts.failed}</StatusTag>}{job.counts.unknown>0&&<StatusTag tone="warn">结果未知 {job.counts.unknown}</StatusTag>}<span>已提交 <b>{job.counts.sent}</b></span>{job.counts.failed===0&&<span>失败 <b>0</b></span>}<span>跳过 <b>{job.counts.skipped}</b></span><span>取消 <b>{job.counts.cancelled}</b></span><span>待处理（已知）<b>{job.counts.pending-job.counts.unknown}</b></span></div>
       <div className="m-bulk-row"><Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button><span className="m-bulk-row-tools"><Button size="sm" disabledReason={cancelBlocked||undefined} onClick={()=>setMutationAction("cancel")}>取消未提交项</Button><Button size="sm" disabledReason={retryBlocked||undefined} onClick={()=>setMutationAction("retry")}>核对并重试失败项</Button></span></div>
       {mutationAction&&<div className="rd-stack"><p>{mutationAction==="cancel"?"取消只影响未提交项，已经提交的消息保留。":"先核对原消息，已提交、已转绑或不再维护项不重发。"}</p><Field label="操作理由" required hint="至少 8 字" explain="提交中或原结果未知时，不能重复操作。">{control=><Textarea {...control} rows={3} minLength={8} maxLength={200} value={mutationReason} count={`${visibleReasonLength(mutationReason)}/200`} onChange={e=>setMutationReason(e.target.value)}/>}</Field><div className="m-bulk-row-tools"><Button variant="primary" size="sm" disabled={busy||Boolean(pending)||!reasonRule.ok(mutationReason)||mutationReason.trim().length>200} onClick={()=>void mutate()}>确认{mutationAction==="cancel"?"取消剩余":"核对重试"}</Button><Button size="sm" disabled={busy} onClick={()=>setMutationAction(null)}>返回结果</Button></div></div>}
-      {resultError&&<Notice tone="danger">结果加载失败，以上为上次已核对值：{resultError}</Notice>}
+      {(mutationFailure||resultError)&&<Notice tone="danger">{mutationFailure}{resultError&&` 结果加载失败，以上为上次已核对值：${resultError}`}</Notice>}
       {!recipients?<p role="status">逐客明细暂未读取</p>:<Table label="逐客结果"><thead><tr><Th>客户</Th><Th>结果</Th><Th>原因</Th><Th>原会话</Th></tr></thead><tbody>{recipients.map((r,i)=><Tr key={r.customerId+":"+i}><Td>{customerName(r.customerId)}</Td><Td><StatusTag tone={recipientTone(r)}>{r.resultCertainty==="UNKNOWN"?"结果未知":stateText[r.state]??"未知"}</StatusTag></Td><Td>{r.failureCode?{...conversationReasonText,SUPPORT_ASSIGNMENT_CHANGED:"客户已转绑，本次不再发送",SUPPORT_MAINTENANCE_STOPPED:"客户已停止维护",SUPPORT_AGENT_UNAVAILABLE:"专属客服当前不可发送",RESULT_UNKNOWN:"需核对原提交结果",SUPPORT_BULK_PAYLOAD_REVIEW_REQUIRED:"原内容需核对，暂不自动重发"}[r.failureCode]??"执行未通过，请核对客户与原消息":"—"}{r.retryable?" · 可核对重试":""}</Td><Td>{r.conversationNo?<a className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(r.conversationNo)}`}>打开原客户会话</a>:"—"}</Td></Tr>)}</tbody></Table>}
       {recipientTotal>0&&<Pager label="逐客结果" total={recipientTotal} page={recipientPage} pageSize={10} sizes={[10]} onPage={setRecipientPage} onPageSize={()=>undefined}/>}</>}
+    {step===4&&!job&&mutationFailure&&<Notice tone="danger" action={resultError ? <Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button> : undefined}>{mutationFailure}{resultError&&` 原批次暂时读不到：${resultError}`}</Notice>}
     </>}
-    <Fold inset title="已提交批次" explain="关闭后可以在这里恢复查看。" open={historyOpen} onOpenChange={setHistoryOpen} summary={jobsError?"加载失败":jobs?`${jobsTotal} 批`:"正在加载…"}>{jobsError?<div role="alert" className="m-bulk-row"><span>已提交批次加载失败。{jobsError}</span><Button size="sm" onClick={()=>setJobsRetry(n=>n+1)}>重试</Button></div>:!jobs?<p role="status">正在加载…</p>:<>{!jobs.length&&<p role="status">暂无已提交批次，提交群发后会显示在这里。</p>}{jobs.map(j=><div className="m-bulk-row" key={j.batchId}><span>{stateText[j.state]??"未知"} · {j.frozenCount} 位{j.counts.failed>0?` · 失败 ${j.counts.failed}`:""}</span><Button size="sm" disabled={Boolean(pending)||busy} onClick={()=>{setJob(j);setStep(4);setRecipientPage(1);setHistoryOpen(false);}}>查看结果</Button></div>)}{jobsTotal>0&&<Pager label="已提交批次" total={jobsTotal} page={jobsPage} pageSize={10} sizes={[10]} onPage={setJobsPage} onPageSize={()=>undefined}/>}</>}</Fold>
+    <Fold inset title="已提交批次" explain="关闭后可以在这里恢复查看。" open={historyOpen} onOpenChange={setHistoryOpen} summary={jobsError?"加载失败":jobs?`${jobsTotal} 批`:"正在加载…"}>{jobsError?<div role="alert" className="m-bulk-row"><span>已提交批次加载失败。{jobsError}</span><Button size="sm" onClick={()=>setJobsRetry(n=>n+1)}>重试</Button></div>:!jobs?<p role="status">正在加载…</p>:<>{!jobs.length&&<p role="status">暂无已提交批次，提交群发后会显示在这里。</p>}{jobs.map(j=><div className="m-bulk-row" key={j.batchId}><span>{stateText[j.state]??"未知"} · {j.frozenCount} 位{j.counts.failed>0?` · 失败 ${j.counts.failed}`:""}</span><Button size="sm" disabled={Boolean(pending)||busy} onClick={()=>{setJob(j);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setRecipientPage(1);setHistoryOpen(false);}}>查看结果</Button></div>)}{jobsTotal>0&&<Pager label="已提交批次" total={jobsTotal} page={jobsPage} pageSize={10} sizes={[10]} onPage={setJobsPage} onPageSize={()=>undefined}/>}</>}</Fold>
     </div>
   </Modal>;
 }

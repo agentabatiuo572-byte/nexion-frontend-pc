@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
 import { canReplayGroupCommand, commandRejected, groupPendingCommands, isInvitePending, supportGroupClient, type InviteCodeView, type InviteIssueRecord } from "@/lib/admin/support-group-client";
 import { SupportClientError } from "@/lib/admin/m-support-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import "./m1-invite-code.css";
 import { Button, Notice, Fact, Facts, Fold, Explain, IrreversibleTag, StatusTag } from "@/app/components/rd";
@@ -29,6 +30,11 @@ function errorText(error: unknown): string {
   }
   // 走到这里的都是后端明确拒绝（结果未知另有处理），不是连接问题：按错误码写原因（TX-12、TX-13）。
   return displayAdminError(error);
+}
+
+function invitePermissionDenied(error: unknown) {
+  return isPermissionDenied(error) || error instanceof SupportClientError && error.status === 403
+    && error.backendMessage === "SUPPORT_PERSONAL_SERVICE_REQUIRED";
 }
 
 // Scanners need dark modules on a light quiet zone whatever the console theme is.
@@ -61,58 +67,113 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [denied, setDenied] = useState(false);
   const resetButton = useRef<HTMLButtonElement>(null);
+  const clearDenied = (cause: unknown) => {
+    setDenied(true); setView(null); setConfirming(false); setUnresolved(false);
+    setError(errorText(cause));
+    announcePermissionDenied();
+  };
   useEffect(() => {
     const controller = new AbortController();
     setReadFailed(false);
     supportGroupClient.selfInviteCode(controller.signal)
       .then(next => { if (!controller.signal.aborted) setView(next); })
-      .catch(() => { if (!controller.signal.aborted) { setView(null); setReadFailed(true); } });
+      .catch(cause => {
+        if (controller.signal.aborted) return;
+        if (invitePermissionDenied(cause)) clearDenied(cause);
+        else { setView(null); setReadFailed(true); }
+      });
     return () => controller.abort();
   }, [reload]);
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   const qr = useMemo(() => view?.link ? qrPng(view.link) : null, [view?.link]);
 
-  // fromConfirm：从「重置邀请码」确认框发起。明确被拒时框不关、原因写在框里（OP-81）；结果未知、版本冲突、没有资格时关框，按原来的方式在页面上提示。
-  const issue = async (fromConfirm = false) => {
-    if (busy || !view || pending || !adminId) return;
-    if (view.code !== null && view.version === null) { setError("当前邀请码的资料不全，暂时不能重置；请刷新后再试。"); return; }
-    const expectedVersion = view.code === null ? null : view.version, commandKey = crypto.randomUUID();
-    groupPendingCommands.remember(fingerprint, commandKey, { actorId: adminId, intent: { kind: "INVITE_ISSUE", payload: { expectedVersion } }, label: expectedVersion === null ? "生成邀请码" : "重置邀请码" });
-    const record = findPending();
-    if (record?.commandKey !== commandKey || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) { groupPendingCommands.forget(fingerprint, commandKey); setError("浏览器存不下这次操作，没有提交；请允许浏览器保存网站数据后重试。"); return; }
+  const settle = (record: InviteIssueRecord, current: InviteCodeView | null) => {
+    groupPendingCommands.forget(record.fingerprint, record.commandKey);
+    setPending(undefined); setUnresolved(false); setView(current); setReadFailed(false);
+    if (!current) setReload(n => n + 1);
+  };
+  const submit = async (record: InviteIssueRecord, fromConfirm: boolean, recovering = false) => {
+    const { expectedVersion } = record.intent.payload;
+    const success = expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。";
     setBusy(true); setError("");
-    let acknowledged = false;
+    let acknowledged: InviteIssueRecord | undefined;
     try {
-      const next = await supportGroupClient.issueSelfInviteCode(expectedVersion, commandKey);
-      acknowledged = true;
+      const next = await supportGroupClient.issueSelfInviteCode(expectedVersion, record.commandKey);
+      acknowledged = { ...record, acknowledged: true };
+      groupPendingCommands.remember(record.fingerprint, record.commandKey, acknowledged);
       const current = await supportGroupClient.selfInviteCode();
       if (current.code !== next.code || current.version !== next.version) throw new Error("SUPPORT_INVITE_READBACK_CHANGED");
-      groupPendingCommands.forget(fingerprint, commandKey);
-      setView(current); setConfirming(false);
-      toast(expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
+      settle(record, current); setConfirming(false);
+      toast(success);
     } catch (cause) {
-      if (acknowledged || !commandRejected(cause)) { setConfirming(false); setPending(record); return; } // unknown result: the shown code may already be revoked
-      groupPendingCommands.forget(fingerprint, commandKey);
+      if (acknowledged) {
+        setPending(acknowledged); setUnresolved(false); setView(null); setConfirming(false);
+        toast(success);
+        if (invitePermissionDenied(cause)) clearDenied(cause);
+        return;
+      }
+      if (invitePermissionDenied(cause)) {
+        if (!recovering) groupPendingCommands.forget(record.fingerprint, record.commandKey);
+        clearDenied(cause);
+        return;
+      }
+      if (!commandRejected(cause)) {
+        setConfirming(false); setPending(record);
+        if (recovering) setError("重试的结果仍然未知，原操作已保留，请稍后再查询或重试。");
+        return;
+      }
       const stale = cause instanceof SupportClientError && cause.status === 409;
-      if (stale) { setView(null); setReload(n => n + 1); }
-      if (fromConfirm && !stale && !(cause instanceof SupportClientError && [401, 403].includes(cause.status))) throw Object.assign(new Error(errorText(cause)), { confirmCopy: errorText(cause) });
+      if (recovering) settle(record, null);
+      else {
+        groupPendingCommands.forget(record.fingerprint, record.commandKey);
+        if (stale) { setView(null); setReload(n => n + 1); }
+      }
+      if (fromConfirm && !stale) throw new Error(errorText(cause));
       setConfirming(false);
       setError(errorText(cause));
     } finally { setBusy(false); }
   };
+
+  const issue = async (fromConfirm = false) => {
+    if (busy || !view || pending || !adminId) return;
+    const reportUnsubmitted = (message: string) => {
+      if (fromConfirm) throw new Error(message);
+      setError(message);
+    };
+    if (view.code !== null && view.version === null) { reportUnsubmitted("当前邀请码的资料不全，暂时不能重置，请刷新后再试。"); return; }
+    const expectedVersion = view.code === null ? null : view.version, commandKey = crypto.randomUUID();
+    try {
+      groupPendingCommands.remember(fingerprint, commandKey, { actorId: adminId, intent: { kind: "INVITE_ISSUE", payload: { expectedVersion } }, label: expectedVersion === null ? "生成邀请码" : "重置邀请码" });
+    } catch (cause) {
+      reportUnsubmitted(`还没提交。${displayAdminError(cause)}`);
+      return;
+    }
+    const record = findPending();
+    if (record?.commandKey !== commandKey || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) {
+      groupPendingCommands.forget(fingerprint, commandKey);
+      reportUnsubmitted("浏览器存不下这次操作，没有提交。请允许浏览器保存网站数据后重试。");
+      return;
+    }
+    await submit(record, fromConfirm);
+  };
   // Sharing comes back only after a fresh read of the current code.
-  const settle = (record: InviteIssueRecord) => { groupPendingCommands.forget(record.fingerprint, record.commandKey); setPending(undefined); setUnresolved(false); setView(null); setReload(n => n + 1); };
   const reconcile = async () => {
     if (!pending || busy) return;
     setBusy(true); setError("");
     try {
+      if (pending.acknowledged) {
+        settle(pending, await supportGroupClient.selfInviteCode());
+        return;
+      }
       const receipt = await supportGroupClient.command(pending.commandKey);
       if (receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") { setUnresolved(false); setError("原操作仍在处理，请稍后再查询。"); return; }
-      await supportGroupClient.selfInviteCode();
-      settle(pending);
+      settle(pending, await supportGroupClient.selfInviteCode());
       toast(receipt.status === "SUCCEEDED" ? "原操作已生效，已重新读取邀请码。" : "原操作没有生效，已重新读取邀请码。");
     } catch (cause) {
+      if (invitePermissionDenied(cause)) { clearDenied(cause); return; }
+      if (pending.acknowledged) { setError(displayAdminReadError(cause)); return; }
       const absent = cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
       setUnresolved(absent);
       const reason = absent ? "还没查到原操作的结果，这说明不了它没有执行。" : "暂时查不到原结果。";
@@ -121,22 +182,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   };
   // Same key and frozen request body; the server dedupes it if the original did arrive.
   const replay = async () => {
-    if (!pending || busy || !canReplayGroupCommand(pending)) return;
-    setBusy(true); setError("");
-    let acknowledged = false;
-    try {
-      const next = await supportGroupClient.issueSelfInviteCode(pending.intent.payload.expectedVersion, pending.commandKey);
-      acknowledged = true;
-      const current = await supportGroupClient.selfInviteCode();
-      if (current.code !== next.code || current.version !== next.version) throw new Error("SUPPORT_INVITE_READBACK_CHANGED");
-      settle(pending);
-      toast(pending.intent.payload.expectedVersion === null ? "邀请码已生成。" : "邀请码已重置，旧码已失效。");
-    } catch (cause) {
-      if (acknowledged) { setError("操作已成功，但邀请码没刷新出来，请刷新核对。"); return; }
-      if (!commandRejected(cause)) { setError("重试的结果仍然未知，原操作已保留，请稍后再查询或重试。"); return; }
-      settle(pending);
-      setError(errorText(cause));
-    } finally { setBusy(false); }
+    if (!pending || pending.acknowledged || busy || !canReplayGroupCommand(pending)) return;
+    await submit(pending, false, true);
   };
   const copy = async (value: string, label: string) => {
     try { await navigator.clipboard.writeText(value); toast(`${label}已复制。`); }
@@ -162,8 +209,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   return <section className="m1-invite" aria-label="我的邀请码">
     {confirmBox}
 
-    {pending ? <>
-      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原操作"}</Button>{unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原操作重试</Button>}</>}>上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。</Notice>
+    {!denied && (pending ? <>
+      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : pending.acknowledged ? "刷新邀请码" : "查询原操作"}</Button>{!pending.acknowledged && unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原操作重试</Button>}</>}>{pending.acknowledged ? "邀请码已保存，最新的邀请码暂时读不到。" : `上次${pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。`}</Notice>
     </> : readFailed ? <>
       <Notice tone="danger" action={<Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>}>暂时无法读取邀请码，请重试。</Notice>
     </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在加载邀请码…</p>
@@ -186,7 +233,7 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
           </div>
         </> : <p className="m1-invite-note m1-invite-muted">分享地址未配置，暂时只能复制邀请码</p>}
         <Button ref={resetButton} type="button" size="sm" variant="ghost" icon={<InviteIcon name="reset" />} onClick={() => { setError(""); setConfirming(true); }}>重置</Button>
-      </>}
+      </>)}
     {!confirming && errorLine}
   </section>;
 }

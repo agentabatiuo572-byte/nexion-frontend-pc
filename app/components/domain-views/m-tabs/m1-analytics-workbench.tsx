@@ -903,24 +903,29 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const maintenanceInBar = unresolvedMaintenance && !(isPersonal ? section !== "stats" : section === "mine");
   const unresolvedPool = poolCommands.list().some(r => r.actorId === adminId) || routeCommands.list().some(r => r.actorId === adminId) || randomAssignmentCommands.list().some(r => r.actorId === adminId);
   const unresolvedGroups = groupPendingCommands.list().some(r => r.actorId === adminId && (!isInvitePending(r) || r.intent.kind === "INVITE_REVOKE"));
-  const unresolvedInvite = groupPendingCommands.list().some(r => r.actorId === adminId && isInvitePending(r) && r.intent.kind === "INVITE_ISSUE");
-  const unresolvedAvatar = selfAvatarCommands.list().some(r => r.actorId === adminId) || avatarDrafts.list().some(r => r.actorId === adminId && r.scope === "self" && (!r.asset || r.cancelKey));
+  const inviteReview = readModes?.includes("PERSONAL") ? groupPendingCommands.list().find(r => r.actorId === adminId && isInvitePending(r) && r.intent.kind === "INVITE_ISSUE") : undefined;
+  const avatarEligible = readModes?.some(mode => mode === "PERSONAL" || mode === "MANAGED");
+  const avatarReview = avatarEligible ? selfAvatarCommands.list().find(r => r.actorId === adminId) : undefined;
+  const avatarPreparationUnknown = avatarEligible && avatarDrafts.list().some(r => r.actorId === adminId && r.scope === "self" && (!r.asset || r.cancelKey));
+  const inviteSaved = inviteReview && "acknowledged" in inviteReview && inviteReview.acknowledged;
   const unresolvedPayments = pendingPaymentReleases(adminId ?? 0).filter(r => r.portKey.startsWith("support:"));
   const unresolvedBulk = hasBulkPending(adminId ?? 0);
+  const hasUnknown = maintenanceInBar || unresolvedPool || unresolvedGroups || (inviteReview && !inviteSaved)
+    || (avatarReview && !avatarReview.acknowledged) || avatarPreparationUnknown || unresolvedBulk || unresolvedPayments.length > 0;
   const profileStats = profileId && data && (data.view === "CUSTOMERS" || data.view === "ACTIVITY") ? data.records.find(row => row.customerId === profileId) : undefined;
   const profileCounts = supportCountsView(profileStats?.invitations);
   return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
     {!isPersonal && <M1LiveService ctx={ctx} />}
-    {(maintenanceInBar || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果未知，先查询原操作" actionBelow action={<>
+    {(hasUnknown || inviteSaved || avatarReview?.acknowledged) && <Notice tone="warn" title={hasUnknown ? "有操作结果未知，先查询原操作" : "已保存，请刷新核对最新值"} actionBelow action={<>
       {maintenanceInBar && <Button size="sm" onClick={() => openTab(isPersonal ? "my-customers" : "mine")}>核对维护原操作</Button>}
       {unresolvedPool && <Button size="sm" onClick={() => openTab("pool")}>核对分配原操作</Button>}
       {unresolvedGroups && <Button size="sm" onClick={() => openTab("team")}>核对分组原操作</Button>}
-      {unresolvedInvite && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>核对邀请码原操作</Button>}
-      {unresolvedAvatar && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
+      {inviteReview && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>{inviteSaved ? "查看邀请码" : "核对邀请码原操作"}</Button>}
+      {(avatarReview || avatarPreparationUnknown) && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
       {unresolvedBulk && <Button size="sm" onClick={() => setBulkRecovery(true)}>核对群发原操作</Button>}
       {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>{unresolvedPayments.length > 1 ? `核对支付安全原操作 · 用户 ${row.userId}` : "核对支付安全原操作"}</Button>)}
-    </>}>原内容和理由已保留；超过 24 小时只能查询，不能再重试。</Notice>}
+    </>}>{hasUnknown && "原内容和理由已保留；超过 24 小时只能查询，不能再重试。"}</Notice>}
 
     {!(isPersonal && currentTab === "home") && navigation}
 <TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />

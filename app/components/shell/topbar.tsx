@@ -38,12 +38,15 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
   // 后端只给有专属客服或客服主管资格的账号换本人头像（客服或超管角色，PERSONAL、MANAGED 两种读法就是这两种资格）；只有 ALL 的超管不显示入口（OP-124）。
   const canChangeAvatar = supportReadModes?.some((mode) => mode === "PERSONAL" || mode === "MANAGED") ?? false;
   const [avatarOpen, setAvatarOpen] = useState(false);
-  // 上次保存本人头像结果未知：菜单项后面标出来（只读已有的待确认记录，头像编辑器改记录时会发 m1-pending-changed）。
+  // 菜单跟随编辑器的原保存记录，区分结果未知和已保存待核对。
   const adminId = useAdminAuth((s) => s.session?.adminId);
-  const [avatarPending, setAvatarPending] = useState(false);
+  const [avatarPending, setAvatarPending] = useState<string | null>(null);
   useEffect(() => {
     if (!canChangeAvatar) return;
-    const read = () => setAvatarPending(selfAvatarCommands.list().some((row) => row.actorId === adminId));
+    const read = () => {
+      const record = selfAvatarCommands.list().find((row) => row.actorId === adminId);
+      setAvatarPending(record ? record.acknowledged ? "已保存待核对" : "结果待确认" : null);
+    };
     read();
     window.addEventListener("m1-pending-changed", read);
     return () => window.removeEventListener("m1-pending-changed", read);
@@ -132,7 +135,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
               <button type="button" onClick={() => { setOpen(false); setAvatarOpen(true); }} className="rd-account-action">
                 <UserRoundPen size={14} aria-hidden />
                 更换本人头像
-                {avatarPending && <span className="rd-account-pending">结果待确认</span>}
+                {avatarPending && <span className="rd-account-pending">{avatarPending}</span>}
               </button>
             )}
             <button type="button" onClick={handleSignOut} disabled={loggingOut} className="rd-account-action">

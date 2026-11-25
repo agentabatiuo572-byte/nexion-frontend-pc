@@ -12,7 +12,7 @@ export interface AvatarDraft extends PendingMutationRecord {
   cancelCreatedAt?: number; cancelRejection?: string;
 }
 type AvatarCancellation = PendingMutationRecord & { actorId: number; draftKey: string; assetId: string };
-export interface SelfAvatarPending extends PendingMutationRecord { actorId: number; input: SelfAvatarSave }
+export interface SelfAvatarPending extends PendingMutationRecord { actorId: number; input: SelfAvatarSave; acknowledged?: true }
 export const avatarDraftFingerprint = (actorId: number, scope: AvatarScope, target: string) => `${actorId}:${scope}:${target}`;
 export const newAccountAvatarTarget = (commandKey: string) => `new/${commandKey}`;
 export const avatarDrafts = createPendingMutationStore<AvatarDraft>({
