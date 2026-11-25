@@ -240,3 +240,12 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
       note: key === "monthlyTargetUsdt" && after.clearMonthlyTarget ? "关闭月目标，改用兼容展示值" : undefined };
   });
 }
+
+/** 展示基础销量、购买动态改了以后在 App / H5 Lite 上的实际效果；送审确认框和审批批准框用同一句。累计销量读不到时写「累计销量 + 基础值」。 */
+export function e1DisplayEffect(change: { base?: number; sold?: number; live?: boolean }, onlyDisplay: boolean): string {
+  const parts = [
+    change.base !== undefined && `「累计已售」按${change.sold === undefined ? `累计销量 + ${e1Number(change.base)}` : ` ${e1Number(change.sold + change.base)}`} 件计`,
+    change.live !== undefined && `${change.base === undefined ? " 上" : ""}这件商品${change.live ? "显示" : "不显示"}商品图左下角的购买动态`,
+  ].filter(Boolean);
+  return parts.length ? `批准后，App / H5 Lite${parts.join("，")}。${onlyDisplay ? "售价、任务、已有订单和设备不变。" : ""}` : "";
+}

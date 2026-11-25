@@ -103,7 +103,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
-import { e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1DisplayEffect, e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount, rewardText } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -640,6 +640,17 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
+/** 商品编辑单改了展示基础销量、购买动态时的实际效果，和商品页送审确认框同一句（e1DisplayEffect）。按审批对照里的前后值比，只改这两项时补一句售价、任务等不变。冻结的前值不含累计销量，所以写「累计销量 + 基础值」。 */
+function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "after">) {
+  if (w.operationCode !== "e1_sku_update") return "";
+  const { b, a } = reviewPair(w.before, w.after, w.operationCode);
+  if (b?.kind !== "object" || a?.kind !== "object") return "";
+  const changed = [...new Set([...Object.keys(b.value), ...Object.keys(a.value)])].filter(key => !same(b.value[key] ?? null, a.value[key] ?? null));
+  const base = changed.includes("displaySoldBase") && typeof a.value.displaySoldBase === "number" ? a.value.displaySoldBase : undefined;
+  const live = changed.includes("liveActivityVisible") && typeof a.value.liveActivityVisible === "boolean" ? a.value.liveActivityVisible : undefined;
+  return e1DisplayEffect({ base, live }, changed.every(key => key === "displaySoldBase" || key === "liveActivityVisible"));
+}
+
 function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after">) {
   if (w.action !== "调整设备型号") return null;
   const before = parseReview(w.before), after = parseReview(w.after);
@@ -2587,6 +2598,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
                   : "立即执行，改线上配置；失败不改原值。";
+    const e1Display = scheduled || monthlyTargetChange(w) ? "" : e1DisplayChange(w);
+    const shownImpact = !e1Display ? impact : e1Display.endsWith("设备不变。") ? e1Display : `${impact}${e1Display}`;
     const check = isRefund ? "核对退款金额、订单和发起理由，理由写清依据或工单号。"
       : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"
         : w.type === "acct" ? "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。"
@@ -2656,7 +2669,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
         </div>
       ),
-      statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact, check },
+      statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact: shownImpact, check },
       amplifies,
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
       // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
