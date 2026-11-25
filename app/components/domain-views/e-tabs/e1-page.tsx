@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
+import { AlertTriangle, RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
 import { canReadOwnRecoveryProposal, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
@@ -583,6 +583,10 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const changedKey = (...keys: string[]) => skuChanges.some(row => keys.includes(row.key));
   const otherChanges = skuChanges.filter(row => !E1_DECISION_KEYS.includes(row.key));
   const SERIES_ONLY_SHOWN = ["seriesCode", "price", "name", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter"];
+  // 关键信息常显的没改字段，「其余设置」不再列第二遍（ST-74）；月收益目标那一行同时写目标和波动。
+  const KEY_FACT_FIELDS: Record<string, string[]> = { price: ["price"], name: ["name"], allowedPoolCodes: ["allowedPoolCodes"], monthlyTargetUsdt: ["monthlyTargetUsdt", "monthlyTargetBandPct"], monthlyTargetBandPct: ["monthlyTargetUsdt", "monthlyTargetBandPct"], datacenter: ["datacenter"] };
+  const restDiff = skuDiff?.filter(row => row.before !== row.after || !KEY_FACT_FIELDS[row.key] || changedKey(...KEY_FACT_FIELDS[row.key])) ?? [];
+  const restUnchanged = restDiff.filter(row => row.before === row.after);
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
     skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, catalogIncomplete, e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: async () => { await refreshProducts(); },
@@ -666,9 +670,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       content={skuDiff ? !mc.beforeSku ? <Fold inset title="完整商品资料" summary={`已填 ${skuFilled.length} 项${skuDiff.length > skuFilled.length ? `，其余 ${skuDiff.length - skuFilled.length} 项未设置` : ""}`}><Facts>{skuFilled.map(row => <Fact key={row.key} k={row.label}>{row.after}</Fact>)}</Facts></Fold>
         : seriesChange ? <Fold inset title="其余设置" summary={`${skuDiff.filter(row => !SERIES_ONLY_SHOWN.includes(row.key)).length} 项不变`}><Facts>{skuDiff.filter(row => !SERIES_ONLY_SHOWN.includes(row.key)).map(row => <Fact key={row.key} k={row.label}>{row.after}</Fact>)}</Facts></Fold>
         : skuChanges.length > 4
-        ? decisionChanges.length ? <><Facts>{decisionChanges.map(row => <Fact key={row.key} k={row.label}><Change from={row.before ?? ""} to={row.after ?? ""} /></Fact>)}</Facts>{!!otherChanges.length && <Fold inset title="其余改动" summary={`${otherChanges.length} 项`}><DiffList named rows={otherChanges} /></Fold>}{skuDiff.length > skuChanges.length && <Fold inset title="其余设置" summary={`${skuDiff.length - skuChanges.length} 项不变`}><dl className="rd-diff-rest">{skuDiff.filter(row => row.before === row.after).map(row => <div key={row.key}><dt>{row.label}</dt><dd>{row.after}</dd></div>)}</dl></Fold>}</>
-          : <Fold inset title="完整商品变更" summary={`${skuChanges.length} 项改动`}><DiffList rows={skuDiff} /></Fold>
-        : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
+        ? decisionChanges.length ? <><Facts>{decisionChanges.map(row => <Fact key={row.key} k={row.label}><Change from={row.before ?? ""} to={row.after ?? ""} />{row.note && <span className="rd-diff-note" data-tone="warn"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>{row.note}</span></span>}</Fact>)}</Facts>{!!otherChanges.length && <Fold inset title="其余改动" summary={`${otherChanges.length} 项`}><DiffList named rows={otherChanges} /></Fold>}{!!restUnchanged.length && <Fold inset title="其余设置" summary={`${restUnchanged.length} 项不变`}><dl className="rd-diff-rest">{restUnchanged.map(row => <div key={row.key}><dt>{row.label}</dt><dd>{row.after}</dd></div>)}</dl></Fold>}</>
+          : <Fold inset title="完整商品变更" summary={`${skuChanges.length} 项改动`}><DiffList rows={restDiff} /></Fold>
+        : <DiffList rows={restDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
       blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原操作" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
         <ConflictBar message="商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。" onRead={readConflict} />
         {conflictRead && <Notice tone="warn" title="核对别人改了什么，再决定是否保留你的修改">
