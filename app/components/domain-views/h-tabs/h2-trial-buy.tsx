@@ -37,6 +37,7 @@ const MONEY_LINE = "减价后的价格低于试用抵扣金时，抵不完的购
 export const EDIT_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
 export const UNKNOWN_TOAST = "结果未知，不要重复操作，到页面上方处理。";
 export const BUY_SAVED = "其他可购买设备 已更新";
+const NO_CHANGES = "勾选和现在一样，没有要保存的改动";
 const INVALID_PICKED = "请先取消不能新增的设备";
 export const BUY_CONFLICT = "这份清单刚被别人改过，这次没有保存";
 export const BUY_READ_INVALID = "收到的数据不完整，已停止显示。";
@@ -162,7 +163,9 @@ export function buyReplayEdits(record: BuyListPending) {
   return { before, added, removed };
 }
 
-export function BuySection({ ctx, list, readError, trialTargetNo, blocked, conflictKey, reading, reach, leaveGuard, replayReview, onReload, onSubmit }: {
+export type ReviewBuyReplay = (edits: NonNullable<ReturnType<typeof buyReplayEdits>>, latest: BuyList) => void;
+
+export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, leaveGuard, replayReview, onReload, onSubmit }: {
   ctx: HCtx;
   list?: BuyList;
   /** 收到了这块数据但形状不对：显示区块错误卡，不显示成空清单（ST-34）。 */
@@ -171,18 +174,16 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
   trialTargetNo?: string;
   /** 读取中或这一行结果未知时，「调整」和提交的禁用原因。 */
   blocked?: string;
-  conflictKey?: string;
   reading: boolean;
   reach: ReturnType<typeof useReach>;
   /** 抽屉里有没保存的改动时是一个「先问再做」，页头刷新走它（OP-30）；没有改动时是 null。 */
   leaveGuard: RefObject<((next: () => void) => void) | null>;
-  replayReview: RefObject<((record: BuyListPending, latest: BuyList) => void) | null>;
+  replayReview: RefObject<ReviewBuyReplay | null>;
   onReload: (requireList?: boolean) => Promise<BuyList | undefined>;
-  onSubmit: (input: BuyListDraft, recoveryKey?: string) => Promise<BuyListSubmitResult>;
+  onSubmit: (input: BuyListDraft) => Promise<BuyListSubmitResult>;
 }) {
   const canWrite = ctx.can("growth_h2_write");
   const [draftBase, setDraftBase] = useState<BuyList>();
-  const [recoveryKey, setRecoveryKey] = useState<string>();
   const [picked, setPicked] = useState<string[]>([]);
   const [lastReason, setLastReason] = useState("");
   const [rejected, setRejected] = useState<string>();
@@ -198,9 +199,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
   const removed = draftItems.filter((item) => !picked.includes(item.productNo));
   const changed = added.length + removed.length > 0;
   const invalidPicked = candidates.some((item) => !item.selectable && added.includes(item.productNo));
-  const entryBlock = blocked ?? (conflictKey ? BUY_READ_FIRST : undefined);
-  const draftBlock = blocked ?? (conflictKey && recoveryKey !== conflictKey ? BUY_READ_FIRST
-    : invalidPicked ? INVALID_PICKED : changed ? undefined : "勾选和现在一样，没有要保存的改动");
+  const draftBlock = blocked ?? (invalidPicked ? INVALID_PICKED : changed ? undefined : NO_CHANGES);
 
   const dirty = !!draftBase && changed;
   // 浏览器后退和换页一样先问（OP-29）。
@@ -210,7 +209,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
     if (dirty) { afterLeave.current = undefined; setLeaving(true); return; }
     setPicked(items.map((item) => item.productNo)); setLastReason(""); setRejected(undefined); setDraftBase(list);
   };
-  const closeDrawer = () => { afterLeave.current = undefined; setLeaving(false); setDraftBase(undefined); setRecoveryKey(undefined); };
+  const closeDrawer = () => { afterLeave.current = undefined; setLeaving(false); setDraftBase(undefined); };
   const continueEditing = () => { afterLeave.current = undefined; setLeaving(false); };
   // 关闭、Esc、点抽屉外、取消：有改动先问（OP-29）。
   const leaveDrawer = () => { if (leaving) continueEditing(); else if (changed) { afterLeave.current = undefined; setLeaving(true); } else closeDrawer(); };
@@ -242,12 +241,11 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
   useEffect(refocusDrawer, [leaving]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
-  const showConfirm = (base: BuyList, selection: string[], { initialReason, initialRejected, othersNote, readFresh, reviewedKey }: {
+  const showConfirm = (base: BuyList, selection: string[], { initialReason, initialRejected, othersNote, readFresh }: {
     initialReason?: string;
     initialRejected?: string;
     othersNote?: string;
     readFresh?: boolean;
-    reviewedKey?: string;
   } = {}) => {
     const { items, candidates } = buyChoices(base);
     const selected = new Set(selection);
@@ -303,7 +301,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
         removed: removed.map(productName),
         nextNames: next.map(productName),
         review: { before: base.items, added },
-      }, reviewedKey);
+      });
       if (outcome.kind === "stopped") { closeDrawer(); return; }
       if (outcome.kind === "conflict") {
         throw new ConfirmReadConflict({
@@ -311,7 +309,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
           readLatest: async () => {
             const { base: latest, selection } = await readReview();
             setLastReason("");
-            if (!showConfirm(latest, selection, { othersNote: changedByOthers(base.items, latest.items), readFresh: true, reviewedKey })) ctx.openActionConfirm(null);
+            if (!showConfirm(latest, selection, { othersNote: changedByOthers(base.items, latest.items), readFresh: true })) ctx.openActionConfirm(null);
             return false;
           },
           renderNotice: (readLatest) => (
@@ -372,10 +370,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
     return true;
   };
 
-  replayReview.current = (record, latest) => {
-    const edits = buyReplayEdits(record);
-    if (!edits) return;
-    const { before, added, removed } = edits;
+  replayReview.current = ({ before, added, removed }, latest) => {
     const review = rebaseSelection(latest, added, removed);
     afterLeave.current = undefined;
     setLeaving(false);
@@ -383,15 +378,19 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
     setRejected(undefined);
     setDraftBase(review.base);
     setPicked(review.selection);
-    setRecoveryKey(record.commandKey);
-    showConfirm(review.base, review.selection, { othersNote: changedByOthers(before, latest.items), readFresh: true, reviewedKey: record.commandKey });
+    const selected = new Set(review.selection);
+    if (selected.size === latest.items.length && latest.items.every(item => selected.has(item.productNo))) {
+      ctx.toast(NO_CHANGES, "info");
+    } else {
+      showConfirm(review.base, review.selection, { othersNote: changedByOthers(before, latest.items), readFresh: true });
+    }
   };
 
   const openConfirm = () => {
     if (!canWrite || !draftBase || draftBlock) return;
     if (!leaving) afterLeave.current = undefined;
     setLeaving(false);
-    showConfirm(draftBase, picked, { initialReason: lastReason, initialRejected: rejected, reviewedKey: recoveryKey });
+    showConfirm(draftBase, picked, { initialReason: lastReason, initialRejected: rejected });
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
@@ -407,7 +406,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, confl
             <ConfigList>
               <ConfigRow name="其他可购买设备" what={ROW_HELP.what} where={ROW_HELP.where} when={ROW_HELP.when} effect={ROW_HELP.effect}
                 value={<>{value}{sub && <> · <span className="h2-buy-sub">{sub}</span></>}</>}
-                action={canWrite ? (describedBy) => <Button size="sm" data-h2-editor-leave aria-label="调整 其他可购买设备" aria-describedby={describedBy} disabledReason={entryBlock} onClick={openDrawer}>调整</Button> : undefined} />
+                action={canWrite ? (describedBy) => <Button size="sm" data-h2-editor-leave aria-label="调整 其他可购买设备" aria-describedby={describedBy} disabledReason={blocked} onClick={openDrawer}>调整</Button> : undefined} />
             </ConfigList>
             {items.length > 0 && <p className="h2-buy-order">按售价从低到高</p>}
             <div className="h2-buy-table">

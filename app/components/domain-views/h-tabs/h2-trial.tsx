@@ -42,7 +42,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useReach } from "@/lib/nav/use-reach";
 import type { EditSpec } from "../design-kit";
 import { AlertTriangle } from "lucide-react";
-import { BUY_CONFLICT, BUY_READ_FIRST, BUY_READ_INVALID, BUY_SAVED, BuyListPendingNotice, EDIT_LOCKED, UNKNOWN_TOAST, BuySection, buyReplayEdits, type BuyListDraft, type BuyListPending, type BuyListSubmitResult } from "./h2-trial-buy";
+import { BUY_CONFLICT, BUY_READ_FIRST, BUY_READ_INVALID, BUY_SAVED, BuyListPendingNotice, EDIT_LOCKED, UNKNOWN_TOAST, BuySection, buyReplayEdits, type BuyListDraft, type BuyListPending, type BuyListSubmitResult, type ReviewBuyReplay } from "./h2-trial-buy";
 import type { HCtx } from "./types";
 
 /** 整页读取失败后按「重试」读到了：焦点落在第一块的标题，不落到整页外框（BUG-710）。 */
@@ -520,7 +520,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const [releasingBuyList, setReleasingBuyList] = useState<string>();
   const [paramReview, setParamReview] = useState<ParamReview>();
   const clearParamReview = useCallback(() => setParamReview(undefined), []);
-  const reviewBuyReplay = useRef<((record: BuyListPending, latest: BuyList) => void) | null>(null);
+  const reviewBuyReplay = useRef<ReviewBuyReplay | null>(null);
   const [buyReadError, setBuyReadError] = useState<string>();
   const [buyLoading, setBuyLoading] = useState(false);
   const [catalogWritePermissionName, setCatalogWritePermissionName] = useState<string>();
@@ -654,7 +654,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const buyRead = model?.buyList;
   const buyList = buyRead === "invalid" ? undefined : buyRead;
   const buyInvalid = buyRead === "invalid" || !!buyReadError;
-  const buyBlock = loading || buyLoading ? READING : buyPending ? EDIT_LOCKED : buyReadError ? BUY_READ_FIRST : undefined;
+  const buyBlock = loading || buyLoading ? READING : buyPending ? EDIT_LOCKED : buyReadError || buyReplayConflict ? BUY_READ_FIRST : undefined;
   const sessionsRead = model?.sessions ?? [];
   const sessionsInvalid = sessionsRead.some((session) => readH2SessionProducts(session) === "invalid");
   const sections: SectionNavItem[] = [
@@ -719,7 +719,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     }
   };
 
-  const submitBuyList = async (draft: BuyListDraft, recoveryKey?: string): Promise<BuyListSubmitResult> => {
+  const submitBuyList = async (draft: BuyListDraft): Promise<BuyListSubmitResult> => {
     const ownerId = adminSession?.adminId;
     if (!ownerId || !canWrite) throw new Error("ADMIN_PERMISSION_DENIED");
     const session = await checkBuyListOwner(ownerId);
@@ -733,8 +733,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       syncBuyPending();
       throw new Error(EDIT_LOCKED);
     }
-    const conflict = records.find(isBuyReplayConflict);
-    if (conflict?.commandKey !== recoveryKey) throw new Error(BUY_READ_FIRST);
+    if (records.some(isBuyReplayConflict)) throw new Error(BUY_READ_FIRST);
     const commandKey = createH2CommandKey("h2-buy-list");
     pendingBuyLists.remember(H2_BUY_LIST_OBJECT, commandKey, { ...draft, requestNo: commandKey, confirmedActorId: ownerId });
     const record = pendingBuyLists.list().find((item) => item.commandKey === commandKey);
@@ -745,7 +744,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     try {
       const outcome = await updateH2TrialBuyList(buyListWrite(record));
       if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
-      if (outcome.kind === "saved" && conflict) forgetBuyConflicts();
       // 首发就被账号核对拒绝：后端没有执行，不留待确认。
       if (outcome.kind === "accountMismatch") {
         toast("确认账号与当前登录账号不符，这次没有保存。", "warn");
@@ -1129,14 +1127,17 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       auditLink={reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?${new URLSearchParams({ domain: "H", action: H2_BUY_LIST_ACTION, object: buyPending.requestNo })}`} prefetch={false}>到操作记录与审批核对</Link>} />,
   );
   if (buyReplayConflict && !buyPending) {
-    const canMerge = !!buyReplayEdits(buyReplayConflict);
+    const edits = buyReplayEdits(buyReplayConflict);
     pendingNotices.push(
       <Notice key="buy-list-conflict" tone="warn" title={BUY_CONFLICT}
-        action={canMerge && canWrite && <Button size="sm" disabled={loading || buyLoading || !!error || !showBuySection}
+        action={edits && canWrite && <Button size="sm" disabled={loading || buyLoading || !!error || !showBuySection}
           onClick={() => void reloadBuyList(true).then(latest => {
-            if (latest) reviewBuyReplay.current?.(buyReplayConflict, latest);
+            if (!latest || !reviewBuyReplay.current) return;
+            reviewBuyReplay.current(edits, latest);
+            pendingBuyLists.forget(buyReplayConflict.fingerprint, buyReplayConflict.commandKey);
+            syncBuyPending();
           }).catch(() => undefined)}>读取最新</Button>}>
-        {canMerge ? "请读取最新清单后再调整。" : <>
+        {edits ? "请读取最新清单后再调整。" : <>
           请到操作记录与审批核对。
           {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?${new URLSearchParams({ domain: "H", action: H2_BUY_LIST_ACTION, object: buyReplayConflict.requestNo })}`} prefetch={false}>到操作记录与审批核对</Link></>}
           <Explain label="技术信息" content={`操作编号 ${buyReplayConflict.commandKey} ｜ 改后清单 ${buyReplayConflict.productNos.join("、") || "空"} ｜ 理由 ${buyReplayConflict.reason}`} />
@@ -1262,7 +1263,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             {showBuySection && (
               <div id={nav.anchor("buy")}>
                 <BuySection ctx={ctx} list={buyList} readError={buyReadError} trialTargetNo={productNo} reach={reach}
-                  blocked={buyBlock} conflictKey={buyReplayConflict?.commandKey} reading={buyLoading} leaveGuard={buyLeaveGuard} replayReview={reviewBuyReplay} onReload={reloadBuyList} onSubmit={submitBuyList} />
+                  blocked={buyBlock} reading={buyLoading} leaveGuard={buyLeaveGuard} replayReview={reviewBuyReplay} onReload={reloadBuyList} onSubmit={submitBuyList} />
               </div>
             )}
 
