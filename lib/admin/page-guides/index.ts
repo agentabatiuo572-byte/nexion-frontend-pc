@@ -953,7 +953,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     terms: [
       { name: "解除原操作记录", text: "按原请求重试被明确拒绝、你核实过原操作结果后才能解除；限流、登录或权限出错不算。只删这个标签页里的记录，后台的结果和锁定不变。" },
       { name: "试用收益", text: "试用期按天累积的 USDT 和 UVT，购买前只能抵购机款，不能提现。" },
-      { name: "试用抵扣金", text: "试用收益在 App 上的叫法，购买设备时抵购机款。" },
+      { name: "试用抵扣金", text: "试用收益在 App 上的叫法，按天累积；购买前只能抵购机款，不能提现。" },
       { name: "试用抵扣金上限", text: "抵扣额取累计收益和这个上限里较小的，也不超过减价后的应付。多出的 USDT 和全部 UVT 购买后进余额。" },
       { name: "三种优惠", text: "购买减价、试用抵扣金、提前购买立减可以叠加，实付最低 0。" },
       { name: "试用目标商品", text: "新领取的用户免费试用的那台设备。" },
@@ -1378,7 +1378,8 @@ export function getPageGuide(pageId: string): PageGuideContent | undefined {
 export function getH2PageGuide(hasBuyList: boolean, canWrite: boolean, canCancel: boolean): PageGuideContent {
   const guide = PAGE_GUIDES.H2;
   const [settings, buyList, records] = guide.tasks;
-  const terms = hasBuyList ? guide.terms : guide.terms
+  // 术语最多 5 个（TX-37）：其余几个在对应那一行的说明里。
+  const terms = hasBuyList ? guide.terms.filter((term) => ["试用抵扣金", "试用抵扣金上限", "三种优惠", "其他可购买设备", "宽限期"].includes(term.name)) : guide.terms
     .filter((term) => !["试用抵扣金", "试用目标商品", "其他可购买设备"].includes(term.name))
     .map((term) => {
       if (term.name === "三种优惠") return { ...term, text: "购买减价、试用收益抵扣、提前购买立减可以叠加，实付最低 0。各自的上限和条件看对应参数的提示。" };

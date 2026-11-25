@@ -4,8 +4,9 @@
  * 免费试用设置 ·「可购买设备」分区（PLAN 第三节，画板 01–11）：用户除了自己领的试用设备，还能用试用抵扣金买哪些设备。
  * 后台只保存「其他可购买设备」；读取结果里没有这块数据时整块不显示，页面和以前一样。
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CircleDot, Coins, Eye, EyeOff, Package, PackageX, Plus, SlidersHorizontal, X } from "lucide-react";
 import { BlockState, Button, Cell, Check, CheckGroup, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, KeepText, Notice, Panel, StatusTag, Table, TableMessage, Td, Th, type DiffRow } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -120,7 +121,7 @@ function rebaseSelection(latest: BuyList, added: BuyCandidate[], removed: BuyDev
   return { base, selection: [...selection] };
 }
 
-export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, onReload, onSubmit }: {
+export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, leaveGuard, onReload, onSubmit }: {
   ctx: HCtx;
   list?: BuyList;
   /** 收到了这块数据但形状不对：显示区块错误卡，不显示成空清单（ST-34）。 */
@@ -131,6 +132,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   blocked?: string;
   reading: boolean;
   reach: ReturnType<typeof useReach>;
+  /** 抽屉里有没保存的改动时是一个「先问再做」，页头刷新走它（OP-30）；没有改动时是 null。 */
+  leaveGuard: RefObject<((next: () => void) => void) | null>;
   onReload: (requireList?: boolean) => Promise<BuyList | undefined>;
   onSubmit: (input: BuyListDraft) => Promise<BuyListSubmitResult>;
 }) {
@@ -139,7 +142,10 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const [picked, setPicked] = useState<string[]>([]);
   const [lastReason, setLastReason] = useState("");
   const [rejectedDraft, setRejectedDraft] = useState<ConfirmReadConflict>();
+  const [leaving, setLeaving] = useState(false);
+  const afterLeave = useRef<() => void>(undefined);
   const formSequence = useRef(0);
+  const router = useRouter();
   const items = list ? byPrice(list.items) : [];
   const { items: draftItems, candidates } = buyChoices(draftBase);
   const inList = new Set(draftItems.map((item) => item.productNo));
@@ -151,7 +157,35 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const draftBlock = blocked ?? (invalidPicked ? "请先取消不能新增的设备" : changed ? undefined : "勾选和现在一样，没有要保存的改动");
 
   const openDrawer = () => { setPicked(items.map((item) => item.productNo)); setLastReason(""); setRejectedDraft(undefined); setDraftBase(list); };
-  const closeDrawer = () => setDraftBase(undefined);
+  const closeDrawer = () => { afterLeave.current = undefined; setLeaving(false); setDraftBase(undefined); };
+  const continueEditing = () => { afterLeave.current = undefined; setLeaving(false); };
+  // 关闭、Esc、点抽屉外、取消：有改动先问（OP-29）。
+  const leaveDrawer = () => { if (leaving) continueEditing(); else if (changed) setLeaving(true); else closeDrawer(); };
+  const discard = () => { const next = afterLeave.current; closeDrawer(); next?.(); };
+  const dirty = !!draftBase && changed;
+  useEffect(() => {
+    if (!dirty) return;
+    const leaveThen = (next: () => void) => { afterLeave.current = next; setLeaving(true); };
+    leaveGuard.current = leaveThen;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    // 侧栏、面包屑和抽屉里的链接会换页：先问，放弃后再去。
+    const intercept = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link || link.target && link.target !== "_self" || link.hasAttribute("download") || link.origin !== window.location.origin
+        || link.pathname === window.location.pathname) return;
+      event.preventDefault();
+      event.stopPropagation();
+      leaveThen(() => router.push(`${link.pathname}${link.search}${link.hash}`));
+    };
+    window.addEventListener("beforeunload", warn);
+    document.addEventListener("click", intercept, true);
+    return () => {
+      leaveGuard.current = null;
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", intercept, true);
+    };
+  }, [dirty, leaveGuard, router]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
   const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejection?: ConfirmReadConflict) => {
@@ -163,14 +197,17 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     const removed = items.filter((item) => !selected.has(item.productNo));
     const kept = items.filter((item) => selected.has(item.productNo));
     if (added.some((item) => !item.selectable) || (!added.length && !removed.length)) return false;
+    const named = [...added, ...removed, ...kept];
+    // 同名商品带上编号才分得清。
+    const label = (item: BuyDevice) => named.filter((other) => other.name === item.name).length > 1 ? `${item.name}（${item.productNo}）` : item.name;
     const rows: DiffRow[] = [
-      ...added.map((item) => ({ key: item.productNo, label: item.name, before: "不在清单", after: "新增" })),
+      ...added.map((item) => ({ key: item.productNo, label: label(item), before: "不在清单", after: "新增" })),
       ...removed.map((item) => item.appState === "hidden"
-        ? { key: item.productNo, label: item.name, before: "在清单 · App 不显示", after: "移除", note: "移除后，重新上架也要手动再添加" }
-        : { key: item.productNo, label: item.name, before: item.appState === "soldOut" ? "在清单 · 售罄" : "在清单", after: "移除", note: "之后不能再用试用抵扣金买它（正在试用它的用户除外）" }),
+        ? { key: item.productNo, label: label(item), before: "在清单 · App 不显示", after: "移除", note: "移除后，重新上架也要手动再添加" }
+        : { key: item.productNo, label: label(item), before: item.appState === "soldOut" ? "在清单 · 售罄" : "在清单", after: "移除", note: "之后不能再用试用抵扣金买它（正在试用它的用户除外）" }),
       ...kept.map((item) => {
         const state = item.appState === "hidden" ? "在清单 · App 不显示" : item.appState === "soldOut" ? "在清单 · 售罄" : "在清单";
-        return { key: item.productNo, label: item.name, before: state, after: state };
+        return { key: item.productNo, label: label(item), before: state, after: state };
       }),
     ];
     const after = listValue(next);
@@ -213,6 +250,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       if (outcome.kind === "rejected") {
         const rejection = new ConfirmReadConflict({
           preserveReason: true,
+          disabledReason: "请先返回调整",
           readLatest: async () => {
             await readReview();
             setRejectedDraft(undefined);
@@ -244,7 +282,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       statedBrief: { impact: "之后发起的购买按新清单，进行中的试用也一样", check: "核对新增和移除，理由写清调整原因和依据。" },
       facts: (
         <div className="rd-stack">
-          <DiffList rows={rows} restTitle="其余设备" />
+          <DiffList rows={rows} restTitle="其余设备" named />
           <Facts><Fact k="改后共">{after.value === "未添加" ? "0 款" : after.value}{after.sub && <> · {after.sub}</>}</Fact></Facts>
           {added.length > 0 && <div className="h2-money-note"><Notice tone="neutral">{MONEY_LINE}</Notice></div>}
         </div>
@@ -260,7 +298,9 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   };
 
   const openConfirm = () => {
-    if (canWrite && draftBase && !draftBlock) showConfirm(draftBase, picked, lastReason, rejectedDraft);
+    if (!canWrite || !draftBase || draftBlock) return;
+    continueEditing();
+    showConfirm(draftBase, picked, lastReason, rejectedDraft);
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
@@ -308,11 +348,15 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         )}
       </Panel>
 
-      <Drawer open={!!draftBase} onClose={closeDrawer} title="调整其他可购买设备" sub="保存后立即生效" icon={SlidersHorizontal} tone="neutral"
-        footer={<Decision note={note}
-          others={<Button size="md" onClick={closeDrawer}>取消</Button>}
-          primary={<Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button>} />}>
-        <div className="h2-buy-form">
+      <Drawer open={!!draftBase} onClose={leaveDrawer} title={leaving ? "清单改动还没保存" : "调整其他可购买设备"} sub="保存后立即生效" icon={SlidersHorizontal} tone="neutral"
+        footer={leaving
+          ? <Decision note={note}
+            others={<><Button size="md" onClick={continueEditing}>继续编辑</Button><Button variant="danger-outline" size="md" onClick={discard}>放弃改动并返回</Button></>}
+            primary={<Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>保存并立即生效</Button>} />
+          : <Decision note={note}
+            others={<Button size="md" onClick={leaveDrawer}>取消</Button>}
+            primary={<Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button>} />}>
+        {leaving ? <p>放弃后，这次的勾选不保存，清单保持原样。</p> : <div className="h2-buy-form">
           <div className="h2-buy-checks">
             <CheckGroup legend="其他可购买设备" summary={`候选 ${candidates.length} 款`}
               explain={<><p>能勾的：在售 · 通过上架条件 · 售价大于 0 · 实体设备或云份额</p><p>开没开「允许试用」都不影响。</p></>}>
@@ -343,7 +387,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
             </CheckGroup>
           </div>
           <Notice tone="neutral">{MONEY_LINE}</Notice>
-        </div>
+        </div>}
       </Drawer>
     </>
   );

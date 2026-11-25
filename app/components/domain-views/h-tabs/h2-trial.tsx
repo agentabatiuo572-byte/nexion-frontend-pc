@@ -447,6 +447,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const buyPending = adminSession && isPendingCommandOwnedBy(pendingBuyList, adminSession.adminId) ? pendingBuyList : undefined;
   const syncBuyPending = useCallback(() => setPendingBuyList(pendingBuyLists.list()[0]), []);
   const reloadEpochRef = useRef(0);
+  const buyLeaveGuard = useRef<((next: () => void) => void) | null>(null);
   const fullReadInProgress = useRef(true);
   const buyReadEpochRef = useRef(0);
   const readsAllowBuyWrite = useRef(false);
@@ -836,7 +837,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       guideContent={getH2PageGuide(showBuySection, canWrite, canCancel)}
       meta={model ? <span className="rd-toolbar">
         <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
-        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => void reload()}>刷新</Button>
+        <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} onClick={() => { const refresh = () => void reload(); if (buyLeaveGuard.current) buyLeaveGuard.current(refresh); else refresh(); }}>刷新</Button>
       </span> : undefined}
       readOnly={model && !canWrite ? (writePermissionName ? `你只能查看；修改需要「${writePermissionName}」权限` : "你只能查看；修改试用设置要有这页的修改权限。") : undefined}
     />
@@ -1082,7 +1083,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             {showBuySection && (
               <div id={nav.anchor("buy")}>
                 <BuySection ctx={ctx} list={buyList} readError={buyReadError} trialTargetNo={productNo} reach={reach}
-                  blocked={buyBlock} reading={buyLoading} onReload={reloadBuyList} onSubmit={submitBuyList} />
+                  blocked={buyBlock} reading={buyLoading} leaveGuard={buyLeaveGuard} onReload={reloadBuyList} onSubmit={submitBuyList} />
               </div>
             )}
 

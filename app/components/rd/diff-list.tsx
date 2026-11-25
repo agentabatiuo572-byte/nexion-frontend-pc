@@ -3,7 +3,7 @@
  * 现在值弱一档，改后的值用进行中蓝（还没生效），方向和后果用状态色，不靠颜色单独传意思。
  *
  * DiffList 多项修改。只列改了的项，其余收进一个折叠；某一项改了有风险，写在这一行下面（note），不另铺横幅。
- * 只有一行时写成一句「现在 → 改后」，没改就只写现在值。
+ * 只有一行时写成一句「现在 → 改后」，没改就只写现在值；框的标题没写明是哪一项时（增删清单里的一款）传 named，一行也写出名称和后果。
  *
  * <DiffList rows={[
  *   { key: "window", label: "默认预测天数", before: "7 天", after: "30 天" },
@@ -32,7 +32,7 @@ import { Fold } from "./fold";
 
 export interface DiffRow {
   key: string;
-  /** 只有一行时不显示：框的标题已经写明是哪一项，写成一句「现在 → 改后」。 */
+  /** 只有一行且没传 named 时不显示：框的标题已经写明是哪一项，写成一句「现在 → 改后」。 */
   label?: ReactNode;
   /** Omit an undocumented side when the row is evidence rather than a replacement value. */
   before?: string;
@@ -43,8 +43,14 @@ export interface DiffRow {
   tone?: "warn" | "danger";
 }
 
-export function DiffList({ rows, emptyNote, restTitle = "其余设置" }: { rows: readonly DiffRow[]; emptyNote?: ReactNode; restTitle?: ReactNode }) {
-  if (rows.length === 1 && rows[0].before !== undefined && rows[0].after !== undefined) {
+export function DiffList({ rows, emptyNote, restTitle = "其余设置", named = false }: {
+  rows: readonly DiffRow[];
+  emptyNote?: ReactNode;
+  restTitle?: ReactNode;
+  /** 只有一行也写出名称和后果。 */
+  named?: boolean;
+}) {
+  if (!named && rows.length === 1 && rows[0].before !== undefined && rows[0].after !== undefined) {
     const [{ before, after }] = rows;
     return (
       <p className="rd-diff-one">
