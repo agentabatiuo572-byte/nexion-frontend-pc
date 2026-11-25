@@ -277,7 +277,7 @@ function AgentStatisticsDrawer({ subject, read, month, currency, drill, onClose,
       {agentPeriod && <Fact k="期间业绩额" unit={agentPeriod.state === "complete" ? "USDT" : undefined}>{perfText(agentPeriod)}<span className="m1-fact-reason">{agentPeriod.state === "complete" ? month : perfNote(agentPeriod)}</span></Fact>}
       <Fact k="已首充"><CountValue count={agent.current.firstConfirmed} label="已首充客户" onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND", firstState: "CONFIRMED" })} /></Fact>
       <Fact k="持有设备"><CountValue count={agent.current.devices.held} label="当前设备" onClick={() => drill({ view: "DEVICES", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_ASSET" })} /></Fact>
-      <Fact k="客户累计充值" unit={unit}><MoneyValue money={agent.current.ownLifetime.find(x => x.currency === currency)?.deposits} label={`客户累计充值 ${unit}`} onClick={() => drill({ view: "FINANCE", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY" })} /></Fact>
+      <Fact k="客户累计充值" unit={agent.current.ownLifetime.find(x => x.currency === currency)?.deposits?.confirmed != null ? unit : undefined}><MoneyValue money={agent.current.ownLifetime.find(x => x.currency === currency)?.deposits} label={`客户累计充值 ${unit}`} onClick={() => drill({ view: "FINANCE", agentId: agent.accountId, category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY" })} /></Fact>
       <Fact k="当前余额" unit={unit}><Numeric kind="amount" value={agent.funds.balances?.find(f => f.currency === currency)?.confirmedAmount ?? null} observed={agent.funds.balances?.find(f => f.currency === currency)?.observedAmount} label={`当前余额 ${unit}`} onClick={() => drill({ view: "CUSTOMERS", agentId: agent.accountId, category: "BOUND" })} /></Fact>
     </> : null}
     </Facts>
@@ -390,7 +390,7 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
       const customerCount = row.funds.customerCount !== undefined ? String(row.funds.customerCount) : row.current.firstConfirmed.confirmed !== null && row.current.firstNone.confirmed !== null && row.current.firstUnknown.confirmed !== null ? (BigInt(row.current.firstConfirmed.confirmed) + BigInt(row.current.firstNone.confirmed) + BigInt(row.current.firstUnknown.confirmed)).toString() : null;
       const group = data.scopeSummary.groups.find(g => g.groupId === row.account.groupId);
       const onlyAgent = (view: SupportAnalyticsView, extra: Partial<AnalyticsQueryState> = {}) => drill({ view, agentId: row.accountId, category: "BOUND", ...extra });
-      return <Tr key={row.accountId} selected={agentId === row.accountId}><Td><div className="sa-identity"><SupportAvatar name={row.displayName || "客服"} path={row.avatarRef ?? undefined} version={row.avatar?.version} /><div><Button variant="ghost" size="sm" title={row.displayName || "客服"} onClick={() => onlyAgent("CUSTOMERS")}>{row.displayName || "名称未同步"}</Button><span className="rd-note">{group?.name || (row.account.groupId === null ? "待分组" : "组名未同步")} · {role(row)}</span></div></div></Td><Td align="right"><Numeric value={customerCount} label="当前绑定客户" onClick={() => onlyAgent("CUSTOMERS")} /></Td><Td align="right"><CountValue count={row.current.activity.active} coverage={[row.current.activity.status, row.current.activity.window.status]} label={activeHead} onClick={() => onlyAgent("ACTIVITY", { filter: "WINDOW_ACTIVE" })} /></Td><Td align="right">{assets ? <CountValue count={row.current.devices.held} label="当前持有设备" onClick={() => onlyAgent("DEVICES", { basis: "CURRENT_ASSET" })} /> : <PerfAmount value={perf.agents[row.accountId]} label="当前客户累计业绩额" onClick={() => onlyAgent("CUSTOMERS")} />}</Td><Td sticky="end" fit><Button size="sm" onClick={() => selectAgent(row)}>查看统计</Button></Td></Tr>;
+      return <Tr key={row.accountId} selected={agentId === row.accountId}><Td><div className="sa-identity" title={`${row.displayName || "名称未同步"} · ${group?.name || (row.account.groupId === null ? "待分组" : "组名未同步")}`}><SupportAvatar name={row.displayName || "客服"} path={row.avatarRef ?? undefined} version={row.avatar?.version} /><div><Button variant="ghost" size="sm" title={row.displayName || "客服"} onClick={() => onlyAgent("CUSTOMERS")}>{row.displayName || "名称未同步"}</Button><span className="rd-note">{group?.name || (row.account.groupId === null ? "待分组" : "组名未同步")} · {role(row)}</span></div></div></Td><Td align="right"><Numeric value={customerCount} label="当前绑定客户" onClick={() => onlyAgent("CUSTOMERS")} /></Td><Td align="right"><CountValue count={row.current.activity.active} coverage={[row.current.activity.status, row.current.activity.window.status]} label={activeHead} onClick={() => onlyAgent("ACTIVITY", { filter: "WINDOW_ACTIVE" })} /></Td><Td align="right">{assets ? <CountValue count={row.current.devices.held} label="当前持有设备" onClick={() => onlyAgent("DEVICES", { basis: "CURRENT_ASSET" })} /> : <PerfAmount value={perf.agents[row.accountId]} label="当前客户累计业绩额" onClick={() => onlyAgent("CUSTOMERS")} />}</Td><Td sticky="end" fit><Button size="sm" onClick={() => selectAgent(row)}>查看统计</Button></Td></Tr>;
     })}</tbody></Table>
     {agentDrawer}
     </>;
@@ -400,9 +400,9 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
   const personal = data.scopeSummary.mode === "PERSONAL";
   const showInviter = data.records.some(row => row.inviter !== undefined);
   // 客户、总览、活动三个视角共用这张客户表：邀请人放第二列，服务状态和最近活动合成一格两行，仍是 6 列（PRD §4.3，画布 06）。
-  return <Table label="客户统计" className={`m1-analytics-table m1-customer-table${showInviter ? "" : " m1-customer-table-5"}`}><colgroup><col />{showInviter && <col />}<col /><col /><col /><col /></colgroup><thead><Tr><Th>{personal ? "客户" : "客户 / 专属客服"}</Th>{showInviter && <Th>邀请人<Explain label="邀请人的说明" content="邀请这位客户注册的人。人数在客户资料里看。" /></Th>}<Th>首充</Th><Th align="right">{personal ? "累计业绩额（USDT）" : <span className="m1-th-title"><Explain label="累计业绩额怎么算" content="这位客户自 2026-11-20 22:57 起的入金减提现，跟着客户走：转来之前在别的客服名下的也算在这里。" />累计业绩额（USDT）</span>}</Th><Th>服务状态 / 最近活动</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{data.records.map(row => {
+  return <Table label="客户统计" className={`m1-analytics-table m1-customer-table${showInviter ? "" : " m1-customer-table-5"}`}><colgroup><col />{showInviter && <col />}<col /><col /><col /><col /></colgroup><thead><Tr><Th>{personal ? "客户" : "客户 / 专属客服"}</Th>{showInviter && <Th>邀请人<Explain label="邀请人的说明" content="邀请这位客户注册的人。人数在客户资料里看。" /></Th>}<Th>首充</Th><Th align="right">{personal ? "累计业绩额（USDT）" : <span className="m1-th-title">累计业绩额（USDT）<Explain label="累计业绩额怎么算" content="这位客户自 2026-11-20 22:57 起的入金减提现，跟着客户走：转来之前在别的客服名下的也算在这里。" /></span>}</Th><Th>服务状态 / 最近活动</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{data.records.map(row => {
     const [status, statusTone] = serviceTag(row.task), checking = session?.checkingId === row.customerId;
-    return <Tr key={row.customerId}><Td><div className="sa-identity"><SupportAvatar name={name(row)} path={row.avatar ?? undefined} /><div><Button variant="ghost" size="sm" title={`${name(row)}：查看资料与记录`} onClick={() => openProfile(row.customerId)}>{name(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span>{personal ? "" : ` · ${row.owner.agentName || "归属未知"}`}</span></div></div></Td>{showInviter && <Td><InviterCell view={inviterView(row.inviter)} /></Td>}<Td>{row.first.state === "CONFIRMED" ? <><StatusTag tone="ok">已首充</StatusTag><span className="rd-note">{row.first.kind ? row.first.kind === "DEPOSIT" ? "充值" : "购机" : "来源未知"}</span></> : row.first.state === "NONE" ? <StatusTag tone="done">未首充</StatusTag> : <span className="sa-nowrap" title="首充历史尚未同步">历史未同步</span>}</Td><Td align="right"><PerfAmount value={perf.customers[row.customerId]} label="累计业绩额" onClick={() => openProfile(row.customerId)} /></Td><Td><Cell main={<StatusTag tone={statusTone}>{status}</StatusTag>} sub={<>{row.activity.lastEffectiveAt ? <span className="sa-nowrap" tabIndex={0} title={dateText(row.activity.lastEffectiveAt)}>{activityTime(row.activity.lastEffectiveAt)}</span> : "—"} · {row.activity.state === "ACTIVE" ? "本统计期活跃" : row.activity.state === "INACTIVE" ? "本统计期未活跃" : "活动未知"}</>} /></Td><Td sticky="end">{session && row.category === "BOUND" ? <Button size="sm" loading={checking} onClick={() => session.start(row)}>发起会话</Button> : <Button size="sm" onClick={() => openProfile(row.customerId)}>查看资料</Button>}</Td></Tr>;
+    return <Tr key={row.customerId}><Td><div className="sa-identity" title={`${name(row)} · ${m1CustomerCode(row.customerId)}`}><SupportAvatar name={name(row)} path={row.avatar ?? undefined} /><div><Button variant="ghost" size="sm" title={`${name(row)}：查看资料与记录`} onClick={() => openProfile(row.customerId)}>{name(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span>{personal ? "" : ` · ${row.owner.agentName || "归属未知"}`}</span></div></div></Td>{showInviter && <Td><InviterCell view={inviterView(row.inviter)} /></Td>}<Td>{row.first.state === "CONFIRMED" ? <><StatusTag tone="ok">已首充</StatusTag><span className="rd-note">{row.first.kind ? row.first.kind === "DEPOSIT" ? "充值" : "购机" : "来源未知"}</span></> : row.first.state === "NONE" ? <StatusTag tone="done">未首充</StatusTag> : <span className="sa-nowrap" title="首充历史尚未同步">历史未同步</span>}</Td><Td align="right"><PerfAmount value={perf.customers[row.customerId]} label="累计业绩额" onClick={() => openProfile(row.customerId)} /></Td><Td><Cell main={<StatusTag tone={statusTone}>{status}</StatusTag>} sub={<>{row.activity.lastEffectiveAt ? <span className="sa-nowrap" tabIndex={0} title={dateText(row.activity.lastEffectiveAt)}>{activityTime(row.activity.lastEffectiveAt)}</span> : "—"} · {row.activity.state === "ACTIVE" ? "本统计期活跃" : row.activity.state === "INACTIVE" ? "本统计期未活跃" : "活动未知"}</>} /></Td><Td sticky="end">{session && row.category === "BOUND" ? <Button size="sm" loading={checking} onClick={() => session.start(row)}>发起会话</Button> : <Button size="sm" onClick={() => openProfile(row.customerId)}>查看资料</Button>}</Td></Tr>;
   })}</tbody></Table>;
 }
 
@@ -785,10 +785,14 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     document.getElementById(tabIds.tab(pendingTabFocus.current))?.focus();
     pendingTabFocus.current = null;
   }, [section, personalView, queryState.view, scope, tabIds]);
+  /** 首读失败「重试」读到之后焦点落在页面标题（两种外框里都是同一个 h1），不掉到页面上（BUG-710 N01）。 */
+  const workbenchRef = useRef<HTMLElement>(null);
+  const workbenchTitle = useMemo(() => ({ get current() { return workbenchRef.current?.querySelector<HTMLElement>("h1") ?? null; } }), []);
   const visible = authSession ? resolveVisibleDomains(authSession) : [];
   const leaderboardReachable = !!authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard");
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
-  // 主管和超管：页头次按钮是会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
+  // 主管和超管：页头次按钮是导出业绩、会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
+  // 「更换本人头像」是本人设置，主管兼客服放在「我的客户」顶部的本人一栏；没有「我的客户」的主管暂时留在页头（不丢入口）。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
   const canRequestExports = authSession?.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
   const exportDisabledReason = noScopedContent && canRequestExports ? NO_EXPORT_GROUP_REASON : exportsPorts?.persona.exportBlocked;
@@ -801,9 +805,10 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     else if (noStatisticsMode) setExportScopeRevision(revision => revision + 1);
     else refreshScope();
   };
-  const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} readOnly={noScopedContent ? exportDisabledReason : undefined} actions={<>
+  const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
+    {!statisticsUnavailable && exportDisabledReason && <span className="rd-toolbar-note">{exportDisabledReason}</span>}
     {!statisticsUnavailable && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
-    {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
+    {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && !canMine && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
@@ -811,14 +816,14 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const exportDialog = exportOpen && exportsPorts && scope && !scopeDenied && <PerfExportDialog ports={exportsPorts}
     initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"}
     onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />;
-  if (!scope || noScopedContent || statisticsUnavailable) return <section className="sa-workbench" aria-busy={exportAccessPending || !scope && !statisticsUnavailable && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
+  if (!scope || noScopedContent || statisticsUnavailable) return <section ref={workbenchRef} className="sa-workbench" aria-busy={exportAccessPending || !scope && !statisticsUnavailable && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
     {header}
     {exportsOnly && exportsPorts && exportViews ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
       <PerfExportRecords ports={{ ...exportsPorts, persona: { ...exportsPorts.persona, views: exportViews } }} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
       : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
         : statisticsUnavailable && !exportAccessPending && !exportReadFailed ? <AnalyticsReadDenied /> : <BlockState state={scopeError || exportReadFailed ? "error" : "loading"}
           title={exportReadFailed ? "导出记录加载失败" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
-          onRetry={exportReadFailed ? refreshWorkbench : scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>}
+          onRetry={exportReadFailed ? refreshWorkbench : scopeError ? () => { setScopeError(""); setScopeRetry(n => n + 1); } : undefined} retryLabel="重试" afterRetryFocus={workbenchTitle} />}</Panel>}
     {noScopedContent && !exportsOnly && exportsPorts && <PerfExportRecords ports={exportsPorts} recoveryOnly />}
     {scopeDenied && related}
     {unavailableAgentDrawer}
@@ -864,6 +869,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     <div><span>{queryState.basis === "PERIOD_EVENT" ? "期间充值" : "客户累计充值"} / {nexGridBrandText(currency)}</span><MoneyValue money={deposits} label={`充值 ${nexGridBrandText(currency)}`} onClick={() => change({ view: "FINANCE", basis: queryState.basis === "CURRENT_ASSET" ? "CURRENT_CUSTOMER_HISTORY" : queryState.basis })} /></div>
     {queryState.basis === "PERIOD_EVENT" && <><div><span>首次付款客户</span><CountValue count={data.scopeSummary.financial.firstCandidates} label="首次付款客户（按付款记录）；查看同范围资金事件" onClick={() => change({ view: "FINANCE" })} /></div><div><span>期间购机 / {nexGridBrandText(currency)}</span><MoneyValue money={data.scopeSummary.financial.currencies.find(x => x.currency === currency)?.purchases} label={`期间购机 ${nexGridBrandText(currency)}；查看同范围资金事件`} onClick={() => change({ view: "FINANCE" })} /></div></>}
   </>;
+  /** 组卡的业绩额都没有数、原因相同时，原因在「负责组」标题行写一次。 */
+  const groupsGap = (() => {
+    if (!data || queryState.basis === "CURRENT_ASSET" || !data.scopeSummary.groups.length) return undefined;
+    const values = data.scopeSummary.groups.slice(0, 4).map(group => { const gp = perf.groups[group.groupId]; return (queryState.basis === "PERIOD_EVENT" ? gp?.period : gp?.current) ?? PERF_UNAVAILABLE_VALUE; });
+    const reasons = new Set(values.map(value => value.state === "unavailable" ? value.reason : value.state === "partial" ? "有数据没核完" : ""));
+    return reasons.size === 1 ? [...reasons][0] || undefined : undefined;
+  })();
   /** 折叠标题写结论，不重复里面的数字（DP-04、DP-61）。 */
   const perfConclusion = (value: PerfValue) => value.state === "complete" ? "已核完" : value.state === "partial" ? "有数据没核完" : value.reason;
   const overviewSummary = !data || queryState.view !== "OVERVIEW" ? undefined
@@ -898,7 +910,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const unresolvedBulk = hasBulkPending(adminId ?? 0);
   const profileStats = profileId && data && (data.view === "CUSTOMERS" || data.view === "ACTIVITY") ? data.records.find(row => row.customerId === profileId) : undefined;
   const profileCounts = supportCountsView(profileStats?.invitations);
-  return <section className="sa-workbench" {...tabIds.panel(currentTab)}>
+  return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
     {!isPersonal && <M1LiveService ctx={ctx} />}
     {(maintenanceInBar || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果未知，先查询原结果" actionBelow action={<>
@@ -939,12 +951,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
     {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
     {exportDialog}
-    {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={queryState.month} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
+    {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={monthCalendar?.length ? queryState.month : ""} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
       status={!monthCalendar ? calendarDenied ? "denied" : calendarError ? { title: "业绩月份加载失败", error: calendarError, onRetry: () => setCalendarRetry(value => value + 1) } : "loading"
         : personalPeriodError ? { error: personalPeriodError, onRetry: () => setPersonalPeriodRetry(value => value + 1) }
         : !personalPeriod && monthCalendar.some(entry => entry.month === queryState.month) ? "loading" : undefined}
       detail={{ loading: eventsOpen && !events, error: eventError || undefined }}
-      monthControl={<span className="m1-group-scope"><span aria-hidden="true">月份</span><Select aria-label="业绩月份" value={queryState.month} onChange={month => change({ month })} options={(monthCalendar ?? []).map(({ month }) => ({ value: month, label: month }))} placeholder="加载后可选" /></span>}
+      monthControl={<span className="m1-group-scope"><span aria-hidden="true">月份</span><Select aria-label="业绩月份" value={monthCalendar?.length ? queryState.month : ""} disabled={!monthCalendar?.length} onChange={month => change({ month })} options={(monthCalendar ?? []).map(({ month }) => ({ value: month, label: month }))} placeholder="加载后可选" /></span>}
       onDetail={personalPeriod?.performance?.period ? openEvents : undefined} />}
     {eventsOpen && events && <PerfEventsDrawer events={eventsPerf(events)} page={events.pageNum} pageSize={events.pageSize}
       total={events.total} observedTotal={events.observedTotal} canContinue={events.canContinue && events.version !== null}
@@ -982,8 +994,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       {queryState.basis === "PERIOD_EVENT" && !monthCalendar && (calendarDenied ? <AnalyticsReadDenied compact /> : calendarError ? <BlockState state="error" compact title="统计月份加载失败" detail={calendarError} onRetry={() => setCalendarRetry(n => n + 1)} retryLabel="重试" />
         : <div className="sa-state" role="status">正在加载统计月份…</div>)}
       {queryState.basis === "PERIOD_EVENT" && monthCalendar?.length === 0 && <BlockState state="empty" title={calendarGeneration === "UPGRADING" ? "数据正在升级" : PERF_UNAVAILABLE_VALUE.reason} onRetry={() => setCalendarRetry(n => n + 1)} />}
-      {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消读取</Button></div>}
-      {error ? <BlockState state="error" title={isCustomerStatistics ? "客户统计加载失败" : error} detail={isCustomerStatistics ? error : undefined}
+      {loading && <div className="sa-state" role="status">正在加载…<Button type="button" size="sm" onClick={() => { controllerRef.current?.abort(); generation.current++; setLoading(false); setCancelled(true); setData(null); }}>取消</Button></div>}
+      {error ? <BlockState state="error" title={isCustomerStatistics ? "客户统计加载失败" : "统计数据加载失败"} detail={error}
         onRetry={reloadFirstPage} retryLabel={error.includes("第一页") ? "从第一页重新加载" : "重试"} /> : cancelled && <div className="sa-state" role="status">已取消加载，筛选条件不变。<Button type="button" size="sm" onClick={reloadFirstPage}>重试</Button></div>}
       {data && current && personnel && <>
         {(queryState.view === "OVERVIEW" || queryState.view === "FINANCE") && <Fold title="经营概况" summary={overviewSummary ?? fundsSummary[fundsCoverage(data.funds)]} explain={queryState.view === "OVERVIEW" && queryState.basis === "PERIOD_EVENT" && perf.attribution ? "业绩按所选月份发生时的归属算。当时还没分组的客服的业绩算给客服本人、不进组，所以组卡和下面两类加起来比总额少；在业绩榜里能看到。" : caption}>
@@ -1014,7 +1026,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
         {queryState.view === "OVERVIEW" && <div className="sa-coverage"><div><span>待分配</span><Numeric value={data.scopeSummary.pending === null ? null : String(data.scopeSummary.pending)} label="待分配客户，打开待分配客户池" onClick={() => openTab("pool")} /></div><div><span>归属异常</span><Numeric value={data.scopeSummary.anomaly === null ? null : String(data.scopeSummary.anomaly)} label="归属异常" onClick={() => change({ view: "CUSTOMERS", category: "ANOMALY", firstState: "ALL", filter: "ALL" })} /></div></div>}</Fold>}
         {queryState.view === "OVERVIEW" ? <>
           {queryState.groupId === undefined && <section className="sa-group-comparison" aria-label="负责组概览">
-            <div className="sa-group-head"><h3>负责组</h3><Explain label="负责组的说明" content={queryState.basis === "PERIOD_EVENT" ? "期间业绩额按发生时所在的组算。当前客户累计业绩额按组里现在的客户算，自 2026-11-20 22:57 起。" : queryState.basis === "CURRENT_ASSET" ? "按组里现在的客户持有的设备算；点数字看设备列表。" : "按组里现在的客户算累计业绩额，自 2026-11-20 22:57 起；点数字看客户表。"} /><span className="rd-note">{data.scopeSummary.groups.length > 4 ? `展示 4 / ${data.scopeSummary.groups.length} 组` : `${data.scopeSummary.groups.length} 组`}</span></div>
+            <div className="sa-group-head"><h3>负责组</h3><Explain label="负责组的说明" content={queryState.basis === "PERIOD_EVENT" ? "期间业绩额按发生时所在的组算。当前客户累计业绩额按组里现在的客户算，自 2026-11-20 22:57 起。" : queryState.basis === "CURRENT_ASSET" ? "按组里现在的客户持有的设备算；点数字看设备列表。" : "按组里现在的客户算累计业绩额，自 2026-11-20 22:57 起；点数字看客户表。"} /><span className="rd-note">{data.scopeSummary.groups.length > 4 ? `展示 4 / ${data.scopeSummary.groups.length} 组` : `${data.scopeSummary.groups.length} 组`}{groupsGap ? ` · ${groupsGap}` : ""}</span></div>
             <ul>{data.scopeSummary.groups.slice(0, 4).map(group => {
               const gp = perf.groups[group.groupId], period = gp?.period ?? PERF_UNAVAILABLE_VALUE, cumulative = gp?.current ?? PERF_UNAVAILABLE_VALUE;
               const keyValue = queryState.basis === "CURRENT_ASSET" ? null : queryState.basis === "PERIOD_EVENT" ? period : cumulative;
