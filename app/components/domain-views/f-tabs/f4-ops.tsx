@@ -219,7 +219,11 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       actions: application && <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>,
     });
   }
-  const recoveryNotice = <F4RecoveryNotice rows={recoveryRows} />;
+  const recoveryNotice = <>
+    <F4RecoveryNotice rows={recoveryRows} />
+    {ctx.f4PolicyAppliedUnread && <BlockState state="error" title="大使规则已写入，最新规则暂时读不到"
+      detail="这不是没有规则：规则暂时没加载出来，调整入口也先收起。" onRetry={() => void ctx.retryF4AmbassadorPolicy()} retrying={ctx.f4PolicyLoading} />}
+  </>;
   const activeQuota = quotaOriginal ?? quotaDraft;
   const quotaModal = activeQuota && <F4QuotaCreate key={activeQuota.commandKey} data={data ?? undefined} ctx={ctx}
     original={quotaOriginal} draft={quotaDraft} onClose={() => { setQuotaOriginal(undefined); setQuotaDraft(undefined); }} />;

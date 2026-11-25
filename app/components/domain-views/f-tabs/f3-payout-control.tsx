@@ -26,6 +26,7 @@ export const F3_PAYOUT_KEYS: readonly F3PayoutControlKey[] = [F3_AUTO_SETTLE_KEY
 export const F3_PAYOUT_NAMES: Record<F3PayoutControlKey, string> = { [F3_AUTO_SETTLE_KEY]: "自动发放", [F3_PLATFORM_CAP_PCT_KEY]: "全平台封顶比例" };
 const SUPER = "另一位超级管理员";
 const QUEUE_UNREAD = "审批队列没有完整读到，请重试读取后再调整。";
+const PENDING_UNVERIFIED = "可能存在待批单，读不到审批队列。";
 
 /** 后端给的百分数文字去掉末尾 0，不舍入：33.333300 → 33.3333%。 */
 export const pctText = (raw: string) => `${raw.trim().replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "")}%`;
@@ -85,10 +86,10 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
     const dir = missing ? "没读到，暂时不能改"
       : direct ? "先查清原操作再改"
         : original ? "先查清原申请再改"
-        : approval ? auto ? "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
+        : approval ? auto ? autoNow ? "关闭立即生效，待批的放宽单会失效" : "开启在等批准，批准或驳回前不能再提交" : `调高到 ${payoutValueText(key, approval.after)} 在等批准；调低仍立即生效`
         : auto ? autoNow ? "关闭立即生效，手动照常" : `开启要${SUPER}批准` : "调高可能多付钱 · 调低立即生效";
     const disabledReason = missing ? "这一项没读到，重新加载后再改"
-      : ctx.f3ApprovalReadError && (!approval || auto && !autoNow) ? QUEUE_UNREAD
+      : auto && !autoNow && ctx.f3ApprovalReadError ? QUEUE_UNREAD
       : auto && !autoNow && approval ? "开启已在等审批，批准或驳回前不能再提交" : undefined;
     const action = direct || original
       ? <Button size="sm" onClick={() => onOpen({ key, snapshot, original, direct })}>{direct ? "查看原操作" : "查看原申请"}</Button>
@@ -190,6 +191,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       <Fact k="自动发放"><Change from={autoNow ? "开" : "关"} to={autoNow ? "关" : "开"} /></Fact>
       {autoNow ? <>
         {approval && <Fact k="已有待批" tone="warn">这次收紧会让待批的放宽单失效。</Fact>}
+        {!approval && ctx.f3ApprovalReadError && <Fact k="审批队列" tone="warn">{PENDING_UNVERIFIED}</Fact>}
         <Fact k="正在结算的这批">没结到的人也停下；已发的不收回</Fact>
         <Fact k="重新开启">要{SUPER}批准；关闭期间的周期不补发</Fact>
       </> : <>
@@ -208,6 +210,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         <Fact k="全平台封顶比例">{next === null || dir === undefined || dir === "unchanged" ? capText : <Change from={capText} to={`${next}%`} />}</Fact>
         {dir === "proposal" && !blockedRaise && <Fact k="批准前">仍按 {capText}</Fact>}
         {approval && <Fact k="已有待批" tone="warn">调高到 {payoutValueText(key, approval.after)} 在等批准。{dir === "direct" ? "这次收紧会让待批的放宽单失效。" : "同方向调高需等待这张单处理。"}</Fact>}
+        {dir === "direct" && !approval && ctx.f3ApprovalReadError && <Fact k="审批队列" tone="warn">{PENDING_UNVERIFIED}</Fact>}
         {dir === "proposal" && !blockedRaise && !canPropose && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，调高会被拦下</Fact>}
         <Fact k="已开始结算的期">剩下的人沿用原额度</Fact>
       </Facts>
@@ -231,7 +234,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
       coverage={snapshot?.coverage ?? ctx.f3Coverage}
       coverageLead={auto ? `开启后系统按周期自动发钱，要${SUPER}批准` : `调高封顶会让平台多付钱，要${SUPER}批准`}
       coverageCheck="批准时查兑付覆盖率，读不到或低于红线就不能批准。"
-      blockedReason={mode === "new" && ctx.f3ApprovalReadError && (!approval || auto && !autoNow) ? QUEUE_UNREAD : undefined}
+      blockedReason={mode === "new" && auto && !autoNow && ctx.f3ApprovalReadError ? QUEUE_UNREAD : undefined}
       confirmLabel={auto ? autoNow ? "立即生效" : "提交审批" : "立即生效"}
       confirmLabelForValue={auto ? undefined : (value) => direction(typedCap(value)) === "proposal" ? "提交审批" : "立即生效"}
       edit={auto ? undefined : {
@@ -239,7 +242,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         initialValue: (mode === "new" ? open.recoveredValue : originalValue)?.replace(/%$/, "").trim(),
         disallowCurrent: true, hint: "0–100，最多 10 位小数",
         // 只有能提交的调高才提示多付钱；已有调高在等或原申请未知时调高被挡下，不提示。
-        amplifiesWhen: (value) => { rawTyped.current = value; return mode === "new" && !blockedRaise && direction(value) === "proposal"; },
+        amplifiesWhen: (value) => { rawTyped.current = value; return mode === "new" && !blockedRaise && !ctx.f3ApprovalReadError && direction(value) === "proposal"; },
         validate: (value) => f3PlatformCapPct(value) === null ? "填 0 到 100 的数，最多 10 位小数"
           : direction(value) !== "proposal" ? undefined
             : ctx.f3ApprovalReadError ? QUEUE_UNREAD

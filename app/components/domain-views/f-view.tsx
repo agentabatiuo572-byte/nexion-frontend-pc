@@ -594,10 +594,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (unresolved) throw new Error(isRetryExpired(unresolved) ? RETRY_EXPIRED_TEXT : "原申请结果未知，请先查询原结果。");
     const queue = f3Queue.current;
     const knownPending = f3PendingFor(queue.rows, key) ?? pending.approval;
-    if (queue.owner !== current.adminId || queue.error && (plan.direction !== "direct" || !knownPending)) {
-      throw new Error("审批队列没有完整读到，请重试读取后再调整。");
-    }
     if (plan.direction === "proposal") {
+      if (queue.owner !== current.adminId || queue.error) throw new Error("审批队列没有完整读到，请重试读取后再调整。");
       if (knownPending) throw new Error("OBJECT_ALREADY_PENDING");
       const ticket = await sendF3(f3ConfigSlot(key), f3PayoutControlSpec(key, plan.before, plan.value, reason), snapshot);
       return { kind: "proposal", ticket } as const;
@@ -1497,13 +1495,15 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4AmbassadorPolicy,
     f4PolicyLoading,
     f4PolicyAppliedUnread: f4PolicyUnreadOwner !== undefined && f4PolicyUnreadOwner === session?.adminId,
-    retryF4AmbassadorPolicy: async () => { try { await readF4AmbassadorPolicy(); } catch { /* The rule block shows the read failure. */ } },
+    retryF4AmbassadorPolicy: async () => { try { await readF4AmbassadorPolicy(); } catch { /* Keep the existing read status visible. */ } },
     refreshF4PolicyBaseline: async (baseline, values) => {
       const policy = await readF4AmbassadorPolicy();
       setActionConfirm(modal => {
         if (!modal?.f4Snapshot || modal.f4Snapshot.action !== "policy" || modal.f4Snapshot.policy !== baseline) return modal;
-        const businessValue = rebaseFValues(f4PolicyValues(baseline), values, f4PolicyValues(policy), equalF4PolicyValue);
-        const snapshot = { ...modal.f4Snapshot, policy, businessValue, policyConflict: true };
+        const before = f4PolicyValues(baseline);
+        const businessValue = rebaseFValues(before, values, f4PolicyValues(policy), equalF4PolicyValue);
+        const policyConflict = typeof modal.f4Snapshot.policyConflict === "object" ? modal.f4Snapshot.policyConflict : before;
+        const snapshot = { ...modal.f4Snapshot, policy, businessValue, policyConflict };
         return { ...modal, ...f4Confirmation(ctx, snapshot), commandKey: createA2CommandKey("f-domain-action") };
       });
     },

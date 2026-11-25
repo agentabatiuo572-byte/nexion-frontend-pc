@@ -221,7 +221,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const queue = approvalQueue.current;
   const queueError = queue.owner === session?.adminId ? queue.error : undefined;
   const pendingPolicy = queue.owner === session?.adminId && queue.pending || hasPendingH8Policy(commands);
-  const policyReadBlock = queueError && !pendingPolicy ? QUEUE_UNREAD : undefined;
+  const tightenWarning = pendingPolicy ? "这次收紧会让待批的放宽单失效。"
+    : queueError ? "可能存在待批单，读不到审批队列。" : undefined;
   const settlementBlocked = commands.find(record => record.kind === "settlement");
   const settlementPermission = !!session?.authorities.some(code => code === "platform_a2_proposal_create" || code === "platform_a2_write");
   const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作待确认，请先查询原结果。"
@@ -253,8 +254,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const latestQueue = approvalQueue.current;
       const knownPending = latestQueue.owner === record.adminId
         && (latestQueue.pending || hasPendingH8Policy(pendingH8RewardCommands(record.adminId)));
-      if (!recovering && record.kind !== "settlement" && (latestQueue.owner !== record.adminId
-        || latestQueue.error && (record.kind !== "direct" || !knownPending))) throw new Error(QUEUE_UNREAD);
+      if (!recovering && record.kind === "param-approval" && (latestQueue.owner !== record.adminId || latestQueue.error)) throw new Error(QUEUE_UNREAD);
       const result = await sendH8RewardCommand(record, recovering, knownPending);
       // 重建后提交成功，「没有保存」的提示随之清掉（同 H3、H5）。
       setStale(null);
@@ -288,7 +288,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     } finally { changed(); }
   };
   const editParam = (param: H8Param, fixedValue?: string, recovered?: H8RewardCommand, draft?: H8RewardCommand) => {
-    if (!session || !recovered && (policyBlocked || policyReadBlock)) return;
+    if (!session || !recovered && policyBlocked) return;
     if (fixedValue !== undefined) fixedValue = conflictDraft.intent ?? fixedValue;
     // 冲突后重建打开时留着「已被别人改过」的提示，普通打开才清掉。
     if (conflictDraft.business === undefined && conflictDraft.intent === undefined) setStale(null);
@@ -350,6 +350,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       if (value === rawCurrent || (numeric && Number(value) === Number(rawCurrent))) return "same" as const;
       return h8RewardParamAmplifies(param.key as Parameters<typeof h8RewardParamAmplifies>[0], rawCurrent, value) ? "loosen" as const : "tighten" as const;
     };
+    if (!pending && queueError && isEnabled && enabling) return;
     const directionTag = (value: string) => {
       const dir = direction(value);
       if (dir === "loosen") return <StatusTag tone="warn" icon={ArrowLeftRight}>{loosenName} · 要批准</StatusTag>;
@@ -383,7 +384,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {numeric && <Fact k="等结算的注册">{resetFact()}</Fact>}
         {numeric && <Fact k="已结算和已冻结">金额不变</Fact>}
         {isEnabled && enabling && <Fact k="谁能批准">{APPROVER}（需有审批批准权限）</Fact>}
-        {isEnabled && !enabling && !pending && pendingPolicy && <Fact k="已有待批" tone="warn">这次收紧会让待批的放宽单失效。</Fact>}
+        {isEnabled && !enabling && !pending && tightenWarning && <Fact k={pendingPolicy ? "已有待批" : "审批队列"} tone="warn">{tightenWarning}</Fact>}
         {isEnabled && !enabling && <Fact k="App 和结算">App 不再显示奖励金额；新的结算不再发</Fact>}
         {isEnabled && !enabling && <Fact k="已冻结的新人礼">首笔实付订单后照常解冻</Fact>}
         {isEnabled && <Fact k="生效时间">{enabling ? <Change from={gateNow} to="批准那一刻" /> : `不变：${gateNow}`}</Fact>}
@@ -441,7 +442,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                   onChange={(next) => onChange({ ...form, value: next })} />
               </Field>
               <Facts>
-                {!pending && pendingPolicy && dir === "tighten" && <Fact k="已有待批" tone="warn">这次收紧会让待批的放宽单失效。</Fact>}
+                {!pending && tightenWarning && dir === "tighten" && <Fact k={pendingPolicy ? "已有待批" : "审批队列"} tone="warn">{tightenWarning}</Fact>}
                 <Fact k="改后">{directionTag(value) ?? "—"}</Fact>
                 <Fact k="改后怎么筛">{modeHelp(value) ?? modeHelp(rawCurrent)}</Fact>
                 <Fact k="生效时间"><Change from={gateNow} to={dir === "loosen" ? "批准那一刻" : "保存那一刻"} /></Fact>
@@ -458,7 +459,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                 <span>改后实际发放 <b>{reference === null ? "—" : `${amountText(reference, decimals)} ${unit}`}</b> = {amountText(value, decimals)} × {multiplierName} {multiplierText(multiplier)}<Explain label="实际发放怎么算" content={dir === "loosen"
                   ? "这是提交时按现在的加成算的参考值；批准时按那时的当月加成重算，6 位小数四舍五入。"
                   : "按现在的当月加成算，6 位小数四舍五入；加成在运营阶段设置改。"} /></span>
-                {!pending && pendingPolicy && dir === "tighten" && <span>这次收紧会让待批的放宽单失效。</span>}
+                {!pending && tightenWarning && dir === "tighten" && <span>{tightenWarning}</span>}
                 {dir === "same" && <span>和现在一样：保存后不会改动，生效时间不变。</span>}
               </span> : undefined}>
               {(control) => <NumberInput {...control} unit={unit} min={0} max={param.max} step={param.step} disabled={locked}
@@ -633,7 +634,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const original = record.original;
     if (!original) continue;
     const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey);
-    const writable = !freshBlocked && !!data && !error && (param ? canWrite && !policyBlocked && !policyReadBlock
+    const writable = !freshBlocked && !!data && !error && (param ? canWrite && !policyBlocked && !(queueError && param.key === "enabled" && record.value === "true")
       : canSettle && !settleWriteBlock && data.enabled && (record.invitedUserId !== undefined || data.pending > 0));
     recoveryRows.push({
       key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
@@ -800,7 +801,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="h8-card-foot">
           <span className="h8-dir">{recoveryByKey[param.key] ?? "调高要批准 · 调低立即生效"}</span>
-          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} disabledReason={policyBlocked ?? policyReadBlock ?? freshBlocked} onClick={conflictDraft.register(`param:${param.key}`, () => editParam(param))}>调整</Button>}
+          {canWrite && <Button size="sm" aria-label={`调整${param.label}基础额`} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register(`param:${param.key}`, () => editParam(param))}>调整</Button>}
         </div>
       </Stat>
     );
@@ -843,14 +844,14 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                 ? <StatusTag tone="ok" icon={Check}>已启用</StatusTag>
                 : <StatusTag tone="neutral" icon={Power}>已停用</StatusTag>}{recoveryByKey.enabled}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" variant={data.enabled ? "danger-outline" : "secondary"} aria-describedby={describedBy}
-                disabledReason={policyBlocked ?? policyReadBlock ?? freshBlocked} onClick={conflictDraft.register("param:enabled", () => editParam(ENABLED_PARAM, String(!data.enabled)))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
+                disabledReason={policyBlocked ?? freshBlocked ?? (queueError && !data.enabled ? QUEUE_UNREAD : undefined)} onClick={conflictDraft.register("param:enabled", () => editParam(ENABLED_PARAM, String(!data.enabled)))}>{data.enabled ? "停用" : "启用"}</Button> : undefined} />
             <ConfigRow name="发放方式"
               what="结算时怎么过风控"
               when={`改成「符合资格就直接发」要${APPROVER}批准；改回确认后立即保存`}
               effect={modeHelp(String(data.params["newcomer.lockMode"]))}
               note="两种方式都保留首购冻结；已冻结的礼包按当初的方式解冻。"
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
-              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? policyReadBlock ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
+              action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
               what="这个时间起（含这一刻）注册的新人才进入结算"
               effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，不再进入结算。</p></>}

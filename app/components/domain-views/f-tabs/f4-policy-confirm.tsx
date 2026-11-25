@@ -9,6 +9,7 @@ import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { decimalText, moneyText } from "./f4-shared";
 import type { FViewCtx, McSpec } from "./types";
+import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 
 export function f4PolicyValues(policy: F4AmbassadorPolicy): BusinessFormValue {
   return {
@@ -24,7 +25,7 @@ const isAmount = (key: string) => key === "defaultBudgetUsdt" || /\.(min|max)$/.
 export const equalF4PolicyValue = (a: string, b: string, key: string) => a.trim() === b.trim()
   || isAmount(key) && a.trim() !== "" && b.trim() !== "" && Number(a) === Number(b);
 
-export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy, conflict = false): McSpec {
+export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy, conflict?: F4ConfirmationSnapshot["policyConflict"]): McSpec {
   let baselineReady = true;
   type Field = Extract<BusinessFormSpec, { kind: "multi-field" }>["fields"][number];
   const budget = { inputKind: "number", min: 100, max: 10_000, pattern: "^[0-9]+(?:\\.[0-9]+)?$", patternMessage: "预算须填写十进制金额" } as const;
@@ -59,13 +60,21 @@ export function f4PolicyConfirmation(ctx: FViewCtx, policy: F4AmbassadorPolicy, 
   const show = (key: string, value: string) => value === "" ? "—" : isAmount(key) ? formatAmount(value) : value;
   const conflictNotice = (values: BusinessFormValue) => {
     if (!conflict) return null;
-    const diff = allFields.filter(field => !equalF4PolicyValue(values[field.key] ?? "", baseline[field.key], field.key));
+    const openedWith = typeof conflict === "object" ? conflict : {};
+    const diff = allFields.flatMap(({ key, label }) => {
+      const latest = baseline[key];
+      const draft = (values[key] ?? "").trim();
+      const opened = openedWith[key];
+      const changedByOther = opened !== undefined && !equalF4PolicyValue(opened, latest, key);
+      if (!changedByOther && equalF4PolicyValue(draft, latest, key)) return [];
+      return [{ key, label, latest, draft, previous: changedByOther ? `他人修改前：${show(key, opened)}` : undefined }];
+    });
     return <Notice tone="warn" title="版本已变化，草稿已保留">
-      <p>{diff.length ? "有人先改了规则。请核对你在最新规则上改动的项目，重新填写理由。" : "最新规则已包含草稿的改动，无需提交。"}</p>
+      <p>{changed(values) ? "有人先改了规则。请核对你在最新规则上改动的项目，重新填写理由。" : "最新规则已包含草稿的改动，无需提交。"}</p>
       {diff.length > 0 && <Table label="最新内容和草稿对比">
         <thead><tr><Th>项目</Th><Th>最新</Th><Th>你的草稿</Th></tr></thead>
-        <tbody>{diff.map((field) => <Tr key={field.key}>
-          <Td>{field.label}</Td><Td><Cell num={isAmount(field.key)} main={show(field.key, baseline[field.key])} /></Td><Td><Cell num={isAmount(field.key)} main={show(field.key, (values[field.key] ?? "").trim())} /></Td>
+        <tbody>{diff.map(({ key, label, latest, draft, previous }) => <Tr key={key}>
+          <Td>{label}</Td><Td><Cell num={isAmount(key)} main={show(key, latest)} sub={previous} /></Td><Td><Cell num={isAmount(key)} main={show(key, draft)} /></Td>
         </Tr>)}</tbody>
       </Table>}
     </Notice>;

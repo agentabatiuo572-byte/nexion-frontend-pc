@@ -20,7 +20,7 @@ export type F4ConfirmationSnapshot = FReconfirmationLink & {
   application?: F4AmbassadorApplication;
   material?: F4AmbassadorMaterialPacket;
   businessValue?: Record<string, string>;
-  policyConflict?: boolean;
+  policyConflict?: boolean | Record<string, string>;
   value?: string;
 };
 export const F4_POLICY_SLOT = "f4-ambassador-policy-approval";
