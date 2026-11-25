@@ -30,6 +30,8 @@
 .m1-stat-detail[data-kind="fund"] .m1-stat-table :is(th, td):last-child { text-align: right; }
 .m1-stat-detail[data-kind="fund"] .m1-stat-table td:last-child { font-variant-numeric: tabular-nums; }
 .m1-stat-table td:nth-child(4) { min-width: 14ch; white-space: normal; overflow-wrap: anywhere; }
+.m1-stat-table td[data-col="code"] { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }  /* 编号等宽、弱一档（TX-28） */
+.m1-stat-table td[data-col="amount"] { font-weight: 500; color: var(--rd-text); }  /* 要核对的金额强一档（VS-100） */
 .m1-stat-pager { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .m1-stat-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;width:100%}
 .m1-stat-detail p{overflow-wrap:normal;text-wrap:pretty}

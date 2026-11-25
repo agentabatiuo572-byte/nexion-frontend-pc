@@ -434,7 +434,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_ANALYTICS_VERSION_INVALID: "统计查询版本无效，请重新读取第一页。",
   SUPPORT_ANALYTICS_VERSION_REQUIRED: "缺少统计查询版本，请从第一页重新查询。",
   SUPPORT_ID_INVALID: "客户、客服或组编号无效，请从原名单重新选择。",
-  SUPPORT_ANALYTICS_QUERY_CHANGED: "统计范围或条件已变化，请重新读取汇总和第一页。",
+  SUPPORT_ANALYTICS_QUERY_CHANGED: "统计范围或条件已变化，需要从第一页重新加载。",
   SUPPORT_ANALYTICS_SOURCE_UNAVAILABLE: "统计来源暂不可用，请稍后重试。",
   SUPPORT_ANALYTICS_HISTORY_INCOMPLETE: "业绩历史还在同步，稍后再看。",
   SUPPORT_ANALYTICS_DETAIL_MISMATCH: "明细和已确认的金额或笔数对不上，先不显示；一直这样请联系技术同事。",

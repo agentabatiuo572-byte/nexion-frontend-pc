@@ -155,3 +155,4 @@
 .m3-perf-rows > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--rd-space-3); }
 .m3-perf-rows dt { color: var(--rd-text-3); white-space: nowrap; }
 .m3-perf-rows dd { margin: 0; }
+.m3-perf-reason { margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }  /* 累计业绩额没有数时「—」后面的原因（ST-45） */

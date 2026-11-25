@@ -36,7 +36,7 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, sta
   const ready = "totals" in perf;
   return <Panel title="期间业绩" icon={BarChart3} tone="role-1" className="m1-perf-panel"
     explain="按所选月份里发生的入金和提现算。只算 USDT，越南盾只在导出文件里作参考。"
-    sub={`${month} · USDT${asOf ? ` · 截至 ${asOf}` : ""}`}
+    sub={[month, "USDT", asOf && `截至 ${asOf}`].filter(Boolean).join(" · ")}
     actions={<div className="m1-perf-actions">{monthControl}{ready && onDetail && <Button icon={<ListChecks size={14} aria-hidden />} loading={detail?.loading} loadingText="正在加载…" onClick={onDetail}>业绩明细</Button>}</div>}>
     {status === "loading" ? <BlockState state="loading" title="正在加载…" />
       : status === "denied" ? <AnalyticsReadDenied />
@@ -45,7 +45,7 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, sta
       {detail?.error && <BlockState state="error" compact title="业绩额明细加载失败" detail={detail.error} onRetry={onDetail} />}
       <StatBand label="期间业绩">
         <Stat lead label="业绩额 = 客户入金 − 客户提现" icon={Scale} tone="role-other" value={statValue(perf.totals.amount)} unit={statUnit(perf.totals.amount, "USDT")}
-          sub={perfObservedText(perf.totals.amount, " USDT")} explain={AMOUNT_EXPLAIN} onOpen={onDetail} openLabel="查看业绩额明细" />
+          sub={perfObservedText(perf.totals.amount, " USDT") ?? (perf.totals.amount.state === "unavailable" ? perf.totals.amount.reason : undefined)} explain={AMOUNT_EXPLAIN} onOpen={onDetail} openLabel="查看业绩额明细" />
         <Stat label="客户入金" icon={ArrowDownToLine} tone="role-2" value={statValue(perf.totals.inflow)} unit={statUnit(perf.totals.inflow, "USDT")}
           sub={perf.totals.inflow.state === "partial" && perf.totals.inflow.observed !== null ? `已核 ${perfText({ state: "complete", value: perf.totals.inflow.observed })} USDT` : undefined} explain="链上和越南银行卡充值到账，加合格的购机直接付款（按商品价）。" />
         <Stat label="客户提现" icon={ArrowUpFromLine} tone="role-4" value={statValue(perf.totals.withdrawal)} unit={statUnit(perf.totals.withdrawal, "USDT")}
@@ -55,7 +55,7 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, sta
           explain={<><p>成功充值或合格付费购机，含直付；每位客户只算第一次。</p><dl className="m1-perf-pop-rows"><div><dt>算</dt><dd>链上、越南银行卡充值到账；用余额或直接付款买设备，含试用转正</dd></div><div><dt>不算</dt><dd>赠送的设备、免费或零价设备、还在核对的付款</dd></div></dl></>} />
       </StatBand>
       {/* 一个视图只露一个主列表（DP-67）：入金、提现构成放进默认展开的折叠。 */}
-      <Fold title="入金和提现构成" summary={`入金 ${perf.inflow.filter(row => !row.sub).length} 个渠道 · 提现按网络`} defaultOpen>
+      <Fold title="入金和提现构成" summary={breakSummary(perf)} defaultOpen>
       <div className="m1-perf-break">
         <Panel plain headingLevel={3} title="入金构成" sub="4 个渠道" explain="四个渠道各自的净额，已含本期更正。退款退回余额不算；核实过的站外退款记成本期更正（负数）。">
           <Table label="入金构成" className="m1-perf-table"><thead><Tr><Th>渠道</Th><Th align="right">金额（USDT）</Th></Tr></thead><tbody>
@@ -75,6 +75,18 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, sta
   </Panel>;
 }
 
+/** 折叠标题的结论：入金、提现都核完写「已核完」，没核完或暂不可用照实写。 */
+function breakSummary(perf: PeriodPerf) {
+  const parts = [perf.totals.inflow, perf.totals.withdrawal];
+  if (parts.every(value => value.state === "complete")) return "入金和提现都已核完";
+  const gap = parts.find(value => value.state === "unavailable");
+  return gap && gap.state === "unavailable" ? gap.reason : "有数据没核完";
+}
+/** 这个月有没有已转走客户的记录：没有时合计只写一行。读不准时照写三行。 */
+function transferred(events: PerfEvents) {
+  const { amount, count } = events.restricted;
+  return !(amount.state === "complete" && Number(amount.value) === 0 && count.state === "complete" && count.value === 0);
+}
 /** 合计没有数时只写「—」，不带「（— 条，— 位客户）」。 */
 const summaryText = (part: { amount: PerfValue; count: PerfCount; customers: PerfCount }) => part.amount.state !== "complete" ? <>—</>
   : <>{perfText(part.amount)} USDT<span className="m1-perf-count">（{perfCountText(part.count)} 条，{perfCountText(part.customers)} 位客户）</span></>;
@@ -92,24 +104,25 @@ export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal,
   canContinue: boolean; loading: boolean; onPage: (page: number) => void; onClose: () => void;
 }) {
   const range = `统计区间 ${formatBusinessTimeCompact(events.from, "—")} 至 ${formatBusinessTimeCompact(events.to, "—")}（北京时间）`;
-  return <Drawer open wide title="业绩额明细" sub="本人 · USDT" onClose={onClose}
+  return <Drawer open title="业绩额明细" sub="本人 · USDT" onClose={onClose}
     footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button>{events.rows.length > 0 && <span className="m1-perf-pager"><Button size="sm" disabledReason={loading ? "正在加载…" : page === 1 ? "已经是第一页" : undefined} onClick={() => onPage(page - 1)}>上一页</Button>第 {page} / {total === null ? "—" : Math.max(1, Math.ceil(observedTotal / pageSize))} 页 · 共 {total ?? "—"} 条<Button size="sm" disabledReason={loading ? "正在加载…" : canContinue ? undefined : "已经是最后一页"} onClick={() => onPage(page + 1)}>下一页</Button></span>}</div>}>
     <p className="rd-note">{range}</p>
     <Facts>
-      <Fact k="本月合计">{summaryText(events.total)}</Fact>
-      <Fact k="现在名下的客户">{summaryText(events.visible)}</Fact>
-      <Fact k="已转走的客户"><span className="m1-perf-inline">{summaryText(events.restricted)}<Explain label="已转走的客户的说明" content="这位客户已转给别的客服。这个月在你名下发生的仍算你的业绩，明细不再显示。" /></span></Fact>
+      <Fact k="本月合计">{summaryText(events.total)}{!transferred(events) && events.total.amount.state === "complete" && <span className="m1-fact-reason">全部是现在名下客户的记录</span>}</Fact>
+      {transferred(events) && <>
+        <Fact k="现在名下的客户">{summaryText(events.visible)}</Fact>
+        <Fact k="已转走的客户"><span className="m1-perf-inline">{summaryText(events.restricted)}<Explain label="已转走的客户的说明" content="这位客户已转给别的客服。这个月在你名下发生的仍算你的业绩，明细不再显示。" /></span></Fact>
+      </>}
     </Facts>
     <Fold title="统计口径" summary="和期间业绩是同一份统计">
       <p>列出这段时间里在你名下发生的每一笔，按发生时的归属算。买设备、奖励只作参考，不计入业绩。</p>
     </Fold>
-    {events.rows.length === 0 ? <BlockState state="empty" {...emptyEvents(events)} /> : <Table label="业绩额明细" className="m1-perf-events"><thead><Tr><Th>时间（北京时间）</Th><Th>客户</Th><Th>类别</Th><Th align="right">业务金额</Th><Th align="right">计入业绩（USDT）</Th></Tr></thead><tbody>
+    {events.rows.length === 0 ? <BlockState state="empty" {...emptyEvents(events)} /> : <Table label="业绩额明细" className="m1-perf-events"><thead><Tr><Th>时间（北京时间）</Th><Th>客户</Th><Th>类别</Th><Th align="right">计入业绩（USDT）</Th></Tr></thead><tbody>
       {events.rows.map(row => <Tr key={row.id}>
         <Td><span className="sa-nowrap">{formatBusinessTimeCompact(row.at, "—")}</span></Td>
         <Td><Cell main={row.customer} sub={<span className="m-user-code">{row.customerNo}</span>} /></Td>
         <Td><Cell main={row.kind} sub={row.detail} /></Td>
-        <Td align="right"><Cell num main={row.business ?? "—"} /></Td>
-        <Td align="right"><Cell num main={row.delta === null ? "—" : amountDisplay(row.delta)} /></Td>
+        <Td align="right"><Cell num main={row.delta === null ? "—" : amountDisplay(row.delta)} sub={`业务金额 ${row.business ?? "—"}`} /></Td>
       </Tr>)}
     </tbody></Table>}
   </Drawer>;

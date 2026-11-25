@@ -46,17 +46,17 @@ export function M5Page({ ctx, permission, permissionUnknown, hasData, loading, l
 
   const conclusion = permissionUnknown ? <Conclusion state="unknown">客服查看范围没读到，管理入口先不显示</Conclusion>
     : manager && pendingCount > 0 ? <Conclusion state="warn" hint="先在下面逐条核对；有结论前同一项不能再改。">有 {pendingCount} 次保存结果未知</Conclusion>
-      : manager && (rules.state === "loading" || policy.state === "loading") ? <Conclusion state="unknown">正在读取分配规则…</Conclusion>
-        : manager && (rules.state === "failed" || policy.state === "failed") ? <Conclusion state="unknown" hint="到「分配规则」页签重新读取。">分配规则读不到，现在不知道新客户怎么分</Conclusion>
+      : manager && (rules.state === "loading" || policy.state === "loading") ? <Conclusion state="unknown">正在加载分配规则…</Conclusion>
+        : manager && (rules.state === "failed" || policy.state === "failed") ? <Conclusion state="unknown" hint="到「分配规则」页签点「重试」。">分配规则：暂时无法判断新客户怎么分</Conclusion>
           : manager ? <Conclusion state="ok" hint={agentsReady && contentReady ? `${content.agentsOpen} 位客服开放接待，客服回复时能选 ${content.published} 条话术和模板。` : undefined}>
             新客户{auto ? "第一次发消息时按负载自动分配" : `由客服主管分配，等 ${policy.fallback ?? "—"} 分钟没人分就自动兜底`}
           </Conclusion>
-            : !hasData ? <Conclusion state="unknown">{loadError ? "话术与模板读不到" : "正在读取话术与模板…"}</Conclusion>
+            : !hasData ? <Conclusion state="unknown">{loadError ? "话术与模板：暂时无法判断" : "正在加载话术与模板…"}</Conclusion>
               : <Conclusion state="ok">客服回复时能选 {contentReady ? content.published : "—"} 条话术和模板</Conclusion>;
 
   const notLoaded = (what: string) => loading && !loadError
-    ? <BlockState state="loading" title={`正在读取${what}…`} />
-    : <BlockState state="error" title={`${what}读不到`} detail="客服中心的数据没同步成功。" onRetry={() => void ctx.refreshContent()} retryLabel="重新读取" />;
+    ? <BlockState state="loading" title={`正在加载${what}…`} />
+    : <BlockState state="error" title={`${what}加载失败`} detail="客服中心的数据没同步成功。" onRetry={() => void ctx.refreshContent()} />;
 
   return edit.provide(
     <>

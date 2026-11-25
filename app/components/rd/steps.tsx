@@ -10,6 +10,7 @@
  * ]} />
  *
  * - 当前步带 aria-current="step"，读屏按列表读。
+ * - failed：这一步没走成（生成失败、被驳回），标记换成叉、红色，读屏读「没走成」；只在现有状态说明了失败时用。
  * - 只给有先后依赖、三步以上的流程。能切换的填写步骤不用它。
  *
  * StageLine 阶段线：平台走到第几个阶段。一排等距的节点，当前阶段的节点高亮并写「当前」，它前面的是实心点、后面的是空心点。只读，点不了。
@@ -26,15 +27,15 @@
  * - 没有阶段传 state="empty" 加一句话；读取中传 state="loading"。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { graphicNote, type GraphicStateProps } from "./graphic-state";
 
-export function Steps({ label, items }: { label: string; items: readonly { label: ReactNode; sub?: ReactNode; state: "done" | "current" | "todo" }[] }) {
+export function Steps({ label, items }: { label: string; items: readonly { label: ReactNode; sub?: ReactNode; state: "done" | "current" | "todo" | "failed" }[] }) {
   return (
     <ol className="rd-steps" aria-label={label}>
       {items.map((item, index) => (
         <li key={index} className="rd-step" data-state={item.state} aria-current={item.state === "current" ? "step" : undefined}>
-          <span className="rd-step-mark">{item.state === "done" ? <Check size={13} strokeWidth={2.4} aria-hidden /> : index + 1}</span>
+          <span className="rd-step-mark">{item.state === "done" ? <Check size={13} strokeWidth={2.4} aria-hidden /> : item.state === "failed" ? <><X size={13} strokeWidth={2.4} aria-hidden /><span className="rd-sr-only">没走成：</span></> : index + 1}</span>
           <span className="rd-step-label">{item.label}</span>
           {item.sub !== undefined && <span className="rd-step-sub">{item.sub}</span>}
         </li>
