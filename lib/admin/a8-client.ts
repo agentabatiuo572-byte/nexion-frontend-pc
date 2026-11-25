@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { PlatformReadError } from "@/lib/admin/platform-contracts";
 import { normalizeA8Page, normalizeA8Permission } from "@/lib/admin/rbac-contracts";
 
 interface ApiResult<T> {
@@ -53,7 +54,8 @@ async function a8Request<T>(path: string): Promise<T> {
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    throw new Error(formatAdminApiError(result?.message, `A8_REQUEST_FAILED_${response.status}`));
+    const status = response.ok ? result?.code ?? response.status : response.status;
+    throw new PlatformReadError(formatAdminApiError(result?.message, `A8_REQUEST_FAILED_${response.status}`), status);
   }
   return result.data as T;
 }

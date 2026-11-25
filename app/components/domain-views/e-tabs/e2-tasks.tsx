@@ -21,6 +21,7 @@ import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Select } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
+import { useHistoryBackGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
 import { checkE2Command, e2CommandLabel, e2Commands, e2CommandSettled, type E2Pending } from "./e2-pending";
 import { canInvestigateECommand, eCommandRollbackConfirmed } from "@/lib/admin/e-command-investigation";
@@ -288,10 +289,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       next();
     }
   }, [editorDirty]);
+  // 浏览器后退和点链接一样先问（OP-29）。
+  useHistoryBackGuard(editorDirty, leaveEditorThen);
 
   useEffect(() => {
     if (!editorDirty) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
     const intercept = (event: MouseEvent) => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
@@ -746,7 +749,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {dialogError && !reasonRejected && <Notice tone="danger">{dialogError}</Notice>}
           {dialog.kind === "status" && <Fold title="本次任务" summary={`${dialog.tasks.length} 个任务，展开核对完整名单`}><ul className="e2-command-tasks">{dialog.tasks.map(task => <li key={task.taskTypeId}>{task.name}</li>)}</ul></Fold>}
           <Fold title="执行摘要" summary="立即生效，不经审批"><p>{TASK_RULES}</p></Fold>
-          <Fold title="技术信息" summary="任务池与请求编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="请求编号"><span data-mono className="e2-request-key">{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("请求编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
+          <Fold title="技术信息" summary="任务池与操作编号"><Facts><Fact k="任务池">{dialog.pool.code}</Fact><Fact k="操作编号"><span data-mono className="e2-request-key">{dialog.key}</span><Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(dialog.key).then(() => ctx.toast("操作编号已复制"), () => setDialogError("复制失败，请选中完整编号复制。")); }}>复制编号</Button></Fact>{dialogErrorCode && <Fact k="原错误码">{dialogErrorCode}</Fact>}</Facts><p><KeepText text={GENERATION} /></p></Fold>
         </div>
     </Modal>}
   </>;

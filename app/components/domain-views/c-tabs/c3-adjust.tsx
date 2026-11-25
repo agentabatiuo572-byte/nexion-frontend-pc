@@ -1526,9 +1526,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           {shown.reversedBy && <Fact k="冲正单"><span data-mono>{text(shown.reversedBy)}</span></Fact>}
         </Facts>
         <div className="rd-fold-flush">
-          <Fold inset title="技术详情" summary={`请求编号 ${text(shown.idempotencyKey).slice(0, 8)}…`}>
+          <Fold inset title="技术详情" summary={`操作编号 ${text(shown.idempotencyKey).slice(0, 8)}…`}>
             <Facts>
-              <Fact k="请求编号"><span data-mono>{text(shown.idempotencyKey)}</span></Fact>
+              <Fact k="操作编号"><span data-mono>{text(shown.idempotencyKey)}</span></Fact>
               <Fact k="系统编号">{text(shown.userId)}</Fact>
               <Fact k="账单记录号">{text(shown.ledgerId)}</Fact>
             </Facts>

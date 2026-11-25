@@ -249,7 +249,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
     purpose: "批准待执行的操作，查谁在什么时候改了什么。",
     tasks: [
       { title: "处理一张审批单", steps: ["在「待审批」点一行，看变更内容、发起人和理由", "同意点「批准」，不同意点「驳回」，都要写理由", "批准后按单上写的时点执行，结果到「操作记录」的「审批结果」里看"] },
-      { title: "查一次操作有没有生效", steps: ["切到「操作记录」，填模块、操作者或对象", "点「查询」", "点一行看前后值、原因和请求编号"] },
+      { title: "查一次操作有没有生效", steps: ["切到「操作记录」，填模块、操作者或对象", "点「查询」", "点一行看前后值、原因和操作编号"] },
       { title: "撤回自己发起的申请", steps: ["在「待审批」找到写着「你发起的」那一行", "点「撤回我的申请」，写理由", "撤回后原操作不会执行，要做需重新发起"] },
     ],
     terms: [
@@ -361,7 +361,7 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
       { name: "角色数", text: "只算启用中的角色；对照表也列出已停用的角色。" },
       { name: "?", text: "这个角色的授权没读到，不代表没有这项权限。" },
     ],
-    more: "列表只收录启用中的权限。数量跟着搜索和筛选变，读取失败时写没读到，不写 0。对照表要逐个读取每个角色，打开时才读，翻页只换行不重新读取角色。看对照表要有角色管理的查看权限，没有时对照表读取失败，列表照常能用。对照表的勾是角色里存的授权，不代表某个账号现在一定能进那一页。",
+    more: "列表只收录启用中的权限。数量跟着搜索和筛选变，读取失败时写没读到，不写 0。对照表要逐个读取每个角色，展开时读取，翻页只换行不重新读取角色。没有角色读取权限时不显示对照表。对照表的勾是角色里存的授权，不代表某个账号现在一定能进那一页。",
   },
   A9: {
     purpose: "审批外部开发者使用开发者接口的申请。",
@@ -1394,6 +1394,20 @@ const PAGE_GUIDES: Record<string, PageGuideContent> = {
 
 export function getPageGuide(pageId: string): PageGuideContent | undefined {
   return PAGE_GUIDES[pageId];
+}
+
+export function getA8PageGuide(canReadRoles: boolean): PageGuideContent {
+  const guide = PAGE_GUIDES.A8;
+  if (canReadRoles) return guide;
+  const [permission, roles, registration] = guide.tasks;
+  return {
+    ...guide,
+    tasks: [
+      permission,
+      { ...roles, steps: ["角色对照表需要角色读取权限（A6），当前账号没有，只能看每项权限绑定了几个角色"] },
+      registration,
+    ],
+  };
 }
 
 export function getH2PageGuide(hasBuyList: boolean, canWrite: boolean, canCancel: boolean): PageGuideContent {

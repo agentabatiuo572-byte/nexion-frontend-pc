@@ -156,3 +156,4 @@
 .m3-perf-rows dt { color: var(--rd-text-3); white-space: nowrap; }
 .m3-perf-rows dd { margin: 0; }
 .m3-perf-reason { margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: var(--rd-weight-regular); }  /* 累计业绩额没有数时「—」后面的原因（ST-45） */
+.m3-profile-updated { margin: var(--rd-space-2) 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-variant-numeric: tabular-nums; }  /* 时间是辅助字 13/18（VS-50、VS-51），时区跟在时间后（TX-25） */

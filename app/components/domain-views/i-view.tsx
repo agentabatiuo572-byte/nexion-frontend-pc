@@ -202,7 +202,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const overlays = (
     <>
       {mc && (
-        <OperationConfirmModal briefKind={mc.briefKind}
+        <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
           title={mc.title}
           detail={mc.detail}

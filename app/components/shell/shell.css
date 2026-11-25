@@ -75,13 +75,14 @@
 
 /* 账号菜单 */
 .rd-account-menu { padding: 4px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); border: 1px solid var(--rd-line-strong); }
-.rd-account-caption { margin: 0; padding: 6px 8px 2px; color: var(--rd-text-3); font-size: 12px; }
+.rd-account-caption { margin: 0; padding: 6px 8px 2px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .rd-account-who { display: grid; justify-items: start; gap: 4px; padding: 4px 8px 8px; color: var(--rd-text); font-size: 14px; font-weight: 500; }
 .rd-account-who .rd-role { background: var(--rd-control); }
-.rd-account-action { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--rd-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.rd-account-action { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--rd-text-2); font: inherit; font-size: var(--rd-text-body); text-align: left; cursor: pointer; }
 .rd-account-action:hover { background: var(--rd-control); color: var(--rd-text); }
 .rd-account-action:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
-.rd-account-error { margin: 0; padding: 6px 8px; color: var(--rd-danger); font-size: 12px; }
+.rd-account-error { margin: 0; padding: 6px 8px; color: var(--rd-danger); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.rd-account-pending { margin-left: auto; color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }  /* 本人头像保存结果未知：菜单项后面一句，结果未知用橙黄（VS-107） */
 
 /* 告警抽屉 */
 .rd-alert-heading { margin: 8px 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; }

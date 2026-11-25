@@ -9,6 +9,7 @@ import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outco
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
+import { fetchDirectCommandReceiptDetails } from "./direct-command-receipt";
 import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
 import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
 import { buyProductReason, H2_BUY_LIST_PATH, isBuyListReceipt, type BuyListWrite } from "./h2-trial-purchase";
@@ -337,11 +338,15 @@ export function isH2OutcomeUnknown(error: unknown) {
   return typeof status !== "number" || !!bodyUnreadable || isIdempotencyOutcomeOpen(apiMessage) || outcomeStaysUnknown(status, apiCode);
 }
 
-export async function updateH2TrialParam(key: string, value: string, reason: string, commandKey: string) {
+export async function updateH2TrialParam(key: string, value: string, reason: string, commandKey: string, expectedValue?: string) {
   return growthRequest<Record<string, any>>(
     `/trials/params/${encodeURIComponent(key)}`,
-    { method: "PATCH", body: commandBody(key, value, reason), headers: { "Idempotency-Key": commandKey } },
+    { method: "PATCH", body: commandBody(key, value, reason, undefined, expectedValue), headers: { "Idempotency-Key": commandKey } },
   );
+}
+
+export function fetchH2TrialParamReceipt(key: string, commandKey: string, actorId: number) {
+  return fetchDirectCommandReceiptDetails(`GROWTH:H2:TRIAL_PARAM_UPDATE:${key.toUpperCase()}`, commandKey, actorId);
 }
 
 export async function updateH2TrialBuyList(input: BuyListWrite) {

@@ -48,12 +48,12 @@
 .m3s-rows { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--rd-space-1) var(--rd-space-2); display: flex; flex-direction: column; gap: 2px; }
 .m3s-row-wrap { display: flex; align-items: center; gap: var(--rd-space-1); min-width: 0; flex: none; }
 .m3s-row-check { display: grid; place-items: center; width: 28px; height: 40px; flex: none; cursor: pointer; }
-.m3s-row { position: relative; flex: 1; min-width: 0; display: flex; gap: 10px; padding: 10px var(--rd-space-2); border-radius: var(--rd-radius-control); color: var(--rd-text); }
+.m3s-row { position: relative; flex: 1; min-width: 0; display: flex; gap: 10px; padding: 10px var(--rd-space-2) 10px 14px; border-radius: var(--rd-radius-control); color: var(--rd-text); }  /* 左边多留 6px 给选中点，选中和没选中同一个内边距，切换时字不跳 */
 /* 整行可点，状态的提示图标浮在上面，按钮里不套按钮。 */
 .m3s-row-hit { position: absolute; inset: 0; padding: 0; border: 0; border-radius: inherit; background: none; cursor: pointer; }
 .m3s-row .rd-explain { position: relative; z-index: 1; }
 .m3s-row[data-on] { background: var(--rd-selected); }
-.m3s-row[data-on]::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 3px 3px 0; background: var(--rd-brand-ink, var(--rd-focus)); }
+.m3s-row[data-on]::before { content: ""; position: absolute; top: 50%; left: 4px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--rd-brand-ink); }  /* 选中行：选中底加品牌色点，和页签、表格选中行一样（VS-74） */
 @media (hover: hover) and (pointer: fine) { .m3s-row:not([data-on]):hover { background: var(--rd-hover); } }
 .m3s-row-hit:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: -2px; }
 .m3s-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -119,7 +119,7 @@
 .m3s-receipt[data-warn] { color: var(--rd-warn); }
 .m3s-system { align-self: center; display: flex; align-items: baseline; gap: var(--rd-space-2); max-width: 86%; padding: var(--rd-space-1) var(--rd-space-3); border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); color: var(--rd-text-3); font-size: var(--rd-text-aux); text-align: center; overflow-wrap: anywhere; }
 .m3s-system time { flex: none; font-variant-numeric: tabular-nums; }
-.m3s-internal { align-self: stretch; display: grid; gap: 2px; margin: 0 8%; padding: var(--rd-space-2) var(--rd-space-3); border-left: 3px solid var(--rd-warn); border-radius: var(--rd-radius-tag); background: var(--rd-warn-bg); color: var(--rd-text-2); }
+.m3s-internal { align-self: stretch; display: grid; gap: 2px; margin: 0 8%; padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-tag); background: var(--rd-warn-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rd-warn) 30%, transparent); color: var(--rd-text-2); }  /* 浅底加同色 1px 边，没有左色条（VS-94 第 4 条） */
 .m3s-internal-label { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .m3s-divider { align-self: stretch; display: flex; align-items: center; gap: 10px; color: var(--rd-text-3); font-size: var(--rd-text-aux); }
 .m3s-divider::before, .m3s-divider::after { content: ""; flex: 1; height: 1px; background: var(--rd-line); }
@@ -144,7 +144,7 @@
 /* 提示条标题后面的弱字：发出时间。 */
 .m3s-notice-meta { display: inline-block; white-space: nowrap; margin-left: var(--rd-space-2); color: var(--rd-text-3); font-size: var(--rd-text-aux); font-weight: normal; font-variant-numeric: tabular-nums; }
 /* 只读原文（首次联系、没发出的原文）：保留换行，最多露约六行，长的在框里滚，不和输入框混。 */
-.m3s-original { margin-top: var(--rd-space-2); padding: var(--rd-space-2) var(--rd-space-3); border-left: 3px solid var(--rd-line-strong); border-radius: var(--rd-radius-tag); background: var(--rd-panel); max-height: 132px; overflow-y: auto; }
+.m3s-original { margin-top: var(--rd-space-2); padding: var(--rd-space-2) var(--rd-space-3); border-radius: var(--rd-radius-tag); background: var(--rd-panel); box-shadow: inset 0 0 0 1px var(--rd-line); max-height: 132px; overflow-y: auto; }  /* 一圈 1px 细线，不用左色条（VS-94 第 4 条） */
 .m3s-original:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 1px; }
 .m3s-original > span { display: block; margin-bottom: 2px; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .m3s-original > p { margin: 0; color: var(--rd-text); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -246,9 +246,6 @@
 .rd-modal .ui-support-workflow summary { color: var(--rd-text-2); font-weight: var(--rd-weight-medium); }
 .rd-modal .ui-support-workflow :is(.rd-facts, .rd-notice, .rd-form-field) { margin-block: var(--rd-space-3); }
 .rd-modal .ui-support-workflow .rd-notice { padding: 10px 16px; border-radius: var(--rd-radius-control); }
-.rd-modal .ui-support-workflow .ui-workflow-steps li { font-size: var(--rd-text-aux); }
-.rd-modal .ui-support-workflow .ui-workflow-steps li.current { background: var(--rd-panel-inner); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
-.rd-modal .ui-support-workflow .ui-workflow-steps li.complete { color: var(--rd-text-2); }
 .rd-modal .m-bulk-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-block: var(--rd-space-3); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .rd-modal .ui-support-contact-picker p > .l-btn { margin-left: 8px; }
 .rd-modal .m-bulk-counts b { color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }

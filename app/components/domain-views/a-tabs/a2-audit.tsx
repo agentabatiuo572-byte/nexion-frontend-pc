@@ -3507,10 +3507,10 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           ]} />
           {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
           {shownLogE1 && <A2ChangeReview before={shownLogE1.before} after={shownLogE1.after} operationCode={shownLogE1.operationCode} />}
-          <Fold inset title="技术信息" summary={`请求编号 ${requestNo}`}>
+          <Fold inset title="技术信息" summary={`操作编号 ${requestNo}`}>
             <Facts>
               <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
-              <Fact k="请求编号"><span data-mono>{requestNo}</span></Fact>
+              <Fact k="操作编号"><span data-mono>{requestNo}</span></Fact>
               {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
               {logActionShown(shownLog).text !== shownLog.action || logActionShown(shownLog).raw ? <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact> : null}
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}

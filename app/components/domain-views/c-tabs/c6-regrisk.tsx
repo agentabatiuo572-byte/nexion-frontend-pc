@@ -10,7 +10,6 @@ import { displayAdminError } from "@/lib/admin/error-messages";
  * 四类写入保存完整原请求；结果未知时只允许原样恢复或读回核对。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CircleHelp, Fingerprint, KeyRound, LockKeyhole, MessageSquareText, Network, RefreshCw, ShieldCheck, ShieldOff, SlidersHorizontal, Users } from "lucide-react";
 import { BlockState, Button, Change, ConfigList, ConfigRow, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ScaleBar, Stat, StatBand, StatusTag } from "@/app/components/rd";
@@ -147,7 +146,6 @@ const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不
 
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const reach = useReach();
-  const router = useRouter();
   const { toast, openActionConfirm, openConfirm } = ctx;
   const role = useAdminAuth((state) => state.session?.role ?? state.role);
   const authorities = useAdminAuth((state) => state.session?.authorities ?? EMPTY_AUTHORITIES);
@@ -626,28 +624,6 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     });
   };
 
-  const k1Confirm = (guard: UserRegistrationRiskK1Guard) => openConfirm({ briefKind: "record",
-    action: "打开「多账户风险排查」",
-    title: "到「多账户风险排查」修改",
-    detail: <><b>{operatorCopyText(text(guard.name))}</b> 在「多账户风险排查」修改。</>,
-    statedBrief: {
-      impact: "只跳转到「多账户风险排查」，不保存任何内容。",
-      check: "到那一页按那一页的规则修改；没有那一页的修改权限时只能查看。",
-    },
-    content: (
-      <Facts>
-        <Fact k="这一项">{operatorCopyText(text(guard.name))}</Fact>
-        <Fact k="在哪里改">多账户风险排查</Fact>
-      </Facts>
-    ),
-    remarkHint: "选填",
-    reasonPlaceholder: "不用填写，备注不会保存",
-    okLabel: "去修改 →",
-    run: () => {
-      router.push(text(guard.suggestedPath, k1Path));
-    },
-  });
-
   const otpMirrorRow = (param: UserRegistrationRiskParam) => (
     <ConfigRow key={rowKey(param)}
       name={operatorCopyText(text(param.name))}
@@ -759,18 +735,17 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
           : <BlockState compact state="empty" title="暂无短信验证码设置" />}
       </Fold>
 
+      {/* 三项都在同一页改（后端给的 suggestedPath 都是 K1 页）：一个直达链接放在折叠标题行，和上面「短信验证码参数」一样；目标不可达时只留说明（OP-76、附录 C 的 C6-A06，ST-58）。 */}
       <Fold title="多账户限制" icon={Users} tone="role-other"
         summary={k1Guards.length ? `${k1Guards.length} 项，在「多账户风险排查」修改` : "暂无"}
-        explain="同 IP 24 小时注册上限、同设备和同支付方式的绑定上限，都在「多账户风险排查」设置，这页只列出归属。">
+        explain="同 IP 24 小时注册上限、同设备和同支付方式的绑定上限。当前值和修改都在「多账户风险排查」，这页只列出名字。"
+        actions={reach(k1Path) ? <Link className="rd-link" href={k1Path} prefetch={false}>去多账户风险排查 →</Link> : undefined}>
         {k1Guards.length > 0 ? (
           <ConfigList label="多账户限制">
             {k1Guards.map((guard) => (
               <ConfigRow key={guardKey(guard)}
                 name={operatorCopyText(text(guard.name))}
-                what="注册和绑定时的多账户限制"
-                effect="当前值和修改都在「多账户风险排查」"
                 value={<span className="c6-elsewhere">在多账户风险排查设置</span>}
-                action={reach(text(guard.suggestedPath, k1Path)) ? <Button size="sm" onClick={() => k1Confirm(guard)}>查看修改位置</Button> : undefined}
               />
             ))}
           </ConfigList>
