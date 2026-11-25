@@ -74,7 +74,7 @@ export async function submitH2TrialApproval(
   let ticket;
   if (previous) {
     try {
-      ticket = await fetchA2ProposalByKey(key);
+      ticket = await fetchA2ProposalByKey(key, true);
     } catch {
       throw new A2OutcomeUncertainError("暂时无法查询原审批单，请稍后再查。", key);
     }

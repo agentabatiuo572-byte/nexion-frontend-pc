@@ -52,19 +52,19 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit) {
   return input instanceof Request ? input.method.toUpperCase() : "GET";
 }
 
-function isAuthenticatedAdminRead(input: RequestInfo | URL, init?: RequestInit) {
-  if (typeof window === "undefined") return false;
+function adminReadPath(input: RequestInfo | URL, init?: RequestInit) {
   const method = requestMethod(input, init);
-  if (method !== "GET" && method !== "HEAD") return false;
+  if (method !== "GET" && method !== "HEAD") return undefined;
   const value = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
   const url = new URL(value, window.location.href);
-  return url.origin === window.location.origin && url.pathname.startsWith("/api/admin/");
+  return url.origin === window.location.origin && url.pathname.startsWith("/api/admin/") ? url.pathname : undefined;
 }
 
 async function guardedAdminRead(
   nativeFetch: AdminFetch,
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init: RequestInit | undefined,
+  onUnauthorized: (() => void) | undefined,
 ) {
   const state = lifecycleState();
   if (state.logoutPending) throw new AdminLogoutAbortError();
@@ -100,6 +100,7 @@ async function guardedAdminRead(
       },
     });
   }
+  if (response.status === 401 && !current.logoutPending && !current.readsBlocked) onUnauthorized?.();
   return response;
 }
 
@@ -109,15 +110,17 @@ async function guardedAdminRead(
  * revocation can be retried with the original credential. Logout never aborts
  * an already-issued network request; its late result loses authority by epoch.
  */
-export function installAdminAuthFetchLifecycle() {
+export function installAdminAuthFetchLifecycle(onUnauthorized: () => void) {
   if (typeof window === "undefined") return;
   const state = lifecycleState();
   if (state.installed) return;
   state.nativeFetch = window.fetch.bind(window);
   const nativeFetch = state.nativeFetch;
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-    if (!isAuthenticatedAdminRead(input, init)) return nativeFetch(input, init);
-    return guardedAdminRead(nativeFetch, input, init);
+    const path = adminReadPath(input, init);
+    if (!path) return nativeFetch(input, init);
+    // The shell resolves auth/session (including anonymous bootstrap) itself.
+    return guardedAdminRead(nativeFetch, input, init, path.startsWith("/api/admin/auth/") ? undefined : onUnauthorized);
   }) as AdminFetch;
   state.installed = true;
 }

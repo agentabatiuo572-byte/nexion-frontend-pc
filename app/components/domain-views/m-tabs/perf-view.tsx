@@ -141,8 +141,8 @@ export type ExportTaskState = "PENDING_GENERATION" | "PENDING_APPROVAL" | "APPRO
 /** 导出记录里的一条。scope、month、rows 为 null 时这些现在看不到（申请人已没有这个范围）。 */
 export type ExportTask = {
   taskId: string; version: number; type: ExportType;
-  /** 申请人姓名；requesterRole 是括号里的角色。mine：是不是当前账号提交的。 */
-  requester: string; requesterRole: string; mine: boolean;
+  /** 申请人姓名和已知角色，缺姓名时为原有回退显示。 */
+  requester: string; hasRequesterName: boolean; mine: boolean;
   scope: string | null; month: string | null; asOf: string | null;
   rows: number | null; columns: ExportColumns;
   coverage: string | null; requestReason: string; requestedAt: string;
@@ -177,7 +177,7 @@ export type DecisionLookup =
   | { kind: "mismatch" | "pending" | "failed" | "expired" | "cleared" | "hidden"; text: string }
   | { kind: "not-received"; text: string };
 /** 这个账号在导出上能做什么。views 只有一个时不画分段。 */
-export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: string; views: ("MINE" | "APPROVALS")[] };
+export type ExportPersona = { name: string; canExport: boolean; exportBlocked?: string; views: ("MINE" | "APPROVALS")[]; mineTotal?: number };
 
 export type ExportVisibleReceipt = { rows: ExportSubmitted[]; checkedAt: number };
 export type SubmitLookup =

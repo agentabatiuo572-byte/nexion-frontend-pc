@@ -259,7 +259,7 @@ export function PerfExportRecords({ ports }: { ports: PerfExportPorts }) {
             const reviewing = view === "APPROVALS" && task.state === "PENDING_APPROVAL";
             return <Tr key={task.taskId} selected={openId === task.taskId} onOpen={() => setOpenId(task.taskId)}>
               {/* 申请人单独一行，范围列只写范围；任务编号写成「编号 40」，不和行数挨着。 */}
-              <Td><Cell main={EXPORT_LABEL[task.type]} sub={view === "APPROVALS" ? task.mine ? "你提交的" : `申请人 ${task.requester}` : <span data-mono="">编号 {task.taskId}</span>} /></Td>
+              <Td><Cell main={EXPORT_LABEL[task.type]} sub={view === "APPROVALS" ? task.mine && !task.hasRequesterName ? "你提交的" : `申请人 ${task.requester}${task.mine ? "（你提交的）" : ""}` : <>{task.hasRequesterName && `${task.requester} · `}<span data-mono="">编号 {task.taskId}</span></>} /></Td>
               <Td>{task.scopeLost ? "—" : <Cell main={task.scope ?? "—"} sub={task.month ?? "—"} />}</Td>
               <Td><Cell main={<StatusTag tone={status.tone}>{status.label}</StatusTag>} sub={reviewing && task.mine ? "你发起的，要另一位有审批权的管理员处理" : status.line} /></Td>
               <Td><span className="sa-nowrap">{formatBusinessTimeCompact(task.requestedAt, "—")}</span></Td>
@@ -377,8 +377,9 @@ function TaskDrawer({ task, view, zone, rows, pending, now, lookup, downloadFail
         <Fact k="提交时间">{formatBusinessTimeCompact(task.requestedAt, "—")}（{zone}）</Fact>
         <Fact k="范围、月份和行数">—</Fact>
       </> : <>
-        {!task.mine && <Fact k="申请人">{task.requester}{task.requesterRole && `（${task.requesterRole}）`}</Fact>}
-        {task.state === "APPROVED" || (task.state === "READY" && DETAIL(task)) || (task.state === "FAILED" && !!task.decidedAt) ? <><Fact k="谁批的">{task.decidedBy} · {task.decidedAt}</Fact><Fact k="批准理由">{task.decisionReason}</Fact></> : null}
+        {(!task.mine || task.hasRequesterName) && <Fact k="申请人">{task.requester}</Fact>}
+        {(task.decidedBy || task.decidedAt) && <Fact k="谁批的">{[task.decidedBy, task.decidedAt].filter(Boolean).join(" · ")}</Fact>}
+        {task.state === "APPROVED" || (task.state === "READY" && DETAIL(task)) || (task.state === "FAILED" && !!task.decidedAt) ? <Fact k="批准理由">{task.decisionReason}</Fact> : null}
         {task.state === "REJECTED" && <Fact k="驳回理由">{task.decisionReason}</Fact>}
         {task.state === "READY" && <><Fact k="文件">{label}（{task.rows ?? "—"} 行，{task.columns.total} 列，CSV）</Fact><Fact k="下载链接">每次获取后 24 小时内有效</Fact></>}
         <Fact k="范围">{task.scope ?? "—"}</Fact>
@@ -402,7 +403,7 @@ function TaskConfirm({ confirm, zone, initialReason, onClose, onConfirm }: { con
   const label = EXPORT_LABEL[task.type];
   const month = task.month ? `${task.month}（截至 ${task.asOf ? formatBusinessTimeCompact(task.asOf, "—") : "—"}，${zone}）` : "—";
   const summary = <Facts>
-    <Fact k="申请人">{task.requester}{task.requesterRole && `（${task.requesterRole}）`}</Fact>
+    <Fact k="申请人">{task.requester}</Fact>
     <Fact k="范围">{task.scope ?? "—"}</Fact>
     <Fact k="月份">{month}</Fact>
     <Fact k="内容">{label}（{task.rows ?? "—"} 行，{task.columns.total} 列）</Fact>
@@ -413,7 +414,7 @@ function TaskConfirm({ confirm, zone, initialReason, onClose, onConfirm }: { con
     effect={<StatusTag tone="progress" filled>立即生效</StatusTag>} confirmLabel="确认撤回" onClose={onClose} onConfirm={onConfirm}
     facts={task.scopeLost
       ? <Facts><Fact k="内容">{label}</Fact><Fact k="编号"><span data-mono="">{task.taskId}</span></Fact><Fact k="提交时间">{formatBusinessTimeCompact(task.requestedAt, "—")}（{zone}）</Fact><Fact k="撤回后">不再审批，也不生成文件；要导出得重新申请</Fact></Facts>
-      : <Facts><Fact k="内容">{label}（{task.rows ?? "—"} 行）</Fact><Fact k="范围">{task.scope ?? "—"}</Fact><Fact k="提交时间">{formatBusinessTimeCompact(task.requestedAt, "—")}（{zone}）</Fact><Fact k="撤回后">不再审批，也不生成文件；要导出得重新申请</Fact></Facts>} />;
+      : <Facts>{task.hasRequesterName && <Fact k="申请人">{task.requester}</Fact>}<Fact k="内容">{label}（{task.rows ?? "—"} 行）</Fact><Fact k="范围">{task.scope ?? "—"}</Fact><Fact k="提交时间">{formatBusinessTimeCompact(task.requestedAt, "—")}（{zone}）</Fact><Fact k="撤回后">不再审批，也不生成文件；要导出得重新申请</Fact></Facts>} />;
   const approve = kind === "approve";
   return <OperationConfirmModal initialReason={initialReason} briefKind="export" title={approve ? `批准${label}导出` : `驳回${label}导出申请`} action={approve ? "批准业绩明细导出" : "驳回业绩明细导出"} detail={task.taskId}
     effect={<StatusTag tone="progress" filled>{approve ? "批准后生成文件" : "立即生效"}</StatusTag>} confirmLabel={approve ? "确认批准" : "确认驳回"}

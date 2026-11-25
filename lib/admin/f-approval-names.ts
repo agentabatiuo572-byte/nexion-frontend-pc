@@ -1,4 +1,5 @@
 export const A2_APPROVE_PERMISSION = "A2 执行/放行(高敏工单)";
+export const H8_SETTLEMENT_APPROVAL_PERMISSION = "H8 真实钱包与资金台账发奖";
 
 export const F_APPROVAL_PERMISSION_NAMES: Readonly<Record<string, string>> = {
   network_f2_royalty_rate: "L1-L7 团队购买奖励比例放宽",

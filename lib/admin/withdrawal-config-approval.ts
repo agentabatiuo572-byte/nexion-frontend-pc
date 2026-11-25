@@ -11,7 +11,7 @@ import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
-import { currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
+import { canReadOwnRecoveryProposal, currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
@@ -362,7 +362,7 @@ export async function submitConfigApproval<T>(
   try {
     // 发起人也能按命令号查自己发起的单（后端 A2AccessPolicy.requireProposalReader、WithdrawalConfigApproval.canReadOwnProposal）。
     if (previous && (domain === "B" || domain === "F" || sourceDomain === "E2" || sourceDomain === "G4" || sourceDomain === "H8"
-      || session.authorities.includes("platform_a2_read") || session.authorities.includes("platform_a2_proposal_create"))) {
+      || canReadOwnRecoveryProposal(session.authorities))) {
       try {
         // 只有 A2_PROPOSAL_NOT_FOUND 才算没有原单；OPERATION_RESULT_UNKNOWN 这类 404 说明不了，按查询失败保留原命令。
         ticket = await fetchA2ProposalByKey(key, true);

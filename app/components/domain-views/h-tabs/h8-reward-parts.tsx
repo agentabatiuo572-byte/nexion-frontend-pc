@@ -87,7 +87,7 @@ export function RewardFlow({ pending, blocked, settled, mode }: { pending: React
         <div className="h8-flow-body">
           <span className="h8-flow-title">结算
             <Explain label="结算怎么发生" content={<>
-              <p>不会自动结算。要有结算权限的人在这页提交批量或指定新人的结算审批，另一位管理员在「操作记录与审批」批准后才发。</p>
+              <p>不会自动结算。要有结算权限的人在这页提交批量或指定新人的结算审批，另一位超级管理员在「操作记录与审批」批准后才发。</p>
               <p>批准时按当时的名单，从最早注册的开始发；奖励配置在这期间变了，要重新提交。</p>
             </>} />
           </span>
@@ -136,7 +136,7 @@ export function unknownTag(kind: "direct" | "approval") {
 export function expiredTag(kind: "direct" | "approval") {
   return <StatusTag tone="neutral" icon={Hourglass} explain={kind === "direct"
     ? "原请求超过 24 小时，不能再重试，只能到「操作记录与审批」核对。"
-    : "原请求超过 24 小时，不能再重试，只能查询原审批单；明确查不到这张单时，可以确认解除。"}>已过期</StatusTag>;
+    : "过了 24 小时只能查询、不能再重试；重试被明确拒绝的，核实后可以解除。"}>已过期</StatusTag>;
 }
 
 export function pendingTag() {

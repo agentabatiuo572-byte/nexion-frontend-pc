@@ -1,4 +1,5 @@
 "use client";
+import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
@@ -654,7 +655,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   const canWriteAny = canDailyWrite || canBalanceWrite || canFeeWrite;
   // 待批总览要 A2 读权；按命令号查自己发起的原单，发起审批权也行（后端 A2AccessPolicy、WithdrawalConfigApproval.canReadOwnProposal）。
   const canQuery = can("platform_a2_read");
-  const canLookupOwn = canQuery || can("platform_a2_proposal_create");
+  const canLookupOwn = canReadOwnRecoveryProposal(authorities);
   const proposeBlock = withdrawalApprovalDisabledReason(authorities);
 
   const [params, setParams] = useState<D5ParamData | null>(null);
@@ -943,6 +944,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     if (!session || !loosenPending) return;
     const key = loosenPending.commandKey;
     if (mode === "retry" && loosenReplayBlock) { note(key, loosenReplayBlock); return; }
+    if (mode === "lookup") setQueryMissing(current => current.filter(saved => saved !== key));
     note(key, "");
     setRecovering(key);
     try {

@@ -1,4 +1,5 @@
 "use client";
+import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
@@ -199,7 +200,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const canForce = has("finance_d7_force_inverted");
   const canReadQueue = has("platform_a2_read");
   // 发起人能按命令号查自己发起的单（闸门 2 第 11 条），查询入口不只给有审批读权的账号。
-  const canQueryOriginal = canReadQueue || has("platform_a2_proposal_create");
+  const canQueryOriginal = canReadOwnRecoveryProposal(authorities);
   const approvalBlocked = withdrawalApprovalDisabledReason(authorities);
   // 和顶栏同一份兑付覆盖率；读不到不传，提交和批准时后端再查。
   const bDomain = useBDomainDashboard(B_DASHBOARD_READ_AUTHORITIES.every(has));
@@ -616,6 +617,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const queryApproval = async () => {
     if (!session || !approval) return;
     const key = approval.commandKey;
+    setQueryMissing(current => current.filter(saved => saved !== key));
     setRecovering("query");
     try {
       const result = await submitConfigApproval("D7", session, null, "", loadPayoutVndConfig, true);

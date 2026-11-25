@@ -1,4 +1,5 @@
 "use client";
+import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
@@ -1009,7 +1010,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     }
   };
 
-  const canQueryProposal = reach("/platform/audit", "platform_a2_read");
+  const canQueryProposal = canReadOwnRecoveryProposal(authorities);
   /** 重试要的权限和正常入口一样，不能比入口宽（OP-93、OP-123）。 */
   const mayRetry = (record: K1PendingCommand) => record.approval ? canProposeRelease : record.kind === "cluster"
     ? { flag: canFlag, freeze: canFreeze, release: canRelease, clear: canClear }[record.clusterAction!]
@@ -1020,7 +1021,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     : !mayRetry(record) ? "这个账号没有这项权限，不能重试，请有权限的同事核对。"
       : record.approval?.acknowledged ? "申请已建单，请查询原审批单。"
         : record.approval && !proposalNotFound.includes(record.commandKey) ? "先查询原审批单，明确查不到才能按原请求重试。"
-      : record.kind === "cluster" && canQueryProposal && !proposalNotFound.includes(record.commandKey) ? "先查询原结果，明确查不到审批单才能重试。"
+      : record.kind === "cluster" && (!canQueryProposal || !proposalNotFound.includes(record.commandKey)) ? "先查询原结果，明确查不到审批单才能重试。"
         : undefined;
 
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});

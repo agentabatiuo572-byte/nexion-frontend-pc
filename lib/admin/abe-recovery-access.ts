@@ -10,6 +10,11 @@ export function canCreateRecoveryProposal(authorities: readonly string[]) {
   return authorities.includes("platform_a2_write") || authorities.includes("platform_a2_proposal_create");
 }
 
+/** For a saved original only. Queue access still requires A2 read authority. */
+export function canReadOwnRecoveryProposal(authorities: readonly string[]) {
+  return authorities.includes("platform_a2_read") || canCreateRecoveryProposal(authorities);
+}
+
 export function recoveryQueryConclusion(state: string) {
   if (state === "NOT_FOUND") return "not-found";
   if (state === "SUCCEEDED" || state === "CONFIRMED_SUCCEEDED") return "succeeded";

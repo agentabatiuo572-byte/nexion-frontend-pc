@@ -1,4 +1,5 @@
 "use client";
+import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
@@ -17,7 +18,7 @@ import { roleLabel } from "@/lib/nav/console-nav";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
@@ -162,8 +163,9 @@ const isConflict = (error: unknown) => fxReasonCode(error) === "FX_QUOTE_VERSION
 
 /** 重试被拒的原因只写发生了什么，不带「刷新后重试」这类动作句：下一步由待确认条统一给。 */
 function retryRejectedReason(cause: unknown) {
-  if (isConflict(cause)) return "这期间这组汇率被别人改过，原操作没有再执行。";
-  if (fxReasonCode(cause) === "FX_QUOTE_NO_CHANGES") return "现在的值已经和原操作要改成的一样，原操作没有再执行。";
+  const code = fxReasonCode(cause) ?? (cause instanceof Error ? cause.message : undefined);
+  if (code === "FX_QUOTE_VERSION_CONFLICT") return "这期间这组汇率被别人改过，原操作没有再执行。";
+  if (code === "FX_QUOTE_NO_CHANGES") return "现在的值已经和原操作要改成的一样，原操作没有再执行。";
   return `${displayAdminError(cause).split("；")[0].replace(/[。.]$/, "")}。`;
 }
 
@@ -175,7 +177,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const authorities = session?.authorities ?? [];
   const canManage = authorities.includes("finance_d6_manage");
   const canReadApproval = authorities.includes("platform_a2_read");
-  const canQueryOriginal = authorities.includes("platform_a2_read") || authorities.includes("platform_a2_proposal_create");
+  const canQueryOriginal = canReadOwnRecoveryProposal(authorities);
   const proposalBlocked = !authorities.includes("platform_a2_proposal_create") && !authorities.includes("platform_a2_write") ? "这个账号没有发起审批的权限" : undefined;
   const [data, setData] = useState<D6FxQuote | null>(null);
   const [loading, setLoading] = useState(true);
@@ -183,7 +185,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   const [readAt, setReadAt] = useState("");
   const [pending, setPending] = useState<PendingFx | null>(null);
   const [retrying, setRetrying] = useState(false);
-  const [retryRejected, setRetryRejected] = useState("");
+  const [proposalNotFound, setProposalNotFound] = useState<string>();
   const [pendingNote, setPendingNote] = useState("");
   const [releasing, setReleasing] = useState(false);
   const [currentId, setCurrentId] = useState<number | null>(null);
@@ -273,7 +275,8 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
 
   /** 按原操作重试：同命令号、同内容、同理由、同版本号，不接受新输入（OP-94）。 */
   const retryPending = async (record: PendingFx) => {
-    if (record.expiresAt <= Date.now() || !canManage || retryRejected) return;
+    if (record.expiresAt <= Date.now() || !canManage || record.replayRejection
+      || record.proposal && (!canQueryOriginal || proposalNotFound !== record.commandKey)) return;
     if (!pendingFx.isDurablyStored(record.fingerprint, record.commandKey)) {
       setPendingNote("浏览器里查不到这条记录，本次没有发送。记录继续保留，请在调整历史里核对。");
       return;
@@ -284,13 +287,17 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       await sendCommand(record, record);
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      if (isExplicitRejection(cause)) {
+      const rejection = explicitRejectionCode(cause);
+      if (rejection) {
         const reason = retryRejectedReason(cause);
         if (record.proposal) {
           pendingFx.forget(record.fingerprint, record.commandKey);
           syncPending();
           toast(reason, "warn");
-        } else setRetryRejected(reason);
+        } else {
+          pendingFx.markReplayRejected(record.fingerprint, record.commandKey, rejection);
+          syncPending();
+        }
       } else setPendingNote(`这次没能确认结果：${retryRejectedReason(cause)}原操作继续保留。`);
     } finally {
       setRetrying(false);
@@ -308,7 +315,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       if (fundCommandSettled(receipt)) {
         pendingFx.forget(record.fingerprint, record.commandKey);
         setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status: receipt!.originalStatus, proposal: true }]);
-        syncPending(); setRetryRejected(""); setPendingNote(""); await load();
+        syncPending(); setPendingNote(""); await load();
       }
       return receipt;
     } catch (cause) {
@@ -321,7 +328,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
   /** 直接修改：按原请求查原结果，业务上确认成功或核查确认才解除；查到的结论写在这一行。 */
   const settleDirect = async (record: PendingFx, status: FundSettled["status"]) => {
     setSettled(current => [...current.filter(item => item.key !== record.commandKey), { key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status }]);
-    syncPending(); setRetryRejected(""); setPendingNote("");
+    syncPending(); setPendingNote("");
     await load();
   };
   const lookupDirect = async (record: PendingFx) => {
@@ -335,19 +342,21 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     } finally { setRetrying(false); }
   };
   const releasePending = (record: PendingFx) => {
+    if (!pendingFx.list().some(row => row.commandKey === record.commandKey && !row.proposal && row.replayRejection)) return;
     setReleasing(false);
     // Legacy manual release is separate from evidence-based command closure.
     pendingFx.forget(record.fingerprint, record.commandKey);
-    syncPending(); setRetryRejected(""); setPendingNote("");
+    syncPending(); setPendingNote("");
     toast("已解除本页这条原操作记录；原操作没有结案时系统仍会阻止新提交", "success");
   };
 
   /** 查原审批单只收尾这次提交的未知结果，不把待批当成已生效。 */
   const queryOriginal = async (record: PendingFx) => {
     setRetrying(true);
+    setProposalNotFound(undefined);
     try {
       const ticket = await fetchA2ProposalByKey(record.commandKey, true);
-      if (!ticket) { setPendingNote("暂未查到原审批单，结果仍未知，记录继续保留。"); return; }
+      if (!ticket) { setProposalNotFound(record.commandKey); setPendingNote("暂未查到原审批单，结果仍未知，记录继续保留。"); return; }
       pendingFx.forget(record.fingerprint, record.commandKey);
       syncPending();
       await load();
@@ -473,7 +482,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const param = paramOf(pending.param);
     const expired = pending.expiresAt <= Date.now();
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
-    const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN : undefined;
+    const retryRejected = pending.replayRejection ? retryRejectedReason(new Error(pending.replayRejection)) : undefined;
+    const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN
+      : pending.proposal && (!canQueryOriginal || proposalNotFound !== pending.commandKey) ? "先查询原结果，查不到才能重试" : undefined;
     // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
     const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
     // 查到记为失败时，「可能已经提交」不再写。
@@ -487,13 +498,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
         {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>}
-        {retryRejected && !expired && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
+        {retryRejected && !pending.proposal && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>
         <p>{failed ? "" : "这次修改可能已经提交，"}已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
         {expired && !outcome && (pending.proposal && !canQueryOriginal ? <p>{EXPIRED_NO_QUERY}</p> : !fundInvestigationAccess(target).unavailableReason && <p>{fundInvestigationAccess(target).canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER}</p>)}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
-        {retryRejected && !expired && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
+        {retryRejected && <p>重试没有成功：{retryRejected} {pending.proposal ? "查不到审批单不能证明没执行。" : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
         {pendingNote && <p>{pendingNote}</p>}
       </>,
       tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}` };
