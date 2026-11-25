@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { CalendarClock, CheckCircle2, CircleHelp, Clock3, Dices, Hourglass, PauseCircle, TriangleAlert } from "lucide-react";
-import { Button, Explain, Notice, SegmentBar, StatusTag } from "@/app/components/rd";
+import { Button, Explain, Fact, Facts, Fold, Notice, SegmentBar, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 
 import type { H7PendingApproval, H7Voucher } from "@/lib/admin/h-client";
@@ -173,11 +173,13 @@ export function VoucherCard({ v, now, skuLabels, selected, onOpen, actions }: { 
 }
 
 /** 原操作的一行：做的是什么、哪张券、改了什么、什么时候提交的、现在怎样、能做什么。 */
-export type H7RecoveryRow = { key: string; name: string; object: ReactNode; change?: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode; note?: ReactNode };
+export type H7RecoveryRow = { key: string; name: string; object: ReactNode; change?: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode; note?: ReactNode; original?: { reason: string; commandKey: string } };
+
+export const H7_DIRECT_RETRY_COPY = "按原请求重试会用原编号、原内容、原理由重新发送一次，已成功的不会重复执行。";
 
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"
+    ? "提交时没收到确定结果，可能已经生效。可读取当前配置供核对，24 小时内可按原请求重试。"
     : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；明确查不到、没过 24 小时才能按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
@@ -221,7 +223,14 @@ export function H7RecoveryNotice({ title, explain, rows, link }: { title: ReactN
             <span className="h7-rec-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
             <span className="h7-rec-state">{row.tag}{row.ticket && <span className="h7-rec-ticket">审批单 <span data-mono="">{row.ticket}</span></span>}</span>
             <span className="h7-rec-actions">{row.actions}</span>
+            {/* 原理由是要核对的事实，常显；编号只在查证时用，收进技术信息（OP-93、OP-154）。 */}
+            {row.original && <span className="h7-rec-reason"><span>原理由</span>{row.original.reason}</span>}
             {row.note && <span className="h7-rec-note">{row.note}</span>}
+            {row.original && <div className="h7-rec-tech"><Fold title="技术信息" summary="原请求编号" tone="role-4" inset>
+              <Facts>
+                <Fact k="原请求编号"><span data-mono="">{row.original.commandKey}</span></Fact>
+              </Facts>
+            </Fold></div>}
           </li>
         ))}
       </ul>

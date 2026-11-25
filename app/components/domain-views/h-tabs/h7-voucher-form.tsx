@@ -5,12 +5,13 @@
  * 只收集表单值（和原来共用确认框里 voucher-config 表单同样的键和字符串值），校验规则照原表单一条不改；
  * 点「下一步」后由页面打开确认框写理由，提交内容仍由页面原来的 parseVoucher 生成。
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { BellOff, CircleSlash, Layers, Lock, Ticket } from "lucide-react";
 import { Button, Check, CheckGroup, Decision, Drawer, Field, Fold, Input, Notice, NumberInput, Segments, StatusTag } from "@/app/components/rd";
 import { h7DateFacts, h7Stamp, h7EditedDateMs, H7_TIME_ZONE } from "@/lib/admin/h7-voucher-time";
 import { validateH7VoucherMoneyPrecision } from "@/lib/admin/h7-voucher-money";
-import { LeaveDialog } from "../i-tabs/i5-writes";
+import { MergeNotice } from "../i-tabs/i5-writes";
+import { H4StaleNote } from "./h4-legacy-parts";
 import { AUDIENCE_LABEL, SURFACE_LABEL, UNIT, VoucherFace, WHEEL_ONLY_TEXT, amountText, countText, voucherSentence, startText, endText, type H7Voucher } from "./h7-voucher-parts";
 
 export type H7FormValue = Record<string, string>;
@@ -110,6 +111,86 @@ const FIELD_LABEL: Record<string, string> = {
   popupEnabled: "参与首页弹窗", popupCadenceEnabled: "弹窗节奏开关", popupDelayMs: "进入后多久弹出", popupCooldownHours: "再次弹出间隔", popupMaxPerSession: "单次打开最多弹出",
   stackWithTrial: "可与试用收益叠加", stackWithOthers: "可与其它优惠叠加", splittable: "可拆分",
 };
+/** businessValue → H7Voucher(逗号串拆 SKU/入口 · 日期转 ms · 数值清洗)。 */
+export function parseVoucher(bv: Record<string, string>, id: string, version = 1, original?: H7Voucher): H7Voucher {
+  const type: H7Voucher["type"] = bv.type === "percent" ? "percent" : "fixed";
+  const skus = (bv.applicableSkus ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const surfaces = (bv.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return {
+    id,
+    name: bv.name?.trim() ?? "",
+    type,
+    amountUSD: type === "fixed" ? Number(bv.amountUSD) || 0 : undefined,
+    percent: type === "percent" ? Number(bv.percent) || 0 : undefined,
+    minPurchaseUSD: Number(bv.minPurchaseUSD) || 0,
+    maxDiscountUSD: Number(bv.maxDiscountUSD) || 0,
+    applicableSkus: skus,
+    audience: bv.audience === "new" ? "new" : "all",
+    startAt: h7EditedDateMs(bv.startDate, original?.startAt),
+    endAt: h7EditedDateMs(bv.endDate, original?.endAt, true),
+    claimSurfaces: surfaces,
+    popupEnabled: bv.popupEnabled !== "false",
+    popupDelayMs: Number.isFinite(Number(bv.popupDelayMs)) ? Number(bv.popupDelayMs) : 1300,
+    popupCooldownHours: Number.isFinite(Number(bv.popupCooldownHours)) ? Number(bv.popupCooldownHours) : 24,
+    popupMaxPerSession: Number.isFinite(Number(bv.popupMaxPerSession)) ? Number(bv.popupMaxPerSession) : 1,
+    popupCadenceEnabled: bv.popupCadenceEnabled !== "false",
+    stackWithTrial: bv.stackWithTrial === "true",
+    stackWithOthers: bv.stackWithOthers === "true",
+    splittable: bv.splittable === "true",
+    issuanceLimit: Number(bv.issuanceLimit) || 0,
+    version,
+    issuedCount: 0,
+    availableCount: 0,
+    redeemedCount: 0,
+    revokedCount: 0,
+    batchCount: 0,
+    status: bv.status === "paused" ? "paused" : "active",
+  };
+}
+
+const fieldKey = (key: string) => key === "startDate" ? "startAt" : key === "endDate" ? "endAt" : key;
+
+function fieldChanges(before: H7Voucher, after: H7Voucher) {
+  return Object.keys(FIELD_LABEL).filter(key => {
+    const field = fieldKey(key) as keyof H7Voucher;
+    return JSON.stringify(before[field]) !== JSON.stringify(after[field]);
+  });
+}
+
+/** 按实际提交的内容比较，也保留需要修正的原输入。 */
+export function voucherDraftKeys(base: H7FormValue, draft: H7FormValue, voucher?: H7Voucher) {
+  const before = parseVoucher(base, "", 1, voucher);
+  const after = parseVoucher(draft, "", 1, voucher);
+  const keys = new Set(fieldChanges(before, after));
+  for (const key of Object.keys(formErrors(draft))) {
+    if (base[key] !== draft[key]) keys.add(key);
+  }
+  return keys;
+}
+
+export function rebaseVoucherForm(base: H7FormValue, draft: H7FormValue, opened: H7Voucher,
+  latest: H7FormValue, current: H7Voucher) {
+  const mine = voucherDraftKeys(base, draft, opened);
+  const theirs = fieldChanges(parseVoucher(base, "", 1, opened), parseVoucher(latest, "", 1, current));
+  const value = { ...latest };
+  const ownTypeChange = mine.has("type");
+  const latestType = theirs.includes("type") ? (current.type === "percent" ? "折扣券" : "满减券") : undefined;
+  const type = ownTypeChange ? draft.type : current.type;
+  const dropped: { key: string; field: string; value: string }[] = [];
+  for (const key of mine) {
+    if ((key === "amountUSD" && type !== "fixed") || (key === "percent" && type !== "percent")) {
+      mine.delete(key);
+      if (latestType && !ownTypeChange) dropped.push({ key, field: FIELD_LABEL[key], value: draft[key] });
+    } else value[key] = draft[key];
+  }
+  const report = { theirs: [] as string[][], clashes: [] as string[][] };
+  for (const key of theirs) {
+    if (key === "type" && draft.type === current.type && ownTypeChange) report.theirs.push([key]);
+    else (mine.has(key) ? report.clashes : report.theirs).push([key]);
+  }
+  return { value, report: { ...report, latestType, dropped } };
+}
+
 /** 改了这些项，已发出还没用的券也按新值使用（领取记录不存券的定义）。 */
 const AFFECTS_ISSUED = new Set(["amountUSD", "percent", "minPurchaseUSD", "maxDiscountUSD", "applicableSkus", "startDate", "endDate"]);
 
@@ -142,12 +223,13 @@ export function displayValue(key: string, state: H7FormValue, skuLabels: Record<
 
 /** 编辑时改了哪些项：只比实际会提交的项（满减不交比例、折扣不交面额，和 parseVoucher 一致）。 */
 export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: Record<string, string>, toMs: (date: string, end?: boolean) => number, issued: number, voucher?: H7Voucher) {
-  const keys = Object.keys(FIELD_LABEL).filter((key) => !(key === "amountUSD" && after.type !== "fixed") && !(key === "percent" && after.type !== "percent"));
+  const keys = fieldChanges(parseVoucher(before, "", 1, voucher), parseVoucher(after, "", 1, voucher))
+    .filter(key => key !== "amountUSD" || after.type === "fixed")
+    .filter(key => key !== "percent" || after.type === "percent");
   return keys
     // 编辑时起止按实际会提交的时刻写：没改日期的旧券保留原时刻（不算改动），改了日期按北京时间整天算。
     .map((key) => ({ key, label: FIELD_LABEL[key], before: voucher && key === "startDate" ? startText(voucher.startAt) : voucher && key === "endDate" ? endText(voucher.endAt) : displayValue(key, before, skuLabels, toMs),
       after: voucher && key === "startDate" ? startText(h7EditedDateMs(after.startDate, voucher.startAt)) : voucher && key === "endDate" ? endText(h7EditedDateMs(after.endDate, voucher.endAt, true)) : displayValue(key, after, skuLabels, toMs) }))
-    .filter((row) => row.before !== row.after)
     .map((row) => {
       const legacy = !!voucher && (row.key === "startDate" && voucher.startAt > 0 && !h7DateFacts(voucher.startAt).wholeDayBoundary || row.key === "endDate" && voucher.endAt > 0 && !h7DateFacts(voucher.endAt, true).wholeDayBoundary);
       const notes = [legacy && "改了日期，按北京时间整天算", issued > 0 && AFFECTS_ISSUED.has(row.key) && "已发出还没用的券也按改后的值使用"].filter(Boolean);
@@ -155,35 +237,40 @@ export function changedRows(before: H7FormValue, after: H7FormValue, skuLabels: 
     });
 }
 
-export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions, skuLabels, toMs, onClose, onReview }: {
+export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, conflict, reading, mergeReport, recovery,
+  blocked, busy, skuOptions, skuLabels, toMs, onChange, onClose, onReview }: {
   voucher?: H7Voucher;
-  initial: H7FormValue;
-  /** 保存被「别人先改过」拒绝后重开：最新读到的值。表单里还是运营填的，改动按最新值对照。 */
-  latest?: H7FormValue;
-  /** 抽屉开着时页面重读失败：抽屉和填的内容留着，读到前不能进下一步。 */
-  readFailed?: { retrying: boolean; onRetry: () => void };
+  baseline: H7FormValue;
+  value: H7FormValue;
+  dirty: boolean;
+  readFailed?: { retrying: boolean; onRetry: () => void; title: string; detail: string };
+  conflict?: () => void;
+  reading: boolean;
+  mergeReport?: ReturnType<typeof rebaseVoucherForm>["report"];
+  recovery?: ReactNode;
+  blocked?: string;
+  busy: boolean;
   skuOptions: string[];
   skuLabels: Record<string, string>;
   toMs: (date: string, end?: boolean) => number;
+  onChange: (value: H7FormValue) => void;
   onClose: () => void;
-  onReview: (value: H7FormValue) => void;
+  onReview: () => void;
 }) {
-  const [value, setValue] = useState<H7FormValue>(initial);
   const [attempted, setAttempted] = useState(false);
-  const [leaving, setLeaving] = useState(false);
   const [folds, setFolds] = useState({ popup: false, stack: false });
   const typeLocked = !!voucher && voucher.issuedCount > 0;
   // 转盘专发券的入口不能改：换成锁定标签，保存时原样带回存的入口。
   const wheelOnly = voucher?.wheelOnly === true;
   const errors = useMemo(() => formErrors(value), [value]);
   const shown = attempted ? errors : {};
-  const dirty = JSON.stringify(value) !== JSON.stringify(initial);
-  const set = (key: string, next: string) => setValue((state) => ({ ...state, [key]: next }));
+  const locked = !!recovery || busy;
+  const set = (key: string, next: string) => { if (!locked) onChange({ ...value, [key]: next }); };
   // 多选和原表单一样：点一项加到末尾，再点去掉。
-  const toggle = (key: string, item: string) => setValue((state) => {
-    const sel = list(state[key]);
-    return { ...state, [key]: (sel.includes(item) ? sel.filter((x) => x !== item) : [...sel, item]).join(",") };
-  });
+  const toggle = (key: string, item: string) => {
+    const sel = list(value[key]);
+    set(key, (sel.includes(item) ? sel.filter((x) => x !== item) : [...sel, item]).join(","));
+  };
   const bool = (key: string) => value[key] === "true";
   const preview = previewVoucher(value, toMs, voucher);
   const percent = value.type === "percent";
@@ -192,8 +279,7 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
   const orphanSkus = selectedSkus.filter((id) => !skuOptions.includes(id));
   const selectedSurfaces = list(value.claimSurfaces);
   const missing = Object.values(errors);
-  const close = () => { if (dirty) setLeaving(true); else onClose(); };
-  const review = () => { setAttempted(true); if (missing.length === 0) onReview(value); };
+  const review = () => { setAttempted(true); if (!blocked && missing.length === 0) onReview(); };
   const issued = voucher?.issuedCount ?? 0;
   const zone = H7_TIME_ZONE.label;
   // 编辑旧券时没改日期，保留原时刻；帮助行写实际的开始、截止时刻。
@@ -202,28 +288,35 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
   const endAt = voucher ? exact(h7EditedDateMs(value.endDate, voucher.endAt, true)) : dateStamp(value.endDate, toMs, true);
   const legacyKept = !!voucher && (voucher.startAt > 0 && !h7DateFacts(voucher.startAt).wholeDayBoundary && value.startDate === h7DateFacts(voucher.startAt).calendarDate
     || voucher.endAt > 0 && !h7DateFacts(voucher.endAt, true).wholeDayBoundary && value.endDate === h7DateFacts(voucher.endAt, true).calendarDate);
-  const changed = voucher ? changedRows(latest ?? initial, value, skuLabels, toMs, issued, voucher) : [];
+  const changed = voucher ? changedRows(baseline, value, skuLabels, toMs, issued, voucher) : [];
   const touchesIssued = changed.some((row) => AFFECTS_ISSUED.has(row.key));
 
   return (
     <>
-      <Drawer open wide data-h7-form="" onClose={close} title={voucher ? "编辑代金券" : "新增代金券"} sub={voucher?.name ?? "保存后立即生效"} icon={Ticket} tone="role-4"
+      <Drawer open wide data-h7-form="" onClose={onClose} busy={busy} keepOnControls={dirty || locked} title={voucher ? "编辑代金券" : "新增代金券"} sub={voucher?.name ?? "保存后立即生效"} icon={Ticket} tone="role-4"
         explain="左边填，右边随时看这张券最后是什么意思。点「下一步」后核对改动、写理由再保存；保存后立即生效，不走审批。"
-        footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : voucher ? (changed.length ? `改了 ${changed.length} 项` : "还没有改动") : undefined}
-          primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : undefined} onClick={review}>下一步：核对并保存</Button>}
-          others={<Button onClick={close}>取消</Button>} />}>
+        footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : blocked ?? (voucher && changed.length ? `改了 ${changed.length} 项` : undefined)}
+          primary={<Button variant="primary" disabledReason={blocked} onClick={review}>下一步：核对并保存</Button>}
+          others={<Button onClick={onClose} disabled={busy}>取消</Button>} />}>
         <div className="rd-split h7-form-split" data-detail="" data-preview="">
           <div className="h7-form">
-            {readFailed && <Notice tone="warn" title="最新数据没读到"
-              action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>重试读取</Button>}>
-              填的内容还在，读到以后才能继续。
+            {recovery}
+            {conflict && !readFailed && <H4StaleNote readLatest={conflict} reading={reading} />}
+            {readFailed && <Notice tone="warn" title={readFailed.title}
+              action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>{conflict ? "读取最新" : "重试"}</Button>}>
+              {readFailed.detail}{readFailed.detail ? " " : ""}填的内容还在。
             </Notice>}
-            {latest && <Notice tone="warn" title="没有保存：这张券刚被别人改过">
-              {changed.length
-                ? `下面还是你填的内容，和最新值有 ${changed.length} 处不同：${changed.map((row) => row.label).join("、")}。核对后点「下一步」，确认框里逐项对照。`
-                : "下面还是你填的内容，和最新值已经一样，不用再保存。"}
-            </Notice>}
-            <section className="h7-form-section" aria-labelledby="h7-f-face">
+            <MergeNotice report={mergeReport ?? null} title={mergeReport?.dropped.length ? `已读取最新内容，你填的有 ${mergeReport.dropped.length} 项用不上` : undefined} name={([key]) =>
+              key === "type" && mergeReport?.latestType ? `类型（对方改成${mergeReport.latestType}）`
+                : mergeReport?.latestType && (key === "amountUSD" || key === "percent") ? null : FIELD_LABEL[key] ?? null}>
+              {/* 类型被对方改掉后用不上的输入：写清是哪一项、填的多少、现在按什么算（05 TX-05，不写字段名和等号）。 */}
+              {mergeReport?.dropped.map(({ key, value: mine }) => {
+                const was = key === "amountUSD" ? ` ${displayValue("amountUSD", { amountUSD: mine }, skuLabels, toMs)} ` : `减 ${mine || "—"}% `;
+                const now = baseline.type === "percent" ? `减 ${displayValue("percent", baseline, skuLabels, toMs)}` : `面额 ${displayValue("amountUSD", baseline, skuLabels, toMs)}`;
+                return <p key={key}>{mergeReport.latestType}没有{key === "amountUSD" ? "面额" : "折扣比例"}，你填的{was}没有带过来；现在是{now}。</p>;
+              })}
+            </MergeNotice>
+            <section className="h7-form-section" inert={locked} aria-labelledby="h7-f-face">
               <h3 id="h7-f-face" className="h7-form-title">券面</h3>
               <Field label="名称" required hint="最多 80 字" error={shown.name}>
                 {(control) => <Input {...control} value={value.name} placeholder="如 新人专享券" onChange={(e) => set("name", e.target.value)} />}
@@ -251,7 +344,7 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               <p className="rd-form-help">金额最多 6 位小数。</p>
             </section>
 
-            <section className="h7-form-section" aria-labelledby="h7-f-who">
+            <section className="h7-form-section" inert={locked} aria-labelledby="h7-f-who">
               <h3 id="h7-f-who" className="h7-form-title">谁能用、在哪领</h3>
               <CheckGroup legend="适用商品" summary={selectedSkus.length ? `已选 ${selectedSkus.length} 个` : "不选＝全部商品可用"}
                 explain="商品名和「商品管理与上架条件」一致，这里只列在售的商品。只选一个时，用户从奖励列表点「使用」直接去这个商品；其他情况去商城。">
@@ -273,7 +366,7 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               {shown.claimSurfaces && <p className="rd-form-error" role="alert">{shown.claimSurfaces}</p>}
             </section>
 
-            <section className="h7-form-section" aria-labelledby="h7-f-when">
+            <section className="h7-form-section" inert={locked} aria-labelledby="h7-f-when">
               <h3 id="h7-f-when" className="h7-form-title">什么时候能领能用</h3>
               <div className="rd-form-grid" data-cols="2" data-dense="">
                 <Field label="开始日期" hint="不填＝立即" help={startAt ? `从 ${startAt}（${zone}）起` : undefined}>
@@ -286,7 +379,7 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               {legacyKept && <Notice tone="neutral" title="这张券不按整天算">按上面写的时刻开始和截止。不改日期就保留原时刻；改了日期，按北京时间整天算（00:00 开始、23:59 截止）。</Notice>}
             </section>
 
-            <section className="h7-form-section" aria-labelledby="h7-f-issue">
+            <section className="h7-form-section" inert={locked} aria-labelledby="h7-f-issue">
               <h3 id="h7-f-issue" className="h7-form-title">发行和状态</h3>
               <div className="rd-form-grid" data-cols="2" data-dense="">
                 <Field label="发行上限" hint="0–10,000,000" error={shown.issuanceLimit}
@@ -303,11 +396,11 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               alert={!!(shown.popupDelayMs || shown.popupCooldownHours || shown.popupMaxPerSession)}
               open={folds.popup || !!(shown.popupDelayMs || shown.popupCooldownHours || shown.popupMaxPerSession)} onOpenChange={(open) => setFolds((f) => ({ ...f, popup: open }))}>
               <Notice tone="neutral">App 目前不自动弹出，这些设置只保存。</Notice>
-              <div className="rd-form-grid" data-cols="2" data-dense="">
+              <div className="rd-form-grid" data-cols="2" data-dense="" inert={locked}>
                 <Check label="参与首页弹窗" checked={bool("popupEnabled")} onChange={(e) => set("popupEnabled", e.target.checked ? "true" : "false")} />
                 <Check label="弹窗节奏开关" explain="这张券自己的开关，不是全平台的总开关。" checked={bool("popupCadenceEnabled")} onChange={(e) => set("popupCadenceEnabled", e.target.checked ? "true" : "false")} />
               </div>
-              <div className="rd-form-grid" data-cols="3" data-dense="">
+              <div className="rd-form-grid" data-cols="3" data-dense="" inert={locked}>
                 <Field label="进入后多久弹出" hint="0–60,000" error={shown.popupDelayMs}>
                   {(control) => <NumberInput {...control} unit="毫秒" min={0} max={60000} step={1} value={value.popupDelayMs} onChange={(e) => set("popupDelayMs", e.target.value)} />}
                 </Field>
@@ -325,8 +418,8 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
               {voucher && <Field label="可拆分" help={SPLIT_RETIRED_HELP}>
                 <span className="h7-retired-value">{bool("splittable") ? "是" : "否"}<StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag></span>
               </Field>}
-              <Check label="可与试用收益叠加" help="试用转购目前用不了代金券，这一项暂时不起作用。" checked={bool("stackWithTrial")} onChange={(e) => set("stackWithTrial", e.target.checked ? "true" : "false")} />
-              <Check label="可与其它优惠叠加" help="决定能不能和促销活动一起用；不是一单用两张券。" checked={bool("stackWithOthers")} onChange={(e) => set("stackWithOthers", e.target.checked ? "true" : "false")} />
+              <Check label="可与试用收益叠加" disabled={locked} help="试用转购目前用不了代金券，这一项暂时不起作用。" checked={bool("stackWithTrial")} onChange={(e) => set("stackWithTrial", e.target.checked ? "true" : "false")} />
+              <Check label="可与其它优惠叠加" disabled={locked} help="决定能不能和促销活动一起用；不是一单用两张券。" checked={bool("stackWithOthers")} onChange={(e) => set("stackWithOthers", e.target.checked ? "true" : "false")} />
             </Fold>
           </div>
 
@@ -347,10 +440,6 @@ export function H7VoucherForm({ voucher, initial, latest, readFailed, skuOptions
           </aside>
         </div>
       </Drawer>
-      {/* 离开框三个选项（OP-29）：保存走抽屉同一个「核对并保存」，确认和理由照旧；保存成功后抽屉才关，取消或被拒留在抽屉里。 */}
-      <LeaveDialog guard={{ asking: leaving, stay: () => setLeaving(false), discard: () => { setLeaving(false); onClose(); }, startSave: () => { setLeaving(false); return () => {}; } }}
-        saveName="保存并立即生效" saveBlocked={readFailed ? "最新数据读到后才能继续" : missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
-        onSave={() => review()} />
     </>
   );
 }
