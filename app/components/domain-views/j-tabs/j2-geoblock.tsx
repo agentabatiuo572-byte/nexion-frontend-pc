@@ -791,7 +791,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     return renderPage(<>
       {header()}
       {recovery}
-      <BlockState state="error" title="当前无法确认地区限制的最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
+      <BlockState retryKey="j2-geoblock-794" state="error" title="当前无法确认地区限制的最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
     </>);
   }
   if (!data) {
@@ -1100,7 +1100,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         </FilterField>
       </FilterBar>
       {hitLog.error
-        ? <BlockState state="error" title="逐条记录没读到" detail={hitLog.error} onRetry={() => setLogTick((tick) => tick + 1)} retrying={hitLog.loading} />
+        ? <BlockState retryKey="j2-geoblock-1103" state="error" title="逐条记录没读到" detail={hitLog.error} onRetry={() => setLogTick((tick) => tick + 1)} retrying={hitLog.loading} />
         : <>
           <Table label="逐条拦截记录" className="j2-log-table">
             <thead><tr><Th>时间</Th><Th>国家或地区</Th><Th>功能入口</Th><Th>识别源</Th><Th>用户</Th><Th align="right">次数</Th></tr></thead>

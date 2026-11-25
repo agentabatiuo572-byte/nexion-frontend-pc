@@ -755,11 +755,13 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
         <Explain label="时间范围的说明" content={TIME_EXPLAIN} />
       </span>
     </FilterBar>
+    {/* 用户账单结果区：加载、失败、读到三种状态都在这一层里，重试时焦点落在这里，不落到整页或带筛选栏的整个页签（BUG-710 F03）。 */}
+    <div className="rd-tab-stack" data-d4-user-result="">
     {!selectedUserId ? <BlockState state="empty" title="还没选用户" detail="输入用户编码或系统编号，点「加载账户」。" />
       : userError?.notFound ? <BlockState state="empty" title={`没有找到用户 ${userCode(selectedUserId)}`} detail="检查用户编码或系统编号，改好后点「加载账户」。" />
       : userError ? (
         <div data-proof="d4-fail-closed">
-          <BlockState state="error" title="用户账单读取失败，不显示旧数据" detail={userError.message} onRetry={() => setUserReload((value) => value + 1)} />
+          <BlockState state="error" title="用户账单加载失败，不显示旧数据" detail={userError.message} onRetry={() => setUserReload((value) => value + 1)} />
         </div>
       )
         : !userData || !running ? <>
@@ -841,6 +843,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             </> : <p className="rd-note">{userData.ledger.rows.length === 0 ? "这段时间没有账单。" : "八类账单的净合计都是 0。"}</p>}
           </Fold>
         </>}
+    </div>
   </>;
 
   const links = [

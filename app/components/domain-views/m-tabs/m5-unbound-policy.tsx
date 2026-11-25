@@ -119,7 +119,7 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
       </Notice>}
       {editable && !pending && command.message && <Notice tone="warn">{command.message}</Notice>}
       {saved && <Notice tone="ok">{savedVersion !== undefined ? `已保存，现在是第 ${savedVersion} 版。` : "已保存。"}</Notice>}
-      {error && <BlockState state="error" title="待分配设置读不到，暂时不能查看和修改" detail={error} onRetry={() => setReload((n) => n + 1)} retryLabel="重新加载" />}
+      {error && <BlockState state="error" title="待分配设置加载失败，暂时不能修改" detail={error} onRetry={() => setReload((n) => n + 1)} />}
       {!policy ? !error && <BlockState state="loading" title="正在读取待分配设置…" /> : pending ? null : <div className="m5-form">
         <div className="m5-unbound-fields">
           <Field label="等待提醒" hint="1–120 分钟" error={alertProblem || undefined} explain="客户发消息后超过这么久还没分到客服，专属会话的待分配里标红提醒主管。">

@@ -35,6 +35,9 @@ import {
   type CheckInRule, type EarnMilestone, type H5Model, type H5RecoveryRow, type PowerUp, type StreakMilestone, type StripMilestone,
 } from "./h5-parts";
 
+/** 读取失败后按「重试」读到了：焦点落在第一块的标题（外层 .h5-page 是 display: contents，接不到焦点，BUG-710）。 */
+const H5_FIRST_TITLE = { get current() { return document.querySelector<HTMLElement>(".h5-page .rd-panel-title"); } };
+
 function text(value: unknown, fallback = "-") {
   if (value == null || value === "") return fallback;
   return String(value);
@@ -652,14 +655,15 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  if (loading && !model) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="签到数据读取中…" />{confirmModal}</div>;
+  // 读取失败后按「重试」：失败块留在原处写「重试中…」，不换成另一块加载占位，焦点不掉到整页（BUG-710）。
+  if (loading && !model && !error) return <div className="h5-page">{header}{recovery}<BlockState state="loading" title="正在加载签到数据…" />{confirmModal}</div>;
   if (error || !model) {
     return (
       <div className="h5-page">
         {header}
         {recovery}
         {staleNotice}
-        <BlockState state="error" title="签到数据读取失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} />
+        <BlockState state="error" title="签到数据加载失败" detail={`${error ?? "没有收到数据"} · 读到之前不能修改签到规则和奖励。`} onRetry={() => void refresh()} retrying={loading} afterRetryFocus={H5_FIRST_TITLE} />
         {confirmModal}
       </div>
     );

@@ -155,7 +155,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     {error&&<Notice tone="warn">{error}</Notice>}
     <div className="rd-stack">
     {statusLoading&&!status?<BlockState state="loading" title="正在加载自动资金流程…"/>
-      :!status?<BlockState state="error" title="自动资金流程状态加载失败" detail={statusError} onRetry={()=>void loadStatus()}/>
+      :!status?<BlockState retryKey="cregis-auto-forward-158" state="error" title="自动资金流程状态加载失败" detail={statusError} onRetry={()=>void loadStatus()}/>
         :<>
           {/* 实际发送状态和「不能新开」分两行写：TRC20 开着的照常发送，通道暂未开放只管能不能开（F04）。 */}
           <p className="rd-note">{network} · {status.executionEnabled?"自动发送已开放":status.configured?"新转账未开放":trc20?"地址未配置":"地址待配置"}</p>
@@ -183,7 +183,7 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
           </ConfigList>
         </>}
         {tasksLoading&&records.length===0?<BlockState state="loading" title="正在加载自动任务…"/>
-          :tasksError?<BlockState state="error" title="自动任务加载失败" detail={tasksError} onRetry={()=>void loadTasks()}/>
+          :tasksError?<BlockState retryKey="cregis-auto-forward-186" state="error" title="自动任务加载失败" detail={tasksError} onRetry={()=>void loadTasks()}/>
           :
           <Fold inset title="自动任务与原单跟踪" alert={waiting>0} summary={records.length?`${waiting?`${waiting} 个待核查，`:""}共 ${records.length} 个`:"暂无自动任务"}>
             {records.length===0?<p className="rd-note">暂无自动任务。关闭状态不会创建任务或发送资金。</p>:<Table label="自动任务">

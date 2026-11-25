@@ -356,7 +356,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     <>
       <Panel title={<span tabIndex={-1} data-section-focus="">可购买设备</span>} explainLabel="可购买设备" icon={Package} tone="role-2" explain={<p>{BUY_INTRO}</p>}>
         {readError || !list ? (
-          <BlockState state="error" title="可购买设备加载失败" detail={readError ?? BUY_READ_INVALID} retrying={reading} onRetry={() => void onReload().catch(() => undefined)} />
+          <BlockState retryKey="h2-trial-buy-359" state="error" title="可购买设备加载失败" detail={readError ?? BUY_READ_INVALID} retrying={reading} onRetry={() => void onReload().catch(() => undefined)} />
         ) : (
           <>
             <ConfigList>
