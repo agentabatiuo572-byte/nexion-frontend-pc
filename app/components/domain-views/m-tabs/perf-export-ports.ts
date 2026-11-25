@@ -90,9 +90,9 @@ const READ_LIMIT_MS = 30_000;
 const read = <T>(path: string, parse: (value: unknown) => T, signal?: AbortSignal) => supportRequest(`${PATH}${path}`, parse, {
   signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(READ_LIMIT_MS)]) : AbortSignal.timeout(READ_LIMIT_MS),
 });
-const post = <T>(path: string, body: object | undefined, parse: (value: unknown) => T, key?: string) => supportRequest(`${PATH}${path}`, parse, {
+const post = <T>(path: string, body: object | undefined, parse: (value: unknown) => T, key?: string, signal?: AbortSignal) => supportRequest(`${PATH}${path}`, parse, {
   method: "POST", body: body === undefined ? undefined : JSON.stringify(body), preserveUnknownOutcome: key !== undefined,
-  headers: key === undefined ? undefined : { "Idempotency-Key": key },
+  headers: key === undefined ? undefined : { "Idempotency-Key": key }, signal,
 });
 const receipt = (path: string, key: string) => supportRequest(`${PATH}${path}`, object, { headers: { "Idempotency-Key": key }, signal: AbortSignal.timeout(READ_LIMIT_MS) });
 
@@ -500,9 +500,10 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
     const selection: Selection = { month: query.month, scope: choice.scope, types: EXPORT_TYPES.filter(type => query.types.includes(type)) };
     const catalog = includeOthers && selection.types.length !== choice.types.length
       ? { ...selection, types: choice.types } : selection;
-    const display = await post("/preview", catalog, parsePreview);
+    // 预检只读，和其他读取一样有时限；提交、批准、撤回这些写入不加。
+    const display = await post("/preview", catalog, parsePreview, undefined, AbortSignal.timeout(READ_LIMIT_MS));
     if (display.items.some(item => item.reasons.includes("PERMISSION_DENIED"))) throw new Error("ADMIN_PERMISSION_DENIED");
-    const accepted = selection.types.length && catalog !== selection ? await post("/preview", selection, parsePreview) : display;
+    const accepted = selection.types.length && catalog !== selection ? await post("/preview", selection, parsePreview, undefined, AbortSignal.timeout(READ_LIMIT_MS)) : display;
     if (accepted.items.some(item => item.reasons.includes("PERMISSION_DENIED"))) throw new Error("ADMIN_PERMISSION_DENIED");
     for (const [request, response] of [[catalog, display], [selection.types.length ? selection : catalog, accepted]] as const) {
       if (response.scope.kind !== request.scope.kind || JSON.stringify(array(response.scope.groupIds, id).sort()) !== JSON.stringify([...(request.scope.groupIds ?? [])].sort())
