@@ -17,6 +17,7 @@ import { E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Amount, e1Precision, e1TargetPrec
 export const E1_MISSING_SERIES_REASON = "未设所属系列，编辑时先选系列";
 
 export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1InvalidSkus" | "e1Loading" | "e1Error" | "e1Gates" | "e1BundleDiscount" | "refreshE1" | "openSku" | "delSku" | "openActionConfirm" | "toast" | "pE"> & {
+  catalogIncomplete: boolean;
   currentPhase: ReturnType<typeof e1CurrentPhase>;
   earlyReady: boolean; earlyLoading: boolean; earlyError: string | null; refreshEarly: () => void;
   gatesLoading: boolean; gatesError: string | null; discountLoading: boolean; discountError: string | null;
@@ -381,7 +382,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const unconfigured = skus.filter(s => s.status === "on" && s.allowedPoolCodes?.length === 0).length;
   const unknown = skus.filter(s => s.publishBlocked === undefined).length, legacy = skus.filter(hasUnsupportedSeries).length;
   // 目录非空、每一行资料都有误时按读取不完整处理（ST-37）：不写 0、不给空目录引导，目录区放错误卡和有误的商品。
-  const incomplete = !ctx.e1Loading && !ctx.e1Error && !skus.length && ctx.e1InvalidSkus.length > 0;
+  const incomplete = ctx.catalogIncomplete;
   const available = !ctx.e1Loading && !ctx.e1Error && !incomplete;
   const gated = releases.filter(g => !gateReadiness(g).unlocked).length;
   const knownSold = skus.filter(s => s.publishBlocked === false && s.sold != null);
@@ -468,7 +469,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       <div id="e1-open-plan"><Fold title="商品开放计划" summary={ctx.e1Gates ? `${releases.length} 条上架条件 · ${available ? `${gated} 条尚未开放` : "商品目录未读取，开放状态待核对"}` : "上架条件未读取"} icon={SlidersHorizontal} open={planOpen} onOpenChange={setPlanOpen} explain="强制提前开放只跳过运营月数，阶段与设备资格仍须满足。异常条件在商品卡常显。">
         <ConfigList label="升级置换抢先购"><ConfigRow name="升级置换抢先购" value={ctx.earlyReady ? `${earlyEnabled} · 提前 ${earlyLead} 天` : "— · 当前设置未读取"} what="旧设备换新时的提前购买窗口" when="批准后供之后换购判断" effect="只影响升级置换，不改变普通购买" action={canWrite ? <Button size="sm" disabledReason={writeBlock({ op: "early-access" })} onClick={adjEarlyAccess}>调整</Button> : undefined} /></ConfigList>
         {!ctx.earlyReady && <BlockState retryKey="e1-catalog-464" compact state={ctx.earlyLoading ? "loading" : "error"} title={ctx.earlyLoading ? "正在读取抢先购设置…" : "抢先购设置暂时读不到"} detail={ctx.earlyLoading ? undefined : `${ctx.earlyError ?? "当前设置未读取"}；只暂停抢先购调整，其他商品操作不受此项影响`} onRetry={ctx.earlyLoading ? undefined : ctx.refreshEarly} retryLabel="重新读取" />}
-        <div className="rd-toolbar"><Segments value={planView} onChange={v => { setPlanView(String(v)); setPlanSku(""); }} label="开放计划视图" items={[{ value: "plan", label: "商品开放计划" }, { value: "phases", label: "阶段设置" }]} />{canWrite && (planView === "plan" ? <Button disabledReason={writeBlock({ op: "generation-gate-save" }) || (incomplete ? "商品目录读取成功前不能提交修改" : !phaseOptions.length ? "请先配置阶段" : !gateSkuOptions.length ? "所有商品都已设置上架条件" : undefined)} onClick={() => openGateEditor()}>+ 新增上架条件</Button> : <Button disabledReason={writeBlock({ op: "phase-save" })} onClick={() => openPhaseEditor()}>+ 新增阶段</Button>)}</div>
+        <div className="rd-toolbar"><Segments value={planView} onChange={v => { setPlanView(String(v)); setPlanSku(""); }} label="开放计划视图" items={[{ value: "plan", label: "商品开放计划" }, { value: "phases", label: "阶段设置" }]} />{canWrite && (planView === "plan" ? <Button disabledReason={writeBlock({ op: "generation-gate-save" }) || (!phaseOptions.length ? "请先配置阶段" : !gateSkuOptions.length ? "所有商品都已设置上架条件" : undefined)} onClick={() => openGateEditor()}>+ 新增上架条件</Button> : <Button disabledReason={writeBlock({ op: "phase-save" })} onClick={() => openPhaseEditor()}>+ 新增阶段</Button>)}</div>
         {!ctx.e1Gates ? <BlockState retryKey="e1-catalog-466" compact state={ctx.gatesLoading ? "loading" : "error"} title="开放阶段与上架条件未读取" detail="读取成功前不能提交修改" onRetry={ctx.gatesLoading ? undefined : ctx.refreshGates} /> : planView === "plan" ? <Table label="商品开放计划" className={`e1-plan-table${canWrite ? "" : " e1-readonly-table"}`}><thead><tr><Th>商品</Th><Th align="right">计划开放</Th><Th>当前状态</Th><Th>阶段</Th><Th>设备资格</Th>{canWrite && <Th sticky="end">操作</Th>}</tr></thead><tbody>
           {!releases.length && <Tr><Td colSpan={canWrite ? 6 : 5}>暂无上架条件</Td></Tr>}{releases.map(g => {
             const state = gateReadiness(g), presentation = releaseMonthPresentation(g.releaseMonth, g.phaseOffset);

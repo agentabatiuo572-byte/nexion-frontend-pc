@@ -173,7 +173,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   }, [canReadE3]);
   useEffect(() => { if (canRead) { void refresh(); void refreshEarly(); } }, [canRead, refresh, refreshEarly]);
   const earlyReady = !earlyLoading && !earlyError && ["开", "关"].includes(early["E.release.earlyAccess.enabled"]) && ["7", "14", "30", "60", "90"].includes(early["E.release.earlyAccess.leadDays"]);
-  const catalogReadBlock = loading || error ? "商品目录读取成功前不能提交修改" : undefined;
+  const catalogIncomplete = !loading && !error && skus.length === 0 && invalid.length > 0;
+  const catalogReadBlock = loading || error || catalogIncomplete ? "商品目录读取成功前不能提交修改" : undefined;
   const gatesReadBlock = gatesLoading || gatesError || !gates ? "开放阶段读取成功前不能提交修改" : undefined;
   const discountReadBlock = discountLoading || discountError || !discount ? "组合购折扣读取成功前不能提交修改" : undefined;
   const currentPhase = e1CurrentPhase(gates);
@@ -195,7 +196,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       }
       case "phase-archive": return gatesReadBlock ?? catalogReadBlock ?? archiveCurrentBlock(input.phaseId);
       case "generation-gate-save": {
-        const sourceBlock = gatesReadBlock ?? (!input.generationGateId ? catalogReadBlock : undefined);
+        // 新增和编辑都会提交开放阶段，后端须核对商品的阶段。
+        const sourceBlock = gatesReadBlock ?? catalogReadBlock;
         if (sourceBlock || !values || !phaseBlock) return sourceBlock;
         if ((values.forceUnlock ?? String(input.generationGate?.forceUnlock)) === "true") return phaseBlock;
         if (input.generationGateId) return undefined;
@@ -210,7 +212,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       }
       case "generation-gate-force": return gatesReadBlock ?? (input.generationGate?.forceUnlock ? catalogReadBlock ?? phaseBlock : undefined);
       case "phase-save": return gatesReadBlock ?? (input.phaseId && values?.status === "archived"
-        && gates?.phases.some(phase => phase.p === input.phaseId && phase.status !== "archived") ? archiveCurrentBlock(input.phaseId) : undefined);
+        && gates?.phases.some(phase => phase.p === input.phaseId && phase.status !== "archived") ? catalogReadBlock ?? archiveCurrentBlock(input.phaseId) : undefined);
       case "param": return gatesReadBlock ?? (gates?.releases.some(gate => gate.id === input.generationGateId && gate.forceUnlock) ? phaseBlock : undefined);
       case "generation-gate-archive": return gatesReadBlock;
       case "bundle-discount": return discountReadBlock;
@@ -551,7 +553,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const SERIES_ONLY_SHOWN = ["seriesCode", "price", "name", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter"];
   const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
-    skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: async () => { await refresh(); },
+    skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, catalogIncomplete, e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: async () => { await refresh(); },
     pE: k => early[k] ?? "—", earlyReady, earlyLoading, earlyError, refreshEarly: () => void refreshEarly(),
     gatesLoading, gatesError, discountLoading, discountError, refreshGates: () => void refreshGates(), refreshDiscount: () => void refreshDiscount(), writeBlockedReason: readBlock,
     pendingProposal: id => receipts.find(row => row.status === "pending" && ["device_sku", "device_generation_gate"].some(type => row.object === `${type}|${id}`)),
@@ -599,7 +601,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     ...verifiedDrafts.map(record => ({
       key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
       tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可从原编辑入口重新确认。",
-      actions: <>{skuDraftOps.includes(record.spec.command.op) && (record.spec.command.op === "e1_sku_create" || record.skuBaseline) && <Button size="sm" disabled={!!edit || !!confirmation || !skuWritesReady}
+      actions: <>{skuDraftOps.includes(record.spec.command.op) && (record.spec.command.op === "e1_sku_create" || record.skuBaseline) && <Button size="sm" disabled={!!edit || !!confirmation || !skuWritesReady} disabledReason={catalogReadBlock}
         onClick={() => openSku(record.spec.command.op === "e1_sku_update" ? record.spec.obj : undefined, undefined, record)}>重新确认</Button>}
         <Button size="sm" onClick={() => discardRecovery.ask(() => { forgetE1(record); syncPending(); })}>放弃这份草稿</Button></>,
     })),
@@ -609,7 +611,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
     ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
-      actions: e1MediaHasOwner(record) ? <Button size="sm" onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
+      actions: e1MediaHasOwner(record) ? <Button size="sm" disabledReason={catalogReadBlock} onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
         : canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined,
       detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),
   ];
