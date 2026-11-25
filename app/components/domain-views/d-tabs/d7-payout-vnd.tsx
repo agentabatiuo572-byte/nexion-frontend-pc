@@ -277,7 +277,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     syncPending();
     toast(message, "success");
     void reload(true);
-    void loadQueue();
   };
 
   const draft = editing && (() => {

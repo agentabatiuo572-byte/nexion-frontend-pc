@@ -105,15 +105,17 @@ type OwnWithdrawalApproval = {
   receipt: SavedWithdrawalReceipt;
   ticket: A2OperationRow | null;
   checking: boolean;
+  queueReadId: number;
 };
 type WithdrawalApprovalQueue = {
   adminId?: number;
+  readId: number;
   state: "loading" | "ready" | "failed";
   rows: A2OperationRow[];
   retrying?: boolean;
 };
 type PendingWithdrawalRow = Pick<A2OperationRow, "id"> & Partial<Pick<A2OperationRow, "operator" | "ts" | "rawTs">>;
-const EMPTY_WITHDRAWAL_QUEUE: WithdrawalApprovalQueue = { state: "loading", rows: [] };
+const EMPTY_WITHDRAWAL_QUEUE: WithdrawalApprovalQueue = { readId: 0, state: "loading", rows: [] };
 const WITHDRAWAL_APPROVAL_PENDING = "等另一位超级管理员批准，批准前参数不变。";
 
 function readSavedWithdrawalReceipt(key: string, source: WithdrawalApprovalSource): SavedWithdrawalReceipt | null {
@@ -138,9 +140,12 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
   const ownId = own?.receipt.ticketId;
   const ticket = own?.ticket;
   const terminal = ticket && ticket.status !== "pending" ? ticket : null;
+  // 终态提示可以继续显示，只有同一次读取确认的终态能压掉旧队列行。
+  const terminalThisRead = !!terminal && own?.queueReadId === queue.readId;
   const rows = queue.rows.flatMap(row => {
     if (row.id !== ownId) return [row];
-    if (terminal || (!ticket && !queueKnown)) return [];
+    if (terminal) return terminalThisRead ? [] : [row];
+    if (!ticket && !queueKnown) return [];
     return [ticket ?? row];
   });
   const listed = rows.some(row => row.id === ownId);
@@ -151,7 +156,7 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
     pendingRows.push(ticket ?? { id: ownId });
   }
   const hasPending = pendingRows.length > 0;
-  const queueRowStale = (id: string) => !queueKnown && id !== ticket?.id;
+  const queueRowStale = (id: string) => !queueKnown && (id !== ticket?.id || !!terminal);
   const staleRows = rows.some(row => queueRowStale(row.id));
   const pendingTitle = checking ? "正在读取放宽单状态…"
     : stale ? "放宽单的最新状态没读到，先按等批准处理"
@@ -165,12 +170,12 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
       : null;
   const blockReason = checking ? "正在读取放宽单状态，读到后再提交放宽"
     : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
-      : canReadQueue && !queueKnown && (!ticket || staleRows)
+      : canReadQueue && !queueKnown && (!ticket || (!!terminal && !terminalThisRead) || staleRows)
         ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
         : hasPending ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined;
   return {
     rows, pendingRows, ownId, queueKnown, terminal, checking, stale, pendingTitle, ownNotice, blockReason, queueRowStale,
-    showOwnNotice: !!ownNotice && !listed,
+    showOwnNotice: !!ownNotice && (!!terminal || !listed),
     pendingDetail: checking ? "" : stale ? "点「刷新」再读。" : "批准前当前值不变。",
     queueLine: WITHDRAWAL_APPROVAL_PENDING,
   };
@@ -190,7 +195,7 @@ export function useWithdrawalApprovals(source: WithdrawalApprovalSource, adminId
     if (!canReadQueue || adminId === undefined) return;
     const seq = ++queueSeq.current;
     setQueue(current => ({
-      adminId, state: "loading",
+      adminId, readId: seq, state: "loading",
       rows: source === "D7" && current.adminId === adminId ? current.rows : [],
       retrying: current.adminId === adminId && (current.state === "failed" || current.retrying),
     }));
@@ -198,21 +203,22 @@ export function useWithdrawalApprovals(source: WithdrawalApprovalSource, adminId
       const overview = await fetchA2Overview({ domain: "D" }, true);
       if (overview.operationQueueInvalidCount) throw new Error("A2_APPROVAL_QUEUE_INCOMPLETE");
       if (seq !== queueSeq.current) return;
-      setQueue({ adminId, state: "ready", rows: overview.operationQueue.filter(row => row.status === "pending" && matchesWithdrawalTicket(source, row)) });
+      setQueue({ adminId, readId: seq, state: "ready", rows: overview.operationQueue.filter(row => row.status === "pending" && matchesWithdrawalTicket(source, row)) });
     } catch {
-      if (seq === queueSeq.current) setQueue({ adminId, state: "failed", rows: [] });
+      if (seq === queueSeq.current) setQueue({ adminId, readId: seq, state: "failed", rows: [] });
     }
   }, [adminId, canReadQueue, source]);
 
   const readOwn = useCallback(async (receipt: SavedWithdrawalReceipt) => {
     const seq = ++readSeq.current;
-    setOwn({ storageKey, receipt, ticket: null, checking: canReadOwn });
+    const queueReadId = queueSeq.current;
+    setOwn({ storageKey, receipt, ticket: null, checking: canReadOwn, queueReadId });
     if (!canReadOwn) return;
     const found = await fetchOwnWithdrawalApproval(source, receipt.commandKey).catch(() => null);
     if (seq !== readSeq.current) return;
     const ticket = found?.id === receipt.ticketId ? found : null;
     if (ticket && ticket.status !== "pending") saveWithdrawalReceipt(storageKey, null);
-    setOwn({ storageKey, receipt, ticket, checking: false });
+    setOwn({ storageKey, receipt, ticket, checking: false, queueReadId });
   }, [canReadOwn, source, storageKey]);
 
   useEffect(() => {
@@ -230,7 +236,8 @@ export function useWithdrawalApprovals(source: WithdrawalApprovalSource, adminId
     const receipt = { source, commandKey: result.commandKey, ticketId: result.ticket.id };
     readSeq.current += 1;
     saveWithdrawalReceipt(storageKey, result.ticket.status === "pending" ? receipt : null);
-    setOwn({ storageKey, receipt, ticket: result.ticket, checking: false });
+    void loadQueue();
+    setOwn({ storageKey, receipt, ticket: result.ticket, checking: false, queueReadId: queueSeq.current });
   };
   const refreshApprovals = () => {
     void loadQueue();

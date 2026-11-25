@@ -734,7 +734,6 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     syncPending();
     toast(result.acknowledgement, "success");
     void load(true);
-    void approvals.loadQueue();
   };
 
   const coverageBlock = params && (!params.coverageReliable
