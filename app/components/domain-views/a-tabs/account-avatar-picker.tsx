@@ -10,7 +10,8 @@ import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure } from "@/lib/admin/support-self-session";
+import { isSupportSelfAccountMismatch } from "@/lib/admin/support-self-contract";
+import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, reportSupportSelfWriteMismatch } from "@/lib/admin/support-self-session";
 import { SupportAvatar } from "../m-tabs/support-avatar";
 import { usePendingReplayDeadline } from "../design-kit";
 import "./account-avatar-controls.css";
@@ -91,6 +92,10 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
     return () => clearTimeout(timer);
   }, [draft?.asset?.assetId, draft?.asset?.expiresAt]);
   const active = (token: number) => token === generation.current && useAdminAuth.getState().session?.adminId === actorId;
+  const clearSelfMismatch = () => {
+    onSelfIdentityChanged?.();
+    reportSupportSelfWriteMismatch();
+  };
   async function choose(nextFile?: File) {
     if (!nextFile || !canUpload || disabled || busy || draft?.asset || draft?.kind === "DEFAULT" || draft?.cancelKey || expired) return;
     const token = generation.current; setBusy(true); setError(""); onBlocking(true); setInvalidSelection(true);
@@ -137,9 +142,9 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
         }
         sent = true;
         return original.kind === "DEFAULT"
-          ? prepareDefaultAccountAvatar(scope, original.gender!, original.clientUploadId, original.commandKey, abort.signal)
+          ? prepareDefaultAccountAvatar(scope, original.gender!, original.clientUploadId, original.commandKey, abort.signal, scope === "self" ? original.actorId : undefined)
           : scope === "admin" ? uploadA1Avatar(file!, original.clientUploadId, original.commandKey, abort.signal)
-            : uploadAccountAvatar("self", file!, original.clientUploadId, original.commandKey, abort.signal);
+            : uploadAccountAvatar("self", file!, original.clientUploadId, original.commandKey, abort.signal, original.actorId);
       };
       const asset = await (scope === "admin" && wasPending ? a1AvatarPreparationRecovery.replay(command, send) : send(command));
       if (!active(token)) return;
@@ -153,8 +158,11 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
           updateDraft(draft);
         }
         const firstAdminRefusal = scope === "admin" && !wasPending && !isA1OutcomeUncertainError(e) && isDeterministicRejection((e as { status?: number }).status ?? 0);
-        if (command && (firstAdminRefusal || scope === "self" && isExplicitRejection(e)) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
-        if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
+        const selfMismatch = scope === "self" && isSupportSelfAccountMismatch(e);
+        const selfRefusal = scope === "self" && isExplicitRejection(e) && (!selfMismatch || !wasPending);
+        if (command && (firstAdminRefusal || selfRefusal) && (sent || !wasPending)) { avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); }
+        if (selfMismatch) clearSelfMismatch();
+        else if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
       }
     } finally { if (active(token)) setBusy(false); }
   }
@@ -181,15 +189,15 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
       if (scope === "self") {
         const snapshot = await fetchSelfAvatar();
         if (!active(token)) return;
-        if (snapshot.assetId === draft.asset.assetId) throw new Error("该头像已保存到本人账号，请刷新头像后再开始新的更换。");
         if (!await checkSupportSelfSession(draft.actorId)) { onSelfIdentityChanged?.(); return; }
         if (!active(token)) return;
+        if (snapshot.assetId === draft.asset.assetId) throw new Error("该头像已保存到本人账号，请刷新头像后再开始新的更换。");
       }
       const command = rememberAvatarDraft({ ...draft, cancelKey: draft.cancelKey ?? crypto.randomUUID(),
         cancelCreatedAt: scope === "admin" ? Date.now() : undefined }, Boolean(draft.cancelKey)); setDraft(command);
       sent = true;
       if (scope === "admin") await cancelA1Avatar(command.asset!.assetId, command.cancelKey!);
-      else await cancelAccountAvatar("self", command.asset!.assetId, command.cancelKey!);
+      else await cancelAccountAvatar("self", command.asset!.assetId, command.cancelKey!, command.actorId);
       if (!active(token)) return;
       avatarDrafts.forget(command.fingerprint, command.commandKey); updateDraft(null); resetFile(); setInvalidSelection(false); onBlocking(false);
     } catch (e) {
@@ -199,8 +207,10 @@ export function AccountAvatarPicker({ account, targetId, originalAssetId, name, 
           avatarDrafts.remember(draft.fingerprint, draft.commandKey, { ...draft, cancelKey: undefined, cancelCreatedAt: undefined });
           updateDraft(draft);
         }
-        if (scope === "self" && !draft.cancelKey && (!sent || isSupportWriteBeforeAuthFailure(e))) updateDraft(rememberAvatarDraft(draft));
-        if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
+        const selfMismatch = scope === "self" && isSupportSelfAccountMismatch(e);
+        if (scope === "self" && !draft.cancelKey && (!sent || selfMismatch || isSupportWriteBeforeAuthFailure(e))) updateDraft(rememberAvatarDraft(draft));
+        if (selfMismatch) clearSelfMismatch();
+        else if (scope === "self" && isSupportAccessFailure(e)) onSelfAccessDenied?.(e);
         setError(displayAdminError(scope === "admin" && sent && !refused ? new Error("A1_AVATAR_CANCEL_QUERY_ONLY") : e));
       }
     }

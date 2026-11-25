@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 import { boundedUpload } from "@/lib/admin/support-image-proxy";
 import { paymentPasswordSupportRoute } from "@/lib/admin/payment-password-routes";
+import { EXPECTED_ADMIN_ID_HEADER } from "@/lib/admin/support-self-contract";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -105,6 +106,10 @@ async function proxy(request: Request, context: RouteContext) {
   const idempotencyKey = request.headers.get(IDEMPOTENCY_KEY_HEADER);
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
+  if (request.method === "POST" && path.join("/") === "support-agents/self/invite-code") {
+    const expectedAdminId = request.headers.get(EXPECTED_ADMIN_ID_HEADER);
+    if (expectedAdminId) headers.set(EXPECTED_ADMIN_ID_HEADER, expectedAdminId);
+  }
   if (performanceFile) {
     const downloadToken = request.headers.get("X-Download-Token");
     if (downloadToken) headers.set("X-Download-Token", downloadToken);

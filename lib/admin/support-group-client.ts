@@ -3,6 +3,7 @@ import { createPendingMutationStore, createPendingRecovery, PENDING_MUTATION_TTL
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
+import { EXPECTED_ADMIN_ID_HEADER } from "./support-self-contract";
 
 const BASE = "/support-agents/groups";
 const GROUP_STATES = ["ENABLED", "DISABLED", "ARCHIVED"] as const;
@@ -154,7 +155,17 @@ export const supportGroupClient = {
   inviteCode(adminId: string, signal?: AbortSignal): Promise<InviteCodeView> { return supportRequest(`/support-agents/${id(adminId)}/invite-code`, value => inviteCodeView(value, true), { signal }); },
   selfInviteCode(signal?: AbortSignal): Promise<InviteCodeView> { return supportRequest("/support-agents/self/invite-code", value => inviteCodeView(value, true), { signal }); },
   /** expectedVersion null generates the first code; the current version resets it (old code revoked). */
-  issueSelfInviteCode(expectedVersion: number | null, commandKey: string, signal?: AbortSignal): Promise<InviteCodeView> { const body = { expectedVersion: expectedVersion === null ? null : positive(expectedVersion) }; return supportRequest("/support-agents/self/invite-code", value => { const result = inviteCodeView(value, true); if (result.code === null) bad("inviteAcknowledgement"); return result; }, supportJson("POST", body, key(commandKey), signal)); },
+  issueSelfInviteCode(expectedVersion: number | null, commandKey: string, expectedAdminId: number): Promise<InviteCodeView> {
+    const body = { expectedVersion: expectedVersion === null ? null : positive(expectedVersion) };
+    const request = supportJson("POST", body, key(commandKey));
+    const headers = new Headers(request.headers);
+    headers.set(EXPECTED_ADMIN_ID_HEADER, String(expectedAdminId));
+    return supportRequest("/support-agents/self/invite-code", value => {
+      const result = inviteCodeView(value, true);
+      if (result.code === null) bad("inviteAcknowledgement");
+      return result;
+    }, { ...request, headers });
+  },
   revokeInviteCode(adminId: string, input: { expectedVersion: number; reason: string }, commandKey: string, signal?: AbortSignal): Promise<InviteCodeView> {
     const target = id(adminId);
     object(input, "expectedVersion reason");

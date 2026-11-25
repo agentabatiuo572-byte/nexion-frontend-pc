@@ -2,14 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchSelfAvatar, saveSelfAvatar, type SelfAvatarSnapshot } from "@/lib/admin/a1-client";
-import { currentAdminSession } from "@/lib/admin/auth-client";
 import { avatarDrafts, avatarDraftFingerprint, selfAvatarCommands, selfAvatarSaveRecovery, type SelfAvatarPending } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
-import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess } from "@/lib/admin/support-self-session";
+import { isSupportSelfAccountMismatch } from "@/lib/admin/support-self-contract";
+import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess, reportSupportSelfWriteMismatch, SELF_READ_SESSION_CHANGED } from "@/lib/admin/support-self-session";
 import { AccountAvatarPicker } from "../a-tabs/account-avatar-picker";
 import { usePendingReplayDeadline } from "../design-kit";
 import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
@@ -64,14 +64,14 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
   const instance = useRef({}).current;
   useEffect(() => {
     const onChangedElsewhere = (event: Event) => {
-      const { source, snapshot: next } = (event as CustomEvent<{ source: object; snapshot: SelfAvatarSnapshot }>).detail;
-      if (source === instance) return;
+      const { source, actorId: changedActor, snapshot: next } = (event as CustomEvent<{ source: object; actorId: number; snapshot: SelfAvatarSnapshot }>).detail;
+      if (source === instance || changedActor !== actorId || changedActor !== useAdminAuth.getState().session?.adminId) return;
       setSnapshot(next); onSnapshot?.(next);
       void ctx.refreshContent().catch(() => undefined);
     };
     window.addEventListener("self-avatar-changed", onChangedElsewhere);
     return () => window.removeEventListener("self-avatar-changed", onChangedElsewhere);
-  }, [ctx, onSnapshot]);
+  }, [actorId, ctx, onSnapshot]);
   // 放在上面那个重置之后：挂上先清空，再打开。
   useEffect(() => { if (launch) { setOpen(true); void read(); } }, []);
   const opened = useRef(false), queryButton = useRef<HTMLButtonElement>(null), pendingFocused = useRef(false);
@@ -83,7 +83,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     forgetPreparedSelection(record);
     setPending(null); setSnapshot(current); setAssetId(undefined); setBlocking(false); setOpen(false); onChanged(current);
     // 账号菜单和客服工作台各挂一个编辑器：一边保存成功，另一边的本人头像和名单跟着换。
-    window.dispatchEvent(new CustomEvent("self-avatar-changed", { detail: { source: instance, snapshot: current } }));
+    window.dispatchEvent(new CustomEvent("self-avatar-changed", { detail: { source: instance, actorId: record.actorId, snapshot: current } }));
     ctx.toast("本人头像已读回确认。");
     void ctx.refreshContent().catch(() => ctx.toast("头像已保存，客服名单还没同步，请刷新名单。"));
   };
@@ -96,21 +96,24 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     clearPrivateAvatar();
     refreshSupportAccess(error);
   };
+  async function readCurrent(expectedActorId: number, token: number, signal: AbortSignal) {
+    const current = await fetchSelfAvatar(signal);
+    if (!active(token)) return null;
+    if (!await checkSupportSelfSession(expectedActorId, signal, SELF_READ_SESSION_CHANGED)) {
+      if (!signal.aborted) clearPrivateAvatar();
+      return null;
+    }
+    return active(token) ? current : null;
+  }
   async function read(hydrate = false) {
     if (!actorId || (!hydrate && busy)) return;
     const token = generation.current, abort = new AbortController(); controller.current = abort; setBusy(true); setError(""); setVersionNotice(""); setAllowed(false);
     try {
-      const current = await fetchSelfAvatar(abort.signal); if (!active(token)) return;
+      const current = await readCurrent(actorId, token, abort.signal);
+      if (!current) return;
       const record = selfAvatarCommands.list().find(row => row.actorId === actorId); setPending(record ?? null);
-      // 只凭版本（图不是原来选的那张）结案前先核对登录账号：读头像接口不带账号，另一个标签页换了账号时读到的是别人的头像（RR01）。
-      const byVersionOnly = !!record && current.assetId !== record.input.assetId;
-      const sameAccount = !hydrate && record && isCurrentAvatar(record, current) && byVersionOnly
-        ? await currentAdminSession({ signal: abort.signal }).then(result => result?.session.adminId === record.actorId, () => false)
-        : true;
-      if (!active(token)) return;
       setReadError("");
-      if (!hydrate && record && isCurrentAvatar(record, current) && sameAccount) complete(record, current);
-      else if (!sameAccount) setError("登录账号可能已经变化，原保存记录先保留；请刷新页面核对。");
+      if (!hydrate && record && isCurrentAvatar(record, current)) complete(record, current);
       else {
         setSnapshot(current); setGender(current.avatarGender ?? "UNSPECIFIED"); setAllowed(true); onSnapshot?.(current);
         if (!hydrate && record?.acknowledged) setError("读到的头像资料版本早于保存回执，请刷新核对。");
@@ -141,27 +144,27 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
       if (!selfAvatarCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(firstAttempt ? "AVATAR_COMMAND_STORAGE_UNAVAILABLE" : "AVATAR_COMMAND_RETRY_STORAGE_UNAVAILABLE");
       const send = (original: SelfAvatarPending) => {
         sent = true;
-        return saveSelfAvatar(original.input, original.commandKey, abort.signal);
+        return saveSelfAvatar(original.input, original.commandKey, original.actorId, abort.signal);
       };
       const receipt = await (firstAttempt ? send(record) : selfAvatarSaveRecovery.replay(record, send));
       saved = true; if (!active(token)) return false;
       const acknowledged = { ...record, acknowledged: true as const, acknowledgedAccountVersion: receipt.accountVersion };
       selfAvatarCommands.remember(record.fingerprint, record.commandKey, acknowledged);
       setPending(acknowledged);
-      const readback = await fetchSelfAvatar(abort.signal); if (!active(token)) return false;
+      const readback = await readCurrent(record.actorId, token, abort.signal);
+      if (!readback) return true;
       if (!isCurrentAvatar(acknowledged, readback)) throw new Error("AVATAR_SAVE_READBACK_MISMATCH");
-      // 读回的不是这次选的图、只凭版本结案：先核对登录账号，另一个标签页换了账号时这张是别人的头像（RR01）。核对不了按「已保存、最新值读不到」留着。
-      if (readback.assetId !== record.input.assetId) {
-        const sameAccount = await currentAdminSession({ signal: abort.signal }).then(result => result?.session.adminId === record.actorId, () => false);
-        if (!active(token)) return false;
-        if (!sameAccount) throw new Error("AVATAR_SAVE_READBACK_MISMATCH");
-      }
       complete(record, readback); return true;
     } catch (e) {
       if (!active(token)) return false;
       if (firstAttempt && !saved && (!sent || isSupportWriteBeforeAuthFailure(e) || avatarErrorIs(e, 403, "AVATAR_SELF_FORBIDDEN") || isExplicitRejection(e))) {
         selfAvatarCommands.forget(record.fingerprint, record.commandKey);
         setPending(null);
+      }
+      if (isSupportSelfAccountMismatch(e)) {
+        clearPrivateAvatar();
+        reportSupportSelfWriteMismatch();
+        return true;
       }
       if (isSupportAccessFailure(e)) {
         clearDenied(e);
@@ -217,8 +220,8 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
         const abort = new AbortController();
         controller.current = abort;
         try {
-          const current = await fetchSelfAvatar(abort.signal);
-          if (!active(confirmationGeneration)) return false;
+          const current = await readCurrent(actorId, confirmationGeneration, abort.signal);
+          if (!current) return false;
           setSnapshot(current); onSnapshot?.(current); setAllowed(true);
           setVersionNotice(current.assetId === previousAssetId
             ? "当前头像没有变化，只是资料版本更新了。"

@@ -2,15 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import qrcode from "qrcode-generator";
-import { canReplayGroupCommand, commandRejected, groupPendingCommands, isInvitePending, supportGroupClient, type InviteCodeView, type InviteIssueRecord } from "@/lib/admin/support-group-client";
+import { canReplayGroupCommand, groupPendingCommands, isInvitePending, supportGroupClient, type InviteCodeView, type InviteIssueRecord } from "@/lib/admin/support-group-client";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
-import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess, SELF_SESSION_CHANGED } from "@/lib/admin/support-self-session";
+import { isSupportSelfAccountMismatch } from "@/lib/admin/support-self-contract";
+import { checkSupportSelfSession, isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess, reportSupportSelfWriteMismatch, SELF_READ_SESSION_CHANGED, SELF_SESSION_CHANGED } from "@/lib/admin/support-self-session";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import "./m1-invite-code.css";
 import { Button, Notice, Fact, Facts, Fold, Explain, IrreversibleTag, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
+import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 
 // Icon paths taken verbatim from the confirmed design (Main.dc.html).
 const ICON_PATHS = {
@@ -66,27 +69,38 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [denied, setDenied] = useState(false);
+  const verifiedRelease = useVerifiedRelease(toast);
   const resetButton = useRef<HTMLButtonElement>(null);
   const clearDenied = (cause: unknown) => {
     setDenied(true); setView(null); setConfirming(false); setUnresolved(false);
     setError(errorText(cause));
     refreshSupportAccess(cause);
   };
-  const clearChangedSession = () => {
-    setDenied(true); setView(null); setConfirming(false); setError(SELF_SESSION_CHANGED);
+  const clearChangedSession = (message = SELF_SESSION_CHANGED) => {
+    setDenied(true); setView(null); setConfirming(false); setUnresolved(false); setError(message);
+  };
+  const checkReadSession = async (actorId: number, signal?: AbortSignal) => {
+    if (await checkSupportSelfSession(actorId, signal, SELF_READ_SESSION_CHANGED)) return true;
+    if (!signal?.aborted) clearChangedSession(SELF_READ_SESSION_CHANGED);
+    return false;
+  };
+  const readCurrent = async (actorId: number, signal?: AbortSignal) => {
+    const current = await supportGroupClient.selfInviteCode(signal);
+    return await checkReadSession(actorId, signal) ? current : null;
   };
   useEffect(() => {
+    if (!adminId) return;
     const controller = new AbortController();
     setReadFailed(false);
-    supportGroupClient.selfInviteCode(controller.signal)
-      .then(next => { if (!controller.signal.aborted) setView(next); })
+    readCurrent(adminId, controller.signal)
+      .then(next => { if (!controller.signal.aborted && next) setView(next); })
       .catch(cause => {
         if (controller.signal.aborted) return;
         if (isSupportAccessFailure(cause)) clearDenied(cause);
         else { setView(null); setReadFailed(true); }
       });
     return () => controller.abort();
-  }, [reload]);
+  }, [adminId, reload]);
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   const qr = useMemo(() => view?.link ? qrPng(view.link) : null, [view?.link]);
 
@@ -94,6 +108,22 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
     groupPendingCommands.forget(record.fingerprint, record.commandKey);
     setPending(undefined); setUnresolved(false); setView(current); setReadFailed(false);
     if (!current) setReload(n => n + 1);
+  };
+  const releaseRejected = (record: InviteIssueRecord) => {
+    const getSnapshot = () => {
+      const current = findPending();
+      if (current?.commandKey === record.commandKey && current.replayRejection && !receiptStatus(current)) return JSON.stringify(current);
+    };
+    verifiedRelease.ask({
+      operation: record.label,
+      createdAt: record.createdAt,
+      getSnapshot,
+      release: () => {
+        settle(record, null);
+        setError("");
+        return true;
+      },
+    });
   };
   const submit = async (record: InviteIssueRecord, fromConfirm: boolean, recovering = false) => {
     const { expectedVersion } = record.intent.payload;
@@ -106,14 +136,22 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
         return;
       }
       sent = true;
-      const next = await supportGroupClient.issueSelfInviteCode(expectedVersion, record.commandKey);
+      const next = await supportGroupClient.issueSelfInviteCode(expectedVersion, record.commandKey, record.actorId);
+      if (!await checkReadSession(record.actorId)) { setPending(record); return; }
       acknowledged = { ...record, receiptStatus: "SUCCEEDED" };
       groupPendingCommands.remember(record.fingerprint, record.commandKey, acknowledged);
-      const current = await supportGroupClient.selfInviteCode();
+      const current = await readCurrent(record.actorId);
+      if (!current) { setPending(acknowledged); return; }
       if (current.code !== next.code || current.version !== next.version) throw new Error("SUPPORT_INVITE_READBACK_CHANGED");
       settle(record, current); setConfirming(false);
       toast(success);
     } catch (cause) {
+      if (isSupportSelfAccountMismatch(cause)) {
+        if (!recovering) groupPendingCommands.forget(record.fingerprint, record.commandKey);
+        clearChangedSession();
+        reportSupportSelfWriteMismatch();
+        return;
+      }
       if (acknowledged) {
         setPending(acknowledged); setUnresolved(false); setView(null); setConfirming(false);
         toast(success);
@@ -134,13 +172,18 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
         setError(message);
         return;
       }
-      if (!commandRejected(cause)) {
+      const rejection = explicitRejectionCode(cause);
+      if (!rejection) {
         setConfirming(false); setPending(record);
         if (recovering) setError("重试的结果仍然未知，原操作已保留，请稍后再查询或重试。");
         return;
       }
       const stale = cause instanceof SupportClientError && cause.status === 409 && cause.backendMessage === "SUPPORT_INVITE_VERSION_CONFLICT";
-      if (recovering) settle(record, null);
+      if (recovering) {
+        groupPendingCommands.markReplayRejected(record.fingerprint, record.commandKey, rejection);
+        setPending({ ...record, replayRejection: rejection });
+        setUnresolved(false);
+      }
       else {
         groupPendingCommands.forget(record.fingerprint, record.commandKey);
         if (stale && fromConfirm) {
@@ -149,7 +192,8 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
             renderNotice: readLatest => <Notice tone="warn" action={<Button type="button" size="sm" onClick={readLatest}>读取最新</Button>}>{errorText(cause)}</Notice>,
             readLatest: async () => {
               try {
-                const current = await supportGroupClient.selfInviteCode();
+                const current = await readCurrent(record.actorId);
+                if (!current) return false;
                 setView(current); setReadFailed(false);
                 if (current.code === null) setConfirming(false);
                 return true;
@@ -207,18 +251,25 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       const alreadyKnown = Boolean(terminal);
       if (!terminal) {
         const receipt = await supportGroupClient.command(pending.commandKey);
+        if (!await checkReadSession(pending.actorId)) return;
         if (receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") { setUnresolved(false); setError("原操作仍在处理，请稍后再查询。"); return; }
         terminal = receipt.status;
         const settled = { ...pending, receiptStatus: terminal };
         groupPendingCommands.remember(pending.fingerprint, pending.commandKey, settled);
         setPending(settled); setUnresolved(false); setView(null);
       }
-      settle(pending, await supportGroupClient.selfInviteCode());
+      const current = await readCurrent(pending.actorId);
+      if (!current) return;
+      settle(pending, current);
       if (!alreadyKnown) toast(terminal === "SUCCEEDED" ? "原操作已生效，已重新读取邀请码。" : "原操作没有生效，已重新读取邀请码。");
     } catch (cause) {
       if (isSupportAccessFailure(cause)) { clearDenied(cause); return; }
       if (terminal) { setError(displayAdminReadError(cause)); return; }
       const absent = cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
+      if (pending.replayRejection) {
+        setError(absent ? "还没查到原操作的结果，请核实后再解除。" : displayAdminReadError(cause));
+        return;
+      }
       setUnresolved(absent);
       const reason = absent ? "还没查到原操作的结果，这说明不了它没有执行。" : "暂时查不到原结果。";
       setError(reason + (!canReplayGroupCommand(pending) ? "原操作已超过 24 小时，不能再重试，请稍后再查询。" : absent ? "可以按原操作重试。" : "原操作仍保留，请稍后再查询。"));
@@ -226,7 +277,7 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
   };
   // Same key and frozen request body; the server dedupes it if the original did arrive.
   const replay = async () => {
-    if (!pending || receiptStatus(pending) || busy || !canReplayGroupCommand(pending)) return;
+    if (!pending || pending.replayRejection || receiptStatus(pending) || busy || !canReplayGroupCommand(pending)) return;
     await submit(pending, false, true);
   };
   const copy = async (value: string, label: string) => {
@@ -257,9 +308,12 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
 
   return <section className="m1-invite" aria-label="我的邀请码">
     {confirmBox}
+    {!denied && verifiedRelease.dialog}
 
     {!denied && (pending ? <>
-      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : terminal ? "刷新邀请码" : "查询原操作"}</Button>{!terminal && unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原操作重试</Button>}</>}>{terminal === "SUCCEEDED" ? `邀请码已${inviteAction}，最新的邀请码暂时读不到。` : terminal === "FAILED" ? "原操作没有生效，当前邀请码暂时读不到。" : `上次${inviteAction}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。`}</Notice>
+      <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : terminal ? "刷新邀请码" : "查询原操作"}</Button>{!terminal && (pending.replayRejection
+        ? <VerifiedReleaseButton disabled={busy} onClick={() => releaseRejected(pending)} />
+        : unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原操作重试</Button>)}</>}>{terminal === "SUCCEEDED" ? `邀请码已${inviteAction}，最新的邀请码暂时读不到。` : terminal === "FAILED" ? "原操作没有生效，当前邀请码暂时读不到。" : pending.replayRejection ? `按原操作重试已被拒绝。原操作结果仍需核实。${displayAdminError(pending.replayRejection)}` : `上次${inviteAction}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。`}</Notice>
     </> : readFailed ? <>
       <Notice tone="danger" action={<Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>}>暂时无法读取邀请码，请重试。</Notice>
     </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在加载邀请码…</p>

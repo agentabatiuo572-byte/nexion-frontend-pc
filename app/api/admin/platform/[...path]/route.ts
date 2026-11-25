@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { ADMIN_TOKEN_COOKIE, requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 import { boundedUpload } from "@/lib/admin/support-image-proxy";
 import { avatarProxyRoute, avatarGender, avatarKey, selfAvatarSaveInput } from "@/lib/admin/account-avatar-contract";
+import { EXPECTED_ADMIN_ID_HEADER } from "@/lib/admin/support-self-contract";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
@@ -235,6 +236,10 @@ async function proxy(request: Request, context: RouteContext) {
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   if (avatarRoute && hasBody) {
     try { avatarKey(idempotencyKey ?? ""); } catch { return jsonError(422, "AVATAR_COMMAND_INVALID"); }
+    if (avatarRoute.self) {
+      const expectedAdminId = request.headers.get(EXPECTED_ADMIN_ID_HEADER);
+      if (expectedAdminId) headers.set(EXPECTED_ADMIN_ID_HEADER, expectedAdminId);
+    }
   }
   const avatarUpload = avatarRoute?.upload === true;
   const avatarRead = avatarRoute?.read === true;

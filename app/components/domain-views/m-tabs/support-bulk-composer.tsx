@@ -6,7 +6,7 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, parseBulkJob, type BulkFilters, type BulkCandidatePage, type BulkPreview, type BulkContent, type BulkJob, type BulkRecipient, type SupportProfile } from "@/lib/admin/m-support-enhancements";
-import { supportClient, SupportClientError, isIndeterminateSupportError } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isIndeterminateSupportError, isSupportScopeDenial, isSupportSessionExpired } from "@/lib/admin/m-support-client";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -28,6 +28,7 @@ const uploads = createPendingMutationStore<UploadPending>({ storageKey: "nexion-
 const commands=createPendingMutationStore<Stored>({storageKey:"nexion-support-bulk-pending",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.payload?.selectionId)});
 const mutationLabel = (action: Stored["action"]) => action === "cancel" ? "取消未提交项" : "核对并重试失败项";
 const replayFailure = (record: Stored) => `「${mutationLabel(record.action)}」的同号重试被拒绝。${displayAdminError(record.replayRejection)}原操作结果仍需核实。`;
+const isBulkAccessFailure = (error: unknown) => isSupportScopeDenial(error) || isSupportSessionExpired(error) || isSupportAccessFailure(error);
 const conversationReasonText:Record<string,string>={
   // Kept for batches created before closed conversations were included (D-6); customer threads are now resumed.
   CONVERSATION_CLOSED:"原会话已结束，本次未发送（旧批次记录）。现在重新圈选会在该客户的会话中继续发送。",
@@ -71,7 +72,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const [image,setImage]=useState<{file:File;url:string;id:string;key:string;hash:string;assetId?:string;ttlSeconds:number|null;assetExpiresAt?:number}|null>(null),[uploading,setUploading]=useState(false),[uploadError,setUploadError]=useState("");
   const [job,setJob]=useState<BulkJob|null>(null),[jobs,setJobs]=useState<BulkJob[]|null>(null),[jobsTotal,setJobsTotal]=useState(0),[jobsPage,setJobsPage]=useState(1),[jobsError,setJobsError]=useState("");
   const [recoveryBatchId,setRecoveryBatchId]=useState<string|null>(null),[mutationFailure,setMutationFailure]=useState("");
-  const [batchReadsRequired,setBatchReadsRequired]=useState<Record<string,number>>({});
+  const [batchReadsRequired,setBatchReadsRequired]=useState<Record<string,{after:number;reason:string}>>({});
   const [recipients,setRecipients]=useState<BulkRecipient[]|null>(null),[recipientTotal,setRecipientTotal]=useState(0),[recipientPage,setRecipientPage]=useState(1),[resultRetry,setResultRetry]=useState(0),[jobsRetry,setJobsRetry]=useState(0),[resultError,setResultError]=useState("");
   const [pending,setPending]=useState<Stored|null>(null),[mutationAction,setMutationAction]=useState<"cancel"|"retry"|null>(null),[mutationReason,setMutationReason]=useState("");
   const verifiedRelease = useVerifiedRelease(ctx.toast);
@@ -142,7 +143,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     const controller=new AbortController(),saved=queryKey,owner=stamp.current;setQuery(null);setError("");setPreviewDenied(false);
     supportEnhancements.bulkCandidates(filters,page,controller.signal).then(v=>{if(controller.signal.aborted||saved!==requestKey.current||owner!==stamp.current)return;if(v.actorId!==actorId)throw new SupportClientError(403,403,"SUPPORT_SCOPE_FORBIDDEN");if(v.pageNum!==page)throw new Error("SUPPORT_CANDIDATE_PAGE_INVALID");if(page>1&&page>Math.max(1,Math.ceil(v.total/10))){setPage(Math.max(1,Math.ceil(v.total/10)));return;}setQuery({...v,requestKey:saved});setIdentities(old=>({...old,...Object.fromEntries(v.records.map(c=>[c.id,{nickname:c.nickname,userNo:c.userNo}]))}));}).catch(e=>{
       if(controller.signal.aborted||saved!==requestKey.current||owner!==stamp.current)return;
-      if(isSupportAccessFailure(e)){
+      if(isBulkAccessFailure(e)){
         setPreviewDenied(true);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);
         refreshSupportAccess(e);
       }
@@ -163,13 +164,13 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     const controller=new AbortController(),owner=stamp.current;setJobs(null);setJobsError("");
     supportEnhancements.bulkJobs(jobsPage,controller.signal).then(p=>{if(!controller.signal.aborted&&owner===stamp.current){setJobs(p.records);setJobsTotal(p.total);}}).catch(e=>{
       if(controller.signal.aborted||owner!==stamp.current)return;
-      if(isSupportAccessFailure(e)){setJobsTotal(0);refreshSupportAccess(e);}
+      if(isBulkAccessFailure(e)){setJobsTotal(0);refreshSupportAccess(e);}
       setJobsError(displayAdminReadError(e));
     });
     return()=>controller.abort();
   },[jobsPage,resultRetry,jobsRetry,scopeKey]);
   const resultBatchId=recoveryBatchId??job?.batchId;
-  const batchReadBlock=job&&batchReadsRequired[job.batchId]!==undefined?"正在读取批次最新状态":undefined;
+  const batchReadBlock=job ? batchReadsRequired[job.batchId]?.reason : undefined;
   useEffect(()=>{
     if(!resultBatchId)return;const controller=new AbortController(),owner=stamp.current;let timer:ReturnType<typeof setTimeout>|undefined;
     const recipientKey=JSON.stringify([scopeKey,resultBatchId,recipientPage]);
@@ -182,16 +183,16 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       ]);
       if(controller.signal.aborted||owner!==stamp.current)return;
       // 两次读取各自按当时的权限查。同轮有拒绝就丢弃整份结果，批次编号只保留给只读刷新。
-      const readDenied=(reason:unknown)=>reason instanceof SupportClientError&&[401,403,404].includes(reason.status);
-      if(batch.status==="rejected"&&readDenied(batch.reason)||items.status==="rejected"&&readDenied(items.reason)){
-        const failures = [batch, items].flatMap(result => result.status === "rejected" && isSupportAccessFailure(result.reason) ? [result.reason] : []);
+      const denials = [batch, items].filter((result): result is PromiseRejectedResult =>
+        result.status === "rejected" && isBulkAccessFailure(result.reason));
+      if(denials.length){
         keepRecipients=false;
         recipientsScope.current=null;
         setJob(null);setRecoveryBatchId(resultBatchId);
         setRecipients(null);setRecipientTotal(0);
         setMutationAction(null);setMutationReason("");
         setResultError("没有查看这个批次的权限。");
-        if(failures.length)refreshSupportAccess(failures.find(cause => cause instanceof SupportClientError && cause.status === 401) ?? failures[0]);
+        refreshSupportAccess(denials.find(result => isSupportSessionExpired(result.reason))?.reason ?? denials[0].reason);
         return;
       }
       const currentBatch=batch.status==="fulfilled"&&batch.value.batchId===resultBatchId?batch.value:null;
@@ -200,14 +201,19 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
         setJob(currentBatch);
         setBatchReadsRequired(current=>{
           // An in-flight read started before the refusal cannot unlock this batch.
-          const failedAfter=current[resultBatchId];
-          if(failedAfter===undefined||sequence<=failedAfter)return current;
+          const block=current[resultBatchId];
+          if(!block||sequence<=block.after)return current;
           const next={...current};
           delete next[resultBatchId];
           return next;
         });
         if(["QUEUED","RUNNING"].includes(currentBatch.state))timer=setTimeout(()=>void read(),3000);
-      }else failure=batch.status==="rejected"?displayAdminError(batch.reason):"批次资料与当前查询不一致，请重新读取。";
+      }else{
+        failure=batch.status==="rejected"?displayAdminReadError(batch.reason):"批次资料与当前查询不一致，请重新读取。";
+        setBatchReadsRequired(current=>({...current,[resultBatchId]:{
+          after:sequence,reason:"批次最新状态读取失败，当前显示上次核对值。请刷新原批次后再操作。",
+        }}));
+      }
       if(items.status==="fulfilled"){
         recipientsScope.current=recipientKey;
         setRecipients(items.value.records);setRecipientTotal(items.value.total);
@@ -262,7 +268,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       setStep(previous ? 3 : 2);
     } catch (e) {
       if (saved !== stamp.current) return;
-      if (isSupportAccessFailure(e)) { closeForAccessFailure(e); return; }
+      if (isBulkAccessFailure(e)) { closeForAccessFailure(e); return; }
       setError(bulkPreviewError(e)); setPreviewUnknown(previewRequested);
     } finally { if (saved === stamp.current) setBusy(false); }
   }
@@ -293,7 +299,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       setImage({ file: exactFile, url: URL.createObjectURL(exactFile), id: original?.clientUploadId ?? crypto.randomUUID(), key: original?.commandKey ?? crypto.randomUUID(), hash, ttlSeconds: policy.ttlSeconds, assetExpiresAt: original?.assetExpiresAt });
     } catch (e) {
       if (saved !== stamp.current || chosen !== imageSelection.current) return;
-      if (isSupportAccessFailure(e)) closeForAccessFailure(e);
+      if (isBulkAccessFailure(e)) closeForAccessFailure(e);
       else setUploadError(e instanceof Error && /^(原|图片|请选择)/.test(e.message) ? e.message : displayAdminError(e));
     }
   }
@@ -314,7 +320,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     } catch (e) {
       if (saved !== stamp.current) return;
       if (!old && (isExplicitRejection(e) || isSupportWriteBeforeAuthFailure(e))) uploads.forget(fingerprint, current.key);
-      if (isSupportAccessFailure(e)) closeForAccessFailure(e);
+      if (isBulkAccessFailure(e)) closeForAccessFailure(e);
       else setUploadError("图片上传结果未知，原图片已保留。" + displayAdminError(e));
     }
     finally { if (saved === stamp.current) setUploading(false); }
@@ -327,7 +333,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     setPending(replayRefusal ? {...record,replayRejection:replayRefusal} : null);setNotReceived(false);
     if(record.action&&record.batchId){
       const batchId=record.batchId,failedAfter=resultReadSequence.current;
-      setBatchReadsRequired(current=>({...current,[batchId]:failedAfter}));
+      setBatchReadsRequired(current=>({...current,[batchId]:{after:failedAfter,reason:"正在读取批次最新状态"}}));
       setMutationFailure(replayRefusal ? replayFailure({...record,replayRejection:replayRefusal}) : `${mutationLabel(record.action)}失败。${reason}`);
       if(job?.batchId!==record.batchId){
         setJob(null);setRecoveryBatchId(record.batchId);setRecipientPage(1);
@@ -369,7 +375,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,recipientIds:record.recipientIds,recipientAssignments:record.recipientAssignments,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError(recover ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");setSubmitFailed(false);const saved=stamp.current;
     let submitted=false;
     try{
-      const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&e.status===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;
+      const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&(e.status===200?e.apiCode:e.status)===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;
       if(saved!==stamp.current)return;
       if(record.replayRejection&&recovered?.status!=="SUCCEEDED"&&recovered?.status!=="FAILED"){
         setMutationFailure(replayFailure(record)+(recovered?"已查到原操作，仍未取得结论。":"暂时查不到原结果。"));
@@ -396,7 +402,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       if(saved!==stamp.current)return;commands.forget(record.fingerprint,record.commandKey);setPending(null);setJob(next);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setHistoryOpen(false);setRecipientPage(1);setMutationAction(null);setMutationReason("");setResultRetry(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));
     }catch(e){
       if(saved!==stamp.current)return;
-      if(isSupportAccessFailure(e)){
+      if(isBulkAccessFailure(e)){
         if(submitted&&!recover&&isSupportWriteBeforeAuthFailure(e))commands.forget(record.fingerprint,record.commandKey);
         closeForAccessFailure(e);
         return;
@@ -454,7 +460,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       <div className="m-bulk-counts"><span>总数 <b>{job.counts.total}</b></span>{job.counts.failed>0&&<StatusTag tone="danger">失败 {job.counts.failed}</StatusTag>}{job.counts.unknown>0&&<StatusTag tone="warn">结果未知 {job.counts.unknown}</StatusTag>}<span>已提交 <b>{job.counts.sent}</b></span>{job.counts.failed===0&&<span>失败 <b>0</b></span>}<span>跳过 <b>{job.counts.skipped}</b></span><span>取消 <b>{job.counts.cancelled}</b></span><span>待处理（已知）<b>{job.counts.pending-job.counts.unknown}</b></span></div>
       <div className="m-bulk-row"><Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button><span className="m-bulk-row-tools"><Button size="sm" disabledReason={cancelBlocked||undefined} onClick={()=>setMutationAction("cancel")}>取消未提交项</Button><Button size="sm" disabledReason={retryBlocked||undefined} onClick={()=>setMutationAction("retry")}>核对并重试失败项</Button></span></div>
       {mutationAction&&<div className="rd-stack"><p>{mutationAction==="cancel"?"取消只影响未提交项，已经提交的消息保留。":"先核对原消息，已提交、已转绑或不再维护项不重发。"}</p><Field label="操作理由" required hint="至少 8 字" explain="提交中或原结果未知时，不能重复操作。">{control=><Textarea {...control} rows={3} minLength={8} maxLength={200} value={mutationReason} count={`${visibleReasonLength(mutationReason)}/200`} onChange={e=>setMutationReason(e.target.value)}/>}</Field><div className="m-bulk-row-tools"><Button variant="primary" size="sm" disabled={busy||Boolean(pending)||!reasonRule.ok(mutationReason)||mutationReason.trim().length>200} disabledReason={mutationBlocked||undefined} onClick={()=>void mutate()}>确认{mutationAction==="cancel"?"取消剩余":"核对重试"}</Button><Button size="sm" disabled={busy} onClick={()=>setMutationAction(null)}>返回结果</Button></div></div>}
-      {(mutationFailure||resultError)&&<Notice tone="danger">{mutationFailure}{resultError&&` 结果加载失败，以上为上次已核对值：${resultError}`}</Notice>}
+      {(mutationFailure||resultError)&&<Notice tone="danger">{mutationFailure}{resultError&&` ${batchReadBlock ? "批次结果加载失败，以上为上次已核对值" : "逐客明细加载失败"}：${resultError}`}</Notice>}
       {!recipients?<p role="status">逐客明细暂未读取</p>:<Table label="逐客结果"><thead><tr><Th>客户</Th><Th>结果</Th><Th>原因</Th><Th>原会话</Th></tr></thead><tbody>{recipients.map((r,i)=><Tr key={r.customerId+":"+i}><Td>{customerName(r.customerId)}</Td><Td><StatusTag tone={recipientTone(r)}>{r.resultCertainty==="UNKNOWN"?"结果未知":stateText[r.state]??"未知"}</StatusTag></Td><Td>{r.failureCode?{...conversationReasonText,SUPPORT_ASSIGNMENT_CHANGED:"客户已转绑，本次不再发送",SUPPORT_MAINTENANCE_STOPPED:"客户已停止维护",SUPPORT_AGENT_UNAVAILABLE:"专属客服当前不可发送",RESULT_UNKNOWN:"需核对原提交结果",SUPPORT_BULK_PAYLOAD_REVIEW_REQUIRED:"原内容需核对，暂不自动重发"}[r.failureCode]??"执行未通过，请核对客户与原消息":"—"}{r.retryable?" · 可核对重试":""}</Td><Td>{r.conversationNo?<a className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(r.conversationNo)}`}>打开原客户会话</a>:"—"}</Td></Tr>)}</tbody></Table>}
       {recipientTotal>0&&<Pager label="逐客结果" total={recipientTotal} page={recipientPage} pageSize={10} sizes={[10]} onPage={setRecipientPage} onPageSize={()=>undefined}/>}</>}
     {step===4&&!job&&(mutationFailure||resultError)&&<Notice tone="danger" action={resultError ? <Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button> : undefined}>{mutationFailure}{resultError&&` ${resultError}`}</Notice>}

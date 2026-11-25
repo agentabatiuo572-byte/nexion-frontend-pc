@@ -2,6 +2,7 @@ import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outco
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { accountAvatarFields, avatarBase, avatarGender, avatarId, avatarKey, parsePreparedAvatar, parseSelfAvatarSnapshot, selfAvatarSaveInput, type AvatarGender, type AvatarScope, type SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 import { parseA1Created, parseA1Operator, parseA1Overview, parseA1PasswordReset, parseA1Permission } from "./a1-read-contract";
+import { EXPECTED_ADMIN_ID_HEADER } from "./support-self-contract";
 export type { AvatarGender, SelfAvatarSnapshot, SelfAvatarSave } from "@/lib/admin/account-avatar-contract";
 
 export type GrantCell = "-" | "R" | "M" | "C";
@@ -227,25 +228,31 @@ export function cancelA1Avatar(assetId:string,key:string) {
   return cancelAccountAvatar("admin", assetId, key);
 }
 
-export async function uploadAccountAvatar(scope: AvatarScope, file: File, clientUploadId: string, key: string, signal?: AbortSignal) {
+function avatarWriteHeaders(key: string, expectedAdminId?: number): HeadersInit {
+  return expectedAdminId === undefined
+    ? { "Idempotency-Key": key }
+    : { "Idempotency-Key": key, [EXPECTED_ADMIN_ID_HEADER]: String(expectedAdminId) };
+}
+
+export async function uploadAccountAvatar(scope: AvatarScope, file: File, clientUploadId: string, key: string, signal?: AbortSignal, expectedAdminId?: number) {
   const body = new FormData(); body.set("file", file); body.set("clientUploadId", avatarKey(clientUploadId)); avatarKey(key);
-  const result = await a1Request<unknown>(avatarBase(scope), { method: "POST", body, headers: { "Idempotency-Key": key }, idempotencyPrefix: "avatar-upload", retryTransport: false, signal });
+  const result = await a1Request<unknown>(avatarBase(scope), { method: "POST", body, headers: avatarWriteHeaders(key, expectedAdminId), idempotencyPrefix: "avatar-upload", retryTransport: false, signal });
   try { return parsePreparedAvatar(result, scope); } catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", key, { cause }); }
 }
-export async function prepareDefaultAccountAvatar(scope: AvatarScope, gender: AvatarGender, clientUploadId: string, key: string, signal?: AbortSignal) {
+export async function prepareDefaultAccountAvatar(scope: AvatarScope, gender: AvatarGender, clientUploadId: string, key: string, signal?: AbortSignal, expectedAdminId?: number) {
   const body = JSON.stringify({ avatarGender: avatarGender(gender), clientUploadId: avatarKey(clientUploadId) }); avatarKey(key);
-  const result = await a1Request<unknown>(`${avatarBase(scope)}/default`, { method: "POST", body, headers: { "Idempotency-Key": key }, idempotencyPrefix: "avatar-default", retryTransport: false, signal });
+  const result = await a1Request<unknown>(`${avatarBase(scope)}/default`, { method: "POST", body, headers: avatarWriteHeaders(key, expectedAdminId), idempotencyPrefix: "avatar-default", retryTransport: false, signal });
   try { return parsePreparedAvatar(result, scope); } catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", key, { cause }); }
 }
-export async function cancelAccountAvatar(scope: AvatarScope, assetId: string, key: string) {
-  const result = await a1Request<unknown>(`${avatarBase(scope)}/${avatarId(assetId)}`, { method: "DELETE", headers: { "Idempotency-Key": avatarKey(key) }, idempotencyPrefix: "avatar-cancel", retryTransport: false });
+export async function cancelAccountAvatar(scope: AvatarScope, assetId: string, key: string, expectedAdminId?: number) {
+  const result = await a1Request<unknown>(`${avatarBase(scope)}/${avatarId(assetId)}`, { method: "DELETE", headers: avatarWriteHeaders(avatarKey(key), expectedAdminId), idempotencyPrefix: "avatar-cancel", retryTransport: false });
   try { return parsePreparedAvatar(result, scope, "CANCELLED"); } catch (cause) { throw new A1OutcomeUncertainError("A1_AVATAR_RESPONSE_UNREADABLE", key, { cause }); }
 }
 export async function fetchSelfAvatar(signal?: AbortSignal) {
   return parseSelfAvatarSnapshot(await a1Request<unknown>("/accounts/self/avatar", { signal }));
 }
-export async function saveSelfAvatar(input: SelfAvatarSave, key: string, signal?: AbortSignal) {
-  const result = await a1Request<unknown>("/accounts/self/avatar", { method: "PATCH", body: JSON.stringify(selfAvatarSaveInput(input)), headers: { "Idempotency-Key": avatarKey(key) }, idempotencyPrefix: "avatar-self-save", retryTransport: false, signal });
+export async function saveSelfAvatar(input: SelfAvatarSave, key: string, expectedAdminId: number, signal?: AbortSignal) {
+  const result = await a1Request<unknown>("/accounts/self/avatar", { method: "PATCH", body: JSON.stringify(selfAvatarSaveInput(input)), headers: avatarWriteHeaders(avatarKey(key), expectedAdminId), idempotencyPrefix: "avatar-self-save", retryTransport: false, signal });
   try {
     const snapshot = parseSelfAvatarSnapshot(result);
     if (snapshot.assetId !== input.assetId) throw new Error("AVATAR_SAVE_READBACK_MISMATCH");
