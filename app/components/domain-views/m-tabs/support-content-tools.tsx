@@ -11,12 +11,15 @@ import { BlockState, Button, KeepText, Explain, Field, Input, Select, StatusTag,
 import { Languages } from "lucide-react";
 import "./support-content-tools.css";
 import { amountDisplay } from "@/lib/format";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 export type SelectedSupportContent = { kind: "SKU"; skuId: string; name: string } | { kind: "LINK"; linkTarget: SupportLink; name: string };
 export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover = false, textOnly = false, faqLanguage, inline = false, onPanelChange, closeRef }: { ctx: MCtx; disabled: boolean; onInsert: (text: string) => void; onSelect: (content: SelectedSupportContent) => void; popover?: boolean; textOnly?: boolean; faqLanguage?: string;
   /** 在宿主弹窗里（群发）：选内容换成同一个框里的面板，不另开弹窗（PG-38）。onPanelChange 告诉宿主面板开没开，好把编写区收起来。 */
   inline?: boolean; onPanelChange?: (open: boolean) => void;
   /** 宿主的 ×、「取消」先收起面板：这里放进收起面板的函数，宿主调用。 */
   closeRef?: MutableRefObject<(() => void) | null> }) {
+  // 没有知识库读取权限的账号不给入口（ST-39），和 m-client 不读知识库的判断一致。
+  const canReadKnowledge = useAdminAuth(state => state.session?.authorities?.includes("service_m4_read") ?? false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<CSSProperties>();
   const [templateType, setTemplateType] = useState("reply"), [keyword, setKeyword] = useState(""), [group, setGroup] = useState("");
@@ -168,7 +171,7 @@ export function SupportContentTools({ ctx, disabled, onInsert, onSelect, popover
   </>;
   return <div className="support-content-tools" ref={triggerRef} data-inline={inline ? "" : undefined}>
     <button type="button" className="support-content-trigger" aria-label="回复模板与专属客服话术" aria-expanded={picker==="template"} disabled={disabled} hidden={panelOpen} onClick={e=>{opener.current=e.currentTarget;show("template");}}><span>{popover?"快捷回复":"回复模板与专属客服话术"}</span><Icon name="doc" size={16}/></button>
-    <button type="button" className="support-content-trigger" aria-label="查找知识库答案" aria-expanded={picker==="faq"} disabled={disabled} hidden={panelOpen} onClick={e=>{opener.current=e.currentTarget;show("faq");}}><span>知识库</span><Icon name="search" size={16}/></button>
+    <button type="button" className="support-content-trigger" aria-label="查找知识库答案" aria-expanded={picker==="faq"} disabled={disabled} hidden={panelOpen || !canReadKnowledge} onClick={e=>{opener.current=e.currentTarget;show("faq");}}><span>知识库</span><Icon name="search" size={16}/></button>
     <button type="button" className="support-content-trigger" aria-label="推荐在售商品" aria-expanded={picker==="sku"} disabled={disabled||textOnly} hidden={panelOpen} title={textOnly?"首次联系只能发文字，发送后再推荐商品":undefined} onClick={e=>{opener.current=e.currentTarget;show("sku");}}><span>{popover?"推荐商品":"推荐在售商品"}</span><Icon name="box" size={16}/></button>
     <button type="button" className="support-content-trigger" aria-label="发送页面链接" aria-expanded={picker==="link"} disabled={disabled||textOnly} hidden={panelOpen} title={textOnly?"首次联系只能发文字，发送后再发页面链接":undefined} onClick={e=>{opener.current=e.currentTarget;show("link");}}><span>{popover?"页面链接":"发送页面链接"}</span><Icon name="arrow" size={16}/></button>
     {disabled&&<p className="support-content-state" role="status" hidden={panelOpen}>当前暂不能选择发送内容：当前状态不可发送，或操作尚未结束。请恢复可用后再试。</p>}
