@@ -214,7 +214,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           <div><dt>奖励总额上限</dt><dd data-empty={cap === null ? "" : undefined}>{cap === null ? "未配置" : `${num(cap)}%`}</dd></div>
         </dl>}
       </Figure>}
-      {limitIssue && <Notice tone="warn" title={limitIssue}>{`App 会读不到团队奖励配置。${issues.length ? "填齐后仍可以提交" : "核对后仍可以提交"}。`}</Notice>}
+      {limitIssue && <Notice tone="warn" title={limitIssue}>{`${ranked ? "App 最多读到合计 25%，" : "App "}会读不到团队奖励配置。${issues.length ? "填齐后仍可以提交" : "核对后仍可以提交"}。`}</Notice>}
       <div className="rd-toolbar" data-end="">
         {blocked && <span className="f2-boot-error" role="alert">{blocked}</span>}
         <Button onClick={() => setDraft(null)}>取消</Button>

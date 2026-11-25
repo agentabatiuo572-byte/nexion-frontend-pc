@@ -2596,7 +2596,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageLead: "启用结算后，平台按这些比例付团队奖励",
       coverageUnknown: "启用结算后，平台按这些比例付团队奖励；兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：低于红线就不建规则，审批单留着待审批。",
-      facts: <><Fact k="要建立">L1–L7 七层规则</Fact><Fact k="七层合计占订单">{rankedBootstrap ? "第 1、2 层按受益人等级" : `${f2PctSum(boot.map((row) => row.usdtPct))}%`}</Fact><Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
+      facts: <><Fact k="要建立">L1–L7 七层规则</Fact>{rankedBootstrap && <Fact k="七层合计占订单">第 1、2 层按受益人等级</Fact>}<Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
       extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />,
     };
     const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
