@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import Link from "next/link";
 import { RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
 import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
-import { sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
+import { canReadOwnRecoveryProposal, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { OperationConfirmModal, useToast, usePendingReplayDeadline } from "../design-kit";
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
@@ -72,7 +72,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const canRead = authorities.includes("device_e1_read");
   const canReadE3 = authorities.includes("device_e3_read");
   const canWrite = authorities.includes("device_e1_write") && authorities.some(a => a === "platform_a2_proposal_create" || a === "platform_a2_write");
-  const canQuery = authorities.some(a => a === "platform_a2_read" || a === "platform_a2_proposal_create");
+  const canQuery = canReadOwnRecoveryProposal(authorities);
   const reach = useReach();
   const canOpenAudit = reach("/platform/audit", "platform_a2_read");
   const forceUnlock = authorities.includes("device_e1_generation_gate_force_unlock"), forceLock = authorities.includes("device_e1_generation_gate_force_lock");

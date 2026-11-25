@@ -6,7 +6,7 @@ import { BlockState, Button, Check, ConfigList, ConfigRow, Decision, DiffList, D
 import { OperationConfirmModal } from "../design-kit";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
-import { currentRecoveryActor, canCreateRecoveryProposal } from "@/lib/admin/abe-recovery-access";
+import { canReadOwnRecoveryProposal, currentRecoveryActor, canCreateRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -71,7 +71,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     const discardRecovery = useRecoveryDraftDiscard();
     const [recoveryDraft, setRecoveryDraft] = useState<SavedProposal | null>(null);
     const canRecover = canReadPolicyReceipt(rights);
-    const canQueryProposal = rights.includes("platform_a2_read") || rights.includes("platform_a2_proposal_create");
+    const canQueryProposal = canReadOwnRecoveryProposal(rights);
     const [policy, setPolicy] = useState<PhonePolicy | null>(null), [values, setValues] = useState(["", "", ""]), [allow, setAllow] = useState(false);
     const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(""), [message, setMessage] = useState("");
     const [confirm, setConfirm] = useState<{

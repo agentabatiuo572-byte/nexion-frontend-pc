@@ -577,9 +577,9 @@ export type KRiskActions = {
   fetchK1ProtectedEntries: (userId?: number) => Promise<K1ProtectedEntry[]>;
   manualReleaseK1Entry: (entryNo: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   updateK1ClusterStatus: (clusterId: string, status: ClusterStatus, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
-  updateK1ClusterReviewNote: (clusterId: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
-  upsertK1Whitelist: (cidr: string, note: string, reason: string, expireText: string, commandKey?: string) => Promise<void>;
-  disableK1Whitelist: (cidr: string, reason: string, commandKey?: string) => Promise<void>;
+  updateK1ClusterReviewNote: (clusterId: string, expectedVersion: number, reason: string, commandKey?: string, operator?: string) => Promise<void>;
+  upsertK1Whitelist: (cidr: string, note: string, reason: string, expireText: string, commandKey?: string, operator?: string) => Promise<void>;
+  disableK1Whitelist: (cidr: string, reason: string, commandKey?: string, operator?: string) => Promise<void>;
   updateK2Param: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   executeK2Action: (rowId: string, action: string, expectedVersion: number, clusterExpectedVersion: number | undefined, reason: string, commandKey?: string) => Promise<void>;
   createK3Rule: (dimension: string, conditionText: string, action: RuleAction, priority: number, reason: string, commandKey?: string) => Promise<void>;
@@ -953,10 +953,10 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
   return { serverCanonical: true, domain: "K1", lastSuccessfulCheckAt, registrationParams, stats, params, releaseParams: currentReleaseParams, clusters, whitelist, sources };
 }
 
-export async function updateK1RegistrationParam(param: Pick<A3PlatformParam, "key" | "value">, value: string, reason: string, commandKey: string) {
+export async function updateK1RegistrationParam(param: Pick<A3PlatformParam, "key" | "value">, value: string, reason: string, commandKey: string, operator?: string) {
   await apiRequest("/multi-account/registration-params", {
     method: "PATCH", commandKey,
-    body: JSON.stringify(withReason({ kind: "param", flagKey: param.key, value, expectedValue: param.value }, reason)),
+    body: JSON.stringify(withReason({ kind: "param", flagKey: param.key, value, expectedValue: param.value }, reason, operator)),
   });
 }
 
@@ -1948,9 +1948,9 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
     method: "POST", commandKey, body: JSON.stringify(withReason({}, reason, operator)),
   }).then(() => undefined),
   updateK1ClusterStatus: (clusterId, status, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ status, expectedVersion }, reason)) }).then(() => undefined),
-  updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
-  upsertK1Whitelist: (cidr, note, reason, expireText, commandKey) => apiRequest("/multi-account/whitelist", { method: "POST", commandKey, body: JSON.stringify(withReason({ cidr, note, expireText }, reason)) }).then(() => undefined),
-  disableK1Whitelist: (cidr, reason, commandKey) => apiRequest("/multi-account/whitelist", { method: "PATCH", commandKey, body: JSON.stringify(withReason({ cidr }, reason)) }).then(() => undefined),
+  updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey, operator) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason, operator)) }).then(() => undefined),
+  upsertK1Whitelist: (cidr, note, reason, expireText, commandKey, operator) => apiRequest("/multi-account/whitelist", { method: "POST", commandKey, body: JSON.stringify(withReason({ cidr, note, expireText }, reason, operator)) }).then(() => undefined),
+  disableK1Whitelist: (cidr, reason, commandKey, operator) => apiRequest("/multi-account/whitelist", { method: "PATCH", commandKey, body: JSON.stringify(withReason({ cidr }, reason, operator)) }).then(() => undefined),
   updateK2Param: async (key, value, expectedVersion, reason, commandKey) => {
     if (!commandKey) validateK2ParamWrite(key, value);
     await apiRequest(`/arbitrage/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) });

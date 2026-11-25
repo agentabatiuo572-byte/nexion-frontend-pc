@@ -10,7 +10,7 @@ import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/compon
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
 import { businessStamp, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { OPEN_RESULT_LABELS } from "../recovery-panel";
-import { DIRECT_RECOVERY_INTRO } from "../direct-recovery-copy";
+import { RECEIPT_RECOVERY_INTRO } from "../direct-recovery-copy";
 
 export type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
   kind: string;
@@ -263,8 +263,8 @@ export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
   const title = [rows.length - submitted - open > 0 && `${rows.length - submitted - open} 项操作结果未知`, open > 0 && `${open} 项操作还没结案`, submitted > 0 && `${submitted} 张申请已提交，状态未查到`].filter(Boolean).join(" · ");
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<>
-      <p>{DIRECT_RECOVERY_INTRO}</p>
-      <p>保留上限的申请过期后，仍可查询原结果。查不到审批单时，继续保留原记录和对象锁。</p>
+      <p>{RECEIPT_RECOVERY_INTRO}</p>
+      <p>保留上限的申请过期后只能查询；查不到审批单时记录继续保留，这一档不能再改。</p>
     </>} /></>}>
       <ul className="i3-recovery" aria-label="结果未知的操作">
         {(all ? rows : rows.slice(0, 3)).map((row) => (
