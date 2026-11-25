@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { guardedFetch } from "@/lib/admin/error-messages";
 import { businessStamp } from "@/lib/admin/business-time";
@@ -9,15 +9,25 @@ import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { performanceEnum as enumeration, performanceInstant as instant, performanceInteger as integer, performanceList as array, performanceMalformed as invalid, performanceObject as object, performanceText as text, performanceWindow, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
-import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type ExportCheck, type ExportColumns, type ExportDownload, type ExportDraft, type ExportConditionDifference, type ExportSelection, type ExportVisibleReceipt, type ExportOriginal, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type SubmitLookup } from "./perf-view";
+import { PERFORMANCE_EXPORT_SUMMARY as SUMMARY, PERFORMANCE_EXPORT_DETAIL as DETAIL, PERFORMANCE_EXPORT_APPROVE as APPROVE } from "@/lib/admin/support-performance-contract";
+import { normalizeSessionRole } from "@/lib/admin/session-role";
+import { roleLabel } from "@/lib/nav/console-nav";
+import { EXPORT_TYPES, ExportOutcomeUnknownError, type DecisionLookup, type ExportCheck, type ExportColumns, type ExportDialogData, type ExportDownload, type ExportDraft, type ExportConditionDifference, type ExportSelection, type ExportVisibleReceipt, type ExportOriginal, type ExportPersona, type ExportQuery, type ExportSubmitted, type ExportTask, type ExportType, type PendingDecision, type PerfExportPorts, type SubmitLookup } from "./perf-view";
 
 const PATH = "/support-workbench/performance-exports";
-const SUMMARY = "service_performance_export_summary", DETAIL = "service_performance_export_detail", APPROVE = "service_performance_export_approve";
 const TYPES = { SUMMARY, CUSTOMER_DETAIL: DETAIL, TRANSACTION_DETAIL: DETAIL } as const;
 const GRAIN = { SUMMARY: "一位客服在一个组一个月一行", CUSTOMER_DETAIL: "一位客户在一位客服名下一个月一行", TRANSACTION_DETAIL: "一笔入金、提现或参考交易一行" };
-/** 申请人、审批人：后端给姓名之前不显示内部账号编号。 */
-/** 后端还没给发起人、审批人的姓名（只给账号编号）：先写账号编号，审批人能到「运营账号与权限」核对是谁（OP-69）。 */
 const namePending = (adminId: string) => `账号 ${adminId}（姓名待补）`;
+const optionalName = (value: unknown) => typeof value === "string" ? value.trim() : "";
+
+function requesterRoleLabel(value: unknown) {
+  const raw = optionalName(value);
+  if (!raw) return "";
+  const alias = { 超管: "superadmin", 配置管理员: "config", 内容: "content", 增长: "growth", super: "superadmin" } as Record<string, string>;
+  const code = normalizeSessionRole(alias[raw] ?? raw);
+  const label = roleLabel(code);
+  return label === code ? raw : label;
+}
 const COVERAGE_TEXT: Record<string, string> = { COMPLETE: "完整", PARTIAL: "部分数据还在核对", UNKNOWN: "暂时无法确认是否完整", FAILED: "核对没完成" };
 const STALE_BLOCKED = "这一版数据更新延迟，暂时不能导出。关掉这个框，在页面上刷新到最新一版后再导出。";
 const SCOPES = ["SELF", "MANAGED_GROUPS", "ALL"] as const;
@@ -28,10 +38,12 @@ type View = ExportPersona["views"][number];
 type Operator = { id: string; epoch: number; name: string; authorities: readonly string[] };
 type Selection = ExportSelection;
 type Scope = Selection["scope"];
+type ScopeChoice = { scope: Scope; label: string; types: ExportType[] };
 type SubmitBody = Selection & { previewVersion: string; reason: string };
 type DecisionBody = { expectedVersion: number; reason: string; decision?: Exclude<Action, "WITHDRAW"> };
 type SavedExport = PendingMutationRecord & ({ action: "SUBMIT"; body: SubmitBody; selection: ExportQuery; acceptedRequestId?: string }
   | { action: Action; taskId: string; body: DecisionBody });
+type SavedSubmit = Extract<SavedExport, { action: "SUBMIT" }>;
 const store = createPendingMutationStore<SavedExport>({
   storageKey: "nexion-support-performance-commands",
   retainExpiredRecords: true,
@@ -73,12 +85,16 @@ const id = (value: unknown) => {
   const key = typeof value === "number" ? String(integer(value)) : text(value);
   return /^[1-9]\d*$/.test(key) ? key : invalid("export.id");
 };
-const read = <T>(path: string, parse: (value: unknown) => T, signal?: AbortSignal) => supportRequest(`${PATH}${path}`, parse, { signal });
-const post = <T>(path: string, body: object | undefined, parse: (value: unknown) => T, key?: string) => supportRequest(`${PATH}${path}`, parse, {
-  method: "POST", body: body === undefined ? undefined : JSON.stringify(body), preserveUnknownOutcome: key !== undefined,
-  headers: key === undefined ? undefined : { "Idempotency-Key": key },
+/** 导出的读取有时限：一处一直不回，按读取失败处理，不挡住别处已经读到的内容。 */
+const READ_LIMIT_MS = 30_000;
+const read = <T>(path: string, parse: (value: unknown) => T, signal?: AbortSignal) => supportRequest(`${PATH}${path}`, parse, {
+  signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(READ_LIMIT_MS)]) : AbortSignal.timeout(READ_LIMIT_MS),
 });
-const receipt = (path: string, key: string) => supportRequest(`${PATH}${path}`, object, { headers: { "Idempotency-Key": key } });
+const post = <T>(path: string, body: object | undefined, parse: (value: unknown) => T, key?: string, signal?: AbortSignal) => supportRequest(`${PATH}${path}`, parse, {
+  method: "POST", body: body === undefined ? undefined : JSON.stringify(body), preserveUnknownOutcome: key !== undefined,
+  headers: key === undefined ? undefined : { "Idempotency-Key": key }, signal,
+});
+const receipt = (path: string, key: string) => supportRequest(`${PATH}${path}`, object, { headers: { "Idempotency-Key": key }, signal: AbortSignal.timeout(READ_LIMIT_MS) });
 
 function columns(value: unknown, type: ExportType): ExportColumns {
   const labels = value == null ? [] : array(value, text);
@@ -117,6 +133,62 @@ function parseOptions(value: unknown) {
   return { months, scopes, minReasonChars: integer(root.minReasonChars), maxReasonChars: integer(root.maxReasonChars) };
 }
 type Options = ReturnType<typeof parseOptions>;
+
+function visibleOriginalScope(options: Options, selection: Selection, authorities: readonly string[]) {
+  const { scope, types } = selection;
+  return options.scopes.find(current => current.kind === scope.kind && current.blocked === null
+    && types.every(type => current.allowed.includes(type) && authorities.includes(TYPES[type]))
+    && (scope.kind !== "MANAGED_GROUPS" || !!scope.groupIds?.length
+      && scope.groupIds.every(groupId => current.groups.some(group => group.id === groupId))));
+}
+
+function originalScopeLabel(options: Options, selection: Selection, authorities: readonly string[]) {
+  const scope = visibleOriginalScope(options, selection, authorities);
+  if (!scope) return undefined;
+  if (scope.kind !== "MANAGED_GROUPS") return scopeLabels[scope.kind];
+  const groupIds = selection.scope.groupIds ?? [];
+  if (groupIds.length > 1 && groupIds.length === scope.groups.length) return "全部负责组";
+  return scope.groups.filter(group => groupIds.includes(group.id)).map(group => group.name).join("、");
+}
+
+function exportChoices(options: Options, authorities: readonly string[]) {
+  const choices = new Map<string, ScopeChoice>();
+  for (const scope of options.scopes) {
+    const types = scope.allowed.filter(type => authorities.includes(TYPES[type]));
+    if (scope.blocked || !types.length) continue;
+    if (scope.kind === "MANAGED_GROUPS") {
+      if (scope.groups.length > 1) choices.set("MANAGED_GROUPS", { scope: { kind: scope.kind, groupIds: scope.groups.map(group => group.id) }, label: "全部负责组", types });
+      for (const group of scope.groups) choices.set(`GROUP:${group.id}`, { scope: { kind: scope.kind, groupIds: [group.id] }, label: group.name, types });
+    } else choices.set(scope.kind, { scope: { kind: scope.kind }, label: scopeLabels[scope.kind], types });
+  }
+  return choices;
+}
+
+function exportDialogCatalog(options: Options, choices: Map<string, ScopeChoice>, name: string) {
+  return {
+    months: options.months,
+    since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "",
+    scopes: Array.from(choices, ([value, { label, types }]) => ({ value, label, types })),
+    downloader: name,
+    catalogState: options.months.length ? "ready" as const : "no-months" as const,
+    minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
+  };
+}
+
+function originalDialog(options: Options, original: SavedSubmit, operator: Operator,
+  choices = exportChoices(options, operator.authorities)): ExportDialogData {
+  const catalog = exportDialogCatalog(options, choices, operator.name);
+  const label = originalScopeLabel(options, original.body, operator.authorities);
+  if (label === undefined) return { ...catalog, month: "", scope: "", asOf: "—", items: [], selected: [], originalHidden: true };
+  const scope = original.selection.scope;
+  const { month, types } = original.body;
+  const originalMonth = { value: month, label: month };
+  return {
+    ...catalog, month, scope, asOf: "—", items: uncheckedItems(types), selected: types,
+    months: catalog.months.some(option => option.value === month) ? catalog.months : [originalMonth, ...catalog.months],
+    scopes: catalog.scopes.map(choice => choice.value === scope ? { ...choice, label } : choice),
+  };
+}
 
 function parsePreview(value: unknown) {
   const row = object(value);
@@ -164,7 +236,8 @@ function taskParser(operator: Operator) {
     const row = object(value);
     const type = enumeration(row.type, EXPORT_TYPES);
     const status = enumeration(row.status, STATES);
-    const mine = id(row.requesterId) === operator.id;
+    const requesterId = id(row.requesterId);
+    const mine = requesterId === operator.id;
     const reasons = array(row.reasonCodes, text);
     const window = row.window === null ? null : performanceWindow(row.window);
     const capabilities = object(row.decisionCapabilities);
@@ -174,18 +247,25 @@ function taskParser(operator: Operator) {
     const reason = nullableText(approve.reasonCode);
     const approvalTime = row.approvedAt === null ? undefined : instant(row.approvedAt);
     const scopeLost = row.scope === null;
+    const requesterName = scopeLost ? "" : optionalName(row.requesterName);
+    const requesterRole = requesterName ? requesterRoleLabel(row.requesterRole) : "";
+    const requester = requesterName ? [requesterName, requesterRole].filter(Boolean).join(" · ")
+      : mine ? operator.name : namePending(requesterId);
+    const reviewerId = row.reviewerId == null ? undefined : id(row.reviewerId);
+    const reviewerName = scopeLost ? "" : optionalName(row.reviewerName);
+    const decidedBy = reviewerName || (reviewerId ? reviewerId === operator.id ? operator.name : namePending(reviewerId) : undefined);
     const failure = status !== "FAILED" ? undefined
       : scopeLost ? "SCOPE_HIDDEN"
       : reasons.some(reason => reason === "EXPORT_SCOPE_CHANGED" || reason === "EXPORT_APPLICANT_INELIGIBLE") ? "SCOPE_LOST_BEFORE_GENERATE" : "GENERATE_FAILED";
     return {
       taskId: id(row.taskId), version: integer(row.version), type, mine,
-      requester: mine ? operator.name : namePending(String(id(row.requesterId))), requesterRole: "",
+      requester, hasRequesterName: !!requesterName,
       scope: row.scope === null ? null : scopeTitle(row.scope), month: window?.month ?? null, asOf: window?.asOf ?? null,
       rows: nullableNumber(row.rowCount), columns: columns(row.columns, type),
       coverage: row.coverage == null ? null : COVERAGE_TEXT[String(object(row.coverage).status)] ?? null,
       requestReason: row.requestReason == null ? "" : text(row.requestReason), requestedAt: instant(row.requestedAt),
       state: status,
-      decidedBy: row.reviewerId === null ? undefined : id(row.reviewerId) === operator.id ? operator.name : namePending(String(id(row.reviewerId))),
+      decidedBy,
       decidedAt: approvalTime ? businessStamp(Date.parse(approvalTime)) : undefined,
       decisionReason: row.decisionReason == null ? undefined : text(row.decisionReason), failure,
       canDownload: bool(row.canDownload) && mine && operator.authorities.includes(TYPES[type]),
@@ -271,59 +351,116 @@ function canRecover(record: SavedExport, authorities: readonly string[]) {
     : authorities.includes(record.action === "WITHDRAW" ? DETAIL : APPROVE);
 }
 
-export function usePerformanceExportPorts(): PerfExportPorts | null | undefined {
+export const NO_EXPORT_GROUP_REASON = "没有负责的组，暂时不能导出";
+
+function exportAvailability(options: Options | null | undefined) {
+  return {
+    canExport: options === undefined || options?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) === true,
+    exportBlocked: options?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !options.scopes.some(scope => scope.blocked === null)
+      ? NO_EXPORT_GROUP_REASON : undefined,
+  };
+}
+
+const readExportView = (view: View, signal: AbortSignal) => read(`?view=${view}&pageNum=1&pageSize=1`, value => {
+  const row = object(value);
+  array(row.records, object);
+  return integer(row.total);
+}, signal);
+
+function keepExportView(result: PromiseSettledResult<number | null>) {
+  if (result.status === "fulfilled") return result.value !== null;
+  const status = result.reason instanceof SupportClientError ? apiStatus(result.reason) : undefined;
+  return !isExportPermissionDenied(result.reason) && (status === undefined || status === 408 || status >= 500);
+}
+
+export function usePerformanceExportPorts(scopeRevision = 0, recordsRefresh = 0): PerfExportPorts | null | undefined {
   const session = useAdminAuth(state => state.session), epoch = useAdminAuth(state => state.authEpoch);
   const active = useAdminAuth(state => state.isAuthenticated && !state.logoutPending && !state.logoutUnknown);
-  const [access, setAccess] = useState<{ key: string; options: Options | null; views: View[] } | null>(null);
+  const [access, setAccess] = useState<{ key: string; options: Options | null | undefined; views: View[]; verifiedViews: View[]; mineTotal?: number } | null>(null);
   const [revision, setRevision] = useState(0);
-  const key = `${session?.adminId}:${epoch}:${session?.authorities.join(",")}`;
+  const key = `${session?.adminId}:${epoch}:${session?.authorities.join(",")}:${scopeRevision}:${revision}`;
   const authorized = active && !!session && !session.passwordChangeRequired
     && session.authorities.some(code => code === "service_m1_read" || code === "service_m3_read");
   const canRequest = !!session && (session.authorities.includes(SUMMARY) || session.authorities.includes(DETAIL));
   const canReview = !!session?.authorities.includes(APPROVE);
+  const eligibleViews = useMemo<View[]>(() => [
+    ...(canRequest ? ["MINE" as const] : []), ...(canReview ? ["APPROVALS" as const] : []),
+  ], [canRequest, canReview]);
   const name = session?.operator || session?.username || "";
   useEffect(() => {
     const controller = new AbortController();
     if (!authorized || !session || !canRequest && !canReview) return;
     const signal = controller.signal;
-    const available = (view: View) => read(`?view=${view}&pageNum=1&pageSize=1`, value => { array(object(value).records, object); return view; }, signal);
     void Promise.allSettled([
-      canRequest ? read("/options", parseOptions, signal) : Promise.resolve(null),
-      canRequest ? available("MINE") : Promise.resolve(null),
-      canReview ? available("APPROVALS") : Promise.resolve(null),
+      // 选项只决定能不能发起导出：等久了就按没读到处理，不挡住已经读到的「我的申请」「待我审批」。
+      canRequest ? read("/options", parseOptions, AbortSignal.any([signal, AbortSignal.timeout(10_000)])) : Promise.resolve(null),
+      canRequest ? readExportView("MINE", signal) : Promise.resolve(null),
+      canReview ? readExportView("APPROVALS", signal) : Promise.resolve(null),
     ] as const).then(([options, mine, approvals]) => {
       if (signal.aborted) return;
       const views: View[] = [];
-      const keep = (result: PromiseSettledResult<View | null>, lane: View, wanted: boolean) => {
-        if (result.status === "fulfilled") return result.value === lane;
-        const status = result.reason instanceof SupportClientError ? apiStatus(result.reason) : undefined;
-        return wanted && !isExportPermissionDenied(result.reason)
-          && (status === undefined || status === 408 || status >= 500);
-      };
-      if (keep(mine, "MINE", canRequest)) views.push("MINE");
-      if (keep(approvals, "APPROVALS", canReview)) views.push("APPROVALS");
-      setAccess({ key, options: options.status === "fulfilled" ? options.value : null, views });
+      if (canRequest && keepExportView(mine)) views.push("MINE");
+      if (canReview && keepExportView(approvals)) views.push("APPROVALS");
+      const mineTotal = mine.status === "fulfilled" ? mine.value ?? undefined : undefined;
+      const verifiedViews = views.filter(view => view === "MINE" ? mineTotal !== undefined : approvals.status === "fulfilled" && approvals.value !== null);
+      const exportOptions = options.status === "fulfilled" ? options.value : isExportPermissionDenied(options.reason) ? null : undefined;
+      setAccess({ key, options: exportOptions, views, verifiedViews, mineTotal });
     });
     return () => controller.abort();
-  }, [authorized, canRequest, canReview, key, revision]);
-  return useMemo(() => {
-    if (!authorized || !session || !canRequest && !canReview) return null;
-    if (access?.key !== key) return undefined;
-    if (!access.options && !access.views.length) return null;
-    return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, access.options, access.views, () => {
-      setAccess(null);
-      setRevision(value => value + 1);
+  }, [authorized, canRequest, canReview, key]);
+  const retryUnverifiedViews = useEffectEvent(async (signal: AbortSignal) => {
+    if (access?.key !== key) return;
+    const pending = access.views.filter(view => !access.verifiedViews.includes(view));
+    if (!pending.length) return;
+    const results = await Promise.allSettled(pending.map(view => readExportView(view, signal)));
+    if (signal.aborted) return;
+    const confirmed = pending.filter((_, index) => results[index].status === "fulfilled");
+    const denied = pending.filter((_, index) => !keepExportView(results[index]));
+    if (!confirmed.length && !denied.length) return;
+    const mine = results[pending.indexOf("MINE")];
+    setAccess(current => {
+      if (current?.key !== key) return current;
+      const views = current.views.filter(view => !denied.includes(view));
+      return {
+        ...current, views,
+        verifiedViews: views.filter(view => current.verifiedViews.includes(view) || confirmed.includes(view)),
+        mineTotal: mine?.status === "fulfilled" ? mine.value : current.mineTotal,
+      };
     });
-  }, [authorized, canRequest, canReview, epoch, key, name, access]);
+  });
+  useEffect(() => {
+    if (!recordsRefresh) return;
+    const controller = new AbortController();
+    void retryUnverifiedViews(controller.signal);
+    return () => controller.abort();
+  }, [key, recordsRefresh]);
+  const accessReady = access?.key === key;
+  const operations = useMemo(() => {
+    if (!authorized || !session || !accessReady) return;
+    return exportPorts({ id: String(session.adminId), epoch, name, authorities: session.authorities }, eligibleViews,
+      () => { setAccess(null); setRevision(value => value + 1); },
+      options => setAccess(current => current?.key === key ? { ...current, options } : current),
+      total => setAccess(current => current?.key === key && current.mineTotal !== total ? { ...current, mineTotal: total } : current));
+  }, [authorized, epoch, key, name, eligibleViews, accessReady]);
+  return useMemo(() => {
+    if (!authorized || !canRequest && !canReview) return null;
+    if (!operations || !access) return undefined;
+    const { views } = access;
+    if (access.options === null && !views.length) return null;
+    return { ...operations, persona: { name, views, verifiedViews: access.verifiedViews, mineTotal: access.mineTotal, ...exportAvailability(access.options) } };
+  }, [authorized, canRequest, canReview, operations, access, name]);
 }
 
-function exportPorts(operator: Operator, initialOptions: Options | null, views: View[], invalidateAccess: () => void): PerfExportPorts {
-  let choices = new Map<string, { scope: Scope; label: string; types: ExportType[] }>();
+function exportPorts(operator: Operator, views: View[], invalidateAccess: () => void, updateOptions: (options: Options) => void,
+  updateMineTotal: (total: number) => void): Omit<PerfExportPorts, "persona"> {
+  let choices = new Map<string, ScopeChoice>();
   let latest: { id: string; payload: Selection; preview: Preview } | undefined;
   let previewSequence = 0;
   let months: string[] = [];
   let restoration: { kind: "conditions-changed"; differences: ExportConditionDifference[] } | undefined;
   let lastVisible: (ExportVisibleReceipt & { operationId: string }) | undefined;
+  const readOriginalScopeLabel = async (selection: Selection, signal?: AbortSignal) =>
+    originalScopeLabel(await read("/options", parseOptions, signal), selection, operator.authorities);
   // A persisted operation preserves intent, never proof of this session's object access.
   const visibleDecisions = new Set<string>();
   const setTaskVisible = (taskId: string, visible: boolean) => {
@@ -340,8 +477,8 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     const rows = array(row.items, value => {
       const task = parseTask(value);
       if (!task.mine) invalid("export.batchOwner");
-      const { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure } = task;
-      return { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure };
+      const { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure, scopeLost } = task;
+      return { type, taskId, state, rows, canDownload, mine, decidedBy, decidedAt, failure, scopeLost };
     });
     return { requestId, rows };
   };
@@ -363,9 +500,10 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     const selection: Selection = { month: query.month, scope: choice.scope, types: EXPORT_TYPES.filter(type => query.types.includes(type)) };
     const catalog = includeOthers && selection.types.length !== choice.types.length
       ? { ...selection, types: choice.types } : selection;
-    const display = await post("/preview", catalog, parsePreview);
+    // 预检只读，和其他读取一样有时限；提交、批准、撤回这些写入不加。
+    const display = await post("/preview", catalog, parsePreview, undefined, AbortSignal.timeout(READ_LIMIT_MS));
     if (display.items.some(item => item.reasons.includes("PERMISSION_DENIED"))) throw new Error("ADMIN_PERMISSION_DENIED");
-    const accepted = selection.types.length && catalog !== selection ? await post("/preview", selection, parsePreview) : display;
+    const accepted = selection.types.length && catalog !== selection ? await post("/preview", selection, parsePreview, undefined, AbortSignal.timeout(READ_LIMIT_MS)) : display;
     if (accepted.items.some(item => item.reasons.includes("PERMISSION_DENIED"))) throw new Error("ADMIN_PERMISSION_DENIED");
     for (const [request, response] of [[catalog, display], [selection.types.length ? selection : catalog, accepted]] as const) {
       if (response.scope.kind !== request.scope.kind || JSON.stringify(array(response.scope.groupIds, id).sort()) !== JSON.stringify([...(request.scope.groupIds ?? [])].sort())
@@ -429,30 +567,20 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
     return deliverDecision(record);
   };
   return {
-    persona: {
-      name: operator.name, views, canExport: initialOptions?.scopes.some(scope => scope.blocked === null && scope.allowed.length > 0) ?? false,
-      exportBlocked: initialOptions?.scopes.some(scope => scope.blocked === "NO_MANAGED_GROUP") && !initialOptions.scopes.some(scope => scope.blocked === null) ? "没有负责组" : undefined,
-    },
     invalidateAccess,
     async open(initial) {
       latest = undefined;
       const options = await read("/options", parseOptions);
-      choices = new Map();
+      updateOptions(options);
+      choices = exportChoices(options, operator.authorities);
       months = options.months.map(month => month.value);
       restoration = undefined;
-      for (const scope of options.scopes) {
-        const types = scope.allowed.filter(type => operator.authorities.includes(TYPES[type]));
-        if (scope.blocked || !types.length) continue;
-        if (scope.kind === "MANAGED_GROUPS") {
-          if (scope.groups.length > 1) choices.set("MANAGED_GROUPS", { scope: { kind: scope.kind, groupIds: scope.groups.map(group => group.id) }, label: "全部负责组", types });
-          for (const group of scope.groups) choices.set(`GROUP:${group.id}`, { scope: { kind: scope.kind, groupIds: [group.id] }, label: group.name, types });
-        } else choices.set(scope.kind, { scope: { kind: scope.kind }, label: scopeLabels[scope.kind], types });
-      }
       const original = mySubmit();
-      const draft = draftsFor(operator)?.submit;
-      const saved = original?.action === "SUBMIT" ? original.selection : draft?.query;
+      if (original?.action === "SUBMIT") return originalDialog(options, original, operator, choices);
+      const retained = draftsFor(operator)?.submit;
+      const draft = retained && visibleOriginalScope(options, retained.selection, operator.authorities) ? retained : undefined;
       const differences: ExportConditionDifference[] = [];
-      if (!original && draft) {
+      if (draft) {
         const approved = choices.get(draft.query.scope);
         const originalScope = draft.selection.scope;
         if (!months.includes(draft.selection.month)) differences.push({ field: "month", original: draft.selection.month });
@@ -471,20 +599,18 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       }
       const defaultMonth = options.months.find(month => month.value === initial?.month)?.value ?? months[0] ?? "";
       const defaultScope = initial?.scope && choices.has(initial.scope) ? initial.scope : choices.keys().next().value ?? "";
-      const month = differences.some(diff => diff.field === "month") ? "" : draft && !original ? draft.selection.month : saved?.month ?? defaultMonth;
-      const scope = differences.some(diff => diff.field === "scope") ? "" : saved?.scope ?? defaultScope;
+      const month = differences.some(diff => diff.field === "month") ? "" : draft?.selection.month ?? defaultMonth;
+      const scope = differences.some(diff => diff.field === "scope") ? "" : draft?.query.scope ?? defaultScope;
       const types = choices.get(scope)?.types ?? [];
       const selected = differences.some(diff => diff.field === "types") ? []
-        : original?.action === "SUBMIT" ? original.body.types : draft?.selection.types
-          ?? (types.includes("SUMMARY") ? ["SUMMARY" as const] : []);
-      const preview = !original && !restoration && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
+        : draft?.selection.types ?? (types.includes("SUMMARY") ? ["SUMMARY" as const] : []);
+      const preview = !restoration && month && scope && types.length ? await requestPreview({ month, scope, types: selected }, true) : undefined;
       return {
-        months: options.months, month, since: options.months.length ? `自 ${businessStamp(Date.parse(options.months.at(-1)!.from))} 起` : "", scopes: Array.from(choices, ([value, item]) => ({ value, label: item.label, types: item.types })), scope,
-        asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—", downloader: operator.name, items: preview?.items ?? (restoration ? uncheckedItems(types) : []),
-        selected: saved ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
-        blocked: previewBlocked(preview), restoration,
-        catalogState: months.length ? "ready" : "no-months",
-        minReasonChars: options.minReasonChars, maxReasonChars: options.maxReasonChars,
+        ...exportDialogCatalog(options, choices, operator.name), month, scope,
+        asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—",
+        items: preview?.items ?? uncheckedItems(restoration ? types : []),
+        selected: draft ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
+        blocked: previewBlocked(preview), restoration, recoveredReason: draft?.reason,
       };
     },
     async check(query, edited) {
@@ -514,7 +640,9 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       const original = mySubmit();
       return original?.action === "SUBMIT" ? { ...originalFields(original), ...restoredDraft(original), acceptedRequestId: original.acceptedRequestId } : undefined;
     },
-    recoveredSubmit: () => draftsFor(operator)?.submit,
+    async canShowOriginalSubmit(selection, signal) {
+      return (await readOriginalScopeLabel(selection, signal)) !== undefined;
+    },
     recoveredDecision: (taskId, action) => draftsFor(operator)?.decisions.get(decisionDraftKey(taskId, action)),
     subscribePending(update) {
       pendingListeners.add(update);
@@ -524,39 +652,53 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
       const original = mySubmit();
       if (original?.action !== "SUBMIT") return { kind: "missing" };
       const previous = lastVisible?.operationId === original.commandKey ? lastVisible : undefined;
+      const verifyOriginal = async () => {
+        try {
+          // 回执已经到手，核对原范围只等一小会儿：没等到就按没核实处理（原填写内容继续遮着），结果和下载照常给。
+          const data = originalDialog(await read("/options", parseOptions, AbortSignal.timeout(8_000)), original, operator);
+          return data.originalHidden ? undefined : data;
+        } catch (error) {
+          if (isSupportSessionExpired(error)) throw error;
+          return undefined;
+        }
+      };
       try {
         const found = await receipt("/command-receipt", original.commandKey);
         if (found.status === "SUCCEEDED") {
           const { requestId, rows } = parseBatch(found.batch);
           const visibleTypes = new Set(rows.map(row => row.type));
           if (visibleTypes.size !== rows.length || rows.some(row => !original.body.types.includes(row.type))) {
-            return { kind: "pending", expired: isRetryExpired(original), previous };
+            return { kind: "pending", expired: isRetryExpired(original) };
           }
+          const originalView = rows.length > 0 && rows.every(row => !row.scopeLost) ? await verifyOriginal() : undefined;
           if (visibleTypes.size < original.body.types.length) {
             if (original.acceptedRequestId !== requestId) updateOriginal({ ...original, acceptedRequestId: requestId });
             const checkedAt = Date.now();
             lastVisible = { operationId: original.commandKey, rows, checkedAt };
-            return { kind: "partial", requestId, rows, checkedAt };
+            return { kind: "partial", requestId, rows, checkedAt, originalView };
           }
           forget(original);
-          return { kind: "matched", rows };
+          return { kind: "matched", rows, originalView };
         }
         if (found.status === "FAILED" || found.status === "CONFIRMED_NOT_EXECUTED") {
           const draft = restoredDraft(original);
           const drafts = draftsFor(operator);
           if (drafts) drafts.submit = draft;
+          const originalView = await verifyOriginal();
           forget(original);
-          return { kind: "cleared", draft };
+          return { kind: "cleared", originalView };
         }
         enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
-        return { kind: "pending", expired: isRetryExpired(original), previous };
+        const originalView = await verifyOriginal();
+        return { kind: "pending", expired: isRetryExpired(original), originalView,
+          previous: originalView ? previous : undefined };
       } catch (error) {
         if (isSupportSessionExpired(error)) throw error;
         if (isExportPermissionDenied(error)) {
           lastVisible = undefined;
           throw error;
         }
-        return { kind: "check-failed", previous };
+        return { kind: "check-failed" };
       }
     },
     tasks(view, page, pageSize, signal) {
@@ -565,7 +707,10 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         const row = object(value);
         if (integer(row.pageNum) !== page || integer(row.pageSize) !== pageSize) invalid("export.taskPage");
         return { rows: array(row.records, parseTask), total: integer(row.total) };
-      }, signal).catch(error => {
+      }, signal).then(result => {
+        if (view === "MINE" && !signal?.aborted) updateMineTotal(result.total);
+        return result;
+      }).catch(error => {
         if (!signal?.aborted && accessDenied(error)) {
           for (const record of store.list()) {
             if (record.action !== "SUBMIT" && decisionLane(record) === view) setTaskVisible(record.taskId, false);
