@@ -1,12 +1,4 @@
 export const PERFORMANCE_VERSION = "NET_INFLOW_V1";
-export const PERFORMANCE_EXPORT_APPROVE = "service_performance_export_approve";
-export const PERFORMANCE_EXPORT_SUMMARY = "service_performance_export_summary";
-export const PERFORMANCE_EXPORT_DETAIL = "service_performance_export_detail";
-
-export function canReadPerformanceExportApprovals(authorities: readonly string[]) {
-  return authorities.includes(PERFORMANCE_EXPORT_APPROVE)
-    && authorities.some(code => code === "service_m1_read" || code === "service_m3_read");
-}
 
 export function performanceMalformed(field: string): never {
   throw new Error(`SUPPORT_CONTRACT_MALFORMED:performance.${field}`);

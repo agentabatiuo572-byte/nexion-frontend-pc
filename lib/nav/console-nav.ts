@@ -26,7 +26,6 @@ import {
 } from "lucide-react";
 
 import { B0_BANK_REVIEW_PATH, b0Blocks, b0HasDailyWork } from "@/lib/admin/b0-access";
-import { canReadPerformanceExportApprovals } from "@/lib/admin/support-performance-contract";
 
 export type BuiltinAdminRole =
   | "superadmin"
@@ -459,8 +458,6 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
 
   if (effectiveCodes === undefined) return [];
   const supportScopeUnknown = snapshot.role === "support" && !snapshot.supportReadModes?.length;
-  const canReviewPerformanceExports = snapshot.supportReadModes?.length === 0
-    && canReadPerformanceExportApprovals(snapshot.authorities ?? []);
   // M-48: an advisor who can only read the knowledge base (M4) or service rules (M5) uses that content inside
   // the conversation; the read-only configuration pages only add menu noise. This narrows, never widens, access.
   // M5 also hosts managed agent profiles, whose writes use M1 authority rather than M5 authority.
@@ -499,8 +496,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   return CONSOLE_NAV.flatMap((domain, domainIndex) => {
     const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
     const l2 = domain.l2
-      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && !readOnlyConfig.has(item.id)
-        && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id) || item.id === "M1" && canReviewPerformanceExports))
+      .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && !readOnlyConfig.has(item.id) && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id)))
       .flatMap((item) => {
         const node = findNode(item.id.toUpperCase(), (candidate) =>
           candidate.routePath === item.path

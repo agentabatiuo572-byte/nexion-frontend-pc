@@ -22,8 +22,8 @@ function seenKey(adminId: number | undefined, pageId: string) {
   return `nexion-admin-page-guide-seen-v1:${adminId ?? "anonymous"}:${pageId}`;
 }
 
-export function PageGuide({ pageId, guideId = pageId, extra }: { pageId: string; guideId?: string; extra?: ReactNode }) {
-  const guide = getPageGuide(guideId);
+export function PageGuide({ pageId, extra }: { pageId: string; extra?: ReactNode }) {
+  const guide = getPageGuide(pageId);
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const [open, setOpen] = useState(false);
   const [hint, setHint] = useState(false);
@@ -72,7 +72,7 @@ export function PageGuide({ pageId, guideId = pageId, extra }: { pageId: string;
           </section>
         )}
         {extra}
-        {more && <Fold key={guideId} inset title="技术信息" summary={`${more.length} 条`}><ul className="rd-guide-more">{more.map((line) => <li key={line}><KeepText text={line} phrases={guide.keep ?? []} /></li>)}</ul></Fold>}
+        {more && <Fold key={pageId} inset title="技术信息" summary={`${more.length} 条`}><ul className="rd-guide-more">{more.map((line) => <li key={line}><KeepText text={line} phrases={guide.keep ?? []} /></li>)}</ul></Fold>}
       </Drawer>
     </>
   );
