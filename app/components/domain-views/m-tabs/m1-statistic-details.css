@@ -35,3 +35,4 @@
 .m1-stat-pager { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
 .m1-stat-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;width:100%}
 .m1-stat-detail p{overflow-wrap:normal;text-wrap:pretty}
+.m1-stat-count{color:var(--rd-text-3);font-weight:var(--rd-weight-regular)}  /* 条数、人数跟在金额后弱一档 */

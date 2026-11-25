@@ -24,7 +24,8 @@ const beijingTime = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "
 /** TX-26 full time in Beijing time, 2026-11-05 14:30:00; callers state the zone once. */
 export const beijing = (time: string) => { const parts = Object.fromEntries(beijingTime.formatToParts(new Date(time)).map(part => [part.type, part.value])); return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`; };
 const changed = () => new SupportClientError(409, undefined, "SUPPORT_STATISTIC_CHANGED");
-const summaryCounts = (total: number, visible: number, restricted: number, unit: string) => "统计 " + total + unit + " · 你能看到 " + visible + unit + " · 看不到 " + restricted + unit;
+/** 统计、能看到、看不到各是一条事实，分三行写，不拼进一个值（VS-109）。 */
+const countFacts = (total: number, visible: number, restricted: number, unit: string) => [{ k: "统计总数", v: total + unit }, { k: "你能看到", v: visible + unit }, { k: "看不到的", v: restricted ? restricted + unit : "没有" }];
 
 async function maintenancePage(source: Extract<StatisticSource, { kind: "maintenance" }>, page: number, version: string | undefined, cache: { current: SuccessList | null }, signal: AbortSignal): Promise<Result> {
   const { overview, choice: { metric, day } } = source;
@@ -60,11 +61,11 @@ async function maintenancePage(source: Extract<StatisticSource, { kind: "mainten
       cache.current = { version: first.queryVersion, restricted, rows: Array.from(customers, ([customer, row]) => [beijing(row.lastAt), customer, String(row.cycles)]) };
     }
     const list = cache.current;
-    return { headings: ["最近成功时间（北京时间）", "客户编号", "成功周期数"], rows: list.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), total: list.rows.length, next: page * PAGE_SIZE < list.rows.length, summary: summaryCounts(performance.successfulCustomerCount, list.rows.length, list.restricted, " 人"), note: period, version: first.queryVersion };
+    return { headings: ["最近成功时间（北京时间）", "客户编号", "成功周期数"], rows: list.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), total: list.rows.length, next: page * PAGE_SIZE < list.rows.length, summary: "", facts: countFacts(performance.successfulCustomerCount, list.rows.length, list.restricted, " 人"), note: period, version: first.queryVersion };
   }
   return { headings: ["事件时间（北京时间）", "客户编号", "原客服编号", "关联记录编号"],
     rows: first.records.map(row => [beijing(row.eventAt), row.customerId, row.agentId, (metric === "EXECUTION" ? "执行 " + row.id + " · 周期 " + row.cycleId + " · 消息 " : "周期 " + row.id + " · 成功事件 ") + (row.sourceId ?? "未知") + " · 归属 " + row.assignmentId]), total: first.visibleCount, next: page * PAGE_SIZE < first.visibleCount,
-    summary: summaryCounts(first.total, first.visibleCount, first.restrictedCount, " 条"), note: period, version: first.queryVersion };
+    summary: "", facts: countFacts(first.total, first.visibleCount, first.restrictedCount, " 条"), note: period, version: first.queryVersion };
 }
 
 type Amount = { confirmed: string | null; observed: string | null };
@@ -132,8 +133,7 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     const headings = ["成功时间（北京时间）", "客户编号", "客户名称", "原归属", "金额 / " + unit];
     if ("measuredSummary" in list) {
       const { total, visible, restricted } = list.measuredSummary;
-      const subtotal = (part: typeof total) => [measuredText(part.amount, money), measuredText(part.count, value => value + " 条"),
-        measuredText(part.customers, value => value + " 位客户")].join(" · ");
+      const subtotal = (part: typeof total) => <>{measuredText(part.amount, money)}<span className="m1-stat-count">（{measuredText(part.count, value => value + " 条")}，{measuredText(part.customers, value => value + " 位客户")}）</span></>;
       return { headings, rows: [], total: null, next: false, summary: "首充历史还在同步",
         historyIncomplete: true, note: "首充历史还在同步，当前只能核对已确认的小计。",
         facts: [{ k: "统计总额", v: subtotal(total) }, { k: "核实情况", v: "首充历史还在同步" },
@@ -150,12 +150,12 @@ async function fundPage(source: Extract<StatisticSource, { kind: "fund" }>, page
     const owner = (row: (typeof list.records)[number]) => row.agentId == null && row.groupId == null ? "没有归属"
       : [row.agentId == null ? null : row.agentDisplayName ?? "客服 " + row.agentId, groupName(row.groupId)].filter(Boolean).join(" · ");
     const facts = [
-      { k: "统计总额", v: <>{money(detail.totalAmount!)} · {detail.totalCount} 条 · {detail.customerCount} 位客户</> },
+      { k: "统计总额", v: <>{money(detail.totalAmount!)}<span className="m1-stat-count">（{detail.totalCount} 条，{detail.customerCount} 位客户）</span></> },
       { k: "核实情况", v: detail.status === "AVAILABLE" ? "全部已核实"
         : <>部分已核实{detail.observedAmount != null && <> · 含未核实的共 {money(detail.observedAmount)}</>}<Explain label="部分已核实是什么意思" content="有的资金记录还没核实完。统计总额只算已核实的，「含未核实的共」把还没核实的也算进去。" /></> },
-      { k: "你能看到", v: <>{money(detail.visibleAmount!)} · {detail.visibleCount} 条 · {detail.visibleCustomerCount} 位客户</> },
+      { k: "你能看到", v: <>{money(detail.visibleAmount!)}<span className="m1-stat-count">（{detail.visibleCount} 条，{detail.visibleCustomerCount} 位客户）</span></> },
       { k: "看不到的", v: detail.restrictedCount === 0 ? "没有"
-        : <>{money(detail.restrictedAmount!)} · {detail.restrictedCount} 条 · {detail.restrictedCustomerCount} 位客户<Explain label="看不到的是什么" content="这些客户不在你的查看范围里，金额计入统计总额，不列明细。" /></> },
+        : <>{money(detail.restrictedAmount!)}<span className="m1-stat-count">（{detail.restrictedCount} 条，{detail.restrictedCustomerCount} 位客户）</span><Explain label="看不到的是什么" content="这些客户不在你的查看范围里，金额计入统计总额，不列明细。" /></> },
     ];
     return { headings,
       rows: list.records.map(row => [beijing(row.succeededAt), row.customerNo ?? row.customerId, operatorNicknameText(row.nickname ?? "") || "未登记", owner(row), groupedAmount(row.amount)]),
@@ -217,8 +217,8 @@ export function M1StatisticDetails({ source, onClose, onInvalid }: { source: Sta
       {source.kind === "fund" && <p className="rd-note">{source.query.groupId != null ? group?.name ?? "组编号 " + source.query.groupId : "当前获准范围"}{source.query.agentId != null && " · 客服编号 " + source.query.agentId} · {nexGridBrandText(source.query.currency ?? "USDT")}{source.metric === "net" && source.query.from && source.query.to && " · 统计区间（北京时间）" + beijing(source.query.from) + " 至 " + beijing(source.query.to) + "，不含结束时刻。"}</p>}
       {!result && !error && <BlockState state="loading" title="正在加载明细…" />}
       {error === "read" && <BlockState state="error" title="明细加载失败" detail="这一块没加载出来，其他统计照常。" onRetry={() => setRetry(n => n + 1)} />}
-      {error === "historyIncomplete" && <Notice tone="progress" title="业绩历史还在同步" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重新读取</Button>}>同步完再看明细，不用处理。</Notice>}
-      {error === "unreconciled" && <Notice tone="warn" title="明细和已确认的金额或笔数对不上，先不显示" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重新读取</Button>}>一直这样请联系技术同事。</Notice>}
+      {error === "historyIncomplete" && <Notice tone="progress" title="业绩历史还在同步" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重试</Button>}>同步完再看明细，不用处理。</Notice>}
+      {error === "unreconciled" && <Notice tone="warn" title="明细和已确认的金额或笔数对不上，先不显示" action={<Button size="sm" onClick={() => setRetry(n => n + 1)}>重试</Button>}>一直这样请联系值班人员。</Notice>}
       {result && <><Facts>{result.facts ? result.facts.map(row => <Fact key={row.k} k={row.k}>{row.v}</Fact>) : <Fact k="核对摘要">{result.summary}</Fact>}</Facts><Fold title="统计口径" summary={result.version ? "和工作台是同一份统计" : "只能看这一页"}><p>{result.note}</p></Fold>{result.headings.length > 0 && <div className="m1-stat-table"><Table label={title + "明细"}><thead><Tr>{result.headings.map(header => <Th key={header} scope="col">{header}</Th>)}</Tr></thead><tbody>{!result.rows.length && <TableMessage columns={result.headings.length}>{empty}</TableMessage>}{result.rows.map((row, index) => <Tr key={index}>{row.map((cell, i) => <Td key={i} data-col={result.headings[i] === "客户编号" ? "code" : source.kind === "fund" && i === row.length - 1 ? "amount" : undefined}>{i === 3 && source.kind === "maintenance" ? <Fold inset title="关联记录" summary="查看完整编号"><span data-mono>{cell}</span></Fold> : <span title={cell} tabIndex={0}>{cell}</span>}</Td>)}</Tr>)}</tbody></Table></div>}{!result.rows.length && !result.headings.length && <BlockState state="empty" title={source.kind === "fund" ? `所选月份没有你能看到的${title}记录` : "没有你能看到的记录"} />}{result.tech && <Fold title="技术信息" summary="记录编号"><p data-mono>{result.tech}</p></Fold>}</>}
     </section>
   </Drawer>;

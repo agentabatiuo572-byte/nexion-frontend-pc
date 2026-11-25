@@ -55,7 +55,7 @@ export function PeriodPerfPanel({ perf, month, asOf, monthControl, onDetail, sta
           explain={<><p>成功充值或合格付费购机，含直付；每位客户只算第一次。</p><dl className="m1-perf-pop-rows"><div><dt>算</dt><dd>链上、越南银行卡充值到账；用余额或直接付款买设备，含试用转正</dd></div><div><dt>不算</dt><dd>赠送的设备、免费或零价设备、还在核对的付款</dd></div></dl></>} />
       </StatBand>
       {/* 一个视图只露一个主列表（DP-67）：入金、提现构成放进默认展开的折叠。 */}
-      <Fold title="入金和提现构成" summary={breakSummary(perf)} defaultOpen>
+      <Fold title="入金和提现构成" summary={breakSummary(perf)} defaultOpen={![perf.totals.inflow, perf.totals.withdrawal].every(value => value.state === "unavailable")}>
       <div className="m1-perf-break">
         <Panel plain headingLevel={3} title="入金构成" sub="4 个渠道" explain="四个渠道各自的净额，已含本期更正。退款退回余额不算；核实过的站外退款记成本期更正（负数）。">
           <Table label="入金构成" className="m1-perf-table"><thead><Tr><Th>渠道</Th><Th align="right">金额（USDT）</Th></Tr></thead><tbody>
@@ -117,12 +117,12 @@ export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal,
     <Fold title="统计口径" summary="和期间业绩是同一份统计">
       <p>列出这段时间里在你名下发生的每一笔，按发生时的归属算。买设备、奖励只作参考，不计入业绩。</p>
     </Fold>
-    {events.rows.length === 0 ? <BlockState state="empty" {...emptyEvents(events)} /> : <Table label="业绩额明细" className="m1-perf-events"><thead><Tr><Th>时间（北京时间）</Th><Th>客户</Th><Th>类别</Th><Th align="right">计入业绩（USDT）</Th></Tr></thead><tbody>
+    {events.rows.length === 0 ? <BlockState state="empty" {...emptyEvents(events)} /> : <Table label="业绩额明细" className="m1-perf-events"><thead><Tr><Th>时间（北京时间）</Th><Th>客户</Th><Th>类别</Th><Th align="right"><span className="m1-th-stack">计入业绩（USDT）<small>业务金额</small></span></Th></Tr></thead><tbody>
       {events.rows.map(row => <Tr key={row.id}>
         <Td><span className="sa-nowrap">{formatBusinessTimeCompact(row.at, "—")}</span></Td>
         <Td><Cell main={row.customer} sub={<span className="m-user-code">{row.customerNo}</span>} /></Td>
         <Td><Cell main={row.kind} sub={row.detail} /></Td>
-        <Td align="right"><Cell num main={row.delta === null ? "—" : amountDisplay(row.delta)} sub={`业务金额 ${row.business ?? "—"}`} /></Td>
+        <Td align="right"><Cell num main={row.delta === null ? "—" : amountDisplay(row.delta)} sub={row.business ?? "—"} /></Td>
       </Tr>)}
     </tbody></Table>}
   </Drawer>;

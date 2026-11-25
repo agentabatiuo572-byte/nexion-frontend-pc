@@ -791,7 +791,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const visible = authSession ? resolveVisibleDomains(authSession) : [];
   const leaderboardReachable = !!authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard");
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
-  // 主管和超管：页头次按钮是会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
+  // 主管和超管：页头次按钮是导出业绩、会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
+  // 「更换本人头像」是本人设置，主管兼客服放在「我的客户」顶部的本人一栏；没有「我的客户」的主管暂时留在页头（不丢入口）。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
   const canRequestExports = authSession?.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
   const exportDisabledReason = noScopedContent && canRequestExports ? NO_EXPORT_GROUP_REASON : exportsPorts?.persona.exportBlocked;
@@ -807,7 +808,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {!statisticsUnavailable && exportDisabledReason && <span className="rd-toolbar-note">{exportDisabledReason}</span>}
     {!statisticsUnavailable && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
-    {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
+    {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && !canMine && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
