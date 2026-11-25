@@ -39,7 +39,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   writeBlockedReason?: string;
   onWriteBusy?: (busy: boolean) => void;
   onState?: (state: PaymentSecurityState, pending: boolean) => void;
-  /** 点了失败卡的「重试」：页面可以让这一块所在的折叠组读到后也保持展开。 */
+  /** 点了失败卡的「重试」或块里的「刷新」：页面可以让这一块所在的折叠组读到后也保持展开（焦点不被收起藏掉）。 */
   onRetry?: () => void;
 }) {
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
@@ -111,7 +111,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
     <>
       <Fold inset title="支付安全" alert={state === "exception" || state === "failed" || showPending} alertTone={error ? "danger" : "warn"} summary={line}
         explain={<><p>支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>{record && <p>解除只处理本条支付密码异常，登录状态不受影响。</p>}</>}
-        actions={!denied && !error && <Button ref={refreshButton} size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
+        actions={!denied && !error && <Button ref={refreshButton} size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => { onRetry?.(); void load(); }}>刷新</Button>}>
         <div ref={box} className="rd-detail-block">
           {/* 重读在途按加载中画（不是红字失败），同一块不卸下，焦点留在「重试中…」（ST-30、ST-31，BUG-746）。 */}
           {error ? <BlockState retryKey="payment-security-block-87" state={loading ? "loading" : "error"} compact title={loading ? "正在重新加载支付安全…" : "支付安全加载失败"} detail={loading ? undefined : error} onRetry={() => { onRetry?.(); void load(); }} retrying={loading} /> : denied && <BlockState state="denied" compact title="无权限" />}
