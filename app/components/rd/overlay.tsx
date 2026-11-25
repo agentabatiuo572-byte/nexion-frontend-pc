@@ -314,7 +314,9 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           aria-describedby={undefined}
           onInput={(event) => {
             if (event.target instanceof Element && event.target.matches(SEARCH_INPUT)) return;
-            typed.current = true;
+            // 删空了就不算填过内容：Esc 和点空白照常关（OP-46「Esc 关闭空框」）。只读、禁用的框和勾选项不算。
+            typed.current = [...event.currentTarget.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")]
+              .some((field) => !field.matches(SEARCH_INPUT) && !field.readOnly && !field.disabled && field.type !== "checkbox" && field.type !== "radio" && field.value.trim() !== "");
             setEscHinted(false);
           }}
           onBlur={(event) => { focusTarget.current = event.relatedTarget instanceof HTMLElement ? event.relatedTarget : null; }}
