@@ -1303,13 +1303,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         reason, sourceDomain: "F1", command: def.buildCommand({ ranks }), target: def.buildTarget({}),
       });
     },
-    proposeVRankOverride: async (userId, targetV, direction, reason) => {
+    proposeVRankOverride: async (userId, targetV, direction, reason, currentRank) => {
       const def = findHighOp("f_vrank_override");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_vrank_override");
       await proposeStable(`f-vrank-override:${userId}`, JSON.stringify([targetV, direction, reason]), {
         action: `${def.action} · ${direction === "promote" ? "晋升" : "降级"}至 ${targetV}`,
         obj: `用户 ${userId}`,
-        before: "当前等级",
+        before: currentRank ?? "提交时没读到",
         after: targetV,
         type: "fund",
         amplifies: direction === "promote" && targetV !== "V8",

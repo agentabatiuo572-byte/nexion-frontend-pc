@@ -125,15 +125,19 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
   };
   const openRaffle = async (row: AdminRaffle | null, closeRetry?: () => void, button?: HTMLElement) => {
     const required = await getRequiredContentLanguages();
-    if (closeRetry) {
-      if (!isActive()) return false;
-      closeRetry();
-    }
-    setRequiredLanguages(required);
-    // 抽屉要等语言读完才开，焦点记的是点的那个按钮。
-    if (button) focus.from(button);
-    choose(row, required);
-    if (closeRetry) setError(H4_OLD_RECORD_REJECTED);
+    if (!isActive()) return false;
+    closeRetry?.();
+    const open = () => {
+      setRequiredLanguages(required);
+      // 抽屉要等语言读完才开，焦点记的是点的那个按钮。
+      if (button) focus.from(button);
+      choose(row, required);
+      if (closeRetry) setError(H4_OLD_RECORD_REJECTED);
+    };
+    // 等语言的时候运营已经在别的确认框或离开框里了：先让那边做完，这次打开作废。
+    if (!closeRetry && document.querySelector('.rd-modal[data-state="open"]')) return false;
+    // 另一个抽屉可能已经打开：按现在的样子再问一次（OP-29）。
+    leave.attempt(open);
     return true;
   };
   const prizePatch = (id: string, values: Partial<RafflePrize>) => setDraft(current => current ? { ...current, prizes: current.prizes.map(prize => prize.id === id ? { ...prize, ...values } : prize) } : null);

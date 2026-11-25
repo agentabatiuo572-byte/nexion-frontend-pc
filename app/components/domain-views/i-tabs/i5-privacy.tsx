@@ -282,7 +282,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
         {!localeKeys.length && <Notice tone="warn" title="还没有语言">先在上面新增一种语言。</Notice>}
       </div>
     </Drawer>
-    <LeaveDialog guard={guard} saveLabel={saveLabel} saveBlocked={saveBlocked} onSave={(saved) => onSave(form, saved)} />
+    <LeaveDialog guard={guard} saveLabel={saveLabel} saveName={form.status === "PUBLISHED" || form.status === "UNPUBLISHED" ? "保存并立即生效" : undefined} saveBlocked={saveBlocked} onSave={(saved) => onSave(form, saved)} />
     {removing && <Modal title={`删除${localeName(locale)}`} icon={Trash2} onClose={() => setRemoving(false)} footer={<>
       <Button onClick={() => setRemoving(false)}>取消</Button>
       <Button variant="danger" onClick={removeLocale}>删除这种语言</Button>
