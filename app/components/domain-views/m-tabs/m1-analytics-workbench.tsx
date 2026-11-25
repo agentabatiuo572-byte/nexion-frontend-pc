@@ -498,6 +498,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   }, [periodDetail, personalPeriod, monthCalendar, data, fundMetric, queryState, statisticsCalendar]);
   const readModes = useAdminAuth(state => state.session?.supportReadModes);
   // A session hint only chooses the requested projection. The response still resolves current authority.
+  const noReadableServiceScope = readModes?.length === 0 && authSession?.role !== "super" && authSession?.role !== "superadmin";
+  // 本来就没有负责的组（会话里没有可读范围），或只剩导出记录的账号：照定稿 3d、6k、6l；其余 403 才是查看权限被收回（ST-38）。
+  const noScopedContent = scopeDenied && (noReadableServiceScope || !!exportsPorts?.persona.views.length);
   const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
   const needsCalendar = Boolean(scope && (isPersonal || queryState.basis === "PERIOD_EVENT"));
   // A supervisor who also holds personal service keeps a tab for their own customers, grouped or not (the managed agent list omits an ungrouped self).
@@ -768,8 +771,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
   // 主管和超管：页头次按钮是会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
-  const exportsOnly = !!exportsPorts?.persona.views.length && scopeDenied;
-  const header = <PageHeader pageId="M1" title="客服工作台" summary={exportsOnly ? exportsPorts.persona.views.includes("MINE") ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
+  const exportsOnly = !!exportsPorts?.persona.views.length && noScopedContent;
+  const header = <PageHeader pageId="M1" title="客服工作台" summary={exportsOnly ? exportsPorts.persona.views.includes("MINE") ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {exportsPorts && (exportsPorts.persona.canExport || exportsPorts.persona.exportBlocked) && <Button disabledReason={exportsPorts.persona.exportBlocked} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {scope?.scopeSummary.mode === "MANAGED" && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
@@ -778,11 +781,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
   if (!scope) return <section className="sa-workbench" aria-busy={!scopeDenied && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
     {header}
-    <Panel>{scopeDenied ? <AnalyticsReadDenied /> : <BlockState state={scopeError ? "error" : "loading"}
-      title={scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
-      onRetry={scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>
-    {exportsOnly && <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
-      <PerfExportRecords ports={exportsPorts} /></>}
+    {exportsOnly ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
+      <PerfExportRecords ports={exportsPorts} /></>
+      : <Panel>{noScopedContent ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
+        : scopeDenied ? <AnalyticsReadDenied /> : <BlockState state={scopeError ? "error" : "loading"}
+          title={scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
+          onRetry={scopeError ? () => setScopeRetry(n => n + 1) : undefined} retryLabel="重试" />}</Panel>}
     {scopeDenied && related}
     {unavailableAgentDrawer}
   </section>;

@@ -1217,7 +1217,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     }).catch((cause: unknown) => {
       if (controller.signal.aborted || requestStamp !== identityRef.current || isSupportSessionExpired(cause)) return;
       if (checkingContinuation.current === selected.id && supportCustomerNotFound(cause)) {
-        leaveUnavailableConversation(selected.id, selected.customerId, "你没有查看这位客户的权限");
+        leaveUnavailableConversation(selected.id, selected.customerId, CONTINUATION_REASSIGNED);
       } else if (supportCustomerNotFound(cause)) {
         ctx.invalidateScope(selected.id, String(selected.customerId), { text: "你没有查看这位客户的权限", page: "M3" });
       } else if (lostPermission(cause)) {
