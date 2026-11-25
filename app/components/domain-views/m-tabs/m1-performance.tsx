@@ -103,11 +103,11 @@ export function PerfEventsDrawer({ events, page, pageSize, total, observedTotal,
   events: PerfEvents; page: number; pageSize: number; total: number | null; observedTotal: number;
   canContinue: boolean; loading: boolean; onPage: (page: number) => void; onClose: () => void;
 }) {
-  const range = `统计区间 ${formatBusinessTimeCompact(events.from, "—")} 至 ${formatBusinessTimeCompact(events.to, "—")}（北京时间）`;
+  const range = `${formatBusinessTimeCompact(events.from, "—")} 至 ${formatBusinessTimeCompact(events.to, "—")}（北京时间）`;
   return <Drawer open title="业绩额明细" sub="本人 · USDT" onClose={onClose}
     footer={<div className="m1-perf-foot"><Button onClick={onClose}>关闭</Button>{events.rows.length > 0 && <span className="m1-perf-pager"><Button size="sm" disabledReason={loading ? "正在加载…" : page === 1 ? "已经是第一页" : undefined} onClick={() => onPage(page - 1)}>上一页</Button>第 {page} / {total === null ? "—" : Math.max(1, Math.ceil(observedTotal / pageSize))} 页 · 共 {total ?? "—"} 条<Button size="sm" disabledReason={loading ? "正在加载…" : canContinue ? undefined : "已经是最后一页"} onClick={() => onPage(page + 1)}>下一页</Button></span>}</div>}>
-    <p className="rd-note">{range}</p>
     <Facts>
+      <Fact k="统计区间">{range}</Fact>
       <Fact k="本月合计">{summaryText(events.total)}{!transferred(events) && events.total.amount.state === "complete" && <span className="m1-fact-reason">全部是现在名下客户的记录</span>}</Fact>
       {transferred(events) && <>
         <Fact k="现在名下的客户">{summaryText(events.visible)}</Fact>

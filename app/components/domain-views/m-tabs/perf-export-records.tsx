@@ -322,7 +322,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
         : !rows ? <BlockState state="loading" title="正在加载…" />
         : !rows.length ? <BlockState state="empty" {...(view === "MINE"
           ? { title: "暂无导出申请", detail: persona.canExport ? "点页头「导出业绩」提交后，会显示在这里。" : "提交过的业绩导出申请会显示在这里。" }
-          : { title: "暂无待你审批的申请", detail: "你能审批的范围里有人提交客户明细或逐笔记录的导出申请后，会显示在这里。" })} />
+          : { title: "暂无待你审批的申请", detail: "有人提交明细导出申请后，会显示在这里。" })} />
         : <>
           {rows.some(row => row.scopeLost) && <p className="m1-export-lost">这些申请的范围和行数现在看不到。</p>}
           <Table label="导出记录" className="m1-export-table"><thead><Tr>
