@@ -3,6 +3,7 @@ import { useEffect,useRef,useState } from 'react';
 import { ConversationRealtime, type RealtimeSocket } from './conversation-realtime';
 import { installAdminRealtime,updateAdminRealtime,receiveAdminPresence } from './admin-conversation-realtime';
 import { useAdminAuth } from '@/lib/store/admin-auth';
+import { isAdminAuthFailure,resetAdminSession } from './auth-session';
 export interface UseConversationStreamOptions {
   onEvent:(conversationNo:string,signal:AbortSignal)=>Promise<true|void>;
   onReconnectSnapshot:(signal:AbortSignal)=>Promise<void>;enabled?:boolean;lifecycleSignal?:AbortSignal;
@@ -27,6 +28,8 @@ export function useConversationStream({onEvent,onReconnectSnapshot,onScopeInvali
       ticket:async signal=>{
         const response=await fetch('/api/admin/content/conversations/realtime-ticket',{method:'POST',credentials:'same-origin',cache:'no-store',signal});
         const result=await response.json();
+        // 取票也是客服侧的请求出口：会话失效同样交外壳重新登录（BUG-715）。
+        if(isAdminAuthFailure(response.status,result?.message)||result?.code===401)resetAdminSession();
         if(!response.ok||result.code!==0)throw Object.assign(new Error('CONVERSATION_AUTH_FAILED'),{status:response.ok?result.code:response.status});
         return result.data;
       },

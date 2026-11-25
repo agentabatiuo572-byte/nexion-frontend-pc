@@ -2087,7 +2087,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H8_DIRECT_RESULT_REQUIRES_AUDIT: "当前设置不能证明原修改的结果；请到「操作记录与审批」核对，原请求继续保留。",
   H8_PROPOSAL_RELEASE_FORBIDDEN: "尚不能解除原申请；仅过期且查询明确查无原单时，才可确认解除。",
   H8_RESULT_UNKNOWN: "提交结果未知，完整原请求已保留；请查询原结果或按原请求重试。",
-  H8_EFFECTIVE_AT_INVALID: "奖励生效时间无效，请重新设置。",
+  H8_EFFECTIVE_AT_INVALID: "奖励生效时间无效，当前不能核对和修改奖励；请联系值班人员处理。",
   H8_RESPONSE_INVALID: "奖励数据不完整或格式不符，当前不能核对；请重新读取，持续失败请联系值班人员。",
   H8_PRODUCTION_OVERVIEW_FORBIDDEN_IN_SANDBOX: "当前验收沙箱禁止读取正式奖励数据；请在正式运行环境核对。",
   H8_PRODUCTION_CONFIG_FORBIDDEN_IN_SANDBOX: "当前验收沙箱禁止修改正式奖励配置；请核对运行环境。",

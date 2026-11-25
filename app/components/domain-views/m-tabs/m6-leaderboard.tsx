@@ -36,7 +36,7 @@ function message(error: unknown): string {
   if (error instanceof LeaderboardUpgrading) return error.message;
   const contractError = supportContractReadError(error);
   if (contractError) return contractError;
-  return status(error) === 403 ? "当前账号不能查看此榜单，请重新确认登录和客服权限。"
+  return status(error) === 403 ? "这个账号没有业绩榜的读取权限，需要时联系超级管理员。"
     : versionChanged(error) ? "榜单已更新，或你能看的范围变了，请从第一页重新加载。"
       : error instanceof SupportClientError ? displayAdminReadError(error) : "榜单加载失败，请重试。";
 }
@@ -103,7 +103,7 @@ export function M6Leaderboard() {
     setNotice("能看的范围变了，范围已回到全员榜，按新权限重读。");
     setQuery(fallback);
   };
-  const deny = () => { setDeniedIdentity(identity); setResult(undefined); setLastGood(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: "当前账号不能查看此榜单，请重新确认登录和客服权限。" }); };
+  const deny = () => { setDeniedIdentity(identity); setResult(undefined); setLastGood(undefined); setPhotos(undefined); closeDetail(); setFailure({ key: requestKey, text: "这个账号没有业绩榜的读取权限，需要时联系超级管理员。" }); };
 
   useEffect(() => {
     const pending = pendingLocate.current;
@@ -283,7 +283,7 @@ export function M6Leaderboard() {
         {(data?.stale || data?.refreshFailed) && <Notice tone="warn" title="当前显示上次发布的榜单" action={<Button size="sm" onClick={() => resetFirstPage("正在重新加载…")}>重新加载</Button>}>{data.refreshFailed ? "榜单更新暂未成功，请稍后读取最新结果。" : "榜单更新延迟，请稍后读取最新结果。"}</Notice>}
         {conclusion}
         {!data && denied ? <BlockState state="denied" title="这个账号不能查看业绩榜"
-            detail="请重新确认登录和客服权限；看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员。"
+            detail="看榜要有客服工作台或专属会话的查看权限，并且是专属客服、客服主管或超级管理员；需要时联系超级管理员。"
             onRetry={allowed ? reload : undefined} retryLabel="重新核验" />
           : <>
             {/* 这一版不排名次（有数据没核完、或业绩额暂不可用）时不画前三名。 */}
