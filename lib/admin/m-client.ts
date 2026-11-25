@@ -7,7 +7,7 @@ import { formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-
 import { compareM3Messages } from "./m3-message-order";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder, parseSupportEffectiveLanguage, parseSupportApiEnvelope } from "@/lib/admin/m-support-client";
+import { supportWireId, supportRequest, supportObject, parseSupportCount, supportClient, parseSupportSessionHolder, parseSupportEffectiveLanguage, parseSupportApiEnvelope, readSupportResponseText } from "@/lib/admin/m-support-client";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -602,7 +602,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       cache: "no-store",
       signal: controller.signal,
     });
-    text = await res.text();
+    text = await readSupportResponseText(res);
   } catch (error) {
     if (timedOut) throw new Error("CONTENT_API_TIMEOUT");
     throw error;

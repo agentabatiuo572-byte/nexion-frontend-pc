@@ -213,11 +213,27 @@ export function parseSupportApiEnvelope<T>(status: number, text: string, require
   }
 }
 
+export async function readSupportResponseText(response: Response): Promise<string> {
+  try {
+    return await response.text();
+  } catch (error) {
+    // The HTTP status still establishes session expiry if reading its body fails.
+    if (response.status === 401) return "";
+    throw error;
+  }
+}
+
 /** Only use a denial from a read or write directed at the original customer or thread. */
 export function isSupportScopeDenial(error: unknown): boolean {
   if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
   const status = error.status === 200 ? error.apiCode : error.status;
   return status === 403 || status === 404;
+}
+
+export function supportCustomerNotFound(error: unknown): boolean {
+  return error instanceof SupportClientError
+    && (error.status === 404 || error.status === 200 && error.apiCode === 404)
+    && error.backendMessage === "SUPPORT_CUSTOMER_NOT_FOUND";
 }
 
 export function supportAssignmentChanged(error: unknown): boolean {
@@ -459,7 +475,7 @@ async function request<T>(path: string, parse: (value: unknown) => T, init: Requ
   const response = await guardedFetch(`${BASE}${path}`, { ...requestInit, headers, cache: "no-store", credentials: "same-origin" });
   const outcomeUnknown = init.preserveUnknownOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown";
   try {
-    const text = await response.text();
+    const text = await readSupportResponseText(response);
     const data = parseSupportApiEnvelope<unknown>(response.status, transformResponseText ? transformResponseText(text) : text, true);
     if (!outcomeUnknown) return parse(data);
   } catch (error) {
@@ -670,7 +686,7 @@ export const supportClient = {
     if (range) headers.set("Range", range);
     const response = await guardedFetch(`${BASE}${attachmentPath(attachmentId)}/content`, { headers, credentials: "same-origin", cache: "no-store", signal });
     if (!response.ok || !["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") || "").split(";")[0].toLowerCase())) {
-      try { parseSupportApiEnvelope(response.status, await response.text(), true); }
+      try { parseSupportApiEnvelope(response.status, await readSupportResponseText(response), true); }
       catch (error) {
         if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
         throw error;

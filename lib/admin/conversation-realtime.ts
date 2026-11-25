@@ -117,7 +117,7 @@ export class ConversationRealtime {
               this.scheduleSync(epoch,0);break;
             case 'presence':if(f.conversationNo===this.watched)this.options.presence?.(f);break;
             case 'error':{
-              const denied=f.code===401||f.code===403;
+              const denied=f.code===403||f.code===401&&typeof f.requestId==='string'&&f.requestId.length>0;
               this.disconnect(true,denied,denied?"当前账号无权接入实时通道":"实时通道返回错误");
               break;
             }

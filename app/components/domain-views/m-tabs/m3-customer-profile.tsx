@@ -9,7 +9,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, type SupportProfile, type SupportGroup, type SupportFinanceFieldStatus } from "@/lib/admin/m-support-enhancements";
 import { perfText } from "./perf-view";
 import { profilePerf } from "./perf-wiring";
-import { supportClient, SupportClientError, isSupportScopeDenial, isSupportSessionExpired, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isSupportScopeDenial, isSupportSessionExpired, supportCustomerNotFound, type SupportMaintenanceHistory } from "@/lib/admin/m-support-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { Icon, Modal } from "../design-kit";
@@ -213,8 +213,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     if (!isSupportScopeDenial(cause)) return false;
     if (revokedScope.current !== scopeKey) {
       revokeScope();
-      const forbidden = cause instanceof SupportClientError && (cause.status === 403 || cause.status === 200 && cause.apiCode === 403);
-      ctx.invalidateScope(conversation?.id, customerId, fromRead && source === "M3" && forbidden
+      ctx.invalidateScope(conversation?.id, customerId, fromRead && source === "M3" && supportCustomerNotFound(cause)
         ? { text: "你没有查看这位客户的权限", page: "M3" } : undefined);
     }
     return true;

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { guardedFetch } from "@/lib/admin/error-messages";
 import { businessStamp } from "@/lib/admin/business-time";
-import { isSupportSessionExpired, parseSupportApiEnvelope, SupportClientError, supportRequest } from "@/lib/admin/m-support-client";
+import { isSupportSessionExpired, parseSupportApiEnvelope, readSupportResponseText, SupportClientError, supportRequest } from "@/lib/admin/m-support-client";
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
@@ -229,10 +229,11 @@ function apiStatus(error: SupportClientError | MContentReadError) {
 }
 
 export function isExportPermissionDenied(error: unknown) {
+  if (isSupportSessionExpired(error)) return false;
   if (isPermissionDenied(error)) return true;
   if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
   const status = apiStatus(error);
-  return status === 401 || status === 403
+  return status === 403
     && ["PERMISSION_DENIED", "ADMIN_PASSWORD_CHANGE_REQUIRED", "无权限访问"].includes(error.backendMessage ?? "");
 }
 
@@ -550,6 +551,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         enumeration(found.status, ["UNKNOWN", "PROCESSING"]);
         return { kind: "pending", expired: isRetryExpired(original), previous };
       } catch (error) {
+        if (isSupportSessionExpired(error)) throw error;
         if (isExportPermissionDenied(error)) {
           lastVisible = undefined;
           throw error;
@@ -619,11 +621,12 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         if (!task.canDownload) return { kind: "forbidden", task };
       };
       const readFailure = (error: unknown) => {
+        if (isSupportSessionExpired(error)) return { kind: "unconfirmed", sessionExpired: true } as const;
         if (isExportPermissionDenied(error)) return { kind: "forbidden", permissionDenied: true } as const;
         if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return undefined;
         const status = apiStatus(error), code = error.backendMessage;
         if (status === 410 && code !== "EXPORT_TOKEN_EXPIRED") return { kind: "expired" } as const;
-        if (status === 401 || status === 404 || status === 409 && code === "EXPORT_SCOPE_CHANGED"
+        if (status === 404 || status === 409 && code === "EXPORT_SCOPE_CHANGED"
           || status === 403 && code !== "EXPORT_TOKEN_INVALID" && code !== "EXPORT_TOKEN_REQUIRED") return { kind: "forbidden" } as const;
       };
       try {
@@ -635,7 +638,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         });
         const response = await guardedFetch(`/api/admin/content${PATH}/${taskId}/file`, { headers: { "X-Download-Token": token }, cache: "no-store", credentials: "same-origin" });
         if (!response.ok || response.headers.get("Content-Type")?.split(";")[0] !== "text/csv") {
-          parseSupportApiEnvelope(response.status, await response.text(), false);
+          parseSupportApiEnvelope(response.status, await readSupportResponseText(response), false);
           throw new Error("下载没有完成。");
         }
         const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -648,7 +651,7 @@ function exportPorts(operator: Operator, initialOptions: Options | null, views: 
         return { kind: "downloaded" };
       } catch (error) {
         const blocked = readFailure(error);
-        if (blocked && "permissionDenied" in blocked) return blocked;
+        if (blocked && ("sessionExpired" in blocked || "permissionDenied" in blocked)) return blocked;
         try {
           const task = await readTask(taskId);
           if (blocked) return { ...blocked, task: { ...task, state: blocked.kind === "expired" ? "EXPIRED" : task.state, canDownload: false } };
