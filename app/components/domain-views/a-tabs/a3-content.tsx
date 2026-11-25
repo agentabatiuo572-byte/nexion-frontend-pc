@@ -10,31 +10,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Archive, BookOpenText, Code2, FileText, Plus, RefreshCw, Smartphone, Trash2, TriangleAlert } from "lucide-react";
 import { BlockState, Button, Change, DiffList, Explain, Fact, Facts, Field, Fold, IconButton, Input, KeepText, Modal, MoreMenu, Notice, PageTabs, Panel, Segments, Select, StatusTag, Textarea, useTabIds } from "@/app/components/rd";
-import { type A3Command, type A3ContentComparison, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
+import { type A3Command, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
 export type A3ContentSummary = { unsaved: number };
-/** 解除待确认后放回编辑器的内容：原来填的正文和版本，基于现在读到的修订号。 */
-export type A3Restored =
-  | { kind: "docs"; document: PublishedContentDocument; baseline: PublishedContentDocument; reason: string }
-  | { kind: "how"; document: PublishedHowContentDocument; baseline: PublishedHowContentDocument; reason: string };
-/** 读回和原提交对不上时的一句话（页面上方提示条和保存框里共用）；修改序号只在解除框的技术信息里。 */
-export const contentCheckLine = (check: A3ContentComparison) =>
-  check.contentMatches
-    ? "内容和你提交的一样，但保存记录对不上，可能刚被别人改过。核对后可以解除。"
-    : "现在的内容和你提交的不一样，可能没保存上，也可能刚被别人改过。核对后解除，再重新保存。";
-/** 「按原操作重试」可用时给原提交框的确认按钮；不可用（旧记录、已过期）时为 undefined。 */
+export type A3ContentRead = { nonce: number; value: PublishedContentDocument | PublishedHowContentDocument };
 type ContentRetry = { disabledReason?: string; busy: boolean; run: () => void };
-type ReleaseProps = { checks: Record<string, A3ContentComparison>; onRelease: (record: A3Command) => void; retry: (record: A3Command) => ContentRetry | undefined; restored: A3Restored | null; onRestored: () => void };
+type ContentRecoveryProps = { retry: (record: A3Command) => ContentRetry | undefined };
+type Mode = "DRAFT" | "PUBLISHED";
 type Toast = (text: string, kind?: "success" | "error" | "warn" | "info") => void;
 type Row = Record<string, unknown>;
-type Mode = "DRAFT" | "PUBLISHED";
-
-function row(value: unknown): Row { return value && typeof value === "object" && !Array.isArray(value) ? value as Row : {}; }
-function text(value: unknown) { return typeof value === "string" ? value : ""; }
+const row = (value: unknown): Row => value && typeof value === "object" && !Array.isArray(value) ? value as Row : {};
+const text = (value: unknown) => typeof value === "string" ? value : "";
 function list(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 function blocks(value: unknown): Row[] { return Array.isArray(value) ? value.map(row) : []; }
 
@@ -72,9 +62,12 @@ function publicLine(doc: { status: string; hasPublishedVersion?: boolean }) {
   return doc.hasPublishedVersion ? "草稿，App 仍读之前的公开版" : "草稿，还没有公开版";
 }
 
-export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, toast, onSummary, ...release }: A3RecoveryProps & ReleaseProps & { docsNonce: number; toast: Toast; onSummary: (summary: A3ContentSummary) => void }) {
+export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, toast, onSummary, contentRead, ...release }: A3RecoveryProps & ContentRecoveryProps & { contentRead?: A3ContentRead; docsNonce: number; toast: Toast; onSummary: (summary: A3ContentSummary) => void }) {
   const ids = useTabIds();
   const [tab, setTab] = useState<"docs" | "how">("how");
+  useEffect(() => { if (contentRead) setTab("locales" in contentRead.value ? "docs" : "how"); }, [contentRead]);
+  const docsRead = contentRead?.nonce === docsNonce && "locales" in contentRead.value ? contentRead.value : undefined;
+  const howRead = contentRead?.nonce === nonce && "contents" in contentRead.value ? contentRead.value : undefined;
   const [dirty, setDirty] = useState({ docs: false, how: false });
   const markDocs = useCallback((value: boolean) => setDirty((current) => current.docs === value ? current : { ...current, docs: value }), []);
   const markHow = useCallback((value: boolean) => setDirty((current) => current.how === value ? current : { ...current, how: value }), []);
@@ -84,8 +77,8 @@ export function A3Content({ commands, recovery, onRecovered, nonce, docsNonce, t
       { value: "how", label: "业务说明（6 页）", count: dirty.how ? "未保存" : undefined },
       { value: "docs", label: "开发者接口文档", count: dirty.docs ? "未保存" : undefined },
     ]} />
-    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={nonce} toast={toast} onDirty={markHow} {...release} /></div>
-    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={docsNonce} toast={toast} onDirty={markDocs} {...release} /></div>
+    <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={nonce} current={howRead} toast={toast} onDirty={markHow} {...release} /></div>
+    <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} nonce={docsNonce} current={docsRead} toast={toast} onDirty={markDocs} {...release} /></div>
   </div>;
 }
 
@@ -120,12 +113,7 @@ function OriginalNote({ expired, retryable }: { expired: boolean; retryable: boo
   if (expired) return <>已超过 24 小时，不能再重试。当前内容供核对，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
   return retryable
     ? <>重试按原提交的内容、方式和理由再发一次：<KeepText text="已经保存过的不会重复保存，也不会盖掉别人后来的修改。" /></>
-    : <>查询原结果会和现在的内容对比：一致就算已保存，<KeepText text="对不上时可以核对后解除。" /></>;
-}
-
-/** 结果未知的保存框里：读回对不上时给解除入口；点了先关保存框，再开页面上的解除框。 */
-function ReleaseNotice({ check, onOpen }: { check: A3ContentComparison; onOpen: () => void }) {
-  return <Notice tone="warn" title="查询结果和原提交对不上" actionBelow action={<Button size="sm" onClick={onOpen}>解除原操作记录…</Button>}>{contentCheckLine(check)}</Notice>;
+    : <>可读取当前内容核对，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
 }
 
 function Preview({ title, children }: { title: string; children: ReactNode }) {
@@ -137,7 +125,7 @@ function Preview({ title, children }: { title: string; children: ReactNode }) {
 
 /* ────────────────── 开发者接口文档（W06） ────────────────── */
 
-function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, retry, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
+function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: currentRead, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedContentDocument; toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -161,18 +149,13 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
     if (recovery?.original.kind !== "docs") return;
     setReason(recovery.reason); setMode(recovery.original.mode); setError(null); onRecovered();
   }, [recovery, onRecovered]);
-  useEffect(() => {
-    if (restored?.kind !== "docs") return;
-    setDocument(restored.document); setBaseline(restored.baseline); setReason(restored.reason); setMode(null); setError(null); setReadReady(true); onRestored();
-  }, [restored, onRestored]);
-  const check = original ? checks[original.commandKey] : undefined;
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (current?: PublishedContentDocument) => {
     if (!canRead) return;
     setReadReady(false); setLoading(true);
     if (!commands.find("docs")) setMode(null);
     if (!conflictDraft.current) setError(null);
     try {
-      const value = await fetchDeveloperDocsAdmin();
+      const value = current ?? await fetchDeveloperDocsAdmin();
       if (!commands.find("docs")) setMode(null);
       setDocument(draft => conflictDraft.current && draft ? { ...draft, revision: value.revision } : value);
       setBaseline(value);
@@ -184,7 +167,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
     }
     finally { setLoading(false); }
   }, [canRead]);
-  useEffect(() => { void refresh(); }, [refresh, nonce]);
+  useEffect(() => { void refresh(currentRead); }, [refresh, nonce]);
   const hasChanges = useMemo(() => JSON.stringify(document) !== JSON.stringify(baseline), [document, baseline]);
   useEffect(() => { onDirty(hasChanges); }, [hasChanges, onDirty]);
   if (!canRead) return <BlockState state="denied" title="没有查看开发者接口文档的权限" />;
@@ -325,8 +308,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, toast, onDirty,
         { key: "locales", label: "语言", before: Object.keys(baseline?.locales ?? {}).map(localeName).join("、") || "—", after: localeKeys.map(localeName).join("、") || "—" },
         { key: "content", label: "有改动的语言", before: "—", after: changedLocales.map(localeName).join("、") || "—" },
       ]} />}
-      extra={check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-        : <Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : SAVE_UNKNOWN_NOTE}</Notice>} />}
+      extra={<Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : SAVE_UNKNOWN_NOTE}</Notice>} />}
   </div>;
 }
 
@@ -361,7 +343,7 @@ function previewText(page: string, value: string): ReactNode {
 const hasAppToken = (blocks: Row[]) => blocks.some((block) => [block.title, block.body, ...list(block.items)].some((value) => /\{[A-Za-z]+\}/.test(text(value))));
 const refBlocksOf = (entry: unknown) => Object.values(row(row(entry).locales)).flatMap((locale) => blocks(row(locale).blocks)).filter((block) => block.kind === "ruleRef");
 
-function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, checks, onRelease, retry, restored, onRestored }: A3RecoveryProps & ReleaseProps & { toast: Toast; onDirty: (value: boolean) => void }) {
+function HowContent({ commands, recovery, onRecovered, nonce, current: currentRead, toast, onDirty, retry }: A3RecoveryProps & ContentRecoveryProps & { current?: PublishedHowContentDocument; toast: Toast; onDirty: (value: boolean) => void }) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
   const canWrite = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_write") === true;
@@ -386,18 +368,13 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
     if (recovery?.original.kind !== "how") return;
     setReason(recovery.reason); setMode(recovery.original.mode); setError(null); onRecovered();
   }, [recovery, onRecovered]);
-  useEffect(() => {
-    if (restored?.kind !== "how") return;
-    setDocument(restored.document); setBaseline(restored.baseline); setReason(restored.reason); setMode(null); setError(null); setReadReady(true); onRestored();
-  }, [restored, onRestored]);
-  const check = original ? checks[original.commandKey] : undefined;
   const busyRef = useRef(false);
   const identitySequence = useRef(0);
   const identities = useRef(new WeakMap<Row, { block: string; items: string[] }>());
   const contentHeading = useRef<HTMLHeadingElement | null>(null);
   const stateRef = useRef({ document, baseline, key, locale });
   stateRef.current = { document, baseline, key, locale };
-  const refresh = useCallback(async (confirmDiscard = true) => {
+  const refresh = useCallback(async (confirmDiscard = true, current?: PublishedHowContentDocument) => {
     if (!canRead || busyRef.current) return;
     const previous = stateRef.current;
     if (!conflictDraft.current && confirmDiscard && JSON.stringify(previous.document) !== JSON.stringify(previous.baseline)
@@ -406,7 +383,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
     if (!commands.find("how")) setMode(null);
     if (!conflictDraft.current) setError(null);
     try {
-      const value = await fetchHowContentAdmin();
+      const value = current ?? await fetchHowContentAdmin();
       if (!commands.find("how")) setMode(null);
       const next = Object.keys(value.contents).length ? value : { ...initialDocument(), ...value, contents: initialDocument().contents };
       const nextKey = next.contents[previous.key] ? previous.key : KEYS.find(item => next.contents[item]) ?? KEYS[0];
@@ -421,7 +398,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
     catch (cause) { setError(previous => conflictDraft.current && previous ? `${previous}；${displayAdminError(cause)}` : displayAdminError(cause)); }
     finally { busyRef.current = false; setLoading(false); }
   }, [canRead]);
-  useEffect(() => { void refresh(false); }, [refresh, nonce]);
+  useEffect(() => { void refresh(false, currentRead); }, [refresh, nonce]);
   const current = row(row(document?.contents[key]).locales)[locale];
   const currentBlocks = blocks(row(current).blocks);
   const hasChanges = useMemo(() => JSON.stringify(document) !== JSON.stringify(baseline), [document, baseline]);
@@ -643,8 +620,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, toast, onDirty, ch
       ]} />}
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="规则引用块发布不了">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，系统会拒绝这次发布。先删掉这些块，或改成「正文」写上实际文字。</Notice>}
-        {check && original ? <ReleaseNotice check={check} onOpen={() => { setMode(null); onRelease(original); }} />
-          : <Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>}
+        <Notice tone="neutral">{original ? <OriginalNote expired={isRetryExpired(original)} retryable={Boolean(retry(original))} /> : <>六页一起保存。{SAVE_UNKNOWN_NOTE}</>}<Explain label="App 什么时候读到" content="发布后 App 下次打开这些说明页时读到新内容；网络断开时可能先显示之前读到的那份。" /></Notice>
       </>} />}
   </div>;
 }

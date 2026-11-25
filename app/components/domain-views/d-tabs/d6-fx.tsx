@@ -20,8 +20,8 @@ import { businessClock, businessZone, formatBusinessTimeFull } from "@/lib/admin
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundSettled } from "../fund-command-check";
-import { pendingReplayReason } from "../recovery-panel";
+import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundSettled } from "../fund-command-check";
+import { foundReceiptNext, pendingReplayReason } from "../recovery-panel";
 import { CommandClosureModal } from "../e-tabs/e-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { dConfigCommandOrigin, isDConfigCommandOrigin, queryDConfigCommand } from "@/lib/admin/d-config-command-investigation";
@@ -296,6 +296,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     }
   };
 
+  const [proposalReadErrors, setProposalReadErrors] = useState<Record<string, string>>({});
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
   const [closing, setClosing] = useState(false);
   const [settled, setSettled] = useState<FundSettled[]>([]);
@@ -354,16 +355,40 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     setPendingNote("");
     try {
       const result = await fxRecovery.query(record, async original => {
-        const ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
-        if (ticket) {
-          if (!ticket.mine || ticket.obj !== original.proposal?.obj
-            || (ticket.operationCode && ticket.operationCode !== original.proposal?.command.op)) throw new Error("查到的审批单和原申请对不上。");
-          return { ticket, conclusion: "unknown" } as const;
-        }
-        const receipt = fundInvestigationAccess(original).unavailableReason ? null : await checkProposalInvestigation(original);
-        return { ticket: null, conclusion: receipt ? "unknown" : "not-found" } as const;
+        let ticket: A2OperationRow | null = null;
+        let ticketError = "";
+        try {
+          ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
+          if (ticket && (!ticket.mine || ticket.obj !== original.proposal?.obj
+            || (ticket.operationCode && ticket.operationCode !== original.proposal?.command.op))) {
+            ticket = null;
+            throw new Error("查到的审批单和原申请对不上。");
+          }
+        } catch (cause) { ticketError = displayAdminReadError(cause); }
+        if (ticket) return { ticket, ticketError, outcome: undefined, conclusion: "unknown" } as const;
+        const outcome: FundInvestigationOutcome = await (async () => {
+          if (!original.commandOrigin) return { receipt: null };
+          try { return { receipt: await checkFundCommand(original) }; }
+          catch (cause) { return { error: displayAdminReadError(cause) }; }
+        })();
+        return { ticket, ticketError, outcome, conclusion: ticketError || "error" in outcome || outcome.receipt ? "unknown" : "not-found" } as const;
       });
-      if (!result?.ticket) return;
+      if (!result) return;
+      setProposalReadErrors(current => ({ ...current, [record.commandKey]: result.ticketError }));
+      if (result.outcome) {
+        setInvestigationResults(current => ({ ...current, [record.commandKey]: result.outcome! }));
+        const receipt = "receipt" in result.outcome ? result.outcome.receipt : null;
+        if (fundCommandSettled(receipt)) {
+          fxRecovery.settleAcknowledged(record);
+          setSettled(current => [...current.filter(item => item.key !== record.commandKey), {
+            key: record.commandKey, label: `把${paramOf(record.param).label}改成 ${valueText(record.param, record.after)}`, status: receipt!.originalStatus, proposal: true,
+          }]);
+          syncPending();
+          await load();
+        }
+        return;
+      }
+      if (!result.ticket) return;
       fxRecovery.settleAcknowledged(record);
       syncPending();
       await load();
@@ -483,18 +508,29 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryRejected = pending.replayRejection ? retryRejectedReason(new Error(pending.replayRejection)) : undefined;
     const outcome = investigationResults[pending.commandKey];
-    const readFailure = outcome && "error" in outcome ? outcome.error : undefined;
+    const ticketError = proposalReadErrors[pending.commandKey];
+    const receipt = outcome && "receipt" in outcome ? outcome.receipt : undefined;
+    const receiptError = outcome && "error" in outcome ? outcome.error : undefined;
+    const readFailure = [ticketError && `原审批单加载失败。${ticketError}`, receiptError].filter(Boolean).join(" ");
+    // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
+    const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
+    const canClose = eCommandClosureOffer(outcome, expired).conclusions.length > 0 && fundInvestigationAccess(target).canSubmit;
+    const receiptNext = foundReceiptNext(receipt, canClose);
     const recoveryState = fxRecovery.state(pending);
     const retryBlock = pendingReplayReason(recoveryState, pending.proposal ? proposalBlocked ?? NO_WRITE : NO_WRITE);
     const blockedReason = recoveryState.replayBlock === "needs-not-found"
-      ? readFailure ? "查询未成功。重新查询原操作，明确查无后才能重试。" : "先查询原操作，明确查无后才能重试。"
+      ? receipt ? receiptNext ?? "已查到原回执，请到操作记录与审批核对。" : readFailure ? "查询未成功，请重新查询原操作。" : "先查询原操作，明确查无后才能重试。"
       : retryRejected ? RETRY_AGAIN : retryBlock;
-    // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
-    const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
     // 查到记为失败时，「可能已经提交」不再写。
     const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
-    return { key: pending.commandKey, title: what, record: target, outcome, createdAt: pending.createdAt, expired, canRetry: !blockedReason,
-      status: readFailure ? { tone: "danger" as const, label: "查询失败", line: `${expired ? "已超过 24 小时，不能再重试。" : ""}${readFailure} 记录继续保留，请重新查询原操作。` } : undefined,
+    const receiptStatus = receipt ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
+    const status = receiptStatus ? receiptNext || readFailure
+      ? { ...receiptStatus, line: [receiptNext ?? receiptStatus.line, readFailure].filter(Boolean).join(" ") } : undefined
+      : readFailure ? { tone: "danger" as const, label: "查询失败", line: `${readFailure} 请重新查询原操作。` }
+        : recoveryState.conclusion === "not-found" && !target.commandOrigin
+          ? { tone: "warn" as const, label: "没有查到", line: expired ? "没有查到原审批单，记录保留。" : "没有查到原审批单，可在有效期内按原操作重试。" }
+          : undefined;
+    return { key: pending.commandKey, title: what, record: target, outcome, createdAt: pending.createdAt, expired, canRetry: !blockedReason, status,
       canQuery: pending.proposal ? canQueryOriginal : undefined, copy: { where: "调整历史", missingOrigin: "只能按操作编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" },
       actions: <>
         {pending.proposal && canQueryOriginal && <FundCheckButtons record={pending} lookupWithoutOrigin outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}

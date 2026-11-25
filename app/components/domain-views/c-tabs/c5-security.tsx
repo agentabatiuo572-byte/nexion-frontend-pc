@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Copy, KeyRound, LockKeyhole, LogOut, MonitorSmartphone, RefreshCw, ShieldCheck, Smartphone, TriangleAlert, UserRound } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IconButton, Input, JudgmentPoints, Modal, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseBody, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, useTabIds } from "@/app/components/rd";
+import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { userNicknameText, platformSessionDeviceText } from "@/lib/admin/brand-copy";
 import { businessZoneText, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { formatAccountStatus } from "@/lib/admin/c1-detail-display";
@@ -12,7 +13,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { canReadOwnRecoveryProposal, nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
 import { c5CommandRecords, prepareC5Command, submitC5Command, forgetC5Command, isCompleteC5Command, type C5CommandKind, type C5Pending } from "@/lib/admin/c5-security-commands";
-import { canProposeSessionRevocation, listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation, sessionRevocationRecovery } from "@/lib/admin/session-revocation-approval";
+import { canProposeSessionRevocation, listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation, sessionRevocationRecovery, sessionRevocationStatus } from "@/lib/admin/session-revocation-approval";
 import { fetchUserProfilesPage, fetchUserSecurityOverview, type User360Profile, type UserCredentialParam, type UserSecurityOverview, type UserSecurityUserRow, type UserSession } from "@/lib/admin/user360-client";
 import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { sessionTimeAnomaly } from "@/lib/admin/session-time";
@@ -33,7 +34,6 @@ const userIdOf = (row?: UserSecurityUserRow | null) => row?.userId == null ? "" 
 const userLabel = (row?: UserSecurityUserRow | null) => { if (!row) return "未选择用户"; const name = userNicknameText(text(row.nickname, ""), row.phoneMasked); return name ? `${name} · ${text(row.userNo)}` : text(row.userNo); };
 const maskSessionId = (id: string) => id.length <= 10 ? `${id.slice(0, 3)}•••${id.slice(-2)}` : `${id.slice(0, 6)}••••${id.slice(-4)}`;
 const sessionLabel = (state: unknown) => ({ ACTIVE: "活跃", REVOKED: "已撤销", EXPIRED: "已过期" }[String(state)] ?? "状态未知");
-const approvalStatus = { pending: "待审批，批准后生效", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
 // 类型未确认的锁：后端给的原因是一句内部规则，按锁的来源写；截止时间是北京时间存的，去掉秒、按业务时区写。
 const lockReasonText = (row: UserSecurityUserRow) => row.lockKind === "UNKNOWN" ? "连续输错" : text(row.lockReason);
 const lockUntilText = (row: UserSecurityUserRow) => { const at = /^锁定至 (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(text(row.lockLeft)); return at ? time(`${at[1]}T${at[2]}+08:00`) : text(row.lockLeft); };
@@ -73,6 +73,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [overview, setOverview] = useState<UserSecurityOverview | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState("");
   const [profile, setProfile] = useState<User360Profile | null>(null), [lookup, setLookup] = useState("");
   const [pendingAll, setPendingAll] = useState(false);
+  const revocationRelease = useVerifiedRelease(ctx.toast);
   const [revocationNotes, setRevocationNotes] = useState<Record<string, string>>({});
   const [users, setUsers] = useState<User360Profile[]>([]), [usersLoading, setUsersLoading] = useState(true), [usersError, setUsersError] = useState("");
   const [userPage, setUserPage] = useState(1), [userSize, setUserSize] = useState(20), [userTotal, setUserTotal] = useState(0), [userRetry, setUserRetry] = useState(0);
@@ -202,7 +203,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       run: async reason => {
         setBusy(true);
         try {
-          await proposeSessionRevocation(session, userId, userLabel(selectedUser), reason, true);
+          await proposeSessionRevocation(session, userId, userLabel(selectedUser), reason);
           ctx.toast("已提交全部设备登出审批，批准后生效");
         } catch (error) {
           if (!pendingSessionRevocationApproval(owner, userId)) throw error;
@@ -221,7 +222,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     const note = (message: string) => setRevocationNotes(current => ({ ...current, [row.commandKey]: message }));
     try {
       const ticket = retry ? await sessionRevocationRecovery.retry(row) : (await sessionRevocationRecovery.query(session, row))?.ticket;
-      if (ticket) ctx.toast(`审批单 ${ticket.id} · ${approvalStatus[ticket.status]}`);
+      if (ticket) { note(""); ctx.toast(`审批单 ${ticket.id} · ${sessionRevocationStatus[ticket.status]}`); }
       else if (ticket === null) note("没有查到原审批单，原操作记录保留。");
     } catch (failure) {
       note(retry ? `重试没有成功。${displayAdminError(failure)}` : `原审批单加载失败。${displayAdminReadError(failure)}`);
@@ -269,10 +270,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         ...logoutPending.map(row => {
           const state = sessionRevocationRecovery.state(row);
           return {
-            key: row.commandKey, title: `全部设备登出审批结果未知 · ${row.label}`,
+            key: row.commandKey, title: `全部设备登出审批${row.ticketId ? "待审批" : "结果未知"} · ${row.label}`,
             action: <><Button size="sm" disabledReason={busy ? "正在处理" : !canQueryRevocation ? "当前账号无法查询原审批单" : undefined} onClick={() => void recoverRevocation(row, false)}>查询原操作</Button>
-              {!state.replayBlock && <Button size="sm" disabled={busy} onClick={() => void recoverRevocation(row, true)}>按原操作重试</Button>}</>,
-            meta: <span>{time(new Date(row.createdAt).toISOString())} · {state.expired && "已超过 24 小时，不能再重试。"}{revocationNotes[row.commandKey] || "可能已建审批单"}<Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{row.commandKey}</span></>} /></span>,
+              {!state.replayBlock && <Button size="sm" disabled={busy} onClick={() => void recoverRevocation(row, true)}>按原操作重试</Button>}
+              {state.replayRejection && !row.ticketId && <VerifiedReleaseButton disabled={busy} onClick={() => revocationRelease.ask({ operation: "退出全部设备", target: row.label, createdAt: row.createdAt, getSnapshot: sessionRevocationRecovery.releaseSnapshot(row), release: () => { const released = sessionRevocationRecovery.release(row); refreshPending(); return released; } })} />}</>,
+            meta: <span>{time(new Date(row.createdAt).toISOString())} · {state.expired && "已超过 24 小时，不能再重试。"}{row.ticketId && `审批单 ${row.ticketId} · ${sessionRevocationStatus.pending}。`}{state.replayRejection ? `重试被拒：${displayAdminError(new Error(state.replayRejection))}` : revocationNotes[row.commandKey] || !row.ticketId && "可能已建审批单"}<Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{row.commandKey}</span></>} /></span>,
           };
         }),
         ...(policyPending && (tab !== "payment" || params?.get("paymentTab") === "exceptions") ? [{ key: "payment-policy", title: "支付密码规则调整结果未知", action: <Button size="sm" onClick={() => setUrl({ tab: "payment", paymentTab: "policy" })}>查询原结果</Button>, meta: "原调整记录已保留，请先核对结果。" }] : []),
@@ -310,6 +312,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     </Drawer>}
     {tab === "security" && locksOpen && !shownLock && <Drawer open onClose={() => setLocksOpen(false)} title="锁定账户" sub="最多 5 条 · 按输错次数排序" icon={LockKeyhole}><Table aria-label="被锁定的账户" label="被锁定的账户" className="c5-locks"><thead><tr><Th>用户</Th><Th>锁定类型</Th><Th>原因</Th><Th sticky="end">操作</Th></tr></thead><tbody>{lockedUsers.map(row => <Tr key={userIdOf(row)} onOpen={() => setShownLock(row)}><Td><Cell main={userNicknameText(text(row.nickname, ""), row.phoneMasked) || text(row.userNo)} sub={row.nickname ? text(row.userNo) : undefined} /></Td><Td><StatusTag tone="warn">{row.lockKind === "UNKNOWN" ? "类型未确认" : lockLabel(row)}</StatusTag></Td><Td><Cell main={lockReasonText(row)} title={lockReasonText(row)} /></Td><Td sticky="end">{canUnlock(row) ? <Button size="sm" disabledReason={userBlocked(userIdOf(row))} onClick={() => begin("unlock", row)}>解锁</Button> : <Button variant="ghost" size="sm" onClick={() => setShownLock(row)}>查看详情</Button>}</Td></Tr>)}{!lockedUsers.length && <TableMessage columns={4}>当前可见范围没有锁定账户</TableMessage>}</tbody></Table></Drawer>}
     {tab === "security" && shownLock && <Drawer open onClose={() => setShownLock(null)} title="登录锁定详情" sub={text(shownLock.userNo)} icon={LockKeyhole} footer={<Decision others={<Button onClick={() => setShownLock(null)}>返回列表</Button>} primary={canUnlock(shownLock) && <Button disabledReason={userBlocked(userIdOf(shownLock))} onClick={() => begin("unlock", shownLock)}>解除{shownLock.lockKind === "LONG" ? "长" : "短"}锁</Button>} />}><JudgmentPoints rows={[{ label: "用户", value: userLabel(shownLock) }, { label: "登录锁定", value: lockLabel(shownLock), state: "warn" }, { label: "输错次数", value: `${text(shownLock.loginFailCount)} 次` }, { label: "密码重置", value: shownLock.passwordResetRequired ? "待用户重置密码" : "未要求重置" }]} /><Facts><Fact k="原因">{lockReasonText(shownLock)}</Fact><Fact k="锁定至">{lockUntilText(shownLock)}</Fact><Fact k="时区">{businessZoneText()}</Fact>{shownLock.lockKind === "UNKNOWN" && <Fact k="解除">到期自动解除，这里不能提前解除</Fact>}</Facts></Drawer>}
+    {revocationRelease.dialog}
     {recovery && commandRecords.some(row => row.commandKey === recovery.commandKey) && <Modal title={release ? "解除原操作记录" : "核对原登录操作"} icon={ShieldCheck} onClose={() => { setRecovery(null); setRelease(false); }} busy={busy} footer={<Decision others={<Button onClick={() => { if (release) setRelease(false); else setRecovery(null); }}>返回</Button>} danger={release ? <Button variant="danger" onClick={() => { forgetC5Command(recovery); setRecovery(null); setRelease(false); refreshPending(); }}>确认解除</Button> : recovery.rejection && <Button variant="danger-outline" onClick={() => setRelease(true)}>解除原操作记录</Button>} primary={!release && !recovery.rejection && <><Button disabled={busy} onClick={() => void recover(false)}>读取现在的值</Button>{isCompleteC5Command(recovery) && !recovery.returned && !recovery.rejection && recovery.expiresAt > Date.now() && <Button variant="primary" disabledReason={!rights.includes(recovery.kind === "credential" ? "user_c5_write" : recovery.kind === "revoke-one" ? "user_c5_session_revoke_one" : recovery.kind === "password-reset" ? "user_c5_password_reset" : recovery.kind === "disable-2fa" ? "user_c5_2fa_disable" : recovery.lockKind === "LONG" ? "user_c5_unlock_long" : "user_c5_unlock_short") ? "当前缺少原操作权限" : undefined} onClick={() => void recover(true)}>按原操作重试</Button>}</>} />}>
       {release ? <ReleaseBody label={recovery.label ?? "旧登录操作"} explain={recovery.rejection} /> : <><Facts><Fact k="原对象">{recovery.label ?? "旧登录处置（缺少原对象快照）"}</Fact><Fact k="发起时间">{time(new Date(recovery.createdAt).toISOString())}</Fact><Fact k="操作编号"><span data-mono>{recovery.commandKey}</span><IconButton aria-label="复制操作编号" onClick={() => void navigator.clipboard.writeText(recovery.commandKey).then(() => ctx.toast("已复制操作编号"), () => ctx.toast("复制失败，请手动复制", "warn"))}><Copy size={14} /></IconButton></Fact>{recovery.reason && <Fact k="原理由">{recovery.reason}</Fact>}{recovery.version !== undefined && <Fact k="原版本">{recovery.version}</Fact>}{recovery.value && <Fact k="原新值">{recovery.value}</Fact>}</Facts>{!recovery.rejection && <Notice tone="warn">{!isCompleteC5Command(recovery) ? "旧记录缺少完整原请求，只能读取现在的值核对；记录继续保留。" : recovery.expiresAt <= Date.now() ? "原请求已超过 24 小时，不能再重试；记录继续保留。" : recovery.returned ? "操作已返回，页面还没刷新，请点「读取现在的值」核对。" : "按原操作重试只用原对象、原内容和原理由。现在的值说明不了原操作成没成。"}</Notice>}{recovery.rejection && <Notice tone="danger" title="原操作已明确拒绝">{recovery.rejection}{recovery.rejectionCode && <> · <span data-mono>{recovery.rejectionCode}</span></>}</Notice>}{recoveryMessage && recoveryMessage !== recovery.rejection && <Notice tone="warn">{recoveryMessage}</Notice>}</>}
     </Modal>}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, createPendingRecovery, isPendingCommandOwnedBy, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { A3FeatureFlag, A3PlatformParam } from "@/lib/admin/a3-client";
@@ -42,7 +42,6 @@ const PATHS: Record<A3Original["kind"], string> = {
 export const a3Deduplicates = (record: Pick<A3Command, "original" | "contentCommandActor">) => record.original.kind !== "docs" && record.original.kind !== "how"
   || record.contentCommandActor !== undefined;
 export const a3HasOriginalReceipt = (record: A3Command) => ["param", "flag", "experience"].includes(record.original.kind);
-export const canReleaseA3Content = (record: A3Command) => !isRetryExpired(record) && !a3Deduplicates(record);
 export type A3ContentComparison = {
   revision: { submitted: number; expected: number; current: number; matches: boolean };
   version: { submitted: string; current: string; matches: boolean };
@@ -114,13 +113,16 @@ const commands = createPendingMutationStore<A3Command>({
 });
 
 const recovery = createPendingRecovery(commands, {
-  capability: () => "receipt",
+  capability: record => a3HasOriginalReceipt(record) ? "receipt" : a3Deduplicates(record) ? "replay" : "readback",
   canReplay: record => {
     const actor = currentRecoveryActor(record.commandOwnerId);
-    return !!actor && (record.original.kind === "experience"
-      ? actor.role === "superadmin" || actor.authorities.includes("platform_a3_write") : actor.role === "superadmin");
+    return !!actor && actor.authorities.includes("platform_a3_write")
+      && (record.original.kind !== "param" && record.original.kind !== "flag" || actor.role === "superadmin");
   },
-  explicitRejectionCode: () => undefined,
+  explicitRejectionCode: error => {
+    const code = explicitRejectionCode(error);
+    return code !== "BUSINESS_CALENDAR_EFFECTIVE_DATE_TOO_EARLY" ? code : undefined;
+  },
 });
 
 export function useA3Commands() {
@@ -175,6 +177,7 @@ export function useA3Commands() {
     if (original.kind !== "docs" && original.kind !== "how" || find(record.fingerprint)?.commandKey !== record.commandKey)
       throw new Error("A3_ORIGINAL_UNRESOLVED");
     const current = original.kind === "docs" ? await fetchDeveloperDocsAdmin() : await fetchHowContentAdmin();
+    if (find(record.fingerprint)?.commandKey !== record.commandKey) throw new Error("A3_ORIGINAL_UNRESOLVED");
     const comparison: A3ContentComparison = {
       revision: { submitted: original.document.revision, expected: original.document.revision + 1, current: current.revision, matches: current.revision === original.document.revision + 1 },
       version: { submitted: original.document.version.trim(), current: current.version, matches: current.version === original.document.version.trim() },
@@ -187,16 +190,11 @@ export function useA3Commands() {
     if (matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
     return { current, comparison, matched };
   };
-  // The visual worker must obtain confirmation before calling this. Read failure retains the record.
-  const releaseContent = async (record: A3Command, confirmed: boolean) => {
-    if (!confirmed || !canReleaseA3Content(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
-    const result = await queryContent(record);
-    if (!result.matched && !canReleaseA3Content(record)) throw new Error("A3_ORIGINAL_QUERY_ONLY");
-    if (!result.matched) { commands.forget(record.fingerprint, record.commandKey); sync(); }
-    return { ...result, released: !result.matched };
+  const send = async (record: A3Command, retry = false) => {
+    try {
+      return retry ? await recovery.replay(record, saved => submit(saved, true)) : await submit(record, false);
+    } finally { sync(); }
   };
-  const send = (record: A3Command, retry = false) => retry && a3HasOriginalReceipt(record)
-    ? recovery.replay(record, saved => submit(saved, true)) : submit(record, retry);
   const submit = async (record: A3Command, retry: boolean) => {
     if (!isPendingCommandOwnedBy(record)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
     if (record.commandOrigin && record.commandOrigin.originalAdminId !== String(useAdminAuth.getState().session?.adminId)) throw new Error("COMMAND_INVESTIGATION_FORBIDDEN");
@@ -221,13 +219,14 @@ export function useA3Commands() {
       if (!response.ok || body?.code !== 0) {
         const reasonCode = typeof body?.message === "string" ? body.message : undefined;
         if (isAdminAuthFailure(response.status, reasonCode)) resetAdminSession();
-        const error = Object.assign(new Error(formatAdminApiError(reasonCode, `A3_REQUEST_FAILED_${response.status}`)), {
-          status: response.status, reasonCode, apiCode: typeof body?.code === "number" ? body.code : undefined,
-        });
-        // The schedule's date check precedes idempotency replay; time advancing cannot settle the original command.
-        const rejected = retry ? isExplicitRejection(error) && reasonCode !== "BUSINESS_CALENDAR_EFFECTIVE_DATE_TOO_EARLY"
-          : !isIdempotencyOutcomeOpen(reasonCode) && isDeterministicRejection(response.status, error.apiCode);
-        if (rejected) { commands.forget(record.fingerprint, record.commandKey); sync(); throw error; }
+        const apiCode = typeof body?.code === "number" ? body.code : undefined;
+        const status = response.ok && apiCode !== undefined && apiCode >= 400 && apiCode < 500 ? apiCode : response.status;
+        const error = Object.assign(new Error(formatAdminApiError(reasonCode, `A3_REQUEST_FAILED_${response.status}`)), { status, reasonCode, apiCode });
+        if (retry && explicitRejectionCode(error)) throw error;
+        if (!retry && !isIdempotencyOutcomeOpen(reasonCode) && isDeterministicRejection(response.status, error.apiCode)) {
+          commands.forget(record.fingerprint, record.commandKey);
+          throw error;
+        }
         throw new OutcomeUnknownError(error.message);
       }
       // A code=0 envelope with missing/invalid data is still unknown. Never display a replay as current data.
@@ -265,11 +264,12 @@ export function useA3Commands() {
       commands.forget(record.fingerprint, record.commandKey); sync();
     } catch (error) {
       sync();
-      if (!commands.list().some(item => item.commandKey === record.commandKey)) throw error;
+      if ((retry && explicitRejectionCode(error)) || !commands.list().some(item => item.commandKey === record.commandKey)) throw error;
       throw error instanceof OutcomeUnknownError ? error : new OutcomeUnknownError("A3_MUTATION_OUTCOME_UNCERTAIN", { cause: error });
     }
   };
-  return { pending, find, capture, send, queryOriginal, queryContent, releaseContent, sync, recoveryState: recovery.state };
+  return { pending, find, capture, send, queryOriginal, queryContent, sync, recoveryState: recovery.state, releaseSnapshot: recovery.releaseSnapshot,
+    releaseRejected: (record: A3Command) => !!currentRecoveryActor(record.commandOwnerId) && recovery.releaseRejectedReplay(record) };
 }
 export type A3Commands = ReturnType<typeof useA3Commands>;
 export type A3RecoveryProps = { commands: A3Commands; recovery: A3Command | null; onRecovered: () => void; nonce: number };

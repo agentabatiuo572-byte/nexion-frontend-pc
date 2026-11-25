@@ -3,16 +3,17 @@
 import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { growthRequest } from "./h-client";
 import { H5_MAX_SORT_ORDER, h5RuleWriteRefusal, h5Amount, parseH5Model, type H5Model } from "./h5-contract";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { canCreateRecoveryProposal, currentRecoveryActor } from "./abe-recovery-access";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
-import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
-import { displayAdminReadError } from "./error-messages";
+import { createPendingMutationStore, createPendingRecovery, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingRecoveryConclusion } from "./pending-mutation-store";
+import { displayAdminError, displayAdminReadError } from "./error-messages";
 
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 export const EARN_CREATE_TARGET = "earn-create:new";
@@ -125,6 +126,24 @@ function validTicket(ticket: A2OperationRow | null | undefined, obj: string, ope
     && ticket.operationCode === operation && ["pending", "approved", "rejected", "expired", "withdrawn"].includes(ticket.status);
 }
 
+function canWriteTarget(session: NonNullable<ReturnType<typeof currentRecoveryActor>>, target: string) {
+  const kind = target.split(":")[0];
+  const authority = kind === "rule" ? "growth_h5_rule_write" : kind === "tick" ? "growth_h5_tick_write" : "growth_h5_write";
+  return session.authorities.includes(authority)
+    && (kind !== "tick" || ["super", "superadmin"].includes(session.role))
+    && (kind !== "rule" || canCreateRecoveryProposal(session.authorities));
+}
+
+const recovery = createPendingRecovery(pending, {
+  capability: record => record.request.kind === "direct" ? "replay" : "receipt",
+  canReplay: record => {
+    const actor = currentRecoveryActor(record.adminId);
+    return !!actor && !record.acknowledged && !record.ticket && canWriteTarget(actor, record.change.target);
+  },
+  hasApproval: record => !!record.acknowledged || !!record.ticket,
+  explicitRejectionCode,
+});
+
 function firstRejection(error: unknown) {
   if (isA2OutcomeUncertainError(error) || isOutcomeUnknownError(error)) return false;
   const e = error as { status?: number; apiCode?: number; reasonCode?: string; backendMessage?: string; unknownOutcome?: boolean; bodyUnreadable?: boolean } | null;
@@ -142,20 +161,15 @@ function normalizeGrowthRejection(error: unknown) {
 export function useH5Mutations(toast: (message: string) => void, settled: (commandKey?: string) => Promise<void>, isFresh: () => boolean) {
   const adminId = useAdminAuth(s => s.session?.adminId);
   const [, update] = useReducer(n => n + 1, 0);
+  useSyncExternalStore(recovery.subscribe, recovery.getRevision, () => 0);
   const [ticketReadErrors, setTicketReadErrors] = useState<Record<string, string>>({});
   useEffect(() => { update(); }, [adminId]);
   const records = () => pending.list().filter(r => r.adminId === adminId);
   const record = (target: string) => records().find(r => r.change.target === target);
   const requireActor = (target: string, write: boolean) => {
-    const auth = useAdminAuth.getState();
-    const session = auth.session;
-    if (!auth.isAuthenticated || auth.logoutPending || !session || session.adminId !== adminId) throw new Error("ADMIN_AUTH_REQUIRED");
-    if (write) {
-      const kind = target.split(":")[0];
-      const authority = kind === "rule" ? "growth_h5_rule_write" : kind === "tick" ? "growth_h5_tick_write" : "growth_h5_write";
-      if (!session.authorities.includes(authority) || kind === "tick" && !["super", "superadmin"].includes(session.role)
-        || kind === "rule" && !session.authorities.some(a => a === "platform_a2_write" || a === "platform_a2_proposal_create")) throw new Error("H5_MAKER_FORBIDDEN");
-    }
+    const session = currentRecoveryActor(adminId);
+    if (!session) throw new Error("ADMIN_AUTH_REQUIRED");
+    if (write && !canWriteTarget(session, target)) throw new Error("H5_MAKER_FORBIDDEN");
     return session;
   };
   const forget = (original: H5PendingCommand) => {
@@ -175,18 +189,6 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       throw new Error("审批单与保存的原申请不符，原操作继续保留，请查询原结果。");
     }
   };
-  const readTicket = async (original: H5PendingCommand) => {
-    try {
-      const ticket = await fetchA2ProposalByKey(original.commandKey, true, "a");
-      if (ticket) checkTicket(original, ticket);
-      else if (original.ticket || original.acknowledged) throw new Error("暂未读到已提交的审批单，保留上次读到的状态。");
-      setTicketReadErrors(({ [original.commandKey]: _, ...rest }) => rest);
-      return ticket;
-    } catch (error) {
-      setTicketReadErrors(current => ({ ...current, [original.commandKey]: displayAdminReadError(error) }));
-      throw error;
-    }
-  };
   const query = async (original: H5PendingCommand, feedback: "lookup" | "refresh" | "submitted" = "lookup") => {
     requireActor(original.change.target, false);
     if (original.request.kind === "direct") {
@@ -194,14 +196,32 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       if (feedback !== "refresh") toast("已重读当前配置；当前值不能证明原操作是否执行，记录继续保留，请到操作记录与审批核对。");
       return undefined;
     }
-    const ticket = await readTicket(original);
+    const { authEpoch } = useAdminAuth.getState();
+    const stillSignedIn = () => useAdminAuth.getState().authEpoch === authEpoch && currentRecoveryActor(original.adminId);
+    const result = await recovery.query(original, async (saved): Promise<{ conclusion: PendingRecoveryConclusion; ticket?: A2OperationRow | null; error?: string }> => {
+      try {
+        const ticket = await fetchA2ProposalByKey(saved.commandKey, true, "a");
+        if (!stillSignedIn()) return { conclusion: "unknown" };
+        if (ticket) checkTicket(saved, ticket);
+        else if (saved.ticket || saved.acknowledged) throw new Error("暂未读到已提交的审批单，保留上次读到的状态。");
+        return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed" };
+      } catch (error) {
+        return { conclusion: "unknown", error: displayAdminReadError(error) };
+      }
+    });
+    if (!result || !stillSignedIn() || record(original.change.target)?.commandKey !== original.commandKey) return;
+    const { ticket, error, conclusion } = result;
+    setTicketReadErrors(current => {
+      const { [original.commandKey]: _, ...rest } = current;
+      return error ? { ...rest, [original.commandKey]: error } : rest;
+    });
+    if (error) return;
     if (!ticket) {
-      // 过期后不能重试，下一步是去操作记录与审批核对（OP-152、OP-153）；没过期的照旧可以按原操作重试。
-      if (feedback !== "refresh") toast(isRetryExpired(original) ? "没查到原审批单。原申请已过期，记录和修改锁保留，请到操作记录与审批核对。" : "暂未查到原审批单，原操作继续保留。");
+      if (feedback !== "refresh") toast(isRetryExpired(original) ? "没查到原审批单。已超过重试时限，请到操作记录与审批核对。" : "没查到原审批单，原操作继续保留。");
       return null;
     }
     if (ticket.status === "pending") retain({ ...original, acknowledged: true, ticket });
-    else forget(original);
+    else if (!recovery.settleFromQuery(original, conclusion)) return;
     if (feedback === "submitted" && ticket.status === "pending") {
       toast(`已提交，等待审批后执行 · 审批单 ${ticket.id}`);
     } else if (feedback !== "refresh" || ticket.status !== "pending") {
@@ -233,9 +253,9 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
         }
       } catch (error) {
         if (request.kind === "earn-create") normalizeGrowthRejection(error);
-        if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
+        if (!recovering && firstRejection(error)) {
           forget(original);
-          if (recovering || isHGrowthReadConflict(error)) await settled(original.commandKey);
+          if (isHGrowthReadConflict(error)) await settled(original.commandKey);
         }
         throw error;
       }
@@ -243,19 +263,16 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       // A POST replay is only historical evidence. Only the by-key GET may mark it pending.
       const acknowledged = { ...original, acknowledged: true };
       retain(acknowledged);
-      const current = await query(acknowledged, recovering ? "lookup" : "submitted");
-      if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原操作继续保留。");
-      if ((recovering || request.kind === "earn-create") && current.status === "pending") await settled(original.commandKey);
-      return;
+      return acknowledged;
     }
     let result: Record<string, unknown>;
     try {
       result = await growthRequest(request.path, { method: "PATCH", body: request.body, headers: { "Idempotency-Key": original.commandKey } }, undefined, true);
     } catch (error) {
       normalizeGrowthRejection(error);
-      if (recovering ? isExplicitRejection(error) : firstRejection(error)) {
+      if (!recovering && firstRejection(error)) {
         forget(original);
-        if (recovering || isHGrowthReadConflict(error)) await settled(original.commandKey);
+        if (isHGrowthReadConflict(error)) await settled(original.commandKey);
       }
       throw error;
     }
@@ -264,17 +281,24 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     const body = JSON.parse(request.body) as Record<string, string | number>;
     const [kind, ...idParts] = original.change.target.split(":");
     const id = idParts.join(":");
+    const multiplier = kind === "power" && original.change.snapshot.powerUps.find(item => item.id === Number(id))?.effectType === "CHECKIN_MULTIPLIER";
     const [tickWhole, tickFraction = ""] = kind === "tick" ? String(body.value).split(".") : ["0"];
     const tickSeconds = (BigInt(tickWhole) * BigInt(1000000) + BigInt(tickFraction.slice(0, 6).padEnd(6, "0"))
       + (Number(tickFraction[6] ?? "0") >= 5 ? BigInt(1) : BigInt(0))) / BigInt(1000000);
     const valid = kind === "streak" ? updated?.source === "nx_streak_milestone" && updated.milestoneId === Number(id) && updated.reward === body.value
-      : kind === "power" ? updated?.source === "nx_streak_power_up" && updated.powerUpId === Number(id) && updated.day === body.day && updated.note === body.note
+      : kind === "power" ? updated?.source === "nx_streak_power_up" && updated.powerUpId === Number(id) && updated.day === body.day && (!multiplier || updated.note === body.note)
         : kind === "earn" ? updated?.source === "nx_earning_milestone_rule" && updated.key === id && h5Amount(String(updated.newThresholdUsd)) === h5Amount(String(body.thresholdUsd)) && h5Amount(String(updated.newRewardNex)) === h5Amount(String(body.rewardNex))
           : updated?.configKey === "growth.earn_milestone.tick_interval_seconds" && String(updated.seconds) === String(tickSeconds);
     if (!valid) throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原操作继续保留，请查询原结果。");
     forget(original);
     await settled(original.commandKey);
     toast(original.change.success);
+  };
+  const finishSubmission = async (acknowledged: H5PendingCommand | undefined, recovering: boolean) => {
+    if (!acknowledged) return;
+    const ticket = await query(acknowledged, recovering ? "lookup" : "submitted");
+    if (!ticket) throw new OutcomeUnknownError("申请已建单，审批进度还没查到。请查询原操作。");
+    if ((recovering || acknowledged.request.kind === "earn-create") && ticket.status === "pending") await settled(acknowledged.commandKey);
   };
   const run = async (change: H5Change, onCommand?: (commandKey: string) => void) => {
     const actor = requireActor(change.target, true);
@@ -296,12 +320,12 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
         : change.direct ? { kind: "direct", path: change.direct.path, body: JSON.stringify({ ...change.direct.body, reason: change.reason, operator: actor.operator || actor.username }) }
           : (() => { throw new Error("H5_PROPOSAL_INVALID"); })();
       const now = Date.now();
-      return { fingerprint, commandKey: createA2CommandKey(request.kind === "direct" ? "h5-direct" : "h5-proposal"), createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, adminId: actor.adminId, change, request };
+      return { fingerprint, commandKey: createA2CommandKey(request.kind === "direct" ? "h5-direct" : "h5-proposal"), createdAt: now, expiresAt: now + PENDING_MUTATION_TTL_MS, commandOwnerId: actor.adminId, adminId: actor.adminId, change, request };
     };
     try {
       const original = create(change.approvalRequired);
       onCommand?.(original.commandKey);
-      await send(original, false);
+      await finishSubmission(await send(original, false), false);
     } catch (error) {
       const e = error as { reasonCode?: string; backendMessage?: string };
       // The streak read model has no stored amount. Its direct endpoint determines direction.
@@ -314,11 +338,21 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     }
   };
 
+  const retryReason = (original: H5PendingCommand) => {
+    const state = recovery.state(original);
+    if (state.replayRejection) return `重试被拒：${displayAdminError(new Error(state.replayRejection))}`;
+    if (state.expired) return "已超过 24 小时，只能查询原操作";
+    if (original.acknowledged || original.ticket) return "申请已建单，请查询原操作";
+    if (state.busy) return "正在处理原操作";
+    if (state.replayBlock === "needs-not-found") return ticketReadErrors[original.commandKey] ? "查询失败，请重新查询原操作" : "须先查明未找到原审批单";
+    if (state.replayBlock) return "当前不能按原操作重试";
+  };
   return {
-    records: records(), record, query, ticketReadErrors,
-    canRetry(original: H5PendingCommand) {
-      if (isRetryExpired(original) || original.acknowledged || original.ticket) return false;
-      try { requireActor(original.change.target, true); return true; } catch { return false; }
+    records: records(), record, query, ticketReadErrors, retryReason, recovery,
+    release(original: H5PendingCommand) {
+      const released = !!currentRecoveryActor(original.adminId) && recovery.releaseRejectedReplay(original);
+      update();
+      return released;
     },
     async refreshTickets() {
       await Promise.allSettled(records().filter(r => r.request.kind !== "direct").map(r => query(r, "refresh")));
@@ -326,14 +360,11 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     async retry(original: H5PendingCommand) {
       const current = record(original.change.target);
       if (current?.commandKey !== original.commandKey) throw new Error("原操作已处理，请刷新后重新操作。");
-      if (current.request.kind !== "direct") {
-        const ticket = await query(current);
-        if (ticket) {
-          if (ticket.status === "pending") await settled(original.commandKey);
-          return;
-        }
+      try {
+        await finishSubmission(await recovery.replay(current, saved => send(saved, true)), true);
+      } finally {
+        update();
       }
-      return send(current, true);
     },
     run,
   };
