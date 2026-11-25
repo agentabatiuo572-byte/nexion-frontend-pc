@@ -1166,7 +1166,7 @@ function G4GenesisPage() {
     ...(pendingFirstDividend ? [{
       key: "first-dividend", name: "每日收益比例",
       change: "首次配置的原申请",
-      tag: <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位超级管理员批准，批准前仍是 0%。点「查询原操作」核对原审批单。">结果未知</StatusTag>,
+      tag: <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位超级管理员批准，批准前每日收益比例仍为未配置。点「查询原操作」核对原审批单。">结果未知</StatusTag>,
       action: <Button size="sm" disabled={!!busyKey} aria-label="查询原日分红审批" onClick={() => { const [original] = configApprovalOriginalInput("G4", pendingFirstDividend.input); setFirstDividend({ epoch, expectedRevision: original.expectedRevision }); }}>查询原操作</Button>,
     }] : []),
   ];
