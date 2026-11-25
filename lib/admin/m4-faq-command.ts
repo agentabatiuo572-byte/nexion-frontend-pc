@@ -60,13 +60,20 @@ export async function queryM4FaqCommand(record: PendingMutationRecord & { faq?: 
 
 export async function readM4FaqRecovery(record: PendingMutationRecord & { faq?: M4FaqCommand }, evidence?: FundCommandEvidence) {
   const result = await queryM4FaqCommand(record, evidence);
-  let conclusion: PendingRecoveryConclusion = "unknown";
-  const verdict = fundCommandResult(result.receipt);
-  if (result.settled && verdict === "SUCCEEDED") conclusion = "succeeded";
-  if (result.settled && verdict === "NOT_EXECUTED") conclusion = "not-executed";
-  if (result.settled && verdict === "REJECTED") conclusion = "rejected";
+  const { receipt } = result;
   const command = record.faq;
-  if (!result.receipt && command) {
+  let conclusion: PendingRecoveryConclusion = "unknown";
+  const verdict = fundCommandResult(receipt);
+  if (result.settled && verdict === "SUCCEEDED") conclusion = "succeeded";
+  // The backend can prove a local rollback only for create and full update.
+  if (result.settled && verdict === "NOT_EXECUTED" && (command?.request.method === "POST"
+    || command?.request.method === "PATCH" && !command.request.path.endsWith("/status"))) conclusion = "not-executed";
+  // Discovery validates the original scope, locator and actor. A completed
+  // command can have a nonzero stored business reply, even when its ledger is SUCCEEDED.
+  const originalBusinessRejection = receipt?.originalStatus === "SUCCEEDED" && !receipt.locked
+    && receipt.businessState === "REJECTED" && typeof receipt.businessCode === "number" && receipt.businessCode !== 0;
+  if (result.settled && verdict === "REJECTED" || originalBusinessRejection) conclusion = "rejected";
+  if (!receipt && command) {
     // Discovery omits older or unattributed rows. Only the exact scope lookup can prove absence.
     const scope = command.request.method === "POST" ? "M4_SUPPORT_FAQ_CREATE"
       : `M4_SUPPORT_FAQ_${command.request.method === "DELETE" ? "DELETE" : command.request.path.endsWith("/status") ? "STATUS" : "UPDATE"}:${command.row.id}`;
