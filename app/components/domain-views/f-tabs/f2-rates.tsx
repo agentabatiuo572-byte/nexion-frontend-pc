@@ -18,7 +18,7 @@ import {
   type F2Confirm, type Layer,
 } from "./f2-shared";
 import { F2Bootstrap, f2BootstrapFormShown, type F2BootstrapDraft } from "./f2-bootstrap";
-import { f2AppLimitIssue, f2DecimalTimes } from "./f2-bootstrap-ticket";
+import { F2_APP_LIMIT_COPY, f2AppLimitIssue, f2DecimalTimes } from "./f2-bootstrap-ticket";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import type { FViewCtx } from "./types";
@@ -110,20 +110,18 @@ function f2LayerEditors(ctx: FViewCtx) {
     const current = rate?.usdtText ?? "";
     // 这一层在按层暂停里停着：改比例批准后也仍不发，说清楚要发放还得去恢复（D5）。
     const layerPaused = m.paused(level) === "on";
+    const limitIssue = (next: string) => next.trim() && Number.isFinite(Number(next)) && rates.length === 7
+      ? f2AppLimitIssue(rates.map((row) => row.l === level ? next.trim() : row.usdtText ?? "0")) : undefined;
     return {
       slot: `f-config:F.unilevel.${level}`,
       action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
       edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase",
-        validate: (next) => {
-          if ((next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4) return "最多 4 位小数（末尾的 0 不算），多了不能提交";
-          // 本来就超了上限时，只要是往下调就放行，免得改不回来。
-          const issue = next.trim() && rates.length === 7 && Number(next) >= Number(current) ? f2AppLimitIssue(rates.map((row) => row.l === level ? next.trim() : row.usdtText ?? "0")) : undefined;
-          return issue && `${issue}，不能提交`;
-        },
+        validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "最多 4 位小数（末尾的 0 不算），多了不能提交" : undefined,
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
         preview: (next) => <>
           {layerPaused && <p className="f2-edit-note">{`要发放，到「按层暂停」恢复 ${level}。`}</p>}
+          {limitIssue(next) && <Notice tone="warn" title={limitIssue(next)!}>{F2_APP_LIMIT_COPY}</Notice>}
           {rates.length ? <LayerCompare rates={sourcesUseFirstTwo ? rates.filter(row => !rankedLevel(row.l as Layer) && !noRateSource(row.l as Layer)) : rates} level={level} next={next || current ? Number(next || current) : null} field="usdt" ranked={ranked} /> : null}
         </> },
       facts: (next) => {

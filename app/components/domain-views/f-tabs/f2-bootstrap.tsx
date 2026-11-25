@@ -130,7 +130,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
   const settlementCap = cap ?? DEFAULT_SETTLEMENT_CAP;
   const budgetHigh = ranked ? Number(sumRange?.high ?? 0) : rawSumNumber;
   const axisMax = Math.max(40, Math.ceil(Math.max(budgetHigh, cap ?? 0) / 10) * 10);
-  const blocked = ctx.f2WriteBlocked(F2_BOOTSTRAP_SLOT) ?? (issues.length ? `还有 ${issues.length} 格要填写或修改` : limitIssue && `${limitIssue}，不能提交`);
+  const blocked = ctx.f2WriteBlocked(F2_BOOTSTRAP_SLOT) ?? (issues.length ? `还有 ${issues.length} 格要填写或修改` : undefined);
   const change = (level: Layer, kind: "usdt" | "nex", value: string) => setDraft({ ...draft, cells: { ...draft.cells, [level]: { ...draft.cells[level], [kind]: value } } });
   const shown = (level: Layer, kind: "usdt" | "nex") => draft.cells[level][kind] ? cellIssue(kind, draft.cells[level][kind]) : undefined;
 
@@ -152,6 +152,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
         <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f2_royalty_rate)}</Fact>
       </Facts>,
       content: <div className="rd-stack">
+        {limitIssue && <Notice tone="warn" title={limitIssue}>{F2_APP_LIMIT_COPY}</Notice>}
         <F2BootstrapReview rows={rows} label="要建立的七层规则" ranked={ranked ? ctx.f2RankPurchaseRange ?? null : undefined} />
       </div>,
       statedBrief: { impact: "批准后七层规则一次建好；整体结算不会自动启用，要另外申请。", check: ranked ? "逐层核对下表；第 1、2 层按受益人等级。" : "逐层核对下表；第 1 层固定 10%。" },
@@ -216,7 +217,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           <div><dt>奖励总额上限</dt><dd data-empty={cap === null ? "" : undefined}>{cap === null ? "未配置" : `${num(cap)}%`}</dd></div>
         </dl>}
       </Figure>}
-      {limitIssue && <Notice tone="danger" title={limitIssue}>{F2_APP_LIMIT_COPY}</Notice>}
+      {limitIssue && <Notice tone="warn" title={limitIssue}>{F2_APP_LIMIT_COPY}</Notice>}
       <div className="rd-toolbar" data-end="">
         {blocked && <span className="f2-boot-error" role="alert">{blocked}</span>}
         <Button onClick={() => setDraft(null)}>取消</Button>

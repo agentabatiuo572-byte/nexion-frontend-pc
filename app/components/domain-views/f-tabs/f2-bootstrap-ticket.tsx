@@ -56,7 +56,7 @@ export const f2SampleUsdt = (pct: string) => f2DecimalTimes(pct, String(SAMPLE_O
 
 /** App 对七层原始配置的读取上限（commission-config-api.ts）。 */
 export const F2_APP_TOTAL_LIMIT = 25;
-export const F2_APP_LIMIT_COPY = "原始比例合计超过 25% 时，App 读不出团队奖励配置，所以不能提交。";
+export const F2_APP_LIMIT_COPY = "原始比例合计超过 25% 时，App 读不出团队奖励配置。核对后仍可以提交。";
 /** 七层原始比例合计超过 App 读取上限时的原因；不超或没填全返回 undefined。 */
 export function f2AppLimitIssue(pcts: readonly string[]) {
   return pcts.reduce((sum, pct) => sum + Number(pct), 0) > F2_APP_TOTAL_LIMIT + 0.000001
