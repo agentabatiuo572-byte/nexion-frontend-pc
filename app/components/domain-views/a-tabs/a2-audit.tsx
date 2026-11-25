@@ -228,8 +228,8 @@ function approvalExecutorLabel(w: A2OperationRow) {
 }
 
 function isV8PromotionTicket(w: A2OperationRow) {
-  // A2 返回目标等级，F1 写入的动作后缀区分晋升和降级。
-  return w.operationCode === "f_vrank_override" && w.after === "V8" && w.action.endsWith(" · 晋升至 V8");
+  // V8 是最高等级，目标为 V8 的人工调级一定是晋升。
+  return w.operationCode === "f_vrank_override" && w.after.trim() === "V8";
 }
 
 function approvalCoverageMode(w: A2OperationRow) {
