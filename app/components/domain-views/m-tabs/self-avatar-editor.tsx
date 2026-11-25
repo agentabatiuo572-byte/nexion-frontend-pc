@@ -28,6 +28,17 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     return () => { generation.current++; controller.current?.abort(); };
   }, [actorId, epoch]);
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
+  const instance = useRef({}).current;
+  useEffect(() => {
+    const onChangedElsewhere = (event: Event) => {
+      const { source, snapshot: next } = (event as CustomEvent<{ source: object; snapshot: SelfAvatarSnapshot }>).detail;
+      if (source === instance) return;
+      setSnapshot(next); onSnapshot?.(next);
+      void ctx.refreshContent().catch(() => undefined);
+    };
+    window.addEventListener("self-avatar-changed", onChangedElsewhere);
+    return () => window.removeEventListener("self-avatar-changed", onChangedElsewhere);
+  }, [ctx, onSnapshot]);
   // 放在上面那个重置之后：挂上先清空，再打开。
   useEffect(() => { if (launch) { setOpen(true); void read(); } }, []);
   const opened = useRef(false), queryButton = useRef<HTMLButtonElement>(null), pendingFocused = useRef(false);
@@ -38,6 +49,8 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
     selfAvatarCommands.forget(record.fingerprint, record.commandKey);
     avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "self", "self"));
     setPending(null); setSnapshot(current); setAssetId(undefined); setBlocking(false); setOpen(false); onChanged(current);
+    // 账号菜单和客服工作台各挂一个编辑器：一边保存成功，另一边的本人头像和名单跟着换。
+    window.dispatchEvent(new CustomEvent("self-avatar-changed", { detail: { source: instance, snapshot: current } }));
     ctx.toast("本人头像已读回确认。");
     void ctx.refreshContent().catch(() => ctx.toast("头像已保存，客服名单还没同步，请刷新名单。"));
   };
@@ -77,6 +90,8 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
           // 从确认框发起时把明确拒绝交给确认框：框不关，原因写在框里（OP-81、OP-82）；抽屉里的原因照旧。
           if (!recovering) throw e;
         }
+        // 从确认框发出后结果未知：原记录还在，关掉确认框，让抽屉里的待确认提示接手（OP-81「转成持续的待确认条」）。
+        if (!recovering && sent && selfAvatarCommands.list().some(row => row.commandKey === record.commandKey)) return true;
       }
       return false;
     } finally { if (active(token)) setBusy(false); }
