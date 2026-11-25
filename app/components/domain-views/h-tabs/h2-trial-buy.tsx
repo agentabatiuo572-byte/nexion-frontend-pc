@@ -141,7 +141,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const [draftBase, setDraftBase] = useState<BuyList>();
   const [picked, setPicked] = useState<string[]>([]);
   const [lastReason, setLastReason] = useState("");
-  const [rejectedDraft, setRejectedDraft] = useState<ConfirmReadConflict>();
+  const [rejected, setRejected] = useState<string>();
   const [leaving, setLeaving] = useState(false);
   const afterLeave = useRef<() => void>(undefined);
   const formSequence = useRef(0);
@@ -156,13 +156,17 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const invalidPicked = candidates.some((item) => !item.selectable && added.includes(item.productNo));
   const draftBlock = blocked ?? (invalidPicked ? "请先取消不能新增的设备" : changed ? undefined : "勾选和现在一样，没有要保存的改动");
 
-  const openDrawer = () => { setPicked(items.map((item) => item.productNo)); setLastReason(""); setRejectedDraft(undefined); setDraftBase(list); };
+  const dirty = !!draftBase && changed;
+  const openDrawer = () => {
+    // 抽屉开着时「调整」仍可用键盘点到：有改动先问，不重置勾选。
+    if (dirty) { setLeaving(true); return; }
+    setPicked(items.map((item) => item.productNo)); setLastReason(""); setRejected(undefined); setDraftBase(list);
+  };
   const closeDrawer = () => { afterLeave.current = undefined; setLeaving(false); setDraftBase(undefined); };
   const continueEditing = () => { afterLeave.current = undefined; setLeaving(false); };
   // 关闭、Esc、点抽屉外、取消：有改动先问（OP-29）。
-  const leaveDrawer = () => { if (leaving) continueEditing(); else if (changed) setLeaving(true); else closeDrawer(); };
+  const leaveDrawer = () => { if (leaving) continueEditing(); else if (changed) { afterLeave.current = undefined; setLeaving(true); } else closeDrawer(); };
   const discard = () => { const next = afterLeave.current; closeDrawer(); next?.(); };
-  const dirty = !!draftBase && changed;
   useEffect(() => {
     if (!dirty) return;
     const leaveThen = (next: () => void) => { afterLeave.current = next; setLeaving(true); };
@@ -188,7 +192,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   }, [dirty, leaveGuard, router]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
-  const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejection?: ConfirmReadConflict) => {
+  const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejected?: string) => {
     const { items, candidates } = buyChoices(base);
     const selected = new Set(selection);
     const current = new Set(items.map((item) => item.productNo));
@@ -211,6 +215,26 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       }),
     ];
     const after = listValue(next);
+    const readReview = async () => {
+      const latest = await onReload(true);
+      if (!latest) throw new Error(BUY_READ_INVALID);
+      const review = rebaseSelection(latest, added, removed);
+      setDraftBase(review.base);
+      setPicked(review.selection);
+      return review;
+    };
+    // 被拒的提示跟着这一框里的增删走：改过勾选再打开，「返回调整」按现在的勾选重算。
+    const rejection = (message: string) => new ConfirmReadConflict({
+      preserveReason: true,
+      disabledReason: "请先返回调整",
+      readLatest: async () => {
+        await readReview();
+        setRejected(undefined);
+        ctx.openActionConfirm(null);
+        return false;
+      },
+      renderNotice: (back) => <Notice tone="danger" action={<Button size="sm" onClick={back}>返回调整</Button>}>{message}</Notice>,
+    });
     const send = async (reason: string) => {
       setLastReason(reason);
       const outcome = await onSubmit({
@@ -222,14 +246,6 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         nextNames: next.map((item) => item.name),
       });
       if (outcome.kind === "stopped") { closeDrawer(); return; }
-      const readReview = async () => {
-        const latest = await onReload(true);
-        if (!latest) throw new Error(BUY_READ_INVALID);
-        const review = rebaseSelection(latest, added, removed);
-        setDraftBase(review.base);
-        setPicked(review.selection);
-        return review;
-      };
       if (outcome.kind === "conflict") {
         throw new ConfirmReadConflict({
           preserveReason: true,
@@ -248,27 +264,19 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         });
       }
       if (outcome.kind === "rejected") {
-        const rejection = new ConfirmReadConflict({
-          preserveReason: true,
-          disabledReason: "请先返回调整",
-          readLatest: async () => {
-            await readReview();
-            setRejectedDraft(undefined);
-            ctx.openActionConfirm(null);
-            return false;
-          },
-          renderNotice: (back) => <Notice tone="danger" action={<Button size="sm" onClick={back}>返回调整</Button>}>{outcome.message}</Notice>,
-        });
-        setRejectedDraft(rejection);
-        throw rejection;
+        setRejected(outcome.message);
+        throw rejection(outcome.message);
       }
       if (outcome.kind === "unknown") {
         closeDrawer();
         ctx.toast("结果未知，不要重复操作，到页面上方处理。", "warn");
         return;
       }
+      // 从「还没保存」里选了保存：存好后接着做原来要做的（换页，或整页刷新，刷新自带读回）。
+      const proceed = afterLeave.current;
       closeDrawer();
-      await onReload().catch(() => undefined);
+      if (proceed) proceed();
+      else await onReload().catch(() => undefined);
       ctx.toast("其他可购买设备 已更新", "success");
     };
     ctx.openActionConfirm({
@@ -288,7 +296,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         </div>
       ),
       initialReason: initialReason || undefined,
-      initialRejection,
+      initialRejection: initialRejected === undefined ? undefined : rejection(initialRejected),
       blockedReason: blocked,
       reasonPlaceholder: "写清调整原因和依据",
       confirmLabel: "确认修改，立即生效",
@@ -299,8 +307,9 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
 
   const openConfirm = () => {
     if (!canWrite || !draftBase || draftBlock) return;
-    continueEditing();
-    showConfirm(draftBase, picked, lastReason, rejectedDraft);
+    if (!leaving) afterLeave.current = undefined;
+    setLeaving(false);
+    showConfirm(draftBase, picked, lastReason, rejected);
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
