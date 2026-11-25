@@ -22,7 +22,7 @@ export type TrialTarget = {
   name: string;
   status: StoreStatus;
   stock: number | string;
-  appVisible?: boolean;
+  appVisible: boolean;
   hiddenReason?: string;
 };
 
@@ -100,15 +100,13 @@ function sameDevice(left: BuyDevice, right: BuyDevice) {
     && left.appState === right.appState && left.hiddenReason === right.hiddenReason;
 }
 
-function readTrialTarget(raw: unknown): TrialTarget | "invalid" | undefined {
-  if (raw === undefined) return undefined;
+function readTrialTarget(raw: unknown): TrialTarget | "invalid" {
   const target = object(raw);
   if (!target) return "invalid";
   const { productNo, name, status, stock, appVisible, hiddenReason } = target;
   if (!nonBlank(productNo) || !nonBlank(name) || !isStoreStatus(status) || !stockCount(stock)) return "invalid";
-  if ((hiddenReason != null && typeof hiddenReason !== "string")
-    || (appVisible !== undefined && (typeof appVisible !== "boolean"
-      || (appVisible ? status !== "on" : !nonBlank(hiddenReason))))) return "invalid";
+  if (typeof appVisible !== "boolean" || (hiddenReason != null && typeof hiddenReason !== "string")
+    || (appVisible ? status !== "on" : !nonBlank(hiddenReason))) return "invalid";
   return { productNo, name, status, stock, appVisible, hiddenReason: nonBlank(hiddenReason) ? hiddenReason : undefined };
 }
 
@@ -128,7 +126,7 @@ export function readH2TrialPurchase(raw: Record<string, unknown>) {
 
   return {
     buyList,
-    trialTarget: readTrialTarget(raw.trialTargetProduct),
+    trialTarget: buyList === undefined ? undefined : readTrialTarget(raw.trialTargetProduct),
     writePermissionName: nonBlank(raw.writePermissionName) ? raw.writePermissionName : undefined,
   };
 }
@@ -143,8 +141,9 @@ export function readH2SessionProducts(value: unknown) {
     || (convertible === true && (state === "redeemed" || nonBlank(purchasedProductName)))) return "invalid";
   return {
     trialProductName: nonBlank(trialProductName) ? trialProductName : undefined,
-    purchasedProductName,
-    convertible,
+    purchasedProductName: purchasedProductName === null
+      ? (typeof convertible === "boolean" ? (convertible ? "尚未购买" : "没有购买") : undefined)
+      : purchasedProductName,
   };
 }
 

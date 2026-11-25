@@ -658,12 +658,11 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         announcePermissionDenied();
         return { kind: "stopped" };
       }
+      if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
       if (outcome.kind === "forbidden" || outcome.kind === "unauthenticated") {
-        if (outcome.kind === "forbidden") setBuyRetryDenied(commandKey);
         handleBuySessionStop(outcome.kind, ownerId);
         return { kind: "stopped" };
       }
-      if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
       return outcome;
     } finally {
       syncBuyPending();
@@ -1172,7 +1171,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             ]} />
             <Facts>
               {sessionProducts.trialProductName !== undefined && <Fact k="试用设备">{sessionProducts.trialProductName}</Fact>}
-              {sessionProducts.purchasedProductName !== undefined && <Fact k="购买设备">{sessionProducts.purchasedProductName ?? ((sessionProducts.convertible ?? !currentRow.terminal) ? "尚未购买" : "没有购买")}</Fact>}
+              {sessionProducts.purchasedProductName !== undefined && <Fact k="购买设备">{sessionProducts.purchasedProductName}</Fact>}
               <Fact k="开始时间">{sessionTime(currentRow.session.claimedAt, true)}</Fact>
               <Fact k="到期时间">{sessionTime(currentRow.session.expiresAt, !currentRow.session.claimedAt)}</Fact>
             </Facts>

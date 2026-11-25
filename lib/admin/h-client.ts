@@ -352,17 +352,17 @@ export async function updateH2TrialBuyList(input: BuyListWrite, commandKey: stri
     return { kind: "saved" } as const;
   } catch (cause) {
     const error = cause as Error & { status?: number; apiCode?: number; apiMessage?: string; details?: { reason?: unknown }; unknownOutcome?: boolean };
+    if (error.unknownOutcome || !Number.isInteger(error.apiCode)
+      || [408, 425, 429].some((status) => status === error.status || status === error.apiCode)
+      || error.apiMessage?.startsWith("IDEMPOTENCY_") || isH2OutcomeUnknown(error)) return { kind: "unknown" } as const;
     if (isAdminAuthFailure(error.status ?? 0, error.apiMessage) || error.apiCode === 401) return { kind: "unauthenticated" } as const;
-    if (error.apiMessage === "TRIAL_BUY_LIST_ACCOUNT_MISMATCH" && !error.unknownOutcome
-      && !isH2OutcomeUnknown(error)) {
+    if (error.apiMessage === "TRIAL_BUY_LIST_ACCOUNT_MISMATCH") {
       const reason = error.details?.reason;
       return { kind: "accountMismatch", message: displayAdminError(
         typeof reason === "string" && reason.trim() ? reason : "确认账号与当前登录账号不符，这次没有保存。",
       ) } as const;
     }
     if (error.status === 403 || error.apiCode === 403) return { kind: "forbidden" } as const;
-    if (error.unknownOutcome || [408, 425, 429].some((status) => status === error.status || status === error.apiCode)
-      || error.apiMessage?.startsWith("IDEMPOTENCY_") || isH2OutcomeUnknown(error)) return { kind: "unknown" } as const;
     if (error.apiMessage === "TRIAL_BUY_LIST_VERSION_CONFLICT") return { kind: "conflict" } as const;
     const message = displayAdminError(typeof error.details?.reason === "string" && error.details.reason.trim()
       ? error.details.reason : error);
