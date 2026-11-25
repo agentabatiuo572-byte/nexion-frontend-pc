@@ -25,3 +25,6 @@
 
 /* 走势图标题下的口径：历史点用现在的应付款，常显一行，不藏进问号（决定 B1-走势） */
 .b1-page .b1-caliber { margin: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+/* 覆盖率走势：红线贴着图底时，红线的字改写到线上方（见 page.tsx CoverageTrend，VS-49）。 */
+.b1-trend-chart[data-refs-low] .rd-chart-ref[data-below] span { top: auto; bottom: var(--b1-red-lift); }
+.b1-trend-chart[data-refs-low] .rd-chart-ref:not([data-below]) span { bottom: var(--b1-healthy-lift); }

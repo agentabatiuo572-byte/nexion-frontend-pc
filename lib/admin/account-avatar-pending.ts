@@ -12,7 +12,9 @@ export interface AvatarDraft extends PendingMutationRecord {
   cancelCreatedAt?: number; cancelRejection?: string;
 }
 type AvatarCancellation = PendingMutationRecord & { actorId: number; draftKey: string; assetId: string };
-export interface SelfAvatarPending extends PendingMutationRecord { actorId: number; input: SelfAvatarSave }
+export interface SelfAvatarPending extends PendingMutationRecord {
+  actorId: number; input: SelfAvatarSave; acknowledged?: true; acknowledgedAccountVersion?: string;
+}
 export const avatarDraftFingerprint = (actorId: number, scope: AvatarScope, target: string) => `${actorId}:${scope}:${target}`;
 export const newAccountAvatarTarget = (commandKey: string) => `new/${commandKey}`;
 export const avatarDrafts = createPendingMutationStore<AvatarDraft>({
@@ -95,8 +97,22 @@ export const a1AvatarCancellationRecovery = createPendingRecovery<AvatarCancella
 export const selfAvatarCommands = createPendingMutationStore<SelfAvatarPending>({
   storageKey: "nexion-self-avatar-save-v1", retainExpiredRecords: true,
   isValidRecord: row => {
-    try { avatarKey(row.commandKey); selfAvatarSaveInput(row.input); return Number.isSafeInteger(row.actorId) && row.actorId > 0; } catch { return false; }
+    try {
+      avatarKey(row.commandKey); selfAvatarSaveInput(row.input);
+      return Number.isSafeInteger(row.actorId) && row.actorId > 0
+        && (row.acknowledgedAccountVersion === undefined || row.acknowledged === true
+          && typeof row.acknowledgedAccountVersion === "string" && /^\d{1,19}$/.test(row.acknowledgedAccountVersion));
+    } catch { return false; }
   },
+});
+export const selfAvatarSaveRecovery = createPendingRecovery(selfAvatarCommands, {
+  capability: record => record.acknowledged ? "readback" : "replay",
+  canReplay: record => {
+    const session = useAdminAuth.getState().session;
+    return session?.adminId === record.actorId
+      && (session.supportReadModes?.some(mode => mode === "PERSONAL" || mode === "MANAGED") ?? false);
+  },
+  explicitRejectionCode,
 });
 export function rememberAvatarDraft(draft: AvatarDraft, recovering = false): AvatarDraft {
   const { fingerprint, commandKey, createdAt: _createdAt, expiresAt: _expiresAt, ...extra } = draft;

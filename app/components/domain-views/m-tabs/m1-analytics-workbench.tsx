@@ -792,7 +792,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const leaderboardReachable = !!authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard");
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
   // 主管和超管：页头次按钮是导出业绩、会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
-  // 「更换本人头像」是本人设置，主管兼客服放在「我的客户」顶部的本人一栏；没有「我的客户」的主管暂时留在页头（不丢入口）。
+  // 「更换本人头像」是本人设置，不放页头：右上角账号菜单里都有，主管兼客服在「我的客户」顶部的本人一栏也有（01 PG-15）。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
   const canRequestExports = authSession?.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
   const exportDisabledReason = noScopedContent && canRequestExports ? NO_EXPORT_GROUP_REASON : exportsPorts?.persona.exportBlocked;
@@ -808,7 +808,6 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {!statisticsUnavailable && exportDisabledReason && <span className="rd-toolbar-note">{exportDisabledReason}</span>}
     {!statisticsUnavailable && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
-    {!noScopedContent && scope?.scopeSummary.mode === "MANAGED" && !canMine && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => undefined} />}
     {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
@@ -904,24 +903,29 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const maintenanceInBar = unresolvedMaintenance && !(isPersonal ? section !== "stats" : section === "mine");
   const unresolvedPool = poolCommands.list().some(r => r.actorId === adminId) || routeCommands.list().some(r => r.actorId === adminId) || randomAssignmentCommands.list().some(r => r.actorId === adminId);
   const unresolvedGroups = groupPendingCommands.list().some(r => r.actorId === adminId && (!isInvitePending(r) || r.intent.kind === "INVITE_REVOKE"));
-  const unresolvedInvite = groupPendingCommands.list().some(r => r.actorId === adminId && isInvitePending(r) && r.intent.kind === "INVITE_ISSUE");
-  const unresolvedAvatar = selfAvatarCommands.list().some(r => r.actorId === adminId) || avatarDrafts.list().some(r => r.actorId === adminId && r.scope === "self" && (!r.asset || r.cancelKey));
+  const inviteReview = readModes?.includes("PERSONAL") ? groupPendingCommands.list().find(r => r.actorId === adminId && isInvitePending(r) && r.intent.kind === "INVITE_ISSUE") : undefined;
+  const avatarEligible = readModes?.some(mode => mode === "PERSONAL" || mode === "MANAGED");
+  const avatarReview = avatarEligible ? selfAvatarCommands.list().find(r => r.actorId === adminId) : undefined;
+  const avatarPreparationUnknown = avatarEligible && avatarDrafts.list().some(r => r.actorId === adminId && r.scope === "self" && (!r.asset || r.cancelKey));
+  const inviteSaved = inviteReview && "acknowledged" in inviteReview && inviteReview.acknowledged;
   const unresolvedPayments = pendingPaymentReleases(adminId ?? 0).filter(r => r.portKey.startsWith("support:"));
   const unresolvedBulk = hasBulkPending(adminId ?? 0);
+  const hasUnknown = maintenanceInBar || unresolvedPool || unresolvedGroups || (inviteReview && !inviteSaved)
+    || (avatarReview && !avatarReview.acknowledged) || avatarPreparationUnknown || unresolvedBulk || unresolvedPayments.length > 0;
   const profileStats = profileId && data && (data.view === "CUSTOMERS" || data.view === "ACTIVITY") ? data.records.find(row => row.customerId === profileId) : undefined;
   const profileCounts = supportCountsView(profileStats?.invitations);
   return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
     {!isPersonal && <M1LiveService ctx={ctx} />}
-    {(maintenanceInBar || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果未知，先查询原操作" actionBelow action={<>
+    {(hasUnknown || inviteSaved || avatarReview?.acknowledged) && <Notice tone="warn" title={hasUnknown ? "有操作结果未知，先查询原操作" : "已保存，请刷新核对最新值"} actionBelow action={<>
       {maintenanceInBar && <Button size="sm" onClick={() => openTab(isPersonal ? "my-customers" : "mine")}>核对维护原操作</Button>}
       {unresolvedPool && <Button size="sm" onClick={() => openTab("pool")}>核对分配原操作</Button>}
       {unresolvedGroups && <Button size="sm" onClick={() => openTab("team")}>核对分组原操作</Button>}
-      {unresolvedInvite && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>核对邀请码原操作</Button>}
-      {unresolvedAvatar && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
+      {inviteReview && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>{inviteSaved ? "查看邀请码" : "核对邀请码原操作"}</Button>}
+      {(avatarReview || avatarPreparationUnknown) && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
       {unresolvedBulk && <Button size="sm" onClick={() => setBulkRecovery(true)}>核对群发原操作</Button>}
       {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>{unresolvedPayments.length > 1 ? `核对支付安全原操作 · 用户 ${row.userId}` : "核对支付安全原操作"}</Button>)}
-    </>}>原内容和理由已保留；超过 24 小时只能查询，不能再重试。</Notice>}
+    </>}>{hasUnknown && "原内容和理由已保留；超过 24 小时只能查询，不能再重试。"}</Notice>}
 
     {!(isPersonal && currentTab === "home") && navigation}
 <TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />
@@ -1061,7 +1065,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}
     {bulkRecovery && <SupportBulkComposer ctx={ctx} onClose={() => setBulkRecovery(false)} />}
     {related}
-    {profileId && <Drawer open wide title="客户资料" sub={profileStats ? `${customerName(profileStats)} · ${profileStats.customerNo ?? m1CustomerCode(profileStats.customerId)}` : undefined} onClose={() => setProfileId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setProfileId(null)}>{isPersonal ? "关闭" : "返回统计列表"}</Button></div>}><p className="sa-disclosure">按你的客户资料查看权限显示；能看到统计不代表能操作资金或回复客户。</p>{profileStats && ["CUSTOMERS", "ACTIVITY"].includes(data?.view || "") && <Fold title="统计依据" summary={`${m1CustomerCode(profileStats.customerId)} · ${currency}`}><Facts>
+    {profileId && <Drawer open title="客户资料" sub={profileStats ? `${customerName(profileStats)} · ${profileStats.customerNo ?? m1CustomerCode(profileStats.customerId)}` : undefined} onClose={() => setProfileId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setProfileId(null)}>{isPersonal ? "关闭" : "返回统计列表"}</Button></div>}><p className="sa-disclosure">按你的客户资料查看权限显示；能看到统计不代表能操作资金或回复客户。</p>{profileStats && ["CUSTOMERS", "ACTIVITY"].includes(data?.view || "") && <Fold title="统计依据" summary={`${m1CustomerCode(profileStats.customerId)} · ${currency}`}><Facts>
       <Fact k="直接邀请"><CustomerValue kind="count" value={profileCounts.kind === "ready" ? String(profileCounts.direct) : null} status={profileStats.invitations.direct.status} label="直接邀请" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
       <Fact k="全部团队成员"><CustomerValue kind="count" value={profileCounts.kind === "ready" ? String(profileCounts.total) : null} status={profileStats.invitations.descendants.status} label="全部团队成员" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
       <Fact k={`本人累充 / ${currency}`}><MoneyValue money={profileStats.lifetime.find(x => x.currency === currency)?.deposits} label="本人累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
