@@ -4,6 +4,20 @@ import { CheckCircle2, ChevronRight, X } from "lucide-react";
 import { Button, Explain, IconButton, Notice, type StateTone } from "@/app/components/rd";
 import { eCommandCanConcludeRejected, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
+
+/** Map the shared replay gate to the existing disabled-reason slot. */
+export function pendingReplayReason(state: PendingRecoveryState, unavailable: string): string | undefined {
+  switch (state.replayBlock) {
+    case "busy": return "正在核对原操作，请稍候。";
+    case "expired": return RETRY_EXPIRED_TEXT;
+    case "missing":
+    case "unavailable": return unavailable;
+    case "needs-not-found": return "请先查询原结果，确认查不到后才可重试。";
+    case "readback-only": return "请核对当前资料及操作记录与审批。";
+    case "replay-rejected": return "后台已拒绝重试，请先核实原操作。";
+  }
+}
 
 /** 两分钟内发出的才算运营刚做完操作产生的记录；页面分批读进来的旧记录不算。 */
 const FRESH_MS = 2 * 60 * 1000;

@@ -6,12 +6,12 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ArrowRight, CircleHelp, Clock3, Copy, KeyRound, MonitorSmartphone, PencilLine, UserCog, UserPlus, UserRound } from "lucide-react";
-import { Button, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, JudgmentPoints, Modal, Notice, Segments, Select, StatusTag, Textarea, Timeline, type TimelineEntry } from "@/app/components/rd";
+import { Button, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, JudgmentPoints, Modal, Notice, Segments, Select, StatusTag, Timeline, type TimelineEntry } from "@/app/components/rd";
 import { domainOfPermission, pageLabelFromCode } from "@/lib/admin/perm-domain";
 import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
 import { businessStamp, businessZone, businessZoneText, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
-import { avatarDrafts, avatarDraftFingerprint } from "@/lib/admin/account-avatar-pending";
+import { avatarDrafts, avatarDraftFingerprint, newAccountAvatarTarget } from "@/lib/admin/account-avatar-pending";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { A1CreateAccountInput, A1Operator, A1PasswordResetResult, A1RoleDefinition, A1UpdateAccountInput } from "@/lib/admin/a1-client";
@@ -122,7 +122,7 @@ export function PermGroups({ codes, label, tone, empty = "没有权限", markRis
 
 /* ---------- 原操作提醒（结果未知、待审批） ---------- */
 
-export type A1RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; actions: ReactNode };
+export type A1RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; note?: string; actions: ReactNode };
 
 /** 结果未知的说明按操作写：note 写「可能已经怎样、能不能按原请求重试」。 */
 export function unknownTag(kind: "direct" | "approval", note?: string) {
@@ -143,7 +143,7 @@ export function A1RecoveryNotice({ title, rows }: { title: ReactNode; rows: A1Re
         {rows.map((row) => (
           <li key={row.key}>
             <span className="a1-recovery-name">{row.name}</span>
-            <span className="a1-recovery-change">{row.change}</span>
+            <span className="a1-recovery-change">{row.change}{row.note && <span> · {row.note}</span>}</span>
             <span className="a1-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
             <span className="a1-recovery-state">{row.tag}</span>
             <span className="a1-recovery-actions">{row.actions}</span>
@@ -317,17 +317,18 @@ export function AccountDetailDrawer({ account, roles, roleCodes, materialPermiss
 
 /* ---------- 改角色：选新角色并对照权限 ---------- */
 
-export function RoleChangeModal({ account, roles, options, codesByRole, effectiveSupers, recovery, onClose, onNext }: {
+export function RoleChangeModal({ account, roles, options, codesByRole, effectiveSupers, recovery, initialRole, onClose, onNext }: {
   account: A1Operator;
   roles: A1RoleDefinition[];
   options: { key: string; name: string; scope?: string }[];
   codesByRole: Record<string, string[]>;
   effectiveSupers: number;
   recovery: boolean;
+  initialRole?: string;
   onClose: () => void;
   onNext: (role: string) => void;
 }) {
-  const [picked, setPicked] = useState(account.role);
+  const [picked, setPicked] = useState(initialRole && options.some(role => role.key === initialRole) ? initialRole : account.role);
   const codesOf = (role: string) => role === "unassigned" || !role ? [] : codesByRole[role] ?? [];
   const before = useMemo(() => new Set(codesOf(account.role)), [account.role, codesByRole]);
   const after = useMemo(() => new Set(codesOf(picked)), [picked, codesByRole]);
@@ -369,8 +370,8 @@ export function RoleChangeModal({ account, roles, options, codesByRole, effectiv
 
 /* ---------- 新建、编辑抽屉 ---------- */
 
-type NaForm = A1CreateAccountInput & { reason: string };
-type EditAccountForm = A1UpdateAccountInput & { reason: string };
+type NaForm = A1CreateAccountInput;
+type EditAccountForm = A1UpdateAccountInput;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
@@ -386,12 +387,13 @@ function StepTitle({ n, children }: { n: number; children: ReactNode }) {
   return <h3 className="a1-step-title"><span className="a1-step-n" aria-hidden>{n}</span>{children}</h3>;
 }
 
-export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, initialForm, onClose, onSubmit }: {
+export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, initialForm, originalCommandKey, onClose, onSubmit }: {
   roles: A1RoleDefinition[];
   codesByRole: Record<string, string[]> | null;
   recoveryMode: boolean;
   disabled?: boolean;
   initialForm?: NaForm;
+  originalCommandKey?: string;
   onClose: () => void;
   onSubmit: (form: NaForm) => void;
 }) {
@@ -401,10 +403,11 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
   const [displayName, setDisplayName] = useState(initialForm?.displayName ?? "");
   const [email, setEmail] = useState(initialForm?.email ?? "");
   const [role, setRole] = useState(initialForm?.role ?? defaultRole);
-  const [reason, setReason] = useState(initialForm?.reason ?? "");
   const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(initialForm?.avatarGender ?? "UNSPECIFIED");
-  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(initialForm?.avatarAssetId || initialForm?.useDefaultAvatar === false || actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
-  const [avatarAssetId, setAvatarAssetId] = useState<string | undefined>(), [avatarBlocking, setAvatarBlocking] = useState(false);
+  // 恢复原草稿时照原来的头像来源：原来选的是随机默认头像就还是默认（OP-93 第 5 条）。
+  const [avatarMode, setAvatarMode] = useState<"default" | "manual">(originalCommandKey ? (initialForm?.useDefaultAvatar ? "default" : "manual")
+    : actorId && avatarDrafts.list().some(row => row.fingerprint === avatarDraftFingerprint(actorId, "admin", "new")) ? "manual" : "default");
+  const [avatarAssetId, setAvatarAssetId] = useState<string | undefined>(), [avatarBlocking, setAvatarBlocking] = useState(Boolean(originalCommandKey && initialForm?.avatarAssetId));
   const [touched, setTouched] = useState(false);
   const useDefaultAvatar = role === "support" && avatarMode === "default";
   useEffect(() => { if (avatarBlocking || avatarAssetId) setAvatarMode("manual"); }, [avatarBlocking, avatarAssetId]);
@@ -425,7 +428,6 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
     !displayName.trim() ? "显示名未填写" : displayNameError ? "显示名含中文" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     recoveryMode && role !== "super" ? "恢复期只能新建超级管理员" : "",
-    !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
   const disabledReason = disabled ? "正在加载，稍后再创建" : "";
   const submitBlockers = [disabledReason, ...missingItems, avatarBlocking ? "新头像还没上传成功" : ""].filter(Boolean);
@@ -443,7 +445,6 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
             email: email.trim() || undefined,
             role,
             ...(useDefaultAvatar ? { useDefaultAvatar: true, avatarGender: avatarGenderValue } : { avatarAssetId, ...(role === "support" ? { useDefaultAvatar: false, avatarGender: avatarGenderValue } : {}) }),
-            reason: reason.trim(),
           })}>{recoveryMode ? "提交创建审批" : "确认创建账号"}</Button>} />}>
       <fieldset className="a1-page a1-sheet a1-form" disabled={disabled}>
         {recoveryMode && <Notice tone="warn" title="恢复期只能新建超级管理员">这里只提交审批；批准后账号才建好。本页拿不到临时密码，批准后到账号列表点「重置密码」，把临时密码交给本人。</Notice>}
@@ -495,7 +496,8 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
             <p className="a1-help">创建后可更换头像。</p>
           </>
         )}
-        {!useDefaultAvatar && <div className="a1-avatar-slot"><AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking} /></div>}
+        {!useDefaultAvatar && <div className="a1-avatar-slot"><AccountAvatarPicker name={displayName} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking}
+          targetId={originalCommandKey ? newAccountAvatarTarget(originalCommandKey) : undefined} originalAssetId={initialForm?.avatarAssetId} /></div>}
         {avatarBlocking && <Notice tone="warn">新头像尚未上传成功；上传或取消新头像后可继续创建。</Notice>}
 
         <StepTitle n={role === "support" ? 4 : 3}>首次登录</StepTitle>
@@ -505,27 +507,23 @@ export function NewAccountDrawer({ roles, codesByRole, recoveryMode, disabled, i
             : <><li>确认后显示一次 20 位临时密码，通过可靠渠道交给本人</li><li>本人用临时密码登录，先绑定两步验证</li><li>再改成自己的密码，才能正常使用后台</li></>}
         </ol>
 
-        <StepTitle n={role === "support" ? 5 : 4}>操作理由</StepTitle>
-        <Field label="为什么开这个账号" required error={touched && !reason.trim() ? "请填写操作理由。" : undefined}>
-          <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="入职、换岗、外部审计…" />
-        </Field>
       </fieldset>
     </Drawer>
   );
 }
 
-export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
+export function EditAccountDrawer({ account, disabled, initialForm, onClose, onSubmit }: {
   account: A1Operator;
   disabled?: boolean;
+  initialForm?: EditAccountForm;
   onClose: () => void;
   onSubmit: (form: EditAccountForm) => void;
 }) {
-  const [username, setUsername] = useState(account.username || "");
-  const [displayName, setDisplayName] = useState(operatorDisplayName(account));
-  const [email, setEmail] = useState(account.email || "");
-  const [reason, setReason] = useState("");
+  const [username, setUsername] = useState(initialForm?.username ?? account.username ?? "");
+  const [displayName, setDisplayName] = useState(initialForm?.displayName ?? operatorDisplayName(account));
+  const [email, setEmail] = useState(initialForm ? initialForm.email ?? "" : account.email ?? "");
   const [avatarAssetId, setAvatarAssetId] = useState<string | undefined>(), [avatarBlocking, setAvatarBlocking] = useState(false);
-  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(account.avatarGender ?? "UNSPECIFIED");
+  const [avatarGenderValue, setAvatarGenderValue] = useState<AvatarGender>(initialForm?.avatarGender ?? account.avatarGender ?? "UNSPECIFIED");
   const [touched, setTouched] = useState(false);
   const usernameOk = isValidUsername(username);
   const emailOk = isValidEmail(email);
@@ -543,7 +541,6 @@ export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
     !displayName.trim() ? "显示名未填写" : displayNameError ? "显示名含中文" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     !changed ? "资料没有变化" : "",
-    !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
   const disabledReason = disabled ? "正在提交，稍后再编辑" : "";
   const submitBlockers = [disabledReason, ...missingItems, avatarBlocking ? "新头像还没上传成功" : ""].filter(Boolean);
@@ -561,7 +558,6 @@ export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
             email: email.trim() || undefined,
             avatarAssetId,
             ...(avatarGenderValue !== (account.avatarGender ?? "UNSPECIFIED") ? { avatarGender: avatarGenderValue } : {}),
-            reason: reason.trim(),
           })}>提交修改审批</Button>} />}>
       <fieldset className="a1-page a1-sheet a1-form" disabled={disabled}>
         <Notice tone="progress" title="资料修改要审批">另一位超级管理员在「操作记录与审批」批准后才生效，批准前资料和头像都不变。</Notice>
@@ -584,10 +580,6 @@ export function EditAccountDrawer({ account, disabled, onClose, onSubmit }: {
         </Field>
         <div className="a1-avatar-slot"><AccountAvatarPicker account={account} name={displayName} gender={avatarGenderValue} allowDefault={account.role === "support"} disabled={disabled} onChange={setAvatarAssetId} onBlocking={setAvatarBlocking} /></div>
         {avatarBlocking && <Notice tone="warn">新头像尚未上传成功；上传或取消新头像后可提交。</Notice>}
-        <StepTitle n={3}>操作理由</StepTitle>
-        <Field label="为什么修改这个账号资料" required error={touched && !reason.trim() ? "请填写操作理由。" : undefined}>
-          <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例如：员工改名、工作邮箱变更" />
-        </Field>
       </fieldset>
     </Drawer>
   );

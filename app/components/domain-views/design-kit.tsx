@@ -7,18 +7,19 @@
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
 import { businessZone } from "@/lib/admin/business-time";
-import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type CSSProperties, type FocusEvent } from "react";
+import { Fragment, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type FocusEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { announcePermissionDenied, isPermissionDenied, operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
+import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
 import { useUI, type ToastKind } from "@/lib/store/ui";
 import { useDialogFeedback } from "@/app/components/kit/dialog-feedback";
 import { ToastHost } from "@/app/components/kit/toast-host";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { i6CopyQualityIssues } from "@/lib/admin/i6-copy-quality";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
-import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength } from "@/lib/admin/a2-client";
+import { fetchA2ReasonPolicy, isA2OutcomeUncertainError, visibleReasonLength, type A2ReasonPolicy } from "@/lib/admin/a2-client";
 import type { H4UploadTarget } from "@/lib/admin/h4-mutations";
 import { uploadAdminMedia, uploadD1VietQrReceiptEvidence } from "@/lib/admin/media-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -587,17 +588,50 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
 export type EditComparison = { before: string; after: string };
-export type PendingConfirmRecovery = { expiresAt: number; blockedReason?: string; query?: () => Promise<void> };
+export function useOperationReasonPolicy(required: boolean, optional = false) {
+  const [policy, setPolicy] = useState<A2ReasonPolicy | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setPolicy(null);
+    setError(null);
+    if (!required) return;
+    let active = true;
+    void fetchA2ReasonPolicy().then(value => {
+      if (active) setPolicy(value);
+    }, () => {
+      if (!active) return;
+      if (optional) setPolicy({ minChars: 8, maxChars: 200, sourceKey: "admin.a2.reason_min_chars" });
+      else setError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。");
+    });
+    return () => { active = false; };
+  }, [required, optional]);
+  return { policy, error };
+}
+export type PendingConfirmRecovery = {
+  expiresAt: number;
+  blockedReason?: string;
+  query?: () => Promise<void>;
+  state?: PendingRecoveryState;
+  subscribe?: (listener: () => void) => () => void;
+  getRevision?: () => number;
+};
 
-export function usePendingConfirmRecovery(reason: string | undefined, getRecovery?: () => PendingConfirmRecovery | undefined) {
+const emptyRecoverySubscription = () => () => {};
+const emptyRecoveryRevision = () => 0;
+
+export function usePendingReplayDeadline(expiresAt?: number) {
   const [, redraw] = useState(0);
-  const recovery = reason === undefined ? undefined : getRecovery?.();
-  const expiresAt = recovery?.expiresAt;
   useEffect(() => {
     if (expiresAt === undefined || expiresAt <= Date.now()) return;
     const timer = setTimeout(() => redraw(n => n + 1), Math.max(1, expiresAt - Date.now()));
     return () => clearTimeout(timer);
   }, [expiresAt]);
+}
+
+export function usePendingConfirmRecovery(reason: string | undefined, getRecovery?: () => PendingConfirmRecovery | undefined) {
+  const recovery = reason === undefined ? undefined : getRecovery?.();
+  useSyncExternalStore(recovery?.subscribe ?? emptyRecoverySubscription, recovery?.getRevision ?? emptyRecoveryRevision, emptyRecoveryRevision);
+  usePendingReplayDeadline(recovery?.expiresAt);
   return recovery;
 }
 type EditReviewResult = {
@@ -3881,9 +3915,9 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const [editLeft, setEditLeft] = useState(false);
   const [openedForm] = useState(() => JSON.stringify([newVal, businessValue]));
   const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(inlineApproval?.pending ? inlineApproval.initialRecovery ?? "lookup" : null);
-  const [authoritativeReasonMin, setAuthoritativeReasonMin] = useState<number | null>(null);
-  const [authoritativeReasonMax, setAuthoritativeReasonMax] = useState<number | null>(null);
-  const [reasonPolicyError, setReasonPolicyError] = useState<string | null>(null);
+  const { policy: reasonPolicy, error: reasonPolicyError } = useOperationReasonPolicy(requireReason, reasonPolicyOptional);
+  const authoritativeReasonMin = reasonPolicy?.minChars ?? null;
+  const authoritativeReasonMax = reasonPolicy?.maxChars ?? null;
   const reasonFieldId = useId();
   const comparisonValueId = useId();
   const comparisonUnitId = useId();
@@ -3972,7 +4006,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   // 对象状态变了或已不在：框里只留橙黄提示和「取消」（VS-107），不再画过期的改动和理由框。
   const finalConflict = !!readConflict && !readConflict.review && readConflict.final;
-  const canConfirm = !blockedReason && !readConflict && !readingConflict && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason && !pendingRecovery?.blockedReason
+  const canConfirm = !blockedReason && !readConflict && !readingConflict && (retryApproval || pendingReason !== undefined ? !submitting && !approvalOnlyLookup && !inlineApproval?.disabledReason && !pendingRecovery?.blockedReason && !pendingRecovery?.state?.replayBlock
     : reasonPolicyReady && !covBlocked && !approval?.disabledReason && !inlineApproval?.disabledReason && !businessSelectionLoading && (!editReview || !!readyReview) && !submitting && reasonOk && editValueOk && businessMissing.length === 0 && !uploadBlocked
       && (!inlineApproval || !approvalRecovery || !!approval));
   const showReasonError = !reasonOk && !retryApproval && (!surface || attempted || reasonLeft);
@@ -3991,28 +4025,6 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     ...businessMissing.map((message) => message.replace(/。+$/, "")),
     !reasonOk && (visibleLength < reasonMin ? `操作理由${reasonShort}` : reasonShort.replace(/。$/, "")),
   ].filter(Boolean);
-  useEffect(() => {
-    if (!requireReason) return;
-    let active = true;
-    setAuthoritativeReasonMin(null);
-    setAuthoritativeReasonMax(null);
-    setReasonPolicyError(null);
-    void fetchA2ReasonPolicy().then((policy) => {
-      if (active) {
-        setAuthoritativeReasonMin(policy.minChars);
-        setAuthoritativeReasonMax(policy.maxChars);
-      }
-    }).catch(() => {
-      if (!active) return;
-      if (reasonPolicyOptional) {
-        setAuthoritativeReasonMin(8);
-        setAuthoritativeReasonMax(200);
-      } else {
-        setReasonPolicyError("理由规则加载失败，暂时无法提交。请关闭弹窗后重试。");
-      }
-    });
-    return () => { active = false; };
-  }, [reasonPolicyOptional, requireReason]);
   const closeOnPermissionDenied = (error: unknown) => {
     if (!isPermissionDenied(error)) return false;
     announcePermissionDenied();
@@ -4170,7 +4182,10 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
       if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
     }
   };
-  const pendingReasonHelp = inlineApproval?.expiredRequestRecovery === "reload"
+  const pendingReasonHelp = pendingRecovery?.state?.expired ? RETRY_EXPIRED_TEXT
+    : pendingRecovery?.state && pendingRecovery.blockedReason ? pendingRecovery.blockedReason
+    : pendingRecovery?.state?.capability === "replay" ? "按原请求重试会重新发送一次。"
+    : inlineApproval?.expiredRequestRecovery === "reload"
     ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
     : inlineApproval?.expiredRequestRecovery === "query"
       ? surface ? "原操作已过期，不能重发；请用「查询原结果」核对。" : "原操作已过期，不能重发，请查询原结果。"
@@ -4226,7 +4241,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
             {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原结果"}
           </Btn>
         )}
-        {!approvalOnlyLookup && !finalConflict && (surface ? (
+        {!approvalOnlyLookup && pendingRecovery?.state?.capability !== "readback" && !finalConflict && (surface ? (
           <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
             disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>

@@ -1,14 +1,16 @@
 "use client";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
-import { accountVersion, canReplayGroupCommand, commandRejected, groupPendingCommands, inviteRevokeReason, isInvitePending, observedVersion, supportGroupClient, supportGroupReason, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
-import { Btn, Modal } from "../design-kit";
+import { accountVersion, canManageSupportQualifications, canReplayGroupCommand, commandRejected, groupPendingCommands, inviteRevokeReason, isInvitePending, isQualificationPending, observedVersion, qualificationRecovery, supportGroupClient, supportGroupReason, type GroupPendingRecord, type InviteCodeView, type InviteRevokeRecord, type QualificationKind, type QualificationPending, type QualificationStatus, type SupportGroup, type SupportGroupDirectory, type SupportGroupDetail, type SupportGroupMember, type SupportQualifications } from "@/lib/admin/support-group-client";
+import { Btn, Modal, useOperationReasonPolicy, usePendingReplayDeadline } from "../design-kit";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
+import { RETRY_EXPIRED_TEXT, type PendingRecoveryConclusion } from "@/lib/admin/pending-mutation-store";
 import { BlockState, Button, Change, Explain, Fact, Facts, Field, Fold, Input, MoreMenu, Notice, PageTabs, Panel, ReleaseModal, Select, StatusTag, Table, Th, Tr, Td, Textarea } from "@/app/components/rd";
 import { ChevronLeft, Network, SearchCheck, UsersRound } from "lucide-react";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { pendingReplayReason, RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { SupportClientError } from "@/lib/admin/m-support-client";
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import "./m-support-admin.css";
@@ -22,7 +24,7 @@ function errorStatus(error: unknown): number { return error && typeof error === 
 function errorText(error: unknown): string { if (error instanceof SupportClientError && error.backendMessage && ADMIN_ERROR_MESSAGES[error.backendMessage]) return displayAdminError(error); const code = errorStatus(error); return [401,403,404].includes(code) ? "你已无权查看这些资料，请返回后刷新。" : code === 409 ? "资料刚被修改过，已填写的内容还在，请刷新预览后再确认。" : code === 422 ? "当前账号、资格或组状态不允许此操作，请核对账号启用状态、成员和交接任务。" : "这次操作结果未知，原内容和理由已保留。"; }
 function reasonValid(value: string) { return supportGroupReason(value).valid; }
 function authStamp() { const a = useAdminAuth.getState(); return adminShellSessionKey(a.session, a.authEpoch) + JSON.stringify(a.session?.menuNodes ?? null) + `|${a.isAuthenticated}|${a.logoutPending}|${a.logoutUnknown}`; }
-export function canManageSupportQualifications(session: { role: string; authorities: string[] } | null) { return !!session && ["SUPERADMIN", "SUPER_ADMIN", "SUPER"].includes(session.role.toUpperCase()) && session.authorities.includes("platform_a1_read") && session.authorities.includes("platform_a1_write"); }
+export { canManageSupportQualifications } from "@/lib/admin/support-group-client";
 function expiredText() { return "原操作已超过 24 小时，不能再重试；请先核对它是否已经执行。原内容和理由仍保留。"; }
 const QUERY_PENDING_TEXT = "不能重复提交，先查询原结果。";
 type Intent = GroupPendingRecord["intent"];
@@ -314,39 +316,131 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
   const allowed = !writeBlockedReason && authenticated && !logoutPending && !logoutUnknown && !!session && !session.passwordChangeRequired && canManageSupportQualifications(session) && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac");
   const readAllowed = authenticated && !logoutPending && !logoutUnknown && !!session && !session.passwordChangeRequired && ["SUPER", "SUPERADMIN", "SUPER_ADMIN"].includes(session.role.toUpperCase()) && session.authorities.includes("platform_a1_read") && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac");
   const key = `${identity}|${adminId}|${kind}`, liveKey = useRef(key); liveKey.current = readAllowed ? key : "";
-  const [projection, setProjection] = useState<{ key: string; value: SupportQualifications }>(), [state, setState] = useState<QualificationStatus>("ENABLED"), [reason, setReason] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false), [stale, setStale] = useState(false), [refresh, setRefresh] = useState(0), [pendingRecord, setPending] = useState<GroupPendingRecord>();
-  const pending = pendingRecord && pendingRecord.actorId === session?.adminId && pendingRecord.intent.kind === "QUALIFICATION" && pendingRecord.intent.targetId === adminId && pendingRecord.intent.payload.qualificationKind === kind ? pendingRecord : undefined;
+  const [projection, setProjection] = useState<{ key: string; value: SupportQualifications }>(), [state, setState] = useState<QualificationStatus>("ENABLED"), [reason, setReason] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false), [stale, setStale] = useState(false), [refresh, setRefresh] = useState(0), [pendingRecord, setPending] = useState<QualificationPending>();
+  const pending = pendingRecord?.actorId === session?.adminId && pendingRecord?.intent.targetId === adminId && pendingRecord.intent.payload.qualificationKind === kind ? pendingRecord : undefined;
   const controllerRef = useRef<AbortController | null>(null), data = readAllowed && projection?.key === key ? projection.value : undefined, fact = data?.qualifications.find(q => q.kind === kind);
-  useEffect(() => { setProjection(undefined); setReason(""); setError(""); setBusy(false); setStale(false); setPending(groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind)); return () => controllerRef.current?.abort(); }, [key]);
+  const currentPending = () => groupPendingCommands.list().filter(isQualificationPending).find(record =>
+    record.actorId === session?.adminId && record.intent.targetId === adminId && record.intent.payload.qualificationKind === kind);
+  useEffect(() => { setProjection(undefined); setReason(""); setError(""); setBusy(false); setStale(false); setPending(currentPending()); return () => controllerRef.current?.abort(); }, [key]);
   useEffect(() => { const controller = new AbortController(); setProjection(undefined); if (readAllowed) void supportGroupClient.qualifications(adminId, controller.signal).then(next => { if (!controller.signal.aborted && liveKey.current === key && authStamp() === identity) { setProjection({ key, value: next }); setStale(false); } }).catch(cause => { if (!controller.signal.aborted && liveKey.current === key) { setProjection(undefined); setError(errorText(cause)); } }); return () => controller.abort(); }, [readAllowed, key, refresh]);
-  const check = async () => { if (!pending || busy || !readAllowed) return; const saved = pending, controller = new AbortController(); controllerRef.current = controller; setBusy(true);
-    try { const receipt = await supportGroupClient.command(saved.commandKey, controller.signal); if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; if (receipt.status === "SUCCEEDED" || receipt.status === "FAILED") { const next = await supportGroupClient.qualifications(adminId, controller.signal); if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; groupPendingCommands.forget(saved.fingerprint, saved.commandKey); setPending(undefined); setProjection({ key, value: next }); if (saved.intent.kind === "QUALIFICATION") { setReason(saved.intent.payload.reason); setState(saved.intent.payload.state); } setStale(receipt.status === "FAILED"); onChanged(); setError(receipt.status === "SUCCEEDED" ? "原操作已成功，已读取当前账号资格。" : "原操作已明确失败，理由已保留；请重读预览后重新确认。"); } else if (authStamp() === identity) setError(canReplayGroupCommand(saved) ? "原操作结果未知，请稍后再查询原结果。" : expiredText()); } catch (cause) { if (authStamp() === identity && liveKey.current === key) { if ([401,403,404].includes(errorStatus(cause))) setProjection(undefined); setError("原操作和理由仍保留。" + errorText(cause)); } } finally { if (authStamp() === identity) setBusy(false); } };
-  const submit = async () => {
-    if (!allowed || busy) return; let saved = pending, createdThisAttempt = false;
-    const previous = saved ?? groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.actorId === session?.adminId && r.intent.kind === "QUALIFICATION" && r.intent.targetId === adminId && r.intent.payload.qualificationKind === kind);
-    if (previous) { setPending(previous); setError(QUERY_PENDING_TEXT); return; }
-    if (!saved) { if (!data || !fact || fact.observationState === "UNKNOWN" || stale || !reasonValid(reason) || fact.state === state || state === "ENABLED" && data.accountStatus !== 1) return;
-      const commandKey = crypto.randomUUID(), fingerprint = `support-qualification:${session!.adminId}:${adminId}:${kind}`, intent: Intent = { kind: "QUALIFICATION", targetId: adminId, payload: { qualificationKind: kind, state, expectedQualificationVersion: observedVersion(fact), expectedAccountVersion: accountVersion(data.accountVersion), reason: supportGroupReason(reason).normalized } };
-      groupPendingCommands.remember(fingerprint, commandKey, { actorId: session!.adminId, intent, label: `${KIND_TEXT[kind]}资格 · ${data.name}` }); saved = groupPendingCommands.list().find((r): r is GroupPendingRecord => !isInvitePending(r) && r.commandKey === commandKey); if (!saved) { setError("命令保存失败，已停止提交。" ); return; } createdThisAttempt = true; setPending(saved);
-    }
-    if (!createdThisAttempt || !saved) { setError(QUERY_PENDING_TEXT); return; }
-    if (!groupPendingCommands.isDurablyStored(saved.fingerprint, saved.commandKey) || saved.intent.kind !== "QUALIFICATION") { groupPendingCommands.forget(saved.fingerprint, saved.commandKey); setPending(undefined); setError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。" ); return; }
-    const controller = new AbortController(); controllerRef.current = controller; setBusy(true); setError(""); let written = false;
-    try { await supportGroupClient.setSupportQualification(adminId, saved.intent.payload, saved.commandKey, controller.signal); written = true; if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; const next = await supportGroupClient.qualifications(adminId, controller.signal); if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; groupPendingCommands.forget(saved.fingerprint, saved.commandKey); setPending(undefined); setProjection({ key, value: next }); onChanged(); setError("资格已更新，已重新加载账号资格。" ); }
-    catch (cause) { if (controller.signal.aborted || authStamp() !== identity || liveKey.current !== key) return; if (!written && cause instanceof SupportClientError && cause.apiCode !== undefined && cause.apiCode < 500 && !isIdempotencyOutcomeOpen(cause.backendMessage) && isDeterministicRejection(cause.status, cause.apiCode)) { groupPendingCommands.forget(saved.fingerprint, saved.commandKey); setPending(undefined); } if (!written && errorStatus(cause) === 409) setStale(true); if ([401,403,404].includes(errorStatus(cause))) setProjection(undefined); setError(errorText(cause)); } finally { if (authStamp() === identity) setBusy(false); }
+  useSyncExternalStore(qualificationRecovery.subscribe, qualificationRecovery.getRevision, () => 0);
+  const recovery = pending && qualificationRecovery.state(pending);
+  usePendingReplayDeadline(recovery?.expiresAt);
+  const replayBlocked = writeBlockedReason ?? (recovery && pendingReplayReason(recovery, "当前账号不能重试这条原操作。"));
+  const { policy: reasonPolicy, error: reasonPolicyError } = useOperationReasonPolicy(readAllowed && !!data && !pending);
+  const qualifiedReason = supportGroupReason(reason);
+  const reasonLength = visibleReasonLength(reason);
+  const reasonOk = !!reasonPolicy && qualifiedReason.valid && reasonLength >= reasonPolicy.minChars && reasonLength <= reasonPolicy.maxChars;
+  const check = async () => {
+    if (!pending || busy || !readAllowed) return;
+    const saved = pending, intent = pending.intent, controller = new AbortController();
+    const active = () => !controller.signal.aborted && authStamp() === identity && liveKey.current === key;
+    controllerRef.current = controller;
+    setBusy(true);
+    try {
+      const original = await qualificationRecovery.query(saved, async (): Promise<{ conclusion: PendingRecoveryConclusion; current?: SupportQualifications }> => {
+        const receipt = await supportGroupClient.command(saved.commandKey, controller.signal).catch(cause => {
+          if (cause instanceof SupportClientError && (cause.status === 404 || cause.apiCode === 404)
+            && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") return null;
+          throw cause;
+        });
+        if (!active()) return { conclusion: "unknown" };
+        if (!receipt) return { conclusion: "not-found" };
+        const succeeded = receipt.status === "SUCCEEDED";
+        const rejected = receipt.status === "CONFIRMED_REJECTED" || receipt.status === "CONFIRMED_NOT_EXECUTED";
+        if (!succeeded && !rejected) return { conclusion: "unknown" };
+        const current = await supportGroupClient.qualifications(adminId, controller.signal);
+        const currentFact = current.qualifications.find(row => row.kind === intent.payload.qualificationKind);
+        if (succeeded && (currentFact?.observationState !== "AVAILABLE" || currentFact.version === null
+          || currentFact.version <= intent.payload.expectedQualificationVersion)) return { conclusion: "unknown" };
+        return { conclusion: succeeded ? "succeeded" : "not-executed", current };
+      });
+      if (!active() || !original) return;
+      if (!original.current || !qualificationRecovery.settleFromQuery(saved, original.conclusion)) {
+        setError(qualificationRecovery.state(saved).expired ? RETRY_EXPIRED_TEXT
+          : original.conclusion === "not-found" ? "" : "原操作结果未知，请稍后再查询原结果。");
+        return;
+      }
+      setPending(undefined);
+      setProjection({ key, value: original.current });
+      setReason("");
+      setState(intent.payload.state);
+      setStale(false);
+      onChanged();
+      setError(original.conclusion === "succeeded" ? "原操作已成功，已读取当前账号资格。" : "原操作未执行，请重新填写理由并确认。");
+    } catch (cause) {
+      if (active()) {
+        if ([401, 403, 404].includes(errorStatus(cause))) setProjection(undefined);
+        setError("原操作和理由仍保留。" + errorText(cause));
+      }
+    } finally { if (active()) setBusy(false); }
   };
-  const canSubmit = !!data && !!fact && fact.observationState !== "UNKNOWN" && !stale && reasonValid(reason) && state !== fact.state && (state !== "ENABLED" || data.accountStatus === 1);
-  const blockedReason = writeBlockedReason ?? (!allowed ? "只有超级管理员（并有账号查看和修改权限）能管理资格" : !data ? "当前资格还没读到" : !fact || fact.observationState === "UNKNOWN" ? "当前资格信息不完整，不能保存" : stale ? "版本已变化，先点「重读当前资格」" : state === fact.state ? "选一个和现在不同的资格状态" : state === "ENABLED" && data.accountStatus !== 1 ? "账号已停用，不能启用资格" : !reasonValid(reason) ? "请填写 8–200 字的操作理由" : undefined);
+  const submit = async (retry = false) => {
+    if (!allowed || busy) return;
+    const previous = currentPending();
+    if (retry ? !previous || previous.commandKey !== pending?.commandKey || qualificationRecovery.state(previous).replayBlock : previous) {
+      setPending(previous);
+      setError(QUERY_PENDING_TEXT);
+      return;
+    }
+    let saved = previous;
+    if (!saved) {
+      if (!data || !fact || fact.observationState === "UNKNOWN" || stale || !reasonOk || fact.state === state || state === "ENABLED" && data.accountStatus !== 1) return;
+      const commandKey = crypto.randomUUID(), fingerprint = `support-qualification:${session!.adminId}:${adminId}:${kind}`;
+      const intent: QualificationPending["intent"] = { kind: "QUALIFICATION", targetId: adminId, payload: { qualificationKind: kind, state, expectedQualificationVersion: observedVersion(fact), expectedAccountVersion: accountVersion(data.accountVersion), reason: qualifiedReason.normalized } };
+      groupPendingCommands.remember(fingerprint, commandKey, { actorId: session!.adminId, intent, label: `${KIND_TEXT[kind]}资格 · ${data.name}` });
+      saved = currentPending();
+      if (!saved || !groupPendingCommands.isDurablyStored(fingerprint, commandKey)) {
+        groupPendingCommands.forget(fingerprint, commandKey);
+        setError("浏览器无法保存这次操作的记录，已停止提交。请检查浏览器设置后重试。");
+        return;
+      }
+      setPending(saved);
+    }
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setBusy(true);
+    setError("");
+    let written = false;
+    const send = (original: QualificationPending) => supportGroupClient.setSupportQualification(original.intent.targetId, original.intent.payload, original.commandKey, controller.signal);
+    const active = () => !controller.signal.aborted && authStamp() === identity && liveKey.current === key;
+    try {
+      await (retry ? qualificationRecovery.replay(saved, send) : send(saved));
+      written = true;
+      if (!active()) return;
+      const next = await supportGroupClient.qualifications(adminId, controller.signal);
+      if (!active()) return;
+      qualificationRecovery.settleAcknowledged(saved);
+      setPending(undefined);
+      setProjection({ key, value: next });
+      onChanged();
+      setError("资格已更新，已重新加载账号资格。");
+    } catch (cause) {
+      if (!active()) return;
+      if (!retry && !written && cause instanceof SupportClientError && cause.apiCode !== undefined && cause.apiCode < 500
+        && !isIdempotencyOutcomeOpen(cause.backendMessage) && isDeterministicRejection(cause.status, cause.apiCode)) {
+        groupPendingCommands.forget(saved.fingerprint, saved.commandKey);
+        setPending(undefined);
+      }
+      if (!written && errorStatus(cause) === 409) setStale(true);
+      if ([401, 403, 404].includes(errorStatus(cause))) setProjection(undefined);
+      setError(errorText(cause));
+    } finally { if (active()) setBusy(false); }
+  };
+  const reasonBlock = !reasonPolicy ? reasonPolicyError ?? "正在加载，稍候即可提交。"
+    : reasonLength < reasonPolicy.minChars ? `操作理由还差 ${reasonPolicy.minChars - reasonLength} 字`
+      : !reasonOk ? `操作理由不能超过 ${reasonPolicy.maxChars} 字` : undefined;
+  const blockedReason = writeBlockedReason ?? (!allowed ? "只有超级管理员（并有账号查看和修改权限）能管理资格" : !data ? "当前资格还没读到" : !fact || fact.observationState === "UNKNOWN" ? "当前资格信息不完整，不能保存" : stale ? "版本已变化，先点「重读当前资格」" : state === fact.state ? "选一个和现在不同的资格状态" : state === "ENABLED" && data.accountStatus !== 1 ? "账号已停用，不能启用资格" : reasonBlock);
   const resultTone = /^(资格已更新|原操作已成功)/.test(error) ? "ok" : /失败|无权|不能/.test(error) ? "danger" : "warn";
-  return <Modal title={pending ? "查询原结果" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{readAllowed && pending ? <Btn disabled={busy} onClick={() => void check()}>查询原结果</Btn> : <><Btn disabled={!readAllowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={busy} disabledReason={busy ? undefined : blockedReason} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
+  return <Modal title={pending ? "查询原结果" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{readAllowed && pending ? <><Btn disabled={busy} onClick={() => void check()}>查询原结果</Btn>{!recovery?.replayRejection && <Btn variant="primary" disabled={busy} disabledReason={replayBlocked} onClick={() => void submit(true)}>按原请求重试</Btn>}</> : <><Btn disabled={!readAllowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={busy} disabledReason={busy ? undefined : blockedReason} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
     <div className="m1-group-form">
     {!readAllowed ? <Notice tone="warn">只有总管理员（并有账号查看和修改权限）能管理资格。</Notice> : pending ? <Notice tone="warn">上次操作结果未知，请先查询原结果。</Notice> : !data ? <BlockState state={error ? "error" : "loading"} title={error || "正在加载…"} /> : <>
       <Facts><Fact k="账号">{data.name}</Fact><Fact k="账号状态">{data.accountStatus === 1 ? "启用" : "停用"}</Fact><Fact k={`当前${KIND_TEXT[kind]}资格`}>{fact?.observationState === "UNKNOWN" ? "信息不完整，不能保存" : fact?.observationState === "ABSENT" ? "确证未授予" : fact?.state ? STATUS_TEXT[fact.state] : "未知"}</Fact>{state !== (fact?.state ?? "") && fact?.observationState !== "UNKNOWN" && <Fact k="改成">{STATUS_TEXT[state]}</Fact>}</Facts>
       <p className="m1-field-value">资格不是角色，单独管理；同一账号可以同时有专属客服和主管资格。授予资格不会自动绑定客户，也不改账号角色。<Explain label="资格的说明" content="专属客服资格让这个账号以客服身份接待本人绑定的客户；有全部或管理范围的管理员仍可在权限范围内介入会话。主管资格用于管理客服组，不带账号管理权限。" /></p>
       {kind === "SUPERVISOR" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</Notice>}{kind === "SERVICE" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</Notice>}
       <Field label="资格状态">{busy ? <p className="m1-field-value">{STATUS_TEXT[state]}</p> : <Select aria-label="资格状态" value={state} options={QUAL_OPTIONS} onChange={value => setState(value as QualificationStatus)} />}</Field>
-      <Field label="操作理由" required help="请填写 8–200 字，将记入操作记录。">{control => <Textarea {...control} value={reason} disabled={busy} count={`${supportGroupReason(reason).length}/200`} onChange={e => setReason(e.target.value)} />}</Field></>}
-    {readAllowed && pending && <Notice tone="warn">{QUERY_PENDING_TEXT}{!canReplayGroupCommand(pending) && expiredText()}</Notice>}{allowed && !pending && stale && <Notice tone="warn">版本已变化，请重读当前资格并再次确认。理由已保留。</Notice>}{error && data && <Notice tone={resultTone}>{error}</Notice>}
+      <Field label="操作理由" required help={reasonPolicy ? `至少 ${reasonPolicy.minChars} 字` : reasonPolicyError ?? "正在加载，稍候即可提交。"}>{control => <Textarea {...control} value={reason} disabled={busy} count={reasonPolicy ? `${reasonLength}/${reasonPolicy.maxChars}` : undefined} onChange={e => setReason(e.target.value)} />}</Field></>}
+    {readAllowed && pending && <Notice tone="warn">{recovery?.expired ? RETRY_EXPIRED_TEXT : replayBlocked ?? "按原内容和理由重发，不会重复执行。"}</Notice>}{allowed && !pending && stale && <Notice tone="warn">版本已变化，请重读当前资格并再次确认。理由已保留。</Notice>}{error && data && <Notice tone={resultTone}>{error}</Notice>}
     </div>
   </Modal>;
 }

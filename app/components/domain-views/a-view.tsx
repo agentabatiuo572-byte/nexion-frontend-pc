@@ -121,6 +121,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           blockedReason={actionConfirmReq.blockedReason}
           initialReason={actionConfirmReq.initialReason}
           getPendingReason={actionConfirmReq.getPendingReason}
+          getPendingRecovery={actionConfirmReq.getPendingRecovery}
           getPendingBusinessValue={actionConfirmReq.getPendingBusinessValue}
           approval={actionConfirmReq.approval}
           inlineApproval={actionConfirmReq.inlineApproval}

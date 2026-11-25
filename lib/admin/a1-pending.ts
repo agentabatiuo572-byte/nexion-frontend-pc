@@ -1,4 +1,7 @@
-import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord, type PendingRecoveryCapability, type PendingRecoveryConclusion } from "./pending-mutation-store";
+import { explicitRejectionCode } from "./explicit-rejection";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { createA1Account, resetA1AccountPassword, revokeA1AccountSession, registerA1Permission, type A1CreateAccountInput, type A1Operator, type A1RoleDefinition, type A1UpdateAccountInput } from "./a1-client";
 import { createA2OperationProposal, type A2OperationRow } from "./a2-client";
 import { a1Object, a1Text, parseA1Operator, parseA1Role } from "./a1-read-contract";
@@ -6,8 +9,8 @@ import { accountAvatarFields } from "./account-avatar-contract";
 import { fetchDirectCommandReceipt } from "./direct-command-receipt";
 
 export type A1Intent =
-  | { kind: "create"; form: A1CreateAccountInput & { reason: string }; approval: boolean }
-  | { kind: "profile"; account: A1Operator; form: A1UpdateAccountInput & { reason: string } }
+  | { kind: "create"; form: A1CreateAccountInput; approval: boolean }
+  | { kind: "profile"; account: A1Operator; form: A1UpdateAccountInput }
   | { kind: "role"; account: A1Operator; picked: string }
   | { kind: "2fa" | "password" | "disable" | "enable" | "logout"; account: A1Operator }
   | { kind: "session"; account: A1Operator; sessionId: string }
@@ -22,7 +25,7 @@ export type A1Request =
 export type A1Pending = PendingMutationRecord & {
   actorId: number; intent: A1Intent; snapshot: A1Snapshot; request: A1Request;
   confirmationReason: string; businessValue?: Record<string, string>;
-  ticket?: A2OperationRow; received?: boolean; proposalNotFound?: boolean;
+  ticket?: A2OperationRow; received?: boolean; verifiedNotExecuted?: boolean; permissionVerificationPending?: boolean;
 };
 type LegacyCreation = PendingMutationRecord & { actorId: number; form: A1CreateAccountInput & { reason: string }; reason: string; operator: string };
 
@@ -43,14 +46,14 @@ function validRecord(value: A1Pending | LegacyCreation) {
     if (!Array.isArray(snapshot.roles) || !Number.isSafeInteger(snapshot.effectiveSupers) || snapshot.effectiveSupers < 0 || typeof snapshot.permissionReady !== "boolean") return false;
     snapshot.roles.forEach(parseA1Role);
     for (const codes of Object.values(a1Object(snapshot.codes))) { if (!Array.isArray(codes)) return false; codes.forEach(a1Text); }
-    if (intent.kind === "create") { formValid(intent.form, true); a1Text(intent.form.reason); if (typeof intent.approval !== "boolean") return false; }
+    if (intent.kind === "create") { formValid(intent.form, true); if (typeof intent.approval !== "boolean") return false; }
     else if (intent.kind === "permission") {
       a1Text(intent.draft.code); a1Text(intent.draft.name); a1Text(intent.draft.path);
       if (!["READ", "WRITE"].includes(intent.draft.type) || typeof intent.draft.amplifies !== "boolean") return false;
     } else {
       if (!["profile", "role", "2fa", "password", "disable", "enable", "logout", "session"].includes(intent.kind)) return false;
       parseA1Operator(intent.account);
-      if (intent.kind === "profile") { formValid(intent.form, false); a1Text(intent.form.reason); }
+      if (intent.kind === "profile") formValid(intent.form, false);
       if (intent.kind === "role") a1Text(intent.picked);
       if (intent.kind === "session") a1Text(intent.sessionId);
     }
@@ -73,6 +76,8 @@ function validRecord(value: A1Pending | LegacyCreation) {
       } else return false;
     }
     if (value.ticket && (!value.ticket.id || typeof value.ticket.mine !== "boolean" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(value.ticket.status))) return false;
+    if (value.verifiedNotExecuted !== undefined && typeof value.verifiedNotExecuted !== "boolean") return false;
+    if (value.permissionVerificationPending !== undefined && (request.kind !== "permission" || typeof value.permissionVerificationPending !== "boolean")) return false;
     return true;
   } catch { return false; }
 }
@@ -105,12 +110,37 @@ export function a1IntentAuthority(intent: A1Intent) {
     : intent.kind === "session" || intent.kind === "logout" ? "platform_a1_account_sessions_revoke"
     : intent.kind === "permission" ? "platform_a1_rbac_grants_update" : "platform_a1_write";
 }
-export function queryA1DirectReceipt(record: A1Pending) {
+export function a1RecoveryCapability(record: A1Pending): PendingRecoveryCapability {
+  return record.request.kind === "session" ? "replay" : "receipt";
+}
+
+export const a1Recovery = createPendingRecovery<A1Pending>(a1PendingCommands, {
+  capability: a1RecoveryCapability,
+  explicitRejectionCode,
+  canReplay(record) {
+    const auth = useAdminAuth.getState(), session = auth.session;
+    return !!session && auth.isAuthenticated && !auth.logoutPending && !auth.logoutUnknown
+      && !session.passwordChangeRequired && session.adminId === record.actorId
+      && session.authorities.includes("platform_a1_read") && session.authorities.includes(a1IntentAuthority(record.intent))
+      && canAccessResolvedPath(resolveVisibleDomains(session), "/platform/rbac")
+      && (record.request.kind !== "proposal" || session.authorities.includes("platform_a2_write"))
+      && (!["create", "password", "session", "logout"].includes(record.intent.kind) || ["super", "superadmin"].includes(session.role))
+      && !record.received && !record.ticket && !record.verifiedNotExecuted && !record.permissionVerificationPending;
+  },
+});
+
+export async function queryA1DirectReceipt(record: A1Pending): Promise<PendingRecoveryConclusion> {
   const kind = record.request.kind;
   const scope = kind === "create" ? `A1:ACCOUNT_CREATE:${record.actorId}`
     : kind === "password" ? `A1:ACCOUNT_PASSWORD_RESET:${record.actorId}`
       : kind === "permission" ? "A1_PERMISSION_REGISTER" : undefined;
-  return scope ? fetchDirectCommandReceipt(scope, record.commandKey, record.actorId) : Promise.resolve(null);
+  if (!scope) return "unknown";
+  const state = await fetchDirectCommandReceipt(scope, record.commandKey, record.actorId);
+  if (state === "NOT_FOUND") return "not-found";
+  if (state === "SUCCEEDED") return "succeeded";
+  if (state === "NOT_EXECUTED") return "not-executed";
+  if (state === "REJECTED") return "rejected";
+  return "unknown";
 }
 export async function sendA1Pending(record: A1Pending) {
   const request = record.request, key = record.commandKey;
