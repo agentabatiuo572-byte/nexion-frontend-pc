@@ -361,16 +361,17 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       next: expired && receipt ? "请再次查询原操作，有调查权限的超级管理员可按回执和证据核查结案。"
         : "记录和修改锁保留。请核实原操作结果，再用「核实后解除」。",
     };
-    if (!outcome && record.contentRetryFeedback) {
-      const feedback = record.contentRetryFeedback;
-      return feedback.kind === "readback-failed" ? {
-        tone: "danger" as const, label: "最新内容加载失败", detail: `原操作已执行。${feedback.detail}`,
-        next: "记录和修改锁保留，请再次查询原操作。",
-      } : {
-        tone: "warn" as const, label: "重试结果未知", detail: displayAdminError(feedback.detail),
-        next: "记录和修改锁保留，请再次查询原操作。",
-      };
-    }
+    const retryFeedback = record.contentRetryFeedback;
+    const queryError = outcome && "error" in outcome ? outcome.error : undefined;
+    if (retryFeedback?.kind === "readback-failed" && (!outcome || queryError !== undefined)) return {
+      tone: "danger" as const, label: "最新内容加载失败",
+      detail: queryError === undefined ? `原操作已执行。${retryFeedback.detail}` : `原操作已执行。本次查询原操作失败。${queryError}`,
+      next: "记录和修改锁保留，请再次查询原操作。",
+    };
+    if (!outcome && retryFeedback?.kind === "unknown") return {
+      tone: "warn" as const, label: "重试结果未知", detail: displayAdminError(retryFeedback.detail),
+      next: "记录和修改锁保留，请再次查询原操作。",
+    };
   };
   const originalShown = (record: A3Command, outcome: OriginalOutcome) => {
     const shown = fundRecoveryStatus({ record: record.commandOrigin ? record : undefined, outcome, expired: isRetryExpired(record), canQuery: true,
