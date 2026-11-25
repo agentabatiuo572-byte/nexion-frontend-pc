@@ -17,6 +17,7 @@ import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview
 import { F2BootstrapReview, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "@/lib/admin/f4-ambassador-display";
 import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
+import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
 import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
 import { f4MonthlyCap } from "@/lib/admin/f4-money";
@@ -102,7 +103,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
 import { e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
-import { payoutAmount } from "../f-tabs/f1-shared";
+import { payoutAmount, rewardText } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
 
 /* ────────────────── 名字和规则 ────────────────── */
@@ -201,6 +202,7 @@ const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
 
 function approvalExecutorLabel(w: A2OperationRow) {
+  if (w.operationCode === "f_vrank_override") return "发起人以外、同时有 A2 批准权限和人工调级权限的管理员";
   if (f2F4ApprovalPermissions(w)) return "另一位超级管理员";
   if (["a6_role_status_update", "a6_role_disable", "a6_role_delete", "a6_role_grants_update"].includes(w.operationCode ?? ""))
     return "另一位有审批批准权限和对应业务权限的管理员";
@@ -223,6 +225,40 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (w.action === "发布规则任务") return "另一位有审批批准权限和任务池修改权限的管理员";
   // 后端存的「门槛者」只是占位叫法（A2-BE-02）。
   return w.roleGate === "超管" ? "另一位超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
+}
+
+function isV8PromotionTicket(w: A2OperationRow) {
+  // A2 返回目标等级，F1 写入的动作后缀区分晋升和降级。
+  return w.operationCode === "f_vrank_override" && w.after === "V8" && w.action.endsWith(" · 晋升至 V8");
+}
+
+function approvalCoverageMode(w: A2OperationRow) {
+  // 旧票在 V8 晋升时也标记为放大，回放时仍免查覆盖率。
+  if (isV8PromotionTicket(w)) return undefined;
+  if (w.coverageCheckOnApproval) return "onApproval";
+  if (w.amplifies) return "amplifies";
+}
+
+function V8PromotionRewardFact() {
+  const readerId = useAdminAuth(s => s.session?.authorities.includes("network_f1_read") ? s.session.adminId : undefined);
+  const [reward, setReward] = useState<{ readerId: number; text: string }>();
+
+  useEffect(() => {
+    if (readerId === undefined) return;
+    let active = true;
+    void fetchF1VRankOverview().then(overview => {
+      const rank = overview.rows.find(row => row.v === "V8");
+      if (!active || !rank) return;
+      const rewards = rank.rewards.map(item => {
+        const { main, unit, missing } = rewardText(item, overview);
+        return missing ? "—" : unit ? `${main} ${unit}` : main;
+      });
+      setReward({ readerId, text: rewards.length ? `${rewards.join("、")}；以前领过的不再发` : "没有晋级奖励" });
+    }).catch(() => { if (active) setReward(undefined); });
+    return () => { active = false; };
+  }, [readerId]);
+
+  return <Fact k="V8 晋级奖励 · 发给本人">{reward && reward.readerId === readerId ? reward.text : "—"}</Fact>;
 }
 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
@@ -563,6 +599,7 @@ function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "afte
 }
 
 function approvalTiming(w: A2OperationRow) {
+  const coverageMode = approvalCoverageMode(w);
   const monthlyChange = monthlyTargetChange(w);
   if (monthlyChange) {
     const impact = monthlyChange === "close"
@@ -573,13 +610,13 @@ function approvalTiming(w: A2OperationRow) {
   const scheduled = phoneScheduledAt(w);
   if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: "批准后登记排程，到点才生效。", drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
   if (isJ4Execution(w)) return { tag: "立即逐步执行", impact: "批准后逐步执行，可能只执行一部分；失败时到「监管要求应急处理」的执行追溯里看哪些步骤已生效。", drawer: "点「批准」确认后逐步执行，可能只执行一部分；点「驳回」原操作不执行。" };
-  if (w.coverageCheckOnApproval) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先检查兑付覆盖率，够了才执行；点「驳回」原操作不执行。" };
+  if (coverageMode === "onApproval") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先检查兑付覆盖率，够了才执行；点「驳回」原操作不执行。" };
   if (w.operationCode === "k1_release_param") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对规则没被改过、兑付覆盖率够，才改；点「驳回」原操作不执行。" };
   if (w.operationCode === "k1_earnings_release") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对这笔收益没变、兑付覆盖率够，才放行；点「驳回」原操作不执行。" };
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
-  if (w.amplifies && fund?.kind === "fConfig" && (fund.spec?.loosen || enablesAutoPayout(fund))) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
+  if (coverageMode === "amplifies" && fund?.kind === "fConfig" && (fund.spec?.loosen || enablesAutoPayout(fund))) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Reissue") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才补发；点「驳回」原操作不执行。" };
   if (g3PolicyExecutionTiming(w)) return { tag: "按计划时点生效", impact: "", drawer: "点「批准」确认后按生效时间执行；点「驳回」原操作不执行。" };
   // 披露发布只封存这一版，用户看哪版另走「设置／调整生效版本」审批（I5，PRD I5 发布批准）。
@@ -2460,6 +2497,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
 
   const approveRequest = (w: A2OperationRow): ActionConfirmReq => {
+    const v8Promotion = isV8PromotionTicket(w);
+    const coverageMode = approvalCoverageMode(w);
+    const amplifies = coverageMode === "amplifies";
     const isRefund = w.fundEffect === "ORDER_REFUND";
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
     const briefKind = isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config";
@@ -2472,7 +2512,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
     const impact = scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
-        : w.coverageCheckOnApproval ? "先查兑付覆盖率，够了才执行，不够不动。"
+        : coverageMode === "onApproval" ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
             // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
             : i5Publish ? "用户看到的版本不变，生效版本另行审批。"
@@ -2488,10 +2528,6 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           : w.type === "sos" ? "核对值班授权、影响范围和恢复条件，理由写清依据或工单号。"
             : i5Publish || w.operationCode === "i5_matrix_configure" ? "核对这次披露改了什么，理由写清版本依据。"
             : "核对修改前后的值和影响范围，理由写清依据或工单号。";
-    // Older PC tickets marked every promotion as amplifying. V8 is the highest target,
-    // and the backend skips coverage for the promotion even on those retained tickets.
-    const v8Approval = w.operationCode === "f_vrank_override" && w.after.trim() === "V8";
-    const amplifies = w.amplifies && !w.coverageCheckOnApproval && !v8Approval;
     const k1 = k1TicketView(w);
     const k1Spec: FundSpec | undefined = k1 && (k1.kind === "release" ? {
       irreversible: true,
@@ -2535,7 +2571,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}{!f2F4ApprovalPermissions(w) && `谁能批准：${approvalExecutorLabel(w)}。`}</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
-        : w.coverageCheckOnApproval ? <>{approvalCoverageCopy(w)}</> : <>{!f2F4ApprovalPermissions(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
+        : coverageMode === "onApproval" ? <>{approvalCoverageCopy(w)}</> : <>{!f2F4ApprovalPermissions(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
       completionCopy: fund?.completion,
       // 派奖、结算：这一次的结果放在关键信息层（和发起人那边同一块），审批单信息放在后面。
       facts: fund?.lead ?? ticketFacts(w, "approve", fund?.facts),
@@ -2546,7 +2582,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
             : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}
-                facts={f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
+                facts={v8Promotion ? <V8PromotionRewardFact /> : f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
                 {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
                 <A2I5DisclosureReview key={w.id} ticket={w} />
               </A2ChangeReview>}
@@ -2562,7 +2598,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverage: amplifies && !belowRedline ? coverage : undefined,
       coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
         : amplifies && !coverage ? <span className="a2-coverage-unknown">{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
-      coverageCheck: fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
+      coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
       reasonMin,
       reasonMax: 200,
@@ -3206,6 +3242,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
   const shownOwn = shown ? isMine(shown) : false;
+  const shownCoverageMode = shown && approvalCoverageMode(shown);
   // F4 派奖和结算、F5 提前解锁：被覆盖率挡住时单子留着，可以等恢复后再批，不只是驳回。
   const shownFund = shown ? fundTicket(shown) : undefined;
   const shownCover = shown ? coverageFacts(shown) : undefined;
@@ -3278,8 +3315,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         {shown && <>
           {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次决定结果未知，先到页面上方「查询原结果」，查清前不要重复处理。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
-          {shown.coverageCheckOnApproval && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
-          {shown.amplifies && !shown.coverageCheckOnApproval && <Notice tone="warn">{shownFundCheck}</Notice>}
+          {shownCoverageMode === "onApproval" && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
+          {shownCoverageMode === "amplifies" && <Notice tone="warn">{shownFundCheck}</Notice>}
           {/* J4 逐步执行，中途失败时前面的步骤不回滚，不能写「失败不改原值」（M3）。 */}
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
@@ -3296,7 +3333,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
-                facts={shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
+                facts={isV8PromotionTicket(shown) ? <V8PromotionRewardFact />
+                  : shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
               </A2ChangeReview>}
