@@ -1651,7 +1651,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     } finally { if (uploadControllerRef.current === controller) uploadControllerRef.current = null; }
   };
 
-  const serviceStatus = !conversationsAvailable ? "会话服务暂不可用。请检查连接后重试。" : lostAccess ? "当前会话权限已变化，请刷新列表。" : "";
+  const serviceStatus = !conversationsAvailable ? "会话服务暂不可用，请检查连接后重试。" : lostAccess ? "当前会话权限已变化，请刷新列表。" : "";
   const title = userNicknameText(selected?.customer || selected?.profile?.nickname || (selected?.customerId ? `客户 ${selected.customerId}` : firstDetail?.displayName || (requestedCustomerIdValid && requestedCustomerId ? `客户 ${requestedCustomerId}` : "会话消息")), selected?.profile?.phone);
   const checkActionReady = async (conversation: SessionConvo) => {
     if (!conversation.customerId || actionChecking) return false;
@@ -2105,7 +2105,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     {banner}
     {streamLost && !reconnectExhausted && <Notice tone="warn">连接已断开，正在重连；下面是最近一次的数据</Notice>}
     {!conversationsAvailable
-      ? ctx.contentLoading ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Conclusion state="danger" action={<Button size="sm" onClick={() => void ctx.refreshConversations()}>重新连接</Button>}>{serviceStatus}</Conclusion>
+      ? ctx.contentLoading ? <Conclusion state="unknown">正在加载会话…</Conclusion> : <Panel><BlockState state="error" title="会话加载失败" detail={serviceStatus} onRetry={() => void ctx.refreshConversations()} /></Panel>
       : scopeDenied ? <BlockState state="denied" title="当前账号看不到客户会话" detail="这页只给客服、客服主管和超级管理员用。需要查看会话，请联系管理员调整账号。" />
       : reviewScopeError
         ? <Panel><BlockState state="error" title="当前可见范围加载失败" detail={reviewScopeError} onRetry={() => { setReviewScopeError(""); setScopeRetry(value => value + 1); }} /></Panel>
