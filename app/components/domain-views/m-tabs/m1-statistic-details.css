@@ -29,7 +29,10 @@
 .m1-stat-table :is(th, td) { white-space: nowrap; }
 .m1-stat-detail[data-kind="fund"] .m1-stat-table :is(th, td):last-child { text-align: right; }
 .m1-stat-detail[data-kind="fund"] .m1-stat-table td:last-child { font-variant-numeric: tabular-nums; }
-.m1-stat-table td:nth-child(4) { min-width: 14ch; white-space: normal; overflow-wrap: anywhere; }
+.m1-stat-detail[data-kind="maintenance"] .m1-stat-table td:nth-child(4) { min-width: 14ch; white-space: normal; overflow-wrap: anywhere; }  /* 维护明细的关联记录列；资金明细第 4 列是金额，不折行 */
+.m1-stat-table td[data-col="pair"] .rd-cell { max-width: 7.5em; }  /* 540 抽屉里客户、原归属两列各留一档宽，放不下省略，聚焦和悬停看全文（ST-04） */
+.m1-stat-th { display: inline-flex; flex-direction: column; }  /* 时间列头的时区写第二行，列宽按时间本身定 */
+.m1-stat-th small { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .m1-stat-table td[data-col="code"] { font-family: var(--rd-font-mono); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }  /* 编号等宽、弱一档（TX-28） */
 .m1-stat-table td[data-col="amount"] { font-weight: 500; color: var(--rd-text); }  /* 要核对的金额强一档（VS-100） */
 .m1-stat-pager { display: flex; align-items: center; gap: 8px; margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }

@@ -654,7 +654,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       {!canResetPassword && <p className="m-admin-muted m3-account-note">重置密码：{passwordWho}</p>}
       {accountActions.length < 3 && <p className="m-admin-muted m3-account-note">冻结、恢复账户、调整余额：{accountWho}</p>}
     </Fold>}
-    <small>资料更新时间：{dates(profile?.identity.evaluatedAt)}</small>
+    <p className="m3-profile-updated">资料更新时间：{dates(profile?.identity.evaluatedAt)}{dates(profile?.identity.evaluatedAt) !== EMPTY && `（${businessZone().label}）`}</p>
     </>}
   </div>;
   return <div className="m3-customer-sidebar">
