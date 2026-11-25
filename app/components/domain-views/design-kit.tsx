@@ -3860,6 +3860,7 @@ export type InlineOperationApproval = {
   renderForm?: (value: BusinessFormValue, onChange: (value: BusinessFormValue) => void, locked: boolean, approval: boolean) => ReactNode;
   recover: (reason: string, value: BusinessFormValue, editValue: string) => Promise<boolean>;
   recoverLabel?: string;
+  readbackNote?: string;
   retry?: () => Promise<void>;
   pending?: boolean;
   /** Saved direct commands can expose the existing query and retry actions together. */
@@ -4142,7 +4143,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         setApprovalRecovery("retry");
         setSubmitError(getPendingRecovery?.() || inlineApproval?.expired || inlineApproval?.queryOnly ? "没查到原审批单，可以稍后再查。" : "没查到原审批单。可以稍后再查，或按原操作重试，不会建第二张。");
       } else if (inlineApproval?.recoverLabel) {
-        setSubmitError(null);
+        setSubmitError(inlineApproval.readbackNote ?? null);
       }
     } catch (error) {
       setSubmitError(isA2OutcomeUncertainError(error) ? (getPendingRecovery?.() && error.queryMessage || error.message) : operationConfirmErrorMessage(error));
@@ -4192,10 +4193,10 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     : pendingRecovery?.state && pendingRecovery.blockedReason ? pendingRecovery.blockedReason
     : pendingRecovery?.state?.capability === "replay" ? "按原操作重试会重新发送一次。"
     : inlineApproval?.expiredRequestRecovery === "reload"
-    ? surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
+    ? inlineApproval.readbackNote ? "原操作已过期，不能重发；请用「读取当前配置」核对。" : surface ? "原操作已过期，不能重发；请刷新页面核对当前值。" : "原操作已过期，不能重发，请刷新页面核对当前值。"
     : inlineApproval?.expiredRequestRecovery === "query"
       ? surface ? "原操作已过期，不能重发；请用「查询原操作」核对。" : "原操作已过期，不能重发，请查询原操作。"
-      : inlineApproval?.queryOnly ? "只能查询原操作，不能重发。"
+      : inlineApproval?.queryOnly ? inlineApproval.readbackNote ? "可以读取当前配置核对。原操作不能重发。" : "只能查询原操作，不能重发。"
         : surface ? "按原内容和理由重发，不会重复执行。" : "原操作结果未知，理由已锁定。重试将继续原操作，不会重复执行。");
   const submitLabel = pendingReason !== undefined || approvalRecovery === "retry" ? "按原操作重试" : needsEditPreview && !editReview ? "下一步" : readyReview?.confirmLabel ?? (approval ? "提交审批" : confirmLabelForValue?.(editValueOk ? newVal : undefined, businessValue) ?? confirmLabel);
   // 放大提示固定在关键信息层，先于所有填写项。
