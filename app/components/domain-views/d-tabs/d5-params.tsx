@@ -563,7 +563,9 @@ function ProposalFacts({ rows }: { rows: readonly { id: string; before?: string;
     const head = rows.length > 1 ? [<Fact key={`${row.id}:id`} k="审批单">{row.id}</Fact>] : [];
     if (!before || !after) return [...head, <Fact key={`${row.id}:none`} k="拟改值">没读到</Fact>];
     const from = new Map(changeParts(before));
-    return [...head, ...changeParts(after).map(([label, value]) => (
+    // 只列改了的项（和越南盾一样）；摘要里一组字段整组带上时，没变的不列。
+    const changed = changeParts(after).filter(([label, value]) => from.get(label) !== value);
+    return [...head, ...(changed.length ? changed : changeParts(after)).map(([label, value]) => (
       <Fact key={`${row.id}:${label}`} k={label}><Change from={from.get(label) ?? "—"} to={value} /></Fact>
     ))];
   })}</Facts>;
