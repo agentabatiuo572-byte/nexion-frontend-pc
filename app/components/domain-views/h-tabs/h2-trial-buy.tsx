@@ -229,7 +229,12 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   useEffect(refocusDrawer, [leaving]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
-  const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejected?: string, othersNote?: string) => {
+  const showConfirm = (base: BuyList, selection: string[], { initialReason, initialRejected, othersNote, readFresh }: {
+    initialReason?: string;
+    initialRejected?: string;
+    othersNote?: string;
+    readFresh?: boolean;
+  } = {}) => {
     const { items, candidates } = buyChoices(base);
     const selected = new Set(selection);
     const current = new Set(items.map((item) => item.productNo));
@@ -292,7 +297,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
           readLatest: async () => {
             const { base: latest, selection } = await readReview();
             setLastReason("");
-            if (!showConfirm(latest, selection, "", undefined, changedByOthers(base.items, latest.items))) ctx.openActionConfirm(null);
+            if (!showConfirm(latest, selection, { othersNote: changedByOthers(base.items, latest.items), readFresh: true })) ctx.openActionConfirm(null);
             return false;
           },
           renderNotice: (readLatest) => (
@@ -345,7 +350,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       content: added.length > 0 ? <div className="h2-money-note"><Notice tone="neutral">{MONEY_LINE}</Notice></div> : undefined,
       initialReason: initialReason || undefined,
       initialRejection: initialRejected === undefined ? undefined : rejection(initialRejected),
-      blockedReason: blocked,
+      blockedReason: readFresh ? undefined : blocked,
       reasonPlaceholder: "写清调整原因和依据",
       confirmLabel: "确认修改，立即生效",
       run: send,
@@ -365,14 +370,14 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     setRejected(undefined);
     setDraftBase(review.base);
     setPicked(review.selection);
-    showConfirm(review.base, review.selection, "", undefined, changedByOthers(before, latest.items));
+    showConfirm(review.base, review.selection, { othersNote: changedByOthers(before, latest.items), readFresh: true });
   };
 
   const openConfirm = () => {
     if (!canWrite || !draftBase || draftBlock) return;
     if (!leaving) afterLeave.current = undefined;
     setLeaving(false);
-    showConfirm(draftBase, picked, lastReason, rejected);
+    showConfirm(draftBase, picked, { initialReason: lastReason, initialRejected: rejected });
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
