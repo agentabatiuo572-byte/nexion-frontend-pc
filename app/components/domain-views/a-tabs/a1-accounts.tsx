@@ -30,7 +30,7 @@ import { groupPendingCommands, isQualificationPending, qualificationRecovery } f
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import type { ACtx, ActionConfirmReq } from "./types";
 import { usePendingReplayDeadline, type BusinessFormValue } from "../design-kit";
-import { pendingReplayReason } from "../recovery-panel";
+import { pendingReplayReason, recoveryTitle } from "../recovery-panel";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryConclusion } from "@/lib/admin/pending-mutation-store";
 import { a1AvatarCancellation, a1AvatarCancellationRecovery, a1AvatarPreparationRecovery, avatarDrafts, avatarDraftFingerprint, findNewAccountAvatar, linkNewAccountAvatar, queryAvatarCancellation, replayAvatarCancellation } from "@/lib/admin/account-avatar-pending";
 import { AVATAR_GENDER_OPTIONS } from "@/lib/admin/account-avatar-contract";
@@ -39,7 +39,7 @@ import { SupportAvatar } from "../m-tabs/support-avatar";
 import { SupportQualificationEditor, canManageSupportQualifications } from "../m-tabs/m1-group-management";
 import {
   A1RecoveryNotice, AccountDetailDrawer, AvatarRecoveryModal, EditAccountDrawer, NewAccountDrawer, PasswordResetDrawer, RoleChangeModal,
-  approvalTag, approverFacts, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName,
+  approvalTag, approverFacts, credentialStatusText, directTag, expiredTag, minuteText, operatorDisplayLabel, operatorDisplayName, approvalPendingTag,
   permSummary, roleName, unknownTag, zoneNote, isHighRiskCode, HIGH_RISK_EXPLAIN, PermGroups, type A1AccountAction, type A1RecoveryRow,
 } from "./a1-account-views";
 
@@ -1368,12 +1368,12 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       note: replayRejection ? `后台已拒绝重试，请先核实原操作。${expired ? RETRY_EXPIRED_TEXT : ""}` : expired ? RETRY_EXPIRED_TEXT
         : record.ticket?.status === "pending" ? undefined : record.received ? "请查询原操作，核对当前业务记录。"
           : retryBlock ?? (capability === "replay" ? "按原操作重试会重新发送一次。" : undefined),
-      tag: record.ticket?.status === "pending" ? <StatusTag tone="warn">待审批</StatusTag>
+      tag: record.ticket?.status === "pending" ? approvalPendingTag()
         : expired ? expiredTag(RETRY_EXPIRED_TEXT)
         : unknownTag(request.kind === "proposal" ? "approval" : "direct", retryBlock ?? "提交时没收到确定结果，可能已经生效。"),
       actions: <>
         <Button size="sm" disabledReason={mutatingAction || busy ? "正在核对原操作，请稍候。" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原操作</Button>
-        {!record.ticket && !record.received && !expired && !replayRejection && capability !== "readback" && <Button size="sm" variant="primary" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原操作重试</Button>}
+        {!record.ticket && !record.received && !expired && !replayRejection && capability !== "readback" && <Button size="sm" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原操作重试</Button>}
         {replayRejection && <Button size="sm" disabled={!!busy} onClick={() => confirmLocalRelease(record, name, () => a1Recovery.releaseRejectedReplay(record))}>解除原操作记录</Button>}
       </>,
     };
@@ -1411,7 +1411,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       tag: status.expired ? expiredTag(RETRY_EXPIRED_TEXT) : unknownTag("direct", "提交时没收到确定结果，资格可能已经改了。请查询原操作。"),
       actions: <>
         <Button size="sm" disabled={!!status.busy} onClick={open}>查询原操作</Button>
-        {!status.expired && !status.replayRejection && <Button size="sm" variant="primary"
+        {!status.expired && !status.replayRejection && <Button size="sm"
           disabledReason={!overviewReady || governanceFrozen ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingReplayReason(status, errorMessage(new Error("A1_OPERATION_FORBIDDEN")))}
           onClick={open}>按原操作重试</Button>}
         {status.replayRejection && <Button size="sm" disabled={!!status.busy}
@@ -1454,11 +1454,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           toast(errorMessage(new Error("A1_AVATAR_READBACK_ONLY")));
         })().catch(error => toast(errorMessage(error)))}>查询原操作</Button>
         {!replay.expired && !replay.replayRejection && (cancellation
-          ? <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => void (async () => {
+          ? <Button size="sm" disabledReason={avatarRetryBlock} onClick={() => void (async () => {
             await replayAvatarCancellation(cancellation);
             await readAfterAvatarCancellation();
           })().catch(error => toast(errorMessage(error)))}>按原操作重试</Button>
-          : <Button size="sm" variant="primary" disabledReason={avatarRetryBlock} onClick={() => setAvatarRecovery(target)}>处理原头像</Button>)}
+          : <Button size="sm" disabledReason={avatarRetryBlock} onClick={() => setAvatarRecovery(target)}>处理原头像</Button>)}
         {replay.replayRejection && <Button size="sm" disabled={!!replay.busy} onClick={() => confirmLocalRelease(cancellation ?? draft, name, () => cancellation
           ? a1AvatarCancellationRecovery.releaseRejectedReplay(cancellation) : a1AvatarPreparationRecovery.releaseRejectedReplay(draft))}>解除原操作记录</Button>}
       </>,
@@ -1466,10 +1466,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   }
   const pendingCount = recoveryRows.filter(row => pendingOperations.some(record => record.commandKey === row.key && record.ticket?.status === "pending")).length;
   const unknownCount = recoveryRows.length - pendingCount - availableDrafts.length - permissionVerifications.length;
-  const recoveryTitle = [unknownCount && `${unknownCount} 个结果未知`, pendingCount && `${pendingCount} 个待审批`,
-    availableDrafts.length && `${availableDrafts.length} 个原操作未执行`,
-    permissionVerifications.length && `${permissionVerifications.length} 个权限已登记`].filter(Boolean).join("、");
-  const recovery = <><A1RecoveryNotice title={`账号原操作：${recoveryTitle}`} rows={recoveryRows} />
+  // 原操作未执行（留作草稿）、权限已登记（只差核对能不能看到）都已有结论，和其他页的恢复条一样算「已有结论」。
+  const recovery = <><A1RecoveryNotice title={recoveryTitle(unknownCount, pendingCount, availableDrafts.length + permissionVerifications.length)} rows={recoveryRows} />
     {avatarRecovery !== null && <AvatarRecoveryModal target={avatarRecovery} onClose={() => setAvatarRecovery(null)} />}{qualificationTarget && <SupportQualificationEditor adminId={qualificationTarget.id} kind={qualificationTarget.kind} writeBlockedReason={!overviewReady ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : governanceFrozen ? "有效的超级管理员不足 2 人，暂时不能改资格" : undefined} onClose={() => setQualificationTarget(null)} onChanged={() => void refreshOverview(true)} />}</>;
 
   if (loading && !overview) {

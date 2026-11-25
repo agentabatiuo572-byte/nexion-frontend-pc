@@ -612,13 +612,13 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     for (const record of commands) {
       const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey);
       const tag = record.ticket?.status === "pending"
-        ? record.kind === "param-approval" ? pendingTag() : <StatusTag tone="warn">待审批</StatusTag>
+        ? record.kind === "param-approval" ? pendingTag() : pendingTag("批准后才发，批准前什么都不发。")
         : isRetryExpired(record) ? expiredTag(record.kind === "direct" ? "direct" : "approval") : unknownTag(record.kind === "direct" ? "direct" : "approval");
       if (param) recoveryByKey[param.key] = tag;
       const recover = () => param ? editParam(param, param.key === "enabled" ? record.value : undefined, record) : settle(undefined, record);
       recoveryRows.push({
         key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
-        submittedAt: record.createdAt, tag,
+        submittedAt: record.createdAt, tag, waiting: record.ticket?.status === "pending",
         change: param ? record.original
             ? <>{record.kind !== "direct" && <span className="h8-rec-kind">申请</span>}<Change from={valueText(param, String(record.original.overview.params[param.key]))} to={valueText(param, record.value)} /></>
             : <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
@@ -645,7 +645,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     recoveryRows.push({
       key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
       submittedAt: record.createdAt, settled: true,
-      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      tag: <StatusTag tone="neutral">未执行</StatusTag>,
       change: param ? <Change from={valueText(param, String(original.overview.params[param.key]))} to={valueText(param, record.value)} />
         : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit} 位`}</span>,
       actions: writable ? <Button size="sm" onClick={async () => {

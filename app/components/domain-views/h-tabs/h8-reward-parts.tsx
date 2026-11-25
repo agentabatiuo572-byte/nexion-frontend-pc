@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass } from "lucide-react";
 import { Explain, KeepText, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { recoveryTitle } from "../recovery-panel";
 import { amountDisplay } from "@/lib/format";
 
 /** 后端金额是普通十进制串（最多 6 位小数）。去掉补的末尾 0，至少 2 位，整数带千分位；不经过浮点，不舍入。 */
@@ -123,7 +124,10 @@ export type H8RecoveryRow = {
   /** 本机记下这次提交的时间（毫秒）。 */
   submittedAt?: number;
   tag: ReactNode;
+  /** 原操作确认没执行、留作草稿的：标题里算「已有结论」。 */
   settled?: boolean;
+  /** 审批单在等批准：标题里算「在等审批」。 */
+  waiting?: boolean;
   actions?: ReactNode;
 };
 
@@ -139,8 +143,8 @@ export function expiredTag(kind: "direct" | "approval") {
     : "过了 24 小时只能查询、不能再重试；重试被明确拒绝的，核实后可以解除。"}>已过期</StatusTag>;
 }
 
-export function pendingTag() {
-  return <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准。批准前奖励配置不变；等批期间这页不能再发起别的放大修改，调低这类收紧照常保存。">待审批</StatusTag>;
+export function pendingTag(note = "批准前奖励配置不变；等批期间这页不能再发起别的放大修改，调低这类收紧照常保存。") {
+  return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。${note}`}>待审批</StatusTag>;
 }
 
 /** 原操作提醒：逐条写改的是什么、从多少到多少、什么时候提交的、现在什么状态。概览读取中、读取失败也显示。 */
@@ -148,7 +152,7 @@ export function H8RecoveryNotice({ rows }: { rows: H8RecoveryRow[] }) {
   if (rows.length === 0) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
   return (
-    <Notice tone="warn" title={<>{rows.every(row => row.settled) ? "原操作未执行的草稿" : rows.some(row => row.settled) ? "原操作与草稿" : `还没有结论的原操作 · ${rows.length} 项`}<Explain label="原操作怎么处理" content={<>
+    <Notice tone="warn" title={<>{recoveryTitle(rows.filter(row => !row.settled && !row.waiting).length, rows.filter(row => row.waiting).length, rows.filter(row => row.settled).length)}<Explain label="原操作怎么处理" content={<>
       <p>这里列你在这个浏览器标签页里提交过、还没收到确定结果的修改和结算申请。</p>
       <p>原操作有结论之前，这一项不能改成别的值。有参数审批在等批时，别的项也只能收紧、不能放大。别人提交的审批单不在这里，到「操作记录与审批」看。</p>
     </>} /></>}>

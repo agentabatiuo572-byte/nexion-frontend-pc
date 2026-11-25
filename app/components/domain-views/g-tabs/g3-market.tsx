@@ -45,7 +45,7 @@ import { OperationConfirmModal, usePendingReplayDeadline, useToast, type EditSpe
 import { G3_EXPIRED_DIRECT_READ, G3_READBACK_NOTE, G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
 import { G3ScheduleResult } from "./g3-schedule-result";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { TechInfo } from "../recovery-panel";
+import { recoveryTitle, TechInfo } from "../recovery-panel";
 import { rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 
 /** 本页的共用确认框请求：action 照旧是记进操作记录的名字，title 只写动作和对象（VS-101）。 */
@@ -638,7 +638,7 @@ function G3MarketEditor() {
     };
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
-    title={`价格的原操作 · ${recoveryRows.length} 项`}
+    title={recoveryTitle(commandRows.filter((row) => !row.ticketId).length, commandRows.filter((row) => row.ticketId).length)}
     lead={commandRows.every((row) => row.ticketId)
       ? "这些申请在等另一位超级管理员审批：点「查询原操作」看结论；有结论之前不要换个值重新提交。"
       : commandRows.some(row => !row.ticketId && row.replayRejection)

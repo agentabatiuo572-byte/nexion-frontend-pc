@@ -48,6 +48,7 @@ import { gParamApprovalFeedback, useGParamApproval, type GParamRecovery } from "
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { rejectedTag } from "../verified-release";
+import { recoveryTitle } from "../recovery-panel";
 import { amountDisplay } from "@/lib/format";
 
 const OPERATOR = currentAdminOperator;
@@ -555,8 +556,12 @@ function G2ExchangePage() {
       }),
     ];
     const waiting = directs.length === 0 && approvals.length > 0 && approvals.every((record) => record.status === "pending");
+    // 标题和每行的标签同一个判断（recoveryTag）：重试被拒、过期也算结果未知，审批单有了结论算已有结论。
+    const shown = approvals.filter((record) => !(record.replayRejection && !record.ticket));
+    const waitingCount = shown.filter((record) => record.status === "pending").length;
+    const endedCount = shown.filter((record) => !["unknown", "pending", "expired"].includes(record.status)).length;
     return <GRecoveryNotice label="兑换的原操作" rows={rows}
-      title={`兑换的原操作 · ${rows.length} 项`}
+      title={recoveryTitle(rows.length - waitingCount - endedCount, waitingCount, endedCount)}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
         : `走审批的先查询原操作，查无且符合条件才可重试。直接修改和处理排队用各行入口核对。有结论前不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "，处理排队的原批次确认之前不能开新的一批" : ""}。`}

@@ -52,6 +52,7 @@ import { focusFrame, releaseOnLeave } from "./block-state";
 import { Button, IconButton, TipSide } from "./button";
 import { Explain } from "./explain";
 import { Fact, Facts } from "./facts";
+import { Check } from "./field";
 import { IconTile } from "./icon-tile";
 import { KeepText } from "./keep-text";
 import { EffectSlot } from "./status-tag";
@@ -461,16 +462,20 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
 }
 
 /**
- * 解除原操作记录（OP-96）：重试被后端拒绝后，人核实过才放开本页的锁。不发请求，不写操作记录，没有生效方式和关键数字。
+ * 解除原操作记录（OP-93 第 8 条）：重试被后端拒绝后，人核实过才放开本页的锁。不发请求，不写操作记录，没有生效方式和关键数字。
  * 本地解除和服务端核查结案分开说明。重试被拒不等于原操作没生效；explain 写这一页先到哪里核对。
+ * 和恢复行上的「核实后解除」（domain-views/verified-release.tsx）是同一个框：勾选「我已核实原操作的结果」后才能确认解除。
  */
 export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: ReactNode; explain?: ReactNode; onCancel: () => void; onConfirm: () => void }) {
+  const [verified, setVerified] = useState(false);
   return (
-    <Modal title="解除原操作记录" icon={ShieldCheck} onClose={onCancel} footer={<>
+    <Modal title="解除原操作记录" icon={ShieldCheck} dirty={verified} onClose={onCancel} footer={<>
       <Button onClick={onCancel}>取消</Button>
-      <Button variant="primary" onClick={onConfirm}>确认解除</Button>
+      <Button variant="primary" disabledReason={verified ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={onConfirm}>确认解除</Button>
     </>}>
-      <ReleaseBody label={label} explain={explain} />
+      <ReleaseBody label={label} explain={explain}>
+        <Check label="我已核实原操作的结果" checked={verified} onChange={(event) => setVerified(event.target.checked)} />
+      </ReleaseBody>
     </Modal>
   );
 }
@@ -479,11 +484,12 @@ export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: R
  * ReleaseModal 的正文。原操作本来就开在一个弹窗里时，在同一个框里换成这块（标题「解除原操作记录」、盾牌图标、底栏「返回」「确认解除」），
  * 不在框上再叠一个框（PG-38）。
  */
-export function ReleaseBody({ label, explain }: { label: ReactNode; explain?: ReactNode }) {
+export function ReleaseBody({ label, explain, children }: { label: ReactNode; explain?: ReactNode; children?: ReactNode }) {
   return (
     <div className="rd-stack rd-release-body">
       <Facts><Fact k="原操作">{label}</Fact></Facts>
       <p><KeepText text="先核对原操作的结果再解除。解除只删掉本标签页里的这条记录，不撤销原操作，也不算核查结案；重新提交时照常检查。" />{explain && <Explain label="解除的说明" content={explain} />}</p>
+      {children}
     </div>
   );
 }

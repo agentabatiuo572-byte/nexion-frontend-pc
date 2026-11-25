@@ -5,7 +5,7 @@
  * 只负责排版：数据、权限判断和提交都由 a1-accounts.tsx 传进来，这里不发请求、不改请求内容。
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowRight, CircleHelp, Clock3, Copy, KeyRound, MonitorSmartphone, PencilLine, UserCog, UserPlus, UserRound } from "lucide-react";
+import { ArrowRight, CircleHelp, Clock3, Copy, Hourglass, KeyRound, MonitorSmartphone, PencilLine, UserCog, UserPlus, UserRound } from "lucide-react";
 import { Button, Decision, Drawer, Explain, Fact, Facts, Field, Fold, Input, JudgmentPoints, Modal, Notice, Segments, Select, StatusTag, Timeline, type TimelineEntry } from "@/app/components/rd";
 import { domainOfPermission, pageLabelFromCode } from "@/lib/admin/perm-domain";
 import { F4_MATERIAL_PERMISSIONS } from "@/lib/admin/f4-ambassador-display";
@@ -133,7 +133,12 @@ export function unknownTag(kind: "direct" | "approval", note?: string) {
 }
 
 export function expiredTag(note = "原请求超过 24 小时，不能再重试，只能查询核对。") {
-  return <StatusTag tone="neutral" icon={Clock3} explain={note}>已过期</StatusTag>;
+  return <StatusTag tone="neutral" icon={Hourglass} explain={note}>已过期</StatusTag>;
+}
+
+/** 原操作的审批单在等批准：和其他页恢复条上的「待审批」同一个样子。 */
+export function approvalPendingTag() {
+  return <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准，批准前不执行。">待审批</StatusTag>;
 }
 
 export function A1RecoveryNotice({ title, rows }: { title: ReactNode; rows: A1RecoveryRow[] }) {
