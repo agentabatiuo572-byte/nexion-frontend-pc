@@ -289,6 +289,17 @@ export function releaseConfigApproval(sourceDomain: keyof typeof commands, admin
   attempts.forget(approvalSlot(sourceDomain, adminId, scope), commandKey);
 }
 
+export function g4FirstDividendRejectionSnapshot(adminId: number, commandKey: string) {
+  const original = pendingConfigApproval("G4", adminId);
+  return original?.commandKey === commandKey && !original.g4Ticket ? original.replayRejection : undefined;
+}
+
+export function releaseRejectedG4FirstDividend(adminId: number, commandKey: string) {
+  if (!g4FirstDividendRejectionSnapshot(adminId, commandKey)) return false;
+  releaseConfigApproval("G4", adminId, commandKey);
+  return !pendingConfigApproval("G4", adminId);
+}
+
 export function releaseRejectedWithdrawalApproval(sourceDomain: WithdrawalApprovalSource, adminId: number, commandKey: string) {
   const record = pendingConfigApproval(sourceDomain, adminId);
   if (record?.commandKey !== commandKey || record.withdrawalSubmissionConfirmed || !record.replayRejection) return false;
@@ -642,6 +653,9 @@ async function submitConfigApprovalTicket(
     if (withdrawalApproval && previous.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }
+  if (sourceDomain === "G4" && previous?.replayRejection && !lookupOnly) {
+    throw new Error("重试已被拒绝，请核实后解除。");
+  }
   const input = JSON.stringify([values, reason]);
   const key = previous?.commandKey ?? createA2CommandKey(op);
   if (sourceDomain === "G4" && previous?.g4Request) {
@@ -688,6 +702,7 @@ async function submitConfigApprovalTicket(
       canClearOnRejection = ticket === null;
     }
     if (sourceDomain === "G4" && previous?.g4Ticket && !ticket) throw new A2OutcomeUncertainError("暂未查到已收录的原审批单，请继续核对，不能重新提交。", key);
+    if (sourceDomain === "G4" && lookupOnly && !ticket) return null;
     if (previous && !ticket && (previous.expiresAt <= Date.now() || sourceDomain === "G4" && Date.now() < previous.createdAt)) {
       throw new A2OutcomeUncertainError("原审批申请已过期，还没查到结果。请到操作记录核对，不要重复提交。", key);
     }
@@ -734,7 +749,11 @@ async function submitConfigApprovalTicket(
       else if (!previous && !isA2OutcomeUncertainError(error) && !isPermissionDenied(error)) {
         throw new A2OutcomeUncertainError("提交结果未知，请到操作记录里核对。", key);
       }
-    } else if (canClearOnRejection && (previous || sourceDomain === "G4" ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) {
+    } else if (sourceDomain === "G4" && canClearOnRejection) {
+      const rejection = explicitRejectionCode(error);
+      if (rejection && previous) attempts.markReplayRejected(slot, key, rejection);
+      else if (rejection) attempts.forget(slot, key);
+    } else if (canClearOnRejection && (previous ? isExplicitRejection(error) : !isA2OutcomeUncertainError(error))) {
       attempts.forget(slot, key);
     }
     throw error;

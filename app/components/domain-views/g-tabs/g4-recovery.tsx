@@ -7,8 +7,10 @@
  */
 import { useState, type ReactNode } from "react";
 import { Button, Change } from "@/app/components/rd";
-import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { rejectedTag } from "../verified-release";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import type { A2OperationRow } from "@/lib/admin/a2-client";
 import { divBaseFormulaText, G_PARAM_APPROVAL_RECOVERY, G_PARAM_RECOVERY } from "@/lib/admin/operator-copy";
 import { gParamApprovalFeedback, type GParamRecovery, type useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { amountDisplay } from "@/lib/format";
@@ -56,7 +58,8 @@ export function g4ParamValueText(key: string, raw: string | undefined) {
 /** 每日收益比例的调高申请在等批准时，仍可直接调低（立即生效）；调低后原申请批准时后端按当前值已变拒绝。其他参数待审批时调高调低都改不了。 */
 export const G4_DIVIDEND_PENDING_NOTE = "批准前仍是原比例；这期间仍可以把比例调低，调低立即生效，原调高申请批准时会因为比例变了被拒绝。";
 
-export function g4RecoveryTag(record: Pick<GParamRecovery, "status">, batch = false, obj?: string) {
+export function g4RecoveryTag(record: Pick<GParamRecovery, "status" | "ticket" | "replayRejection">, batch = false, obj?: string) {
+  if (record.replayRejection && !record.ticket) return rejectedTag();
   if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
   if (record.status === "pending") return pendingTag(batch ? "批准前不付款；批准时按原批次的待付明细发放。"
     : obj === "dividend" ? G4_DIVIDEND_PENDING_NOTE : "批准前参数不变；这一项被审批锁住，调高调低都改不了。");
@@ -64,7 +67,9 @@ export function g4RecoveryTag(record: Pick<GParamRecovery, "status">, batch = fa
   return resolvedTag(record.status);
 }
 
-export type G4ExtraRecovery = { key: string; name: string; change: ReactNode; tag: ReactNode; action: ReactNode; submittedAt?: number };
+export const G4_FIRST_DIVIDEND_TICKET_STATUS = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as const;
+
+export type G4ExtraRecovery = { key: string; name: string; change: ReactNode; tag: ReactNode; action: ReactNode; submittedAt?: number; ticket?: A2OperationRow };
 
 /**
  * 有原申请时在结论下面一条提醒；概览读取中、读取失败也显示。和参数行的「调整」是两条路：新修改被禁用时这里照样能用。
@@ -90,7 +95,8 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
     }
   };
   const total = records.length + extra.length;
-  const waiting = extra.length === 0 && records.every((record) => record.status === "pending");
+  const waiting = records.every((record) => record.status === "pending") && extra.every((row) => row.ticket?.status === "pending");
+  const knownConclusion = extra.some((row) => row.ticket && row.ticket.status !== "pending");
   // 待审批的参数里，每日收益比例是例外：仍可直接调低。其余有待审批申请的参数调高调低都改不了。
   const dividendWaiting = records.some((record) => record.request.obj === "dividend" && record.ticket?.status === "pending");
   const lockedWaiting = records.some((record) => record.request.obj !== "dividend" && record.request.command.op !== "g4_genesis_rerun_dividend" && record.ticket?.status === "pending");
@@ -107,19 +113,23 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
       const name = batch ? "补发收益" : G4_PARAM_NAME[obj] ?? obj;
       const to = typeof params.value === "string" ? g4ParamValueText(obj, params.value) : "—";
       const from = typeof params.expectedValue === "string" ? g4ParamValueText(obj, params.expectedValue) : undefined;
+      const change = batch ? <>批次 <span data-mono>{obj}</span></> : from ? <Change from={from} to={to} /> : <>申请改成 {to}</>;
+      const rejected = record.replayRejection && !record.ticket;
       return {
         key: record.commandKey, name, submittedAt: record.createdAt, tag: g4RecoveryTag(record, batch, obj), ticket: record.ticket?.id,
-        change: batch ? <>批次 <span data-mono>{obj}</span></> : from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
+        change: <>{change}{rejected && <GReplayRejectionNote record={record} />}</>,
         actions: <>
           <Button size="sm" disabled={busy} aria-label={`查询${name}${batch ? ` ${obj}` : ""}的原操作`} onClick={() => void recover(obj, false)}>查询原操作</Button>
           {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原操作重试${name}${batch ? ` ${obj}` : ""}`} onClick={() => void recover(obj, true)}>按原操作重试</Button>}
+          {rejected && <GRejectedRelease record={record} name={name} target={change} disabled={busy} toast={toast}
+            getSnapshot={() => approval.rejectedSnapshot(record)} release={() => approval.releaseRejected(record)} />}
         </>,
       };
     }),
-    ...extra.map((row) => ({ key: row.key, name: row.name, change: row.change, tag: row.tag, actions: row.action, submittedAt: row.submittedAt })),
+    ...extra.map((row) => ({ key: row.key, name: row.name, change: row.change, tag: row.tag, actions: row.action, submittedAt: row.submittedAt, ticket: row.ticket?.id })),
   ];
   return <GRecoveryNotice label="原操作" rows={rows}
-    title={`${waiting ? "在等审批的原申请" : "还没有结论的原操作"} · ${total} 项`}
+    title={`${waiting ? "在等审批的原申请" : knownConclusion ? "原操作" : "还没有结论的原操作"} · ${total} 项`}
     lead={waiting ? waitingLead : `走审批的先查询原操作，查无且符合条件才可重试。直接修改可读取当前配置核对。有结论前不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}。其他参数照常可改。`}
     explain={<>
       <p>这里列你在这台电脑上提交过、还没处理完的参数修改、每日收益比例、补发收益和价格档位。{G_PARAM_RECOVERY}现在的配置值证明不了原直接修改是否生效。</p>

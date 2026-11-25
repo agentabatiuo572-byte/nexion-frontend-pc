@@ -324,6 +324,7 @@ export function deriveG4TierPrice(
 }
 
 export interface G4Overview {
+  readAt: number;
   stats: G4Stats;
   params: G4Param[];
   dividend: G4Dividend;
@@ -453,6 +454,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
   const tierPayloadPresent = data?.tiers !== undefined && data?.tiers !== null;
   const tiers = normalizeTiers(data?.tiers, sold);
   return {
+    readAt: Date.now(),
     stats: {
       totalSlots,
       sold,
