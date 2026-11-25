@@ -266,9 +266,10 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   };
   // 暂停、投放被「别人先改过」挡下：确认框不关，框里说明并给「读取最新」（OP-81、OP-97）。
   // 读到后按最新状态重新核对：已是目标状态或券已不在就只留提示和「取消」；仍可操作时用最新版本重建这个框，理由清空。
-  const statusStale = (voucher: OpsVoucher) => new ConfirmReadConflict({
+  const statusStale = (voucher: OpsVoucher) => {
+    const label = voucher.status === "active" ? "暂停" : "投放";
+    return new ConfirmReadConflict({
     readLatest: async () => {
-      const label = voucher.status === "active" ? "暂停" : "投放";
       const payload = await reload();
       if (!payload) throw new Error("最新代金券暂时没有读到，请再点「读取最新」。");
       const latest = payload.vouchers.find(row => row.id === voucher.id);
@@ -281,8 +282,10 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       openToggle(latest);
       return true;
     },
-    renderNotice: action => <H4StaleNote readLatest={action} />,
-  }, "H7_VOUCHER_STALE");
+    renderNotice: action => <Notice tone="warn" title={`别人先改过，这次没有${label}`}
+      action={<Button size="sm" onClick={action}>读取最新</Button>}>读取最新后按最新状态重新确认，理由要重填。</Notice>,
+    }, "H7_VOUCHER_STALE");
+  };
   const executeDirect = async (record: H7DirectMutation, recovering: boolean, editor?: FormState, after?: () => void) => {
     const blocked = recovering ? replayReadProblem(record.voucherId, record.context.kind === "create") : undefined;
     if (blocked) throw new Error(blocked);
