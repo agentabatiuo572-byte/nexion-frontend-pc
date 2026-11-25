@@ -1779,9 +1779,9 @@ export default function UserDetailPage() {
             {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError} failureRetry={{ onRetry: () => { keepFoldOpen("security"); void loadPaymentMethods(); }, retrying: paymentLoading }} reloading={paymentLoading && !!paymentError}
               sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
               issue={unfinishedRevokes.length > 0 ? `${unfinishedRevokes.length} 张卡仍可能被扣款` : undefined} issueTone="danger"
-              actions={<Button size="sm" aria-label="刷新支付方式" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新</Button>}>
+              actions={<Button size="sm" aria-label="刷新支付方式" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => { keepFoldOpen("security"); void loadPaymentMethods(); }}>刷新</Button>}>
               <Check label="显示已解绑" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); setRecord(null); }} />
-              {revokeScanFailed && <Notice tone="warn">撤销状态读取失败：已解绑的卡有没有撤销完暂时无法确认，点这一行的「刷新」重读。</Notice>}
+              {revokeScanFailed && (paymentLoading ? <p className="rd-note" role="status">正在重新读取撤销状态…</p> : <Notice tone="warn">撤销状态读取失败：已解绑的卡有没有撤销完暂时无法确认，点这一行的「刷新」重读。</Notice>)}
               {unfinishedRevokes.map((method) => (
                 <Notice key={method.id} tone={method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? "danger" : "warn"} title={`${method.brand} ···· ${method.last4}`}>
                   我们这边已解绑，但支付商那边{method.pspRevokeStatus === "FAILED" ? "撤销失败" : "还在处理"}，这张卡仍可能被扣款，还不算彻底解绑。
