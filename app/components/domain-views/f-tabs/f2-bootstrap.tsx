@@ -12,7 +12,7 @@ import { Clock3, Lock } from "lucide-react";
 import { Button, Cell, Explain, Fact, Facts, Figure, Notice, NumberInput, ScaleBar, StatusTag, Table, Td, Th } from "@/app/components/rd";
 import { f4Decimal } from "@/lib/admin/f4-money";
 import { F2_BOOTSTRAP_SLOT } from "@/lib/admin/f2-approval";
-import { F2BootstrapReview, f2BootstrapUsesRank, type F2RankedRange, F2_APP_LIMIT_COPY, F2_APP_TOTAL_LIMIT, f2DecimalTimes, f2PctSum, f2SampleUsdt, parseF2BootstrapAfter, type F2BootstrapRow } from "./f2-bootstrap-ticket";
+import { F2BootstrapReview, f2BootstrapUsesRank, type F2RankedRange, F2_APP_LIMIT_COPY, F2_APP_TOTAL_LIMIT, f2AppLimitIssue, f2DecimalTimes, f2PctSum, f2SampleUsdt, parseF2BootstrapAfter, type F2BootstrapRow } from "./f2-bootstrap-ticket";
 import { LAYERS, LAYER_WHO, SAMPLE_ORDER, f2Ranked, num, pctAdd, pctSample, rangeText, rankedRange, stamp, type F2Confirm, type Layer } from "./f2-shared";
 import { SUPER_APPROVER } from "./f1-shared";
 import type { FViewCtx } from "./types";
@@ -122,17 +122,15 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
   const filledAll = rawRates.every((value) => value !== null);
   const rawSum = f2PctSum(rawRates.filter((value): value is string => value !== null));
   const rawSumNumber = Number(rawSum);
-  // App checks each stored rate and their sum, including the zero placeholders for ranked L1/L2.
-  const overAppLimit = !sourceUnknown && (rawRates.some((value) => value !== null && Number(value) > F2_APP_TOTAL_LIMIT)
-    || rawSumNumber > F2_APP_TOTAL_LIMIT + 0.000001);
-  const overTitle = `七层原始比例合计 ${num(rawSum)}%，超过 App 上限 ${F2_APP_TOTAL_LIMIT}%`;
+  // App checks the sum of the stored rates, including the zero placeholders for ranked L1/L2.
+  const limitIssue = sourceUnknown ? undefined : f2AppLimitIssue(rawRates.filter((value): value is string => value !== null));
   // 按等级时合计是一段：已填的第 3 层起加上第 1、2 层九级最低、最高。
   const l1 = ranked ? rankedRange(ctx, "L1") : null, l2 = ranked ? rankedRange(ctx, "L2") : null;
   const sumRange = ranked && l1 && l2 ? { low: pctAdd(pctAdd(rawSum, l1.min), l2.min), high: pctAdd(pctAdd(rawSum, l1.max), l2.max) } : null;
   const settlementCap = cap ?? DEFAULT_SETTLEMENT_CAP;
   const budgetHigh = ranked ? Number(sumRange?.high ?? 0) : rawSumNumber;
   const axisMax = Math.max(40, Math.ceil(Math.max(budgetHigh, cap ?? 0) / 10) * 10);
-  const blocked = ctx.f2WriteBlocked(F2_BOOTSTRAP_SLOT) ?? (issues.length ? `还有 ${issues.length} 格要填写或修改` : undefined);
+  const blocked = ctx.f2WriteBlocked(F2_BOOTSTRAP_SLOT) ?? (issues.length ? `还有 ${issues.length} 格要填写或修改` : limitIssue && `${limitIssue}，不能提交`);
   const change = (level: Layer, kind: "usdt" | "nex", value: string) => setDraft({ ...draft, cells: { ...draft.cells, [level]: { ...draft.cells[level], [kind]: value } } });
   const shown = (level: Layer, kind: "usdt" | "nex") => draft.cells[level][kind] ? cellIssue(kind, draft.cells[level][kind]) : undefined;
 
@@ -154,7 +152,6 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
         <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f2_royalty_rate)}</Fact>
       </Facts>,
       content: <div className="rd-stack">
-        {overAppLimit && <Notice tone="warn" title={overTitle}>{F2_APP_LIMIT_COPY}</Notice>}
         <F2BootstrapReview rows={rows} label="要建立的七层规则" ranked={ranked ? ctx.f2RankPurchaseRange ?? null : undefined} />
       </div>,
       statedBrief: { impact: "批准后七层规则一次建好；整体结算不会自动启用，要另外申请。", check: ranked ? "逐层核对下表；第 1、2 层按受益人等级。" : "逐层核对下表；第 1 层固定 10%。" },
@@ -207,7 +204,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           {ranked ? <ScaleBar label="七层合计占订单" max={axisMax} range={sumRange ? { low: Number(sumRange.low), high: Number(sumRange.high) } : undefined} target={settlementCap} tone="role-4"
             ticks={[{ value: 0, text: "0%" }, { value: settlementCap, text: `上限 ${num(settlementCap)}%` }, { value: axisMax, text: `${axisMax}%` }]}
             valueText={sumRange ? `已填的层合计 ${rangeText(sumRange.low, sumRange.high)}` : "第 1、2 层的九级比例没读到，合计这次没有算"} />
-          : <ScaleBar label="七层合计占订单" max={axisMax} value={rawSumNumber} fill tone={overAppLimit ? "role-other" : "role-4"}
+          : <ScaleBar label="七层合计占订单" max={axisMax} value={rawSumNumber} fill tone={limitIssue ? "role-other" : "role-4"}
             ticks={[{ value: 0, text: "0%" }, { value: F2_APP_TOTAL_LIMIT, text: "App 上限 25%" }, ...(cap !== null && cap <= axisMax && cap !== F2_APP_TOTAL_LIMIT ? [{ value: cap, text: `总额上限 ${num(cap)}%` }] : []), { value: axisMax, text: `${axisMax}%` }]}
             valueText={`${filledAll ? "七层合计" : "已填的层合计"} ${num(rawSum)}%`} />}
           {ranked && <p className="f2-sum-cap">{`上限 ${num(settlementCap)}%：${num(SAMPLE_ORDER)} USDT 订单最多分 ${num(f2SampleUsdt(String(settlementCap)))} USDT`}<Explain label="上限怎么用" content="结算超过上限时从 L1 往下分，分完为止。App 能不能读到配置另按填写的原始比例判断，第 1、2 层按 0% 算。" /></p>}
@@ -219,7 +216,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           <div><dt>奖励总额上限</dt><dd data-empty={cap === null ? "" : undefined}>{cap === null ? "未配置" : `${num(cap)}%`}</dd></div>
         </dl>}
       </Figure>}
-      {overAppLimit && <Notice tone="warn" title={overTitle}>{F2_APP_LIMIT_COPY}</Notice>}
+      {limitIssue && <Notice tone="danger" title={limitIssue}>{F2_APP_LIMIT_COPY}</Notice>}
       <div className="rd-toolbar" data-end="">
         {blocked && <span className="f2-boot-error" role="alert">{blocked}</span>}
         <Button onClick={() => setDraft(null)}>取消</Button>

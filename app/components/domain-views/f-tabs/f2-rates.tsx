@@ -18,7 +18,7 @@ import {
   type F2Confirm, type Layer,
 } from "./f2-shared";
 import { F2Bootstrap, f2BootstrapFormShown, type F2BootstrapDraft } from "./f2-bootstrap";
-import { f2DecimalTimes } from "./f2-bootstrap-ticket";
+import { f2AppLimitIssue, f2DecimalTimes } from "./f2-bootstrap-ticket";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import type { FViewCtx } from "./types";
@@ -115,7 +115,12 @@ function f2LayerEditors(ctx: FViewCtx) {
       action: `调整 ${level} USDT 奖励比例`, title: `调整 ${level}（${LAYER_WHO[level]}）的 USDT 比例`, briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: effectTag,
       edit: { kind: "number", current, min: 0, unit: "%", amplifiesWhen: "increase",
-        validate: (next) => (next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4 ? "最多 4 位小数（末尾的 0 不算），多了不能提交" : undefined,
+        validate: (next) => {
+          if ((next.trim().split(".")[1]?.replace(/0+$/, "").length ?? 0) > 4) return "最多 4 位小数（末尾的 0 不算），多了不能提交";
+          // 本来就超了上限时，只要是往下调就放行，免得改不回来。
+          const issue = next.trim() && rates.length === 7 && Number(next) >= Number(current) ? f2AppLimitIssue(rates.map((row) => row.l === level ? next.trim() : row.usdtText ?? "0")) : undefined;
+          return issue && `${issue}，不能提交`;
+        },
         hint: "填百分数：0.5 就是 0.5%，最多 4 位小数",
         preview: (next) => <>
           {layerPaused && <p className="f2-edit-note">{`要发放，到「按层暂停」恢复 ${level}。`}</p>}
