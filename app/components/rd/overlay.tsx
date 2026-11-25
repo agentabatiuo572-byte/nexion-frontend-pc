@@ -45,7 +45,7 @@
  *
  * 框里直接放的 Facts 自动带关键信息区的底。解除待确认全站一个样子，用 ReleaseModal，页面只传原操作的名字和核对说明。
  */
-import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
+import { Children, Fragment, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type CSSProperties } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronDown, ChevronUp, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { focusFrame, releaseOnLeave } from "./block-state";
@@ -147,45 +147,72 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
   };
   const latest = useRef(target);
   latest.current = target;
+  /** 开着时的内容节点：卸下后 ref 已清空，用它认「真的摘掉了」。 */
+  const opened = useRef<HTMLDivElement | null>(null);
+  /** 关掉后焦点交给谁。Radix 卸下内容后要等下一个定时器才调 onCloseAutoFocus；内容卸下时 onGone 先调一次，两次走同一套判断，第二次焦点已有去处就什么都不做。 */
+  const settle = () => {
+    const self = content.current;
+    // 关掉的时候焦点已经在另一个还开着的框里（旧抽屉退出动画还没完，新抽屉已经打开并接了焦点）：不动它。
+    const holder = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>(".rd-modal, .rd-drawer") : null;
+    if (holder && holder !== self && holder.getAttribute("data-state") === "open") return;
+    // 关掉的时候焦点已经在页面上别的控件里（抽屉开着时 Tab 到页面，在那里按 Esc）：留在那里，不拉回原来那一行（ST-56）。
+    const elsewhere = document.activeElement;
+    if (elsewhere instanceof HTMLElement && elsewhere !== document.body && elsewhere.isConnected && !holder) return;
+    const top = openOverlay(self);
+    // 都找不到时回到还开着的最上层框，不落到页面上。
+    const next = latest.current() ?? top;
+    // 这时上面还开着另一个弹窗（离开框收起、保存确认打开）：焦点留在那个弹窗里，不拉出去。
+    if (top?.matches(".rd-modal") && !(next && top.contains(next))) { if (!top.contains(document.activeElement)) top.focus(); return; }
+    // 原按钮还在但提交后变成了原生 disabled，接不到焦点：当作没有去处，往下找外框。
+    next?.focus();
+    if (next && document.activeElement === next) return;
+    // 打开者那一行处理完已经移出列表（A2 撤回成功）：不找别的记录的同名按钮，交给还挂着的最近一层稳定外框；
+    // 接不到焦点再往外一层，到整页外框为止，不落到整页外框和页面上（BUG-710 补记三）。焦点已经在页面别处时不动。
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected && !self?.contains(active)) return;
+    for (const frame of chain.current) {
+      if (frame.matches(".rd-page")) break;
+      if (!frame.isConnected || !frame.matches(STABLE_FRAME) || !focusFrame(frame)) continue;
+      // 这是临时落点：带 data-retry-landing，页面自己「焦点没去处才补位」的逻辑把它当成还没去处，照样放回原卡（h4-legacy-parts）。
+      // 标记只在焦点停在这里时有，离开就撤：原本没有 tabindex 的外框连临时加的 tabindex 一起撤（focusFrame），原本就能 Tab 到的外框（表格滚动区）只撤标记，不影响它平时的焦点框（BUG-746）。
+      if (!frame.hasAttribute("data-retry-landing")) { frame.setAttribute("data-retry-landing", ""); releaseOnLeave(frame, false); }
+      return;
+    }
+  };
   return {
     ref: content,
     previous,
     onOpenAutoFocus: (event: Event) => {
       event.preventDefault();
       if (content.current) handoffs.set(content.current, () => latest.current());
+      opened.current = content.current;
       content.current?.focus();
     },
     onCloseAutoFocus: (event: Event) => {
       event.preventDefault();
-      const self = content.current;
-      // 关掉的时候焦点已经在另一个还开着的框里（旧抽屉退出动画还没完，新抽屉已经打开并接了焦点）：不动它。
-      const holder = document.activeElement instanceof HTMLElement ? document.activeElement.closest<HTMLElement>(".rd-modal, .rd-drawer") : null;
-      if (holder && holder !== self && holder.getAttribute("data-state") === "open") return;
-      // 关掉的时候焦点已经在页面上别的控件里（抽屉开着时 Tab 到页面，在那里按 Esc）：留在那里，不拉回原来那一行（ST-56）。
-      const elsewhere = document.activeElement;
-      if (elsewhere instanceof HTMLElement && elsewhere !== document.body && elsewhere.isConnected && !holder) return;
-      const top = openOverlay(self);
-      // 都找不到时回到还开着的最上层框，不落到页面上。
-      const next = latest.current() ?? top;
-      // 这时上面还开着另一个弹窗（离开框收起、保存确认打开）：焦点留在那个弹窗里，不拉出去。
-      if (top?.matches(".rd-modal") && !(next && top.contains(next))) { if (!top.contains(document.activeElement)) top.focus(); return; }
-      // 原按钮还在但提交后变成了原生 disabled，接不到焦点：当作没有去处，往下找外框。
-      next?.focus();
-      if (next && document.activeElement === next) return;
-      // 打开者那一行处理完已经移出列表（A2 撤回成功）：不找别的记录的同名按钮，交给还挂着的最近一层稳定外框；
-      // 接不到焦点再往外一层，到整页外框为止，不落到整页外框和页面上（BUG-710 补记三）。焦点已经在页面别处时不动。
+      settle();
+    },
+    /**
+     * 内容刚从页面上摘掉（同一个任务里，浏览器还没来得及绘制或跑别的定时器）：焦点跟着节点掉到页面上时马上交出去。
+     * 不等 Radix 的定时器，中间就不会有一刻停在页面上（BUG-746 第 9 条：A2 撤回、H4 保存关框时采到过一次 body）。
+     */
+    onGone: () => {
+      const node = opened.current;
+      // 开发模式的 StrictMode 会假卸一次，节点还在页面上：不算关。
+      if (!node || node.isConnected) return;
       const active = document.activeElement;
-      if (active && active !== document.body && active.isConnected && !self?.contains(active)) return;
-      for (const frame of chain.current) {
-        if (frame.matches(".rd-page")) break;
-        if (!frame.isConnected || !frame.matches(STABLE_FRAME) || !focusFrame(frame)) continue;
-        // 这是临时落点：带 data-retry-landing，页面自己「焦点没去处才补位」的逻辑把它当成还没去处，照样放回原卡（h4-legacy-parts）。
-        // 标记只在焦点停在这里时有，离开就撤：原本没有 tabindex 的外框连临时加的 tabindex 一起撤（focusFrame），原本就能 Tab 到的外框（表格滚动区）只撤标记，不影响它平时的焦点框（BUG-746）。
-        if (!frame.hasAttribute("data-retry-landing")) { frame.setAttribute("data-retry-landing", ""); releaseOnLeave(frame, false); }
-        return;
-      }
+      if (active && active !== document.body && active.isConnected) return;
+      settle();
     },
   };
+}
+
+/** 放在弹层内容里：内容卸下时，等这次提交做完（微任务，仍在同一个任务里）再交焦点，这时节点已经摘掉、页面也已更新（同 BlockState 的做法）。 */
+function HandoffOnUnmount({ onGone }: { onGone: () => void }) {
+  const latest = useRef(onGone);
+  latest.current = onGone;
+  useLayoutEffect(() => () => { queueMicrotask(() => latest.current()); }, []);
+  return null;
 }
 
 export interface DrawerNav {
@@ -256,6 +283,8 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
             if (!busy) tabOutOfDrawer(event, focus.previous.current);
           }}
         >
+          {/* 点外面关的（焦点已跟着点到的地方走）不交。 */}
+          <HandoffOnUnmount onGone={() => { if (!closedByOutsideClick.current) focus.onGone(); }} />
           <div className="rd-drawer-head">
             {icon && <IconTile tone={tone} icon={icon} size={28} />}
             <div className="rd-drawer-heading" aria-live="polite">
@@ -398,6 +427,7 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
+          <HandoffOnUnmount onGone={focus.onGone} />
           <div className="rd-modal-head">
             {icon && (isValidElement(icon)
               ? <span className="rd-tile" data-tone={tone} data-size={28} aria-hidden>{icon}</span>
