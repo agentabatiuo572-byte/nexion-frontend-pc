@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CircleDot, Coins, Eye, EyeOff, Package, PackageX, Plus, SlidersHorizontal, X } from "lucide-react";
 import { BlockState, Button, Cell, Check, CheckGroup, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, KeepText, Notice, Panel, StatusTag, Table, TableMessage, Td, Th, type DiffRow } from "@/app/components/rd";
+import { TipSide } from "@/app/components/rd/button";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import type { updateH2TrialBuyList } from "@/lib/admin/h-client";
@@ -318,7 +319,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       briefKind: "config",
       icon: "sliders",
       action: "调整其他可购买设备",
-      title: <>调整其他可购买设备<Explain label="其他可购买设备的说明" rows={[{ k: "这是什么", v: ROW_HELP.what }, { k: "显示位置", v: ROW_HELP.where }, { k: "生效时间", v: ROW_HELP.when }, { k: "改了会怎样", v: ROW_HELP.effect }]} /></>,
+      title: <>调整其他可购买设备<Explain label="其他可购买设备的说明" side="bottom" align="start" rows={[{ k: "这是什么", v: ROW_HELP.what }, { k: "显示位置", v: ROW_HELP.where }, { k: "生效时间", v: ROW_HELP.when }, { k: "改了会怎样", v: ROW_HELP.effect }]} /></>,
       detail: "",
       amplifies: false,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
@@ -328,9 +329,9 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
           {othersNote && <Notice tone="neutral">{othersNote}</Notice>}
           <DiffList rows={rows} restTitle="其余设备" named />
           <Facts><Fact k="改后共">{after.value === "未添加" ? "0 款" : after.value}{after.sub && <> · {after.sub}</>}</Fact></Facts>
-          {added.length > 0 && <div className="h2-money-note"><Notice tone="neutral">{MONEY_LINE}</Notice></div>}
         </div>
       ),
+      content: added.length > 0 ? <div className="h2-money-note"><Notice tone="neutral">{MONEY_LINE}</Notice></div> : undefined,
       initialReason: initialReason || undefined,
       initialRejection: initialRejected === undefined ? undefined : rejection(initialRejected),
       blockedReason: blocked,
@@ -403,10 +404,10 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         footer={leaving
           ? <Decision note={note}
             others={<><Button size="md" onClick={continueEditing}>继续编辑</Button><Button variant="danger-outline" size="md" onClick={discard}>放弃改动并返回</Button></>}
-            primary={<Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>保存并立即生效</Button>} />
+            primary={<TipSide side="top"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>保存并立即生效</Button></TipSide>} />
           : <Decision note={note}
             others={<Button size="md" onClick={leaveDrawer}>取消</Button>}
-            primary={<Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button>} />}>
+            primary={<TipSide side="top"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button></TipSide>} />}>
         {leaving ? <div className="rd-stack">
           <p>放弃后，这次的勾选不保存，清单保持原样。</p>
           <Facts>
@@ -415,8 +416,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
           </Facts>
         </div> : <div className="h2-buy-form">
           <div className="h2-buy-checks">
-            <CheckGroup legend="其他可购买设备" summary={`候选 ${candidates.length} 款`}
-              explain={<><p>能勾的：在售 · 通过上架条件 · 售价大于 0 · 实体设备或云份额</p><p>开没开「允许试用」都不影响。</p></>}>
+            <CheckGroup summary={`候选 ${candidates.length} 款`}
+              legend={<>其他可购买设备<Explain label="其他可购买设备的说明" side="bottom" align="start" content={<><p>能勾的：在售 · 通过上架条件 · 售价大于 0 · 实体设备或云份额</p><p>开没开「允许试用」都不影响。</p></>} /></>}>
               {candidates.map((candidate) => {
                 const listed = inList.has(candidate.productNo);
                 const on = picked.includes(candidate.productNo);
@@ -432,7 +433,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                     <Check checked={on} disabled={disabled} onChange={(event) => toggle(candidate.productNo, event.currentTarget.checked)}
                       label={<>
                         {candidate.name || "—"}
-                        {candidate.productNo === trialTargetNo && <StatusTag tone="neutral" icon={CircleDot} explain={TARGET_TIP}>试用目标商品</StatusTag>}
+                        {candidate.productNo === trialTargetNo && <Explain label="试用目标商品是什么意思" content={TARGET_TIP} side="bottom" align="start"><StatusTag tone="neutral" icon={CircleDot}>试用目标商品</StatusTag></Explain>}
                         {mark && <span data-change=""><StatusTag tone="progress" icon={mark === "新增" ? Plus : X}>{mark}</StatusTag></span>}
                       </>}
                       help={<>
