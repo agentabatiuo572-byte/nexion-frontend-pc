@@ -1,7 +1,7 @@
 import { isDeterministicRejection, isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { createPendingMutationStore, createPendingRecovery, createSlotAttemptStore, isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, createSlotAttemptStore, isRetryExpired, ORIGINAL_UNKNOWN_TEXT, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { RETRY_REJECTED_TEXT } from "@/lib/admin/retry-rejected";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -430,7 +430,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       }
       const saved = getJ2PendingCommand(writeSlot);
       isOriginalRetry = !!saved;
-      if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原操作。");
+      if (saved && replayKey !== saved.commandKey) throw new Error(ORIGINAL_UNKNOWN_TEXT);
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.geo.body !== init?.body)) {
         throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原操作重试或查询原操作");
@@ -451,7 +451,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       if (getJ3LegacyCommand()) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
       const saved = getJ3PendingCommand();
       isOriginalRetry = !!saved;
-      if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原操作。");
+      if (saved && replayKey !== saved.commandKey) throw new Error(ORIGINAL_UNKNOWN_TEXT);
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.tamper.body !== init?.body)) {
         throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原操作重试或查询原操作");
@@ -475,7 +475,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       if (listJ4LegacyCommands().some((record) => record.fingerprint === writeSlot)) throw new EmergencyOutcomeUncertainError(formatAdminApiError("EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE", "EMERGENCY_ORIGINAL_REQUEST_UNAVAILABLE"));
       const saved = getJ4PendingCommand(writeSlot);
       isOriginalRetry = !!saved;
-      if (saved && replayKey !== saved.commandKey) throw new Error("原操作待确认，请查询原操作。");
+      if (saved && replayKey !== saved.commandKey) throw new Error(ORIGINAL_UNKNOWN_TEXT);
       if (saved && isRetryExpired(saved)) throw new Error(RETRY_EXPIRED_TEXT);
       if (saved && (saved.commandKey !== providedCommandKey || saved.sop.body !== init?.body)) throw new EmergencyOutcomeUncertainError("原操作结果未知，请按原操作重试或查询原操作");
       const commandKey = providedCommandKey || idempotencyKey();

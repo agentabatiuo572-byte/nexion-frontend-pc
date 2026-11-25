@@ -26,10 +26,10 @@ export type GRecoveryRow = {
 };
 
 /** 结果未知：直接生效的写操作和走审批的申请各一句。 */
-export function unknownTag(kind: "direct" | "approval") {
+export function unknownTag(kind: "direct" | "approval", approvalHint = "可以查询原操作；24 小时内也可以按原操作重试，不会建第二张。") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
     ? "提交时没收到确定结果，可能已经生效。可以用这一行的按钮核对；24 小时内也可以按原操作重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。可以查询原操作；24 小时内也可以按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
+    : `提交时没收到确定结果，可能已经建了审批单。${approvalHint}`}>结果未知</StatusTag>;
 }
 
 export function pendingTag(note = "批准前参数不变；这一项被审批锁住，调高调低都改不了。") {

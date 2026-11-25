@@ -1,7 +1,7 @@
 "use client";
 import { useReach } from "@/lib/nav/use-reach";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
-import { operatorCopyText } from "@/lib/admin/operator-copy";
+import { G_PARAM_APPROVAL_RECOVERY, operatorCopyText } from "@/lib/admin/operator-copy";
 
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
@@ -44,7 +44,7 @@ import {
 } from "@/lib/admin/g2-exchange-command";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
-import { useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
+import { gParamApprovalFeedback, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { amountDisplay } from "@/lib/format";
@@ -258,7 +258,7 @@ function paramValueText(key: string, raw: string | undefined, display?: string) 
 
 /** 原申请记录的状态：标签、色调和气泡（G 域五页同一写法）。 */
 function recoveryTag(record: GParamRecovery) {
-  if (record.status === "unknown") return unknownTag("approval");
+  if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
   if (record.status === "pending") return pendingTag();
   if (record.status === "expired") return expiredTag("approval");
   return resolvedTag(record.status);
@@ -492,7 +492,7 @@ function G2ExchangePage() {
         if (retry) await paramApproval.retry(obj);
         else if (!await paramApproval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
       } catch (err) {
-        toast(displayAdminError(err));
+        toast(gParamApprovalFeedback(err) ?? displayAdminError(err));
       } finally {
         setRecoverBusy(false);
       }
@@ -553,9 +553,9 @@ function G2ExchangePage() {
       title={`兑换的原操作 · ${rows.length} 项`}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
-        : `这些操作先只能核对（参数和处理排队查询原操作，开关和取消排队读取当前配置），或在 24 小时内按原操作重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
+        : `走审批的先查询原操作，查无且符合条件才可重试。直接修改和处理排队用各行入口核对。有结论前不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "，处理排队的原批次确认之前不能开新的一批" : ""}。`}
       explain={<>
-        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。参数和处理排队可以「查询原操作」查原结果；紧急暂停和取消排队只能读取当前配置核对，现在的值证明不了原操作成没成。都可以在 24 小时内按原操作重试，不能改值。</p>
+        <p>这里列你在这台电脑上提交过、还没有结论的原操作。{G_PARAM_APPROVAL_RECOVERY}直接改参数和处理排队可以「查询原操作」。紧急暂停和取消排队可读取当前配置核对，现在的值证明不了原操作成没成。</p>
         <p>要改成别的值，等原操作有结论后再在「兑换参数」里发起新修改。处理排队的原批次在这里只能查原结果，不会重发。</p>
       </>} />;
   };
@@ -654,6 +654,8 @@ function G2ExchangePage() {
       businessForm={mc.businessForm}
       reasonMax={mc.reasonMax}
       getPendingReason={mc.getPendingReason}
+      getPendingRecovery={() => mc.approvalObject === undefined ? undefined
+        : paramApproval.getPendingRecovery(mc.approvalObject, () => openActionConfirm(null))}
       getPendingBusinessValue={mc.getPendingBusinessValue}
       effect={mc.effect}
       facts={mc.facts}
@@ -750,9 +752,7 @@ function G2ExchangePage() {
             <Fact k="改的是">{name}</Fact>
             {original && <Fact k="原申请"><Change from={currentText} to={nextText ?? "—"} /></Fact>}
             <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{originalDirect ? "提交结果未知，可能已经生效。有效期内按原操作重试，不会重复执行；过期后只能查询。" : original
-              ? original.ticket?.status === "pending"
-                ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
-                : "原申请结果还没确认：有效期内按原操作重试，不会重复建单"
+              ? "已查不到原审批单，确认后按保存的原申请重试。"
               : loose === true
                 ? "放宽：提交审批，另一位超级管理员（需有审批批准权限）批准后才生效；批准前参数不变，这一项被锁住"
                 : loose === false
@@ -794,6 +794,7 @@ function G2ExchangePage() {
             unit: copy?.unit, hint: copy?.hint,
             amplifiesWhen: cap.key === "fee" || cap.key === "feeMin" ? "decrease" : "increase" },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, `/exchange/params/${cap.key}`)?.input.reason ?? paramApproval.getPendingReason(cap.key),
+      approvalObject: cap.key,
       run: async (reason, value) => {
         const savedDirect = pendingG2ExchangeCommand(batchAdminId, `/exchange/params/${cap.key}`);
         if (originalDirect || savedDirect) {
