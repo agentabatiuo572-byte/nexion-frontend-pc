@@ -129,7 +129,7 @@ export type A1RecoveryRow = { key: string; name: ReactNode; change: ReactNode; s
 export function unknownTag(kind: "direct" | "approval", note?: string) {
   return <StatusTag tone="warn" icon={CircleHelp} explain={note ?? (kind === "direct"
     ? "提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。点「查询原结果」核对。")}>结果未知</StatusTag>;
+    : "提交时没收到确定结果，可能已经建了审批单。点「查询原操作」核对。")}>结果未知</StatusTag>;
 }
 
 export function expiredTag(note = "原请求超过 24 小时，不能再重试，只能查询核对。") {

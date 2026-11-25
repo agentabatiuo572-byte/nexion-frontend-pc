@@ -65,7 +65,7 @@ export function ChannelDrawer({ editing, form, setForm, cadenceError, sources, f
       footer={<Decision primary={<Button variant="primary" loading={saving} disabledReason={blocked} onClick={onSubmit}>{retry ? "按原操作重试" : editing ? "保存" : "新增频道"}</Button>} />}>
       <div className="rd-stack i2-form">
         {error && <Notice tone="danger" title={editing ? "没有保存" : "没有新增"}>{error}</Notice>}
-        {retry && <Notice tone="warn" title={frozenTitle(requestBlocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(requestBlocked, "先在页面上方查询原结果")}</Notice>}
+        {retry && <Notice tone="warn" title={frozenTitle(requestBlocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(requestBlocked, "先在页面上方查询原操作")}</Notice>}
         {!editing && !retry && <Notice tone="progress">新增后是停用的：先给它写好模板并发布，再启用。</Notice>}
         <Field label="频道名称" required>
           <Input disabled={locked} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="例如：每周回顾" />

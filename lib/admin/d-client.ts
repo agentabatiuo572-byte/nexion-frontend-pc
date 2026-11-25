@@ -35,7 +35,7 @@ export class DRequestError extends Error {
  * 操作编号只留在 commandKey 上，句子里不出现；没有地方按文案判断。
  */
 export class DOutcomeUnknownError extends Error {
-  constructor(public readonly commandKey: string, message = "结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原操作重试。") {
+  constructor(public readonly commandKey: string, message = "结果未知，可能已经生效。不要重复操作，到页面上方查询原操作，或按原操作重试。") {
     super(message);
     this.name = "DOutcomeUnknownError";
   }
@@ -704,7 +704,7 @@ export function listD1PendingCommands(): D1PendingCommand[] {
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
-/** 按原请求重发 USDT 收款和银行卡支付参数的写操作：同命令号、同路径、同内容（OP-94）。 */
+/** 按原操作重发 USDT 收款和银行卡支付参数的写操作：同命令号、同路径、同内容（OP-94）。 */
 export async function retryD1PendingCommand(commandKey: string) {
   const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
   if (!pending || pending.base !== "finance" || pending.method === "GET"

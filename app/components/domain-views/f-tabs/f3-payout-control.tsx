@@ -42,8 +42,8 @@ export function payoutValueText(key: F3PayoutControlKey, raw: string) {
 export type F3PayoutOpen = { draft?: FDomainAttempt | FDirectAttempt; key: F3PayoutControlKey; recoveredValue?: string; snapshot?: F3ConfirmationSnapshot; original?: FDomainAttempt; direct?: FDirectAttempt };
 
 const unknownTag = (direct: FDirectAttempt) => isRetryExpired(direct)
-  ? <StatusTag tone="neutral" icon={Hourglass} explain="原操作超过 24 小时，不能再重试，只能查询原结果。">已过期</StatusTag>
-  : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内也可以按原内容重试，不会重复执行。">结果未知</StatusTag>;
+  ? <StatusTag tone="neutral" icon={Hourglass} explain="原操作超过 24 小时，不能再重试，只能查询原操作。">已过期</StatusTag>
+  : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。先查询原操作；24 小时内也可以按原操作重试，不会重复执行。">结果未知</StatusTag>;
 
 /** 把框里填的值交给外层，让标题下的生效标签跟着输入变。 */
 function TypedSync({ value, onValue }: { value: string | undefined; onValue: (value: string | undefined) => void }) {
@@ -79,7 +79,7 @@ export function F3PayoutRows({ ctx, snapshot, onOpen }: { ctx: FViewCtx; snapsho
         ? autoNow ? <StatusTag tone="ok" icon={CalendarClock}>已开启</StatusTag> : <StatusTag tone="neutral" icon={CalendarOff}>已关闭</StatusTag>
         : <span className="f3-cfg-value">{pctText(capNow!)}</span>;
     const pendingTag = direct ? unknownTag(direct)
-      : original ? <StatusTag tone="warn" icon={CircleHelp} explain={isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "提交审批时没收到确定结果，可能已经建了审批单。请查询原结果。"}>结果未知</StatusTag>
+      : original ? <StatusTag tone="warn" icon={CircleHelp} explain={isRetryExpired(original) ? RETRY_EXPIRED_TEXT : "提交审批时没收到确定结果，可能已经建了审批单。请查询原操作。"}>结果未知</StatusTag>
         : approval ? <StatusTag tone="warn" icon={Clock3}
             explain={`${auto ? "开启" : `调高到 ${payoutValueText(key, approval.after)}`}在等${SUPER}批准；批准前仍按现在的值。${auto ? "" : "现在调低会立即生效，之后这张调高不能再批准。"}`}>待审批</StatusTag>
           : null;
@@ -150,12 +150,12 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
   const queryOnly = !!original && !!f3ProposalRecovery.state(original).replayBlock;
   const canWriteProposal = canPropose && ctx.can(f3PayoutControlAuthority(key));
   const recoveryText = direct
-    ? expired ? "超过 24 小时，只能查询原结果" : "可能已经生效；先查询原结果"
+    ? expired ? "超过 24 小时，只能查询原操作" : "可能已经生效；先查询原操作"
     : original?.ticket?.status === "pending" ? `审批单在等${SUPER}批准；批准前不生效`
       : expired ? "超过 24 小时，只能查询原审批单"
         : queryOnly && !canWriteProposal ? PERMISSION_DENIED_TEXT
           : original?.received ? "原申请建过单，批没批准还没查到，请继续查询"
-            : "可能已经建了审批单；先查询原结果";
+            : "可能已经建了审批单；先查询原操作";
   // 框里填的原样值：被挡下的调高也要写在事实里、按钮写「提交审批」。amplifiesWhen 每次渲染都拿到原值，先于事实和按钮。
   const rawTyped = useRef<string | undefined>(undefined);
   const [typed, setTyped] = useState<string>();
@@ -247,7 +247,7 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
           : direction(value) !== "proposal" ? undefined
             : ctx.f3ApprovalReadError ? QUEUE_UNREAD
             : approval ? "已有调高在等审批，批准或驳回前只能调低"
-              : originalProposal ? "原申请结果未知，请先查询原结果" : undefined,
+              : originalProposal ? "原申请结果未知，请先查询原操作" : undefined,
       }}
       initialReason={direct?.f3Request?.reason ?? original?.spec?.reason}
       getPendingReason={() => ownDirect()?.f3Request?.reason ?? ownProposal()?.spec?.reason}
@@ -278,8 +278,8 @@ export function F3PayoutConfirm({ open, ctx, onClose }: { open: F3PayoutOpen; ct
         const value = auto ? open.recoveredValue ?? (autoNow ? "off" : "on") : newValue ?? "";
         const result = await ctx.runFContinuation(open.draft?.commandKey, () => ctx.submitF3PayoutControl(key, value, reason, snapshot)).catch((error: unknown) => {
           // 直接生效的结果未知：这页有自己的查询和重试，提示指向框里的按钮，不指去操作记录与审批。
-          if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原结果」核对。" });
-          else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原结果」；关框后在页面上方原操作列表也能查询。" });
+          if (isF1OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已经生效。先点「查询原操作」核对。" });
+          else if (isA2OutcomeUncertainError(error)) Object.assign(error, { confirmCopy: "结果未知，可能已建审批单。先点「查询原操作」；关框后在页面上方原操作列表也能查询。" });
           throw error;
         });
         ctx.toast(result.kind === "unchanged" ? "和现在一样，没有提交"

@@ -412,7 +412,7 @@ export function h4RetryBlockedReason(r: H4Command): string | undefined {
   if (r.rejectedReceipt) return h4ReceiptRejection(r.rejectedReceipt)?.message;
   if (r.replayRejection) return RETRY_REJECTED_TEXT;
   if (isRetryExpired(r)) return RETRY_EXPIRED_TEXT;
-  if (r.acknowledged) return "请查询原结果";
+  if (r.acknowledged) return "请查询原操作";
   try { requireActor(r.owner, true, r.scope); } catch { return "没有这项修改的权限"; }
   if (isH4MediaCommand(r)) return;
   const state = h4CommandLookupState(r);
@@ -421,7 +421,7 @@ export function h4RetryBlockedReason(r: H4Command): string | undefined {
   return state === "PROCESSING" ? "原操作还在处理，请稍后再查"
     : state === "FAILED" ? "系统记录这次失败了，到操作记录与审批核对后再决定要不要重新发起"
     : state === "UNKNOWN" ? "系统也没有结果，重试也拿不到新结果"
-    : "先查询原结果，明确查不到后才能重试";
+    : "先查询原操作，明确查不到后才能重试";
 }
 
 export function h4PendingConfirmRecovery(record: H4Command | undefined, onSucceeded: () => Promise<void>, onRejected?: (error: PendingConfirmRejected) => Error, onTicket?: (record: H4Command, ticket: A2OperationRow) => Promise<void>) {

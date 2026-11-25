@@ -184,7 +184,7 @@ export function M4StatusConfirm({ faq, busy, disabled, disabledReason, failure, 
       sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={busy} onClose={onCancel} returnFocus={returnFocus}
       footer={<>
         <Button disabled={busy} onClick={onCancel}>取消</Button>
-        {retry && <Button variant={retry.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={busy} disabledReason={onQuery ? undefined : "当前账号没有知识库查看权限"} onClick={onQuery}>查询原结果</Button>}
+        {retry && <Button variant={retry.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={busy} disabledReason={onQuery ? undefined : "当前账号没有知识库查看权限"} onClick={onQuery}>查询原操作</Button>}
         {info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
           : <Button variant={retry?.state?.replayBlock ? "secondary" : "primary"} loading={busy && !querying} loadingText="提交中…" disabled={disabled} disabledReason={busy ? undefined : disabledReason} onClick={onConfirm}>{retry || unknown ? "按原操作重试" : `确认${action}`}</Button>}
       </>}>

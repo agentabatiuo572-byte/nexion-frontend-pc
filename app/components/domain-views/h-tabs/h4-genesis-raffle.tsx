@@ -418,7 +418,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, co
   const enableBlocked = !!base && (base.status === "PROCESSING" || base.status === "DRAWN" || base.totalEntries > 0);
   return <Panel id="h4l-raffle" title="创世抽奖" icon={Trophy} tone="role-4" sub={loading ? undefined : `最近 ${rows.length} 期`}
     explain={<><p>用户用创世抽奖券报名，到开奖时间系统自动开奖、发奖；这里没有人工开奖或补发。</p><p>从草稿开放报名要另一位超级管理员批准。还没人报名时可以关闭回草稿再改；有人报名后奖项和时间锁定。只显示最近 50 期。</p></>}
-    actions={<><Button disabledReason={loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void load()}>刷新</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!write ? "没有修改创世抽奖的权限" : loading ? "正在读取" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={event => { const button = event.currentTarget; leave.attempt(() => void openRaffle(null, button)); }}>新建一期</Button></>}>
+    actions={<><Button disabledReason={loading ? "正在加载" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={() => void load()}>刷新</Button><Button icon={<Plus size={14} aria-hidden />} disabledReason={!write ? "没有修改创世抽奖的权限" : loading ? "正在加载" : saving ? "正在保存" : draft ? "先关掉正在改的这一期" : undefined} onClick={event => { const button = event.currentTarget; leave.attempt(() => void openRaffle(null, button)); }}>新建一期</Button></>}>
     {loading ? <BlockState state="loading" title="正在加载抽奖设置" />
       : readError ? <BlockState state="error" title="创世抽奖没有读到" detail={readError} onRetry={() => void load()} />
       : !rows.length ? <BlockState state="empty" title="暂无抽奖轮次" detail="点右上角「新建一期」。" />

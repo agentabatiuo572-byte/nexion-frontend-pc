@@ -277,9 +277,9 @@ export function ClickPanel({ gradId, row, heat, aggregate, loaded, failed, scope
       {row.pageCount > 1 ? `「${name}」这一行合并了 ${row.pageCount} 个有事件的页面。` : `「${name}」这一行代表这一组页面。`}点击位置只按单个页面统计，不同页面叠在一起没有意义。把「页面层级」换成「全部页面」或「三级」，再点具体页面。
     </Notice>
   ) : failed ? (
-    <BlockState state="error" title="这一页的点击位置读取失败" detail="页面热力表照常；不能据此认为这一页没有点击。" onRetry={onRetry} retryLabel="重新加载" />
+    <BlockState state="error" title="这一页的点击位置加载失败" detail="页面热力表照常；不能据此认为这一页没有点击。" onRetry={onRetry} />
   ) : !loaded ? (
-    <BlockState state="loading" title="正在读取这一页的点击位置…" />
+    <BlockState state="loading" title="正在加载这一页的点击位置…" />
   ) : noCoords ? (
     <BlockState state="empty" title={row.clicks ? "这段时间没有记录到点击位置" : "这段时间这一页没有点击"}
       detail={row.clicks ? <>这一页有 {n(row.clicks)} 次点击记录，但没有带位置的点击。{nativeNote}</> : <>只有浏览，没有点击记录。{nativeNote}</>} />

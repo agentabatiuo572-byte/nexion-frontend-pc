@@ -365,7 +365,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     });
   };
 
-  const readBlocked = ctx.biLoading ? "正在读取，读完再导出" : ctx.biError ? "财务数据读取失败，暂时不能导出" : undefined;
+  const readBlocked = ctx.biLoading ? "正在加载，读完再导出" : ctx.biError ? "财务数据读取失败，暂时不能导出" : undefined;
   const summaryBlocked = readBlocked ?? (!exportable ? "暂无可导出的财务数据" : undefined);
   const detailBlocked = pendingDetail ? formatAdminApiError("L3_DETAIL_PENDING", "L3_DETAIL_PENDING") : readBlocked ?? (!detailExportable ? "当前周期没有起止日期，不能导出明细" : undefined);
   const actions = (ctx.canExport || ctx.canExportFinanceDetail) ? (
@@ -438,14 +438,14 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
       <Notice tone="warn" title={outcome.reportId ? "资金明细申请已创建，审批状态未知" : "资金明细申请结果未知"} actionBelow>
         <p>{request}{outcome.at && <> · <span className="rd-keep">{outcome.at} 提交（{businessZone().label}）</span></>}</p>
         <p>{outcome.reportId
-          ? <>申请已创建（报表号 {outcome.reportId}），审批状态没有读到。点「查询原结果」再查，不会重新提交。</>
+          ? <>申请已创建（报表号 {outcome.reportId}），审批状态没有读到。点「查询原操作」再查，不会重新提交。</>
           : pendingDetail && isRetryExpired(pendingDetail)
             ? <>申请可能已经提交。已超过 24 小时，只能核对：{canOpenExportPage ? exportPageLink(`到「${exportPageName}」看有没有这条待放行的申请`) : <>请找有「{exportPageName}」权限的同事核对</>}。</>
-            : <>申请可能已经提交。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原操作重试，不会重复申请。</>}</p>
+            : <>申请可能已经提交。先{canOpenExportPage ? <>点「查询原操作」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原操作重试，不会重复申请。</>}</p>
         {pendingDetail && <span className="rd-toolbar">
           {pendingDetail.reportId
-            ? <Button size="sm" loading={detailExporting} disabledReason={canQueryDetail ? undefined : formatAdminApiError("L3_DETAIL_QUERY_PERMISSION", "L3_DETAIL_QUERY_PERMISSION")} onClick={() => void queryDetail(pendingDetail)}>查询原结果</Button>
-            : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原结果</Link>}
+            ? <Button size="sm" loading={detailExporting} disabledReason={canQueryDetail ? undefined : formatAdminApiError("L3_DETAIL_QUERY_PERMISSION", "L3_DETAIL_QUERY_PERMISSION")} onClick={() => void queryDetail(pendingDetail)}>查询原操作</Button>
+            : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原操作</Link>}
           <Button size="sm" loading={detailExporting} disabledReason={pendingDetail.reportId ? formatAdminApiError("L3_DETAIL_QUERY_REQUIRED", "L3_DETAIL_QUERY_REQUIRED") : isRetryExpired(pendingDetail) ? RETRY_EXPIRED_TEXT : !ctx.canExportFinanceDetail ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined} onClick={() => openDetailExport(pendingDetail)}>按原操作重试</Button>
         </span>}
       </Notice>
@@ -497,7 +497,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           <Input id="l3-custom-from" aria-label="自定义开始日期" type="date" value={customFrom} max={customTo} aria-invalid={customInvalid || undefined} onChange={(event) => setCustomFrom(event.target.value)} />
           <label className="rd-note" htmlFor="l3-custom-to">止</label>
           <Input id="l3-custom-to" aria-label="自定义结束日期" type="date" value={customTo} min={customFrom} aria-invalid={customInvalid || undefined} onChange={(event) => setCustomTo(event.target.value)} />
-          <Button disabledReason={ctx.biLoading ? "正在读取" : customInvalid ? "开始日期不能晚于结束日期" : undefined} onClick={() => selectPeriod("custom")}>应用日期</Button>
+          <Button disabledReason={ctx.biLoading ? "正在加载" : customInvalid ? "开始日期不能晚于结束日期" : undefined} onClick={() => selectPeriod("custom")}>应用日期</Button>
           <Explain label="自定义日期的说明" content={`按平台业务日（${businessZone().label}）算，含首尾两天，最长一年。超过一年时读取失败，改短后再应用。`} />
         </div>
       )}
@@ -514,12 +514,12 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   );
 
   if (!data) return page(<>
-    <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "财务状况：正在读取" : ctx.biError ? "财务状况：读取失败，暂时无法判断" : "财务状况：没有读到数据"}</Conclusion>
+    <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "财务状况：正在加载" : ctx.biError ? "财务状况：读取失败，暂时无法判断" : "财务状况：没有读到数据"}</Conclusion>
     {ctx.biLoading
-      ? <BlockState state="loading" title="正在读取本期收入、提现、储备和到期…" />
+      ? <BlockState state="loading" title="正在加载本期收入、提现、储备和到期…" />
       : ctx.biError
-        ? <BlockState state="error" title="财务数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以改上面的周期再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-        : <BlockState state="empty" title="这次没有读到财务数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+        ? <BlockState state="error" title="财务数据加载失败，不显示旧数据" detail={`${ctx.biError} 可以改上面的周期再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+        : <BlockState state="empty" title="这次没有读到财务数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
   </>);
 
   /* ---------------- 读到的数：映射和完整性检查沿用改版前（L3-S04、L3-V06） ---------------- */
@@ -558,7 +558,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     && Number.isFinite(Number(data.reserveCoverDays));
   if (!fullContractReady) return page(<>
     <Conclusion state="unknown" icon={ShieldQuestion}>财务状况：数据不完整，暂时无法判断</Conclusion>
-    <BlockState state="error" title="收到的财务数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请先重新加载；仍然这样，请把这页的情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
+    <BlockState state="error" title="收到的财务数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请先重新加载；仍然这样，请把这页的情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />
   </>);
 
   /* The authoritative treasury snapshot owns valuation, not the separately read legacy overview. */
@@ -644,7 +644,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   const zone = coverageUnavailable ? "unknown" : noLiability ? "ok" : coverage < redLine ? "danger" : coverage === redLine || coverage <= healthyLine ? "warn" : "ok";
   const coverageTone = zone === "danger" ? "danger" : zone === "warn" ? "warn" : zone === "ok" ? "ok" : "neutral";
   const overviewName = findByPath(OVERVIEW_PAGE)?.l2.name ?? "资金与应付款总览";
-  const overviewLink = reach(OVERVIEW_PAGE) ? <Link className="rd-link" href={OVERVIEW_PAGE}>去「{overviewName}」看处理建议</Link> : null;
+  const overviewLink = reach(OVERVIEW_PAGE) ? <Link className="rd-link" href={OVERVIEW_PAGE}>去「{overviewName}」看处理建议 →</Link> : null;
   const conclusionExplain = <><p>兑付覆盖率 = 可用储备 ÷ 应付款，和「{overviewName}」是同一个数。低于红线时提现审核不能放行，低于健康线算警戒。</p><p>这页只能查看和导出，不会改账。</p></>;
   const conclusion = zone === "unknown"
     ? coverageUnread

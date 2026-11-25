@@ -84,7 +84,7 @@ const STATUS: Record<string, { label: string; tone: StateTone; icon: LucideIcon 
 };
 const UNKNOWN_STATUS = { label: "状态未知", tone: "warn" as StateTone, icon: CircleHelp };
 const SEARCH_EXPLAIN = "可以搜用户编码、系统编号、昵称、推荐码、脱敏手机号（138****8010）和手机号哈希。为保护隐私，不能按完整手机号查。停止输入后自动查询。";
-const RETRY_EXPLAIN = "按原请求重发。原操作已经生成过文件时，直接给回那个文件，不会再记一条导出。";
+const RETRY_EXPLAIN = "按原操作重发。原操作已经生成过文件时，直接给回那个文件，不会再记一条导出。";
 
 const exportStore = createPendingMutationStore<PendingExport>({
   storageKey: "nexion-admin-pending-c1-export-v1",

@@ -17,7 +17,7 @@ export function FReleaseButton({ label, onRelease, toast }: { label: ReactNode; 
   </>;
 }
 
-/** 查询原结果查到的审批单已经结束：轻提示写状态和后果（和设备域原申请同一组说法）。 */
+/** 查询原操作查到的审批单已经结束：轻提示写状态和后果（和设备域原申请同一组说法）。 */
 export function fProposalEndText(status: "approved" | "rejected" | "withdrawn" | "expired") {
   return {
     approved: "原审批单已批准：批准后按原内容执行；结果以重新读取的当前值为准。",

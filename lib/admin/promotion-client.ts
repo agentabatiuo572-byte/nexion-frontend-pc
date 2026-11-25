@@ -169,7 +169,7 @@ function requireMatchingReceipt(result: CommandReceipt, intent: PromotionCommand
 export async function promotionCommand(intent: PromotionCommandIntent, retry = false): Promise<CommandReceipt> {
   const slot = fingerprint(intent);
   const actor = useAdminAuth.getState().session;
-  if (!actor) throw new PromotionApiError('登录已失效，请重新登录后查询原结果。');
+  if (!actor) throw new PromotionApiError('登录已失效，请重新登录后查询原操作。');
   const previous = pendingPromotionCommands().find(r => r.fingerprint === slot);
   if (previous && (!retry || previous.recoveryState !== 'NOT_FOUND' || JSON.stringify(previous.body) !== JSON.stringify(intent.body) || previous.path !== intent.path || previous.method !== intent.method)) {
     throw new PromotionApiError('有结果未知的原操作，请先核查原结果；不能改了参数再提交。');

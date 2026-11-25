@@ -352,7 +352,7 @@ export default function FunnelPage() {
   };
   const filtered = !isAll(filters.cohort) || !isAll(filters.phase) || !isAll(filters.ref);
 
-  const exportBlocked = !data ? (error ? "读取失败，重新读取后再导出" : "正在读取，读完再导出") : !data.available || !data.stages.length ? "当前条件下算不出转化，没有可导出的数据" : undefined;
+  const exportBlocked = !data ? (error ? "读取失败，重新读取后再导出" : "正在加载，读完再导出") : !data.available || !data.stages.length ? "当前条件下算不出转化，没有可导出的数据" : undefined;
   const headerActions = canExport ? (
     <span className="b3-pair" data-pair="">
       <Explain label="导出 CSV 的内容" content={<><p>导出当前注册批次、阶段、渠道下四个步骤的人数、上一步人数和转化率，每步一行，不含用户明细。</p><p>和下面「看哪一步的走势」选哪一步无关。少于 5 人的格子留空，并标「样本过小」。导出会记入操作记录。</p></>} />
@@ -402,10 +402,10 @@ export default function FunnelPage() {
       <RdPage className="b3-page">
         {header}
         {filterBar}
-        <Conclusion state="unknown">{error ? "用户转化：读取失败，暂时无法判断" : "用户转化：正在读取"}</Conclusion>
+        <Conclusion state="unknown">{error ? "用户转化：读取失败，暂时无法判断" : "用户转化：正在加载"}</Conclusion>
         {error
-          ? <BlockState state="error" title="转化数据读取失败，不显示旧数据" detail={displayAdminReadError(error)} onRetry={() => void reload()} retryLabel="重新读取" />
-          : <BlockState state="loading" title="正在读取这批用户的转化…" />}
+          ? <BlockState state="error" title="转化数据加载失败，不显示旧数据" detail={displayAdminReadError(error)} onRetry={() => void reload()} />
+          : <BlockState state="loading" title="正在加载这批用户的转化…" />}
       </RdPage>
     );
   }

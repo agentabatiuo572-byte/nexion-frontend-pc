@@ -31,7 +31,7 @@ export function E6ComputeConfig({ctx}:{ctx:EViewCtx}) {
     const { taskCatalogReady, phone } = await ctx.refreshE2();
     return section === "tasks" ? taskCatalogReady : !!phone;
   };
-  const phoneWriteBlock = ctx.e5Loading ? "正在读取手机列表" : ctx.e5DeviceError ? "手机列表读取失败，请先重试" : undefined;
+  const phoneWriteBlock = ctx.e5Loading ? "正在加载手机列表" : ctx.e5DeviceError ? "手机列表读取失败，请先重试" : undefined;
   return <E6MutationProvider refreshSection={refreshSection} phoneWriteBlock={phoneWriteBlock} key={`${session.adminId}:${epoch}`} refreshYieldBinding={refreshYieldBinding}><E6Content ctx={ctx}/></E6MutationProvider>;
 }
 function E6Content({ctx}:{ctx:EViewCtx}) {
@@ -55,12 +55,12 @@ function E6Content({ctx}:{ctx:EViewCtx}) {
       {ctx.canReadE2&&<><div {...ids.panel("tasks")} hidden={tab!=="tasks"} className="e6-tab"><PhoneTasksSection ctx={ctx}/></div><div {...ids.panel("tiers")} hidden={tab!=="tiers"} className="e6-tab"><PhoneTiersSection ctx={ctx}/></div></>}
       {ctx.canReadE5&&<div {...ids.panel("phones")} hidden={tab!=="phones"} className="e6-tab"><E6PhoneDevices ctx={ctx}/></div>}
       {ctx.canReadE6&&<div {...ids.panel("calibration")} hidden={tab!=="calibration"} className="e6-tab">
-        {ctx.e6Error&&<BlockState state="error" title="设备配置读取失败" detail={ctx.e6Error} retryLabel="重试" onRetry={()=>void ctx.refreshE6()}/>}
+        {ctx.e6Error&&<BlockState state="error" title="设备配置加载失败" detail={ctx.e6Error} retryLabel="重试" onRetry={()=>void ctx.refreshE6()}/>}
         <div className="rd-config-layout"><div className="rd-config-grid"><div className="rd-config-rail"><SectionNav label="校准与风控主题" items={sections} nav={nav}/></div><div className="rd-config-groups e6-config-groups">
           <div id="phone-calibration"><PhoneCalibrationPanel ctx={ctx} onPendingCount={setPendingCount}/></div>
           <div id="section-risk"><PhoneRiskSection canWrite={ctx.canWriteE6} toast={ctx.toast}/></div>
           <div id="section-replacement"><PhoneReplacementPolicyPanel configReadFailed={!!ctx.e6Error}/></div>
-          <div id="section-estimate"><Fold title="高级参数" icon={SlidersHorizontal} tone="role-4" summary={ctx.e6Config?`${ctx.e6Config.yieldEstimate.length} 项估算参数 · 在线兼容值只读`:ctx.e6Loading?"正在读取配置":"等设备配置读取成功后可用"} open={advanced} onOpenChange={setAdvanced}><div className="e6-fold-content"><E6Estimates ctx={ctx}/></div></Fold></div>
+          <div id="section-estimate"><Fold title="高级参数" icon={SlidersHorizontal} tone="role-4" summary={ctx.e6Config?`${ctx.e6Config.yieldEstimate.length} 项估算参数 · 在线兼容值只读`:ctx.e6Loading?"正在加载配置":"等设备配置读取成功后可用"} open={advanced} onOpenChange={setAdvanced}><div className="e6-fold-content"><E6Estimates ctx={ctx}/></div></Fold></div>
           <div id="section-records"><Fold title="记录与生效" icon={FileClock} tone="role-other" summary="按各自发布方式生效，可查原记录" open={records} onOpenChange={setRecords}>
             <div className="e6-fold-content"><Panel plain title="修改记录与回滚" icon={FileClock} data-proof="e6-version-rollback"><div className="e6-fold-content"><p>每次修改记录改前、改后值和操作人。回滚时核对原值，再按最新版本提案。退役参数只读。</p>{m.canAudit?<Link href="/platform/audit?domain=E&object=E.compute">查看修改记录</Link>:<p>查看修改记录需要操作记录与审批读取权限。</p>}</div></Panel>
             <Panel plain title="什么时候生效" icon={Clock3} data-proof="e6-effective-boundary"><ConfigList label="生效边界"><ConfigRow name="手机任务" value="批准后对新派任务生效" note="已派任务保留原版本。"/><ConfigRow name="手机校准规则" value="批准后用于后续校准" note="预约还须到所选时间；批准时已过预约时间则批准后生效。"/><ConfigRow name="机型风控" value="保存后立即用于之后校准" note="已激活手机和历史结算不受影响。"/><ConfigRow name="手机换机策略" value="四项批准后同时生效" note="只约束后续换机。"/><ConfigRow name="收益估算参数" value="批准后发布公共配置" note="未证明直接参与现行手机结算。"/></ConfigList></Panel></div>
@@ -84,7 +84,7 @@ function E6Estimates({ctx}:{ctx:EViewCtx}) {
   const scope=edit?`param:${edit.key}`:"";
   const amplifiesWhen=edit?.key===e6YieldKey("topsBaseline")?"decrease":"increase";
   return <>
-    {ctx.e6Loading?<BlockState state="loading" title="正在读取设备配置…"/>:ctx.e6Error||!ctx.e6Config?<BlockState state="empty" title="等设备配置读取成功后可用"/>:<>
+    {ctx.e6Loading?<BlockState state="loading" title="正在加载设备配置…"/>:ctx.e6Error||!ctx.e6Config?<BlockState state="empty" title="等设备配置读取成功后可用"/>:<>
       <Panel plain title="收益估算参数" icon={Settings2} tone="role-4" data-proof="e6-yield-estimate"><div data-proof="e6-yield-estimate-params"><ConfigList label="收益估算参数">{ctx.e6Config.yieldEstimate.map(p=><ConfigRow key={p.key} name={operatorCopyText(p.label)} what="公共收益估算使用的参数" when="批准后发布公共配置" note="未证明参与现行结算；App 具体位置待确认。" effect="不追溯历史已结收益。" value={`${p.value} ${operatorCopyText(p.unit)}`} action={ctx.canWriteE6&&m.canPropose?<Button size="sm" disabledReason={m.locked(`param:${e6YieldKey(p.key)}`)?"这个参数有结果未知的原提案":undefined} onClick={()=>setEdit({key:e6YieldKey(p.key),label:operatorCopyText(p.label),unit:operatorCopyText(p.unit),value:p.value})}>调整</Button>:undefined}/>)}</ConfigList></div></Panel>
       <Fold title="在线系数与兼容项" summary="历史兼容值 · 只读" inset><ConfigList label="在线历史兼容值">{ctx.e6Config.coefficients.filter(c=>c.key!=="h5BaseFactor").map(c=><ConfigRow key={c.key} name={operatorCopyText(c.label)} value={`${c.value} ${operatorCopyText(c.unit)}`} what="退役的在线历史兼容值" when="只读，不参与任务收益" note={operatorCopyText(c.desc)} action={<span>已退役 · 只读</span>}/>)}</ConfigList><p>连续在线满额时长保留历史兼容值，不可修改，不参与任务收益计算。</p></Fold>
     </>}

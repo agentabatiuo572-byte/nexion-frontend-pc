@@ -138,7 +138,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
         getPendingReason={() => m.pendingReason(scope)} onClose={() => setConfirm(null)}
         refusal={conflict ? {
           message: conflict.latest ? "这个对比位已被别人改过，页面已换成最新内容，请重新选择商品。"
-            : conflict.reading ? "正在读取最新内容。" : "这个对比位已被别人改过，最新内容没读到。",
+            : conflict.reading ? "正在加载最新内容。" : "这个对比位已被别人改过，最新内容没读到。",
           retryRead: conflict.latest ? undefined : () => void readConflict(row),
           reading: conflict.reading,
         } : undefined}

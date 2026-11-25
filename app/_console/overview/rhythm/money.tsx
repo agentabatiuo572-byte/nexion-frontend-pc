@@ -116,12 +116,12 @@ export function PhaseMoney() {
     const failed = !history.loading;
     const state = failed ? (
       <BlockState state="error" title="钱的进出和预算没有读到" detail={history.error ?? "没有读到内容"} onRetry={() => void history.reload()} />
-    ) : <BlockState state="loading" title="正在读取…" />;
+    ) : <BlockState state="loading" title="正在加载…" />;
     return (
       <div className="rd-split" data-even="">
         <Panel data-testid="b3-growth-outflow-ratio" title="钱进得多还是出得多" sub="近 8 个业务月 · USDT" icon={ArrowLeftRight} tone="role-2">{state}</Panel>
         <Panel data-testid="b6-monthly-budget-allocation" title="本月运营预算怎么分" sub="四类 · USDT" icon={PieChart} tone="role-1">
-          {failed ? <BlockState state="error" title="预算没有读到" detail="和左边的入金、流出一起读取。" onRetry={() => void history.reload()} /> : <BlockState state="loading" title="正在读取…" />}
+          {failed ? <BlockState state="error" title="预算没有读到" detail="和左边的入金、流出一起读取。" onRetry={() => void history.reload()} /> : <BlockState state="loading" title="正在加载…" />}
         </Panel>
       </div>
     );

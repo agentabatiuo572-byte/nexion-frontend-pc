@@ -1,5 +1,5 @@
 "use client";
-import { APPROVAL_REPLAY_RELEASE, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
+import { APPROVAL_REPLAY_RELEASE, APPROVAL_REPLAY_RELEASE_NO_AUDIT, canReadOwnRecoveryProposal, currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 
 /**
@@ -58,7 +58,7 @@ const QUOTE_KEYS: Key[] = ["sellSpreadPct", "quoteTtlMinWithdraw", "requoteToler
 const RELATED: Partial<Record<Key, Key>> = { feeMinUsd: "minAmountUsd", feeMaxUsd: "feeMinUsd", maxAmountUsd: "minAmountUsd" };
 const FORCE_PHRASE = "确认价格倒挂风险";
 /** 读取中不能依据旧数据写入（ST-32）。 */
-const READING = "正在读取最新数据，读完再操作";
+const READING = "正在加载最新数据，读完再操作";
 const LOCKED = "上一次提交的结果未知，处理完再改";
 const CONFLICT = "越南盾提现参数已被其他人员更新，当前输入已保留。请读取最新后重新核对。";
 /** 抽屉没有改动时，底部问号只写规则，不说哪条路（「写的必须是真的」）。 */
@@ -453,7 +453,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
           if (isA2OutcomeUncertainError(cause) || isDOutcomeUnknownError(cause)) {
             syncPending();
             closeAfterWrite();
-            toast("结果未知，不要重复提交。到页面上方查询原结果。", "warn");
+            toast("结果未知，不要重复提交。到页面上方查询原操作。", "warn");
             return;
           }
           const code = errorCode(cause);
@@ -542,7 +542,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       || withdrawalReplayQueryBlock(investigationResults[record.commandKey], canInvestigate)) return;
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!directCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请先查询原结果。");
+      note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请先查询原操作。");
       return;
     }
     setRecovering(`retry:${record.commandKey}`);
@@ -559,16 +559,16 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       if (isDOutcomeUnknownError(cause)) {
         note(record.commandKey, canInvestigate
-          ? "重试的结果也未知，记录继续保留。请先查询原结果。" : "重试的结果也未知，记录继续保留。");
+          ? "重试的结果也未知，记录继续保留。请先查询原操作。" : "重试的结果也未知，记录继续保留。");
       } else {
         const rejection = explicitRejectionCode(cause);
         if (rejection) {
-          note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「查询原结果」核实。解除原操作记录不代表原操作没执行，也不算核查结案。`);
+          note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「查询原操作」核实。解除原操作记录不代表原操作没执行，也不算核查结案。`);
           directCommands.markReplayRejected(record.fingerprint, record.commandKey, rejection);
           syncPending();
         } else {
           // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
-          note(record.commandKey, `重试没有完成：${reasonOf(displayAdminError(cause))}。记录继续保留。${canInvestigate ? "请先查询原结果。" : ""}`);
+          note(record.commandKey, `重试没有完成：${reasonOf(displayAdminError(cause))}。记录继续保留。${canInvestigate ? "请先查询原操作。" : ""}`);
         }
       }
     } finally {
@@ -599,7 +599,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       throw cause;
     } finally { setRecovering(""); }
   };
-  /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
+  /** 查询原操作：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
   const lookupApproval = async () => {
     const missing = await queryApproval();
     const original = session ? pendingConfigApproval("D7", session.adminId) : undefined;
@@ -685,7 +685,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       const message = isA2OutcomeUncertainError(cause)
         ? uncertainDetail(cause) || "没有收到明确结果"
         : reasonOf(displayAdminError(cause));
-      note(key, `重试没有完成：${message}。记录继续保留，请先查询原结果。`);
+      note(key, `重试没有完成：${message}。记录继续保留，请先查询原操作。`);
     } finally {
       setRecovering("");
     }
@@ -755,7 +755,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         <p>{confirmed ? "审批已提交，查到审批单状态后再提交放宽。"
           : <>可能已生成审批单，这组参数有结果前不能再改。{expired && !outcome && (canQueryOriginal ? expiredNext(approval) : EXPIRED_NO_QUERY)}</>}</p>
         {!expired && approvalBlocked && <p>{approvalBlocked}</p>}
-        {approval.replayRejection && <p>重试没有成功：{reasonOf(displayAdminError(new Error(approval.replayRejection)))}。 {APPROVAL_REPLAY_RELEASE}</p>}
+        {approval.replayRejection && <p>重试没有成功：{reasonOf(displayAdminError(new Error(approval.replayRejection)))}。 {canReachAudit ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT}</p>}
         {notes[approval.commandKey] && <p>{notes[approval.commandKey]}</p>}
       </>,
       tech: original };
@@ -764,7 +764,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />;
   const releaseModal = <>
     {releasing && <ReleaseModal label={releasing.kind === "approval" ? "放宽提交" : "参数修改"} onCancel={() => setReleasing(null)} onConfirm={releasePending}
-      explain={releasing.kind === "approval" ? APPROVAL_REPLAY_RELEASE : "重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。"} />}
+      explain={releasing.kind === "approval" ? canReachAudit ? APPROVAL_REPLAY_RELEASE : APPROVAL_REPLAY_RELEASE_NO_AUDIT : "重试被拒说明不了原操作的结果，先查询原操作。解除后原操作不再重试。"} />}
     {directClosing && <CommandClosureModal label="参数修改" commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
       offer={eCommandClosureOffer(investigationResults[directClosing.commandKey], isRetryExpired(directClosing))} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {
@@ -813,7 +813,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         line: stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine };
     })} />;
   const queueReadNotice = (queueState === "failed" || approvals.queueRetrying)
-    && <Notice tone="warn" title="待批列表暂时读不到" action={<InlineRetry onRetry={() => void loadQueue()} retrying={approvals.queueRetrying} />}>{approvals.queueError}</Notice>;
+    && <Notice tone="warn" title="待批列表加载失败" action={<InlineRetry onRetry={() => void loadQueue()} retrying={approvals.queueRetrying} />}>{approvals.queueError}</Notice>;
 
   if (!config) {
     return <>
@@ -823,13 +823,13 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       {ownApprovalNotice}
       {queueReadNotice}
       {loading
-        ? <BlockState state="loading" title="正在读取越南盾提现参数…" />
+        ? <BlockState state="loading" title="正在加载越南盾提现参数…" />
         // 资金页读取失败不留旧值（ST-36），写法和汇率设置一样：一句话加「失败原因」问号，汇率来源不可用时另起一行给去处。
         : <BlockState state="error" title="越南盾提现参数加载失败" onRetry={() => void reload()}
           detail={<>
             <p>{loadError?.message === WITHDRAWAL_CONFIG_READ_FAILED
               ? loadError.message : <>读不到参数，页面不显示旧值。点「重试」，一直失败请联系财务值班人员。{loadError && <Explain label="失败原因" content={loadError.message} />}</>}</p>
-            {loadError?.code === "D7_D6_SOURCE_UNAVAILABLE" && canReachFx && <p><Link className="rd-link" href="/finance/fx-rate" prefetch={false}>去汇率设置</Link></p>}
+            {loadError?.code === "D7_D6_SOURCE_UNAVAILABLE" && canReachFx && <p><Link className="rd-link" href="/finance/fx-rate" prefetch={false}>去汇率设置 →</Link></p>}
           </>} />}
       {releaseModal}
     </>;
@@ -839,7 +839,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const liveInverted = isPayoutVndInverted(config.buySpreadPct, config.sellSpreadPct);
   const editBlock = direct.length > 0 || approval && !approval.withdrawalSubmissionConfirmed ? LOCKED : loading ? READING : undefined;
   const nothingToDo = queueKnown && direct.length === 0 && !approval && !approvals.blockReason && !approvals.ownNotice;
-  const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>去修改</Link>;
+  const fxLink = canReachFx && <Link className="rd-link" href="/finance/fx-rate" prefetch={false} onClick={guard("/finance/fx-rate")}>去修改 →</Link>;
 
   const row = (key: Key) => {
     const help = PAYOUT_VND_HELP[key];

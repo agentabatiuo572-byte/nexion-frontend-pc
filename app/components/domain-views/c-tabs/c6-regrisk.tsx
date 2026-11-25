@@ -143,7 +143,7 @@ function staleText(failure: unknown) {
   return <><b>{conflict ? "刚被别人改过，这次没有保存，最新的规则也没读到。" : "这次没有保存，最新的规则也没读到。"}</b>{!conflict && <><br />{rejectionText(failure)}</>}<br />关掉这个框，在页面上重新加载后再打开。</>;
 }
 const STALE_TOAST = "最新的规则没读到，现在不能提交。关掉这个框，重新加载后再打开。";
-const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不能再重试，只能查询原结果。";
+const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不能再重试；只能读取当前规则，再到「操作记录与审批」核对原操作。";
 
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const reach = useReach();
@@ -248,7 +248,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       // 重试被 401／403／429 挡下：说这次为什么没执行，原操作仍是结果未知。
       const retryRefused = row && !rejected && retry && err instanceof UsersRequestError && [401, 403, 429].includes(err.status);
       const message = retryRefused ? `这次重试没有执行：${rejectionText(err)}原操作仍是结果未知，原请求已保留。`
-        : row && !rejected ? "结果未知 · 已保留原请求，在页面上方查询原结果或按原操作重试" : `操作失败 · ${errorMessage(err)}`;
+        : row && !rejected ? "结果未知 · 已保留原请求，在页面上方读取当前规则核对，或按原操作重试" : `操作失败 · ${errorMessage(err)}`;
       // 第一次提交被拒时原框还开着，原因写在框里，不再弹同一句；最新规则没读到时页面照旧停在「没有保存」。
       const keptOpen = Boolean(row && rejected && !retry);
       if (!keptOpen || !overviewRef.current) setError(message);
@@ -305,7 +305,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   // Restore from the saved request even when the overview cannot be loaded.
   const pendingNotices = pending.length > 0 && (
-    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能查询原结果。「查询原结果」读的是现在的规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
+    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能读取当前规则核对。「读取当前规则」读的是现在的规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
       <ul className="c6-pending" aria-label="结果未知的操作">
         {pending.map((record) => {
           const complete = isCompleteC6Command(record);
@@ -315,13 +315,13 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
               <span className="c6-pending-name">{record.label ?? pendingLabel(record.fingerprint)}</span>
               <span className="c6-pending-time">{businessStamp(record.createdAt)} 提交</span>
               <span>{!complete
-                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能查询原结果</StatusTag>
+                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能读取当前规则</StatusTag>
                 : expired
                   ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
               <span className="c6-pending-actions">
-                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>查询原结果</Button>
-                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能查询原结果" : undefined} onClick={() => void perform(record)}>按原操作重试</Button>}
+                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>读取当前规则</Button>
+                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能读取当前规则核对" : undefined} onClick={() => void perform(record)}>按原操作重试</Button>}
               </span>
             </li>
           );
@@ -337,14 +337,14 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         {header}
         {pendingNotices}
         {loading ? (
-          <BlockState state="loading" title="正在读取注册与登录风险" />
+          <BlockState state="loading" title="正在加载注册与登录风险" />
         ) : error && !error.startsWith("加载失败") ? (
           <Notice tone={error.startsWith("操作失败") ? "danger" : "warn"} title={error.startsWith("操作失败") ? "这次修改没有保存，重新加载后再改" : "重新加载后再看当前规则"}
             action={<Button size="sm" onClick={() => void loadData()}>重新加载</Button>}>
             {error.startsWith("操作失败") && error.replace(/^操作失败 · /, "")}
           </Notice>
         ) : (
-          <BlockState state="error" title="数据暂不可用，已暂停显示和修改" detail={error ?? "没有读到这页的数据。"} onRetry={() => void loadData()} retrying={loading} retryLabel="重新加载" />
+          <BlockState state="error" title="数据暂不可用，已暂停显示和修改" detail={error ?? "没有读到这页的数据。"} onRetry={() => void loadData()} retrying={loading} />
         )}
       </div>
     );
@@ -547,7 +547,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     },
     get content() { return (
       <>
-        {original.getPendingReason() !== undefined && <Notice tone="warn" title="结果未知，可能已经生效">理由已锁住。按原操作重试只发原来那一次，不会重复执行；也可以关掉后在页面上方查询原结果。</Notice>}
+        {original.getPendingReason() !== undefined && <Notice tone="warn" title="结果未知，可能已经生效">理由已锁住。按原操作重试只发原来那一次，不会重复执行；也可以关掉后在页面上方读取当前规则核对；现在的规则证明不了原操作成没成。</Notice>}
         {stale && <Notice tone="warn">{staleText(after.failure)}</Notice>}
         <Facts>
           <Fact k="人机验证"><Change from={basis.stats?.captchaTemporarilyDisabled ? "临时关闭" : "开启"} to="开启" /></Fact>
@@ -642,7 +642,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     ),
     remarkHint: "选填",
     reasonPlaceholder: "不用填写，备注不会保存",
-    okLabel: "去修改",
+    okLabel: "去修改 →",
     run: () => {
       router.push(text(guard.suggestedPath, k1Path));
     },
@@ -753,7 +753,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       <Fold title="短信验证码参数" icon={KeyRound} tone="role-other"
         summary={otpParams.length ? `${otpParams.length} 项：${otpParams.map((param) => `${operatorCopyText(text(param.name))} ${text(param.value)}`).join(" · ")}` : "暂无短信验证码设置"}
         explain="只显示当前值，修改请到「异常套利与刷量排查」。注册、登录、找回密码共用同一手机号的发送额度。"
-        actions={reach(K2_PATH) ? <Link className="rd-link" href="/risk/abuse" prefetch={false}>去修改</Link> : undefined}>
+        actions={reach(K2_PATH) ? <Link className="rd-link" href="/risk/abuse" prefetch={false}>去修改 →</Link> : undefined}>
         {otpParams.length > 0
           ? <ConfigList label="短信验证码参数">{otpParams.map(otpMirrorRow)}</ConfigList>
           : <BlockState compact state="empty" title="暂无短信验证码设置" />}
@@ -770,7 +770,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
                 what="注册和绑定时的多账户限制"
                 effect="当前值和修改都在「多账户风险排查」"
                 value={<span className="c6-elsewhere">在多账户风险排查设置</span>}
-                action={reach(text(guard.suggestedPath, k1Path)) ? <Button size="sm" onClick={() => k1Confirm(guard)}>去修改</Button> : undefined}
+                action={reach(text(guard.suggestedPath, k1Path)) ? <Button size="sm" onClick={() => k1Confirm(guard)}>查看修改位置</Button> : undefined}
               />
             ))}
           </ConfigList>

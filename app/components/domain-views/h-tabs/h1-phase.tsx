@@ -285,7 +285,7 @@ export default function H1Phase({ ctx,
       boolean>>({});
   const [deepLink,
     setDeepLink] = useState<{ phase: string; dial: string } | null>(null);
-  /** 上次「查询原结果」查到的每个原请求（按操作编号），决定这一步给不给「核查结案」。 */
+  /** 上次「查询原操作」查到的每个原请求（按操作编号），决定这一步给不给「核查结案」。 */
   const [receipts,
     setReceipts] = useState<Record<string, ECommandInvestigation | null>>({});
   const [closing,
@@ -394,7 +394,7 @@ export default function H1Phase({ ctx,
   const ratio = number(coverage?.coverageRatio);
   const redline = number(coverage?.redlinePct);
   const fundingBlocked = !coverage?.reliable || coverage.redlineBreached || ratio == null || ratio <= 0 || redline == null || redline <= 0;
-  const freshBlock = loading ? "正在读取最新数据，请稍后操作" : error ? "数据没读到，请先刷新" : undefined;
+  const freshBlock = loading ? "正在加载最新数据，请稍后操作" : error ? "数据没读到，请先刷新" : undefined;
   const scopeBlock = (scope: string) => freshBlock ?? (pending.some((row) => row.scope === scope) ? LOCKED : undefined);
   const precision = useMemo(() => Object.fromEntries(DIALS.map((dial) => [dial.key,
   dial.key === "withdrawCooldownDays" || dial.key === "complianceReviewThresholdUsdt" || dial.key === "complianceHoldEnabled" ? 0 : Math.max(2,
@@ -930,7 +930,7 @@ export default function H1Phase({ ctx,
   /** 每条记录的入口：一条时放在提示下面（带原操作详情）；多条收成一块时原操作详情放进展开的内容里。 */
   const recordActions = (row: H1Pending, withDetail: boolean) => <>
     {withDetail && <Button size="sm" onClick={() => setDetail(row)}>原操作详情</Button>}
-    <Button size="sm" disabledReason={!canQueryOriginal(row) ? row.requests.some((request) => request.kind === "proposal") ? "你没有原操作的权限" : "你没有这页的查看权限，查不了原结果" : undefined} loading={busy} onClick={() => void readOriginal(row)}>查询原结果</Button>
+    <Button size="sm" disabledReason={!canQueryOriginal(row) ? row.requests.some((request) => request.kind === "proposal") ? "你没有原操作的权限" : "你没有这页的查看权限，查不了原结果" : undefined} loading={busy} onClick={() => void readOriginal(row)}>查询原操作</Button>
     {closableSteps(row).map((request) => <Button key={request.commandKey} size="sm" variant="danger-outline" onClick={() => setClosing({ row, request })}>{row.requests.length > 1 ? `核查结案 · ${request.label}` : "核查结案"}</Button>)}
     {row.state !== "approval" && <Button size="sm" disabledReason={!permitted(row) ? "你没有原操作的权限" : isRetryExpired(row) ? RETRY_EXPIRED_TEXT : undefined} loading={busy} onClick={async () => {
       setBusy(true); try {
@@ -946,7 +946,7 @@ export default function H1Phase({ ctx,
 
   return <>
     <PageHeader pageId="H1" title="运营阶段设置" summary={`安排运营月份和每月生效的参数。${!canWrite && !canControl && !canRevoke ? "你只能查看。" : ""}`} meta={readAt ? `${formatBusinessTimeCompact(readAt)} 读取（${businessZone().label}）` : undefined}
-      actions={<>{reach("/overview/rhythm", "overview_b4_read") ? <Link className="rd-link" href="/overview/rhythm" prefetch={false}>去运营阶段状态 →</Link> : <span className="h1-access-note">运营阶段状态 · 无访问权限</span>}<Button icon={<RefreshCw size={14} />} loading={loading} onClick={async () => {
+      actions={<>{reach("/overview/rhythm", "overview_b4_read") ? <Link className="rd-link" href="/overview/rhythm" prefetch={false}>去运营阶段状态 →</Link> : <span className="h1-access-note">运营阶段状态 · 无访问权限</span>}<Button icon={<RefreshCw size={14} />} loading={loading} onClick={async () => {
         if (await reload()) ctx.toast("已刷新",
           "success");
       }}>刷新数据</Button>
@@ -964,20 +964,20 @@ export default function H1Phase({ ctx,
         const answer = feedback && checked === row.commandKey && feedback !== line ? feedback : undefined;
         return { key: row.commandKey, object: row.label, createdAt: row.createdAt,
           tag: <StatusTag tone={row.state === "approval" ? "progress" : "warn"}>{row.state === "approval" ? "待审批" : row.state === "rejected" ? row.retryRejected ? "重试被拒绝" : "提交被拒绝" : "结果未知"}</StatusTag>,
-          line: row.state === "approval" ? `${row.ticket ? `审批单 ${row.ticket.id} ` : ""}在等批准，批准前参数不变。` : row.state === "rejected" ? `拒绝原因：${row.rejectionReason ?? "没有记下，请查询原结果核对。"}`
-            : isRetryExpired(row) ? "超过 24 小时不能再重试，先查询原结果。" : row.requests.some((request) => request.kind === "proposal") ? "可能已经提交，先查询原结果。" : "可能已经生效，先查询原结果。",
+          line: row.state === "approval" ? `${row.ticket ? `审批单 ${row.ticket.id} ` : ""}在等批准，批准前参数不变。` : row.state === "rejected" ? `拒绝原因：${row.rejectionReason ?? "没有记下，请查询原操作核对。"}`
+            : isRetryExpired(row) ? "超过 24 小时不能再重试，先查询原操作。" : row.requests.some((request) => request.kind === "proposal") ? "可能已经提交，先查询原操作。" : "可能已经生效，先查询原操作。",
           result: title && resultLine ? { tag: <StatusTag tone={title === "记为失败" ? "neutral" : title === "还在执行" ? "progress" : "warn"}>{title}</StatusTag>, line: resultLine } : undefined,
           note: answer, actions: recordActions(row, false),
           detail: <>
             <p>{formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")}（{businessZone().label}）提交。有结论前这项不能再改。</p>
             {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !line && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
-            {row.state === "rejected" && title && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}</p>}
+            {row.state === "rejected" && title && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原操作核对。"}</p>}
             <p><Button size="sm" variant="ghost" onClick={() => setDetail(row)}>原操作详情</Button></p>
           </> };
       })} />
     : shownPending.map((row) => <Notice key={row.commandKey} tone={row.state === "approval" ? "progress" : "warn"} actionBelow action={recordActions(row, true)}>
       <b>{rowTitle(row) ?? (row.state === "approval" ? "已提交审批，等待批准" : row.state === "rejected" ? row.retryRejected ? "按原操作重试被拒绝" : "提交被拒绝" : "提交结果未知")}</b> · {row.label}{row.ticket && ` · 审批单 ${row.ticket.id}`}
-      {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}</p>}
+      {row.state === "rejected" && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原操作核对。"}</p>}
       {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !rowLine(row) && !(feedback && checked === row.commandKey) && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
       {row.state !== "approval" && isRetryExpired(row) && !(feedback && checked === row.commandKey) && !rowLine(row) && <p>{RETRY_EXPIRED_TEXT}；原记录继续保留，这项暂时不能再改。</p>}
       {feedback && checked === row.commandKey ? <p>{feedback}</p> : rowLine(row) && <p>{rowLine(row)}</p>}
@@ -1110,7 +1110,7 @@ export default function H1Phase({ ctx,
     {confirm && <OperationConfirmModal {...confirm} facts={(value) => <div className="h1-confirm-facts" data-pending={confirmPending?.state}>
       {confirmPending && <div className="h1-pending-feedback"><Notice tone="warn" title={confirmPending.state === "rejected" ? confirmPending.retryRejected ? "按原操作重试被拒绝" : "提交被拒绝" : "提交结果未知"}>
         {confirmPending.requests.some((request) => request.acknowledged && request.kind === "patch") && <p>{confirmPending.requests.filter((request) => request.acknowledged && request.kind === "patch").map((request) => `${request.label}已保存`).join("，")}；{confirmPending.requests.filter((request) => !request.acknowledged).map((request) => `${request.label}${confirmPending.state === "rejected" ? confirmPending.retryRejected ? "重试被拒绝" : "未保存" : "结果未知"}`).join("，")}。</p>}
-        <p>{confirmPending.state === "rejected" ? `拒绝原因：${confirmPending.rejectionReason ?? "没有记下拒绝原因，请查询原结果核对。"}` : confirmPending.requests.some((request) => request.kind === "proposal") ? "可能已经建了审批单，批准前参数不变。请先查询原结果。" : "原内容和理由已保留，可以按原操作重试，不会重复执行。"}</p>
+        <p>{confirmPending.state === "rejected" ? `拒绝原因：${confirmPending.rejectionReason ?? "没有记下拒绝原因，请查询原操作核对。"}` : confirmPending.requests.some((request) => request.kind === "proposal") ? "可能已经建了审批单，批准前参数不变。请先查询原操作。" : "原内容和理由已保留，可以按原操作重试，不会重复执行。"}</p>
       </Notice></div>}
       {confirm.businessForm && rhythm ? <Facts>
         <Fact k="现在">第 {text(rhythm.currentMonth)} 月，本阶段进度 {text(rhythm.phaseProgressPct)}%</Fact>
@@ -1174,7 +1174,7 @@ export default function H1Phase({ ctx,
         </Fold>
       </>}
     </Drawer>
-    {release && <ReleaseModal onCancel={() => setRelease(null)} label={<div className="h1-release-facts"><b>{release.label}</b><Change from={pendingValue(release, release.before)} to={pendingValue(release, release.after)} /><span className="h1-release-reason">拒绝原因：{release.rejectionReason ?? "没有记下拒绝原因，请先查询原结果。"}</span></div>} explain="只清掉本页这条记录，不撤销后台的操作，也不记操作记录；已保存的步骤不会退回。" onConfirm={() => {
+    {release && <ReleaseModal onCancel={() => setRelease(null)} label={<div className="h1-release-facts"><b>{release.label}</b><Change from={pendingValue(release, release.before)} to={pendingValue(release, release.after)} /><span className="h1-release-reason">拒绝原因：{release.rejectionReason ?? "没有记下拒绝原因，请先查询原操作。"}</span></div>} explain="只清掉本页这条记录，不撤销后台的操作，也不记操作记录；已保存的步骤不会退回。" onConfirm={() => {
       if (release?.retryRejected && release.state === "rejected" && checked === release.commandKey) {
         h1Pending.forget(release.fingerprint,
           release.commandKey); syncPending(); setRelease(null); setConfirm(null); setFeedback(undefined); setChecked(undefined);

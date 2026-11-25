@@ -88,7 +88,7 @@ const PARAMS = [
 type Param = (typeof PARAMS)[number];
 const paramOf = (key: ParamKey) => PARAMS.find((param) => param.key === key)!;
 
-const READING = "正在读取最新数据，读完再操作";
+const READING = "正在加载最新数据，读完再操作";
 const LOCKED = "先处理上方结果未知的修改，再调整";
 const NO_WRITE = "这个账号现在没有调整权限，不能重试，请在调整历史里核对";
 const RETRY_AGAIN = "原操作已被拒绝，再重试结果一样";
@@ -511,7 +511,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const ticketError = proposalReadErrors[pending.commandKey];
     const receipt = outcome && "receipt" in outcome ? outcome.receipt : undefined;
     const receiptError = outcome && "error" in outcome ? outcome.error : undefined;
-    const readFailure = [ticketError && `原审批单加载失败。${ticketError}`, receiptError].filter(Boolean).join(" ");
+    const readFailure = [ticketError && `原审批单加载失败。${ticketError}`, receiptError && `原操作回执加载失败。${receiptError}`].filter(Boolean).join(" ");
     // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
     const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
     const canClose = eCommandClosureOffer(outcome, expired).conclusions.length > 0 && fundInvestigationAccess(target).canSubmit;
@@ -526,7 +526,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const receiptStatus = receipt ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
     const status = receiptStatus ? receiptNext || readFailure
       ? { ...receiptStatus, line: [receiptNext ?? receiptStatus.line, readFailure].filter(Boolean).join(" ") } : undefined
-      : readFailure ? { tone: "danger" as const, label: "查询失败", line: `${readFailure} 请重新查询原操作。` }
+      : readFailure ? { tone: "danger" as const, label: ticketError ? "原审批单加载失败" : "原操作回执加载失败", line: `${readFailure} 可再次查询原操作。` }
         : recoveryState.conclusion === "not-found" && !target.commandOrigin
           ? { tone: "warn" as const, label: "没有查到", line: expired ? "没有查到原审批单，记录保留。" : "没有查到原审批单，可在有效期内按原操作重试。" }
           : undefined;
@@ -550,7 +550,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}` };
   })();
   const pendingNotice = <FundRecoveryPanel rows={pendingRow ? [pendingRow] : []} settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))}
-    link={canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>到操作记录与审批核对</Link>} />;
+    link={canAudit && <Link className="rd-link" href="/platform/audit?domain=D&object=VND_USDT" prefetch={false}>去操作记录与审批 →</Link>} />;
   const releaseModal = <>
     {pending && releasing && <ReleaseModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} onCancel={() => setReleasing(false)} onConfirm={() => releasePending(pending)} />}
     {pending && closing && !pending.proposal && <CommandClosureModal label={`把${paramOf(pending.param).label}改成 ${valueText(pending.param, pending.after)}`} commandKey={pending.commandKey} createdAt={pending.createdAt}
@@ -572,7 +572,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {header}
         {pendingNotice}
         {loading
-          ? <BlockState state="loading" title="正在读取汇率设置…" />
+          ? <BlockState state="loading" title="正在加载汇率设置…" />
           : <BlockState state="error" title="汇率设置加载失败"
             detail={<>读不到汇率设置，页面不显示任何旧值。点「重试」；一直失败请联系财务值班人员。{error && <Explain label="失败原因" content={error} />}</>}
             onRetry={() => void load()} />}
@@ -626,7 +626,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           {data.approval.status === "pending" && (approvalValues ? <>
             <Fact k="待批买入价" unit="₫/USDT">{vnd(d6QuoteRate(approvalValues.baseRateVndPerUsdt, approvalValues.buySpreadPct))}<span className="rd-fact-unit">尚未生效</span></Fact>
             {PARAMS.map((param) => <Fact key={param.key} k={`待批${param.label}`}>{valueText(param.key, approvalValues[param.key])}</Fact>)}
-          </> : <Fact k="待批新值">{approvalReadError || "正在读取原审批单…"}</Fact>)}
+          </> : <Fact k="待批新值">{approvalReadError || "正在加载原审批单…"}</Fact>)}
           {data.approval.applied && <Fact k="生效记录">这张单已批准，当前配置以本页当前值为准<Explain label="批准状态和当前值" content="批准状态只表示这张单已批准，之后可能又有直接调整，不能把原单新值当成当前值。" /></Fact>}
         </Facts>
       </Panel>}

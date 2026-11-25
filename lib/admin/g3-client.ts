@@ -474,7 +474,7 @@ async function g3Request<T>(path: string, init?: RequestInit, strictOutcome = fa
 
   if (strictOutcome && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || !result || !Number.isInteger(result.code) || result.code >= 500 || result.code !== 0 && result.code < 400)) {
-    throw Object.assign(new StableMutationFailure("outcome-unknown", "提交结果未知，请保留原操作，查询原结果或按原操作重试。"), {
+    throw Object.assign(new StableMutationFailure("outcome-unknown", "提交结果未知，请保留原操作，查询原操作或按原操作重试。"), {
       unknownOutcome: true, status: response.status, backendMessage: result?.message,
     });
   }

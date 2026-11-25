@@ -222,7 +222,7 @@ function NotificationDrawer({
       {/* 风险与应急告警 */}
       <h3 className="rd-alert-heading">风险与应急告警</h3>
       <div className="rd-alert-list">
-        {alerts.length === 0 && <div className="rd-alert-empty">{alertsLoading ? "正在读取告警…" : "现在没有要处理的告警。"}</div>}
+        {alerts.length === 0 && <div className="rd-alert-empty">{alertsLoading ? "正在加载告警…" : "现在没有要处理的告警。"}</div>}
         {alerts.map((a) => {
           const lv = LEVEL[a.level];
           const reachable = reach(a.href, ALERT_READ[a.href]);

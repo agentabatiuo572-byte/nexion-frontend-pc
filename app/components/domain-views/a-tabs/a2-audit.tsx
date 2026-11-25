@@ -172,7 +172,7 @@ const NO_DECIDE = "这个账号没有处理这张单的权限";
 /** 页面判断不了这张单要哪项业务权限或附加条件时，入口照常放出，写这一句（协调人第五轮定）。 */
 const BACKEND_CHECKS_NOTE = "批准时系统再核对业务权限，没有权限会被拒绝并写明原因";
 const WAIT_OTHERS = "等待有权限的人处理";
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原操作重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请在「操作记录」里按单号核对";
 
@@ -949,8 +949,8 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
   approve: "可以查询这次批准的结果，或按原操作重试，不会重复执行。",
   reject: "可以查询这次驳回的结果，或按原操作重试，不会重复执行。",
   withdraw: "可以查询这次撤回的结果，或按原操作重试，不会重复执行。",
-  param: "查询只能看到现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
-  retention: "查询只能看到最近一次手动清理。可以按原操作重试，不会重复清理。",
+  param: "读到的是现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
+  retention: "「读取最近清理」只能看到最近一次手动清理，证明不了这次清理成没成。可以按原操作重试，不会重复清理。",
   export: "查询只能看到有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
 };
 /**
@@ -1979,7 +1979,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : { state: "error", message: "退款金额未读取" }
     : undefined;
   const refundAmountText = (amount: RefundAmount) => amount.state === "ok" ? `${orderAmount(amount.amount)} USDT`
-    : amount.state === "loading" ? "正在读取" : "退款金额未读取";
+    : amount.state === "loading" ? "正在加载" : "退款金额未读取";
 
   // 已应用的条件后端查过了，以后端的结果为准；对象还会命中详情里的命令号这类字段，前端再按窄的字段筛会把查到的记录删掉（M4）。
   const logRows = records?.recentLogs ?? [];
@@ -2243,7 +2243,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const d5Block = d5RetryBlock(record);
     if (d5Block) return d5Block;
     const amount = retryAmount(record);
-    if (amount?.state === "loading") return "正在读取退款金额，读完再重试";
+    if (amount?.state === "loading") return "正在加载退款金额，读完再重试";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
     return undefined;
   };
@@ -2362,7 +2362,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 框标题只写「批准审批单」，动作名放在标题下面一行，长了省略、悬停看全文（设计偏差二选一的第一种）。 */
   const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w)}>{shortCodes(actionName(w))}</span>;
 
-  /** 本人、已退役、解析不了、有未确认操作、正在读取、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
+  /** 本人、已退役、解析不了、有未确认操作、正在加载、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
   const decideBlock = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
     if (submitting) return SUBMITTING;
     if (pendingTicketIds.has(w.id)) return PENDING_LOCK;
@@ -2379,7 +2379,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
-    if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
+    if (amount?.state === "loading") return "正在加载退款金额，读完再批准";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
     return undefined;
   };
@@ -3019,12 +3019,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     return {
       key: record.fingerprint, object: record.label, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">结果未知</StatusTag>,
-      line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : d5Block ? `${d5Block}。点「查询原结果」看这次批准执行没有，或点「在操作记录里查看」。` : RECOVERY_HINT[record.kind]}`,
+      line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : d5Block ? `${d5Block}。点「查询原操作」看这次批准执行没有，或点「在操作记录里查看」。` : RECOVERY_HINT[record.kind]}`,
       result: note ? { tag: check ? <StatusTag tone={check.tone} icon={check.icon}>{check.label}</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>, line: note.text } : undefined,
       // 查询的回答已在 result 里替换这一行的结论；noteKey 只让回答变了时自动展开，不在展开内容里再写一遍。
       noteKey: note?.text,
       actions: <>
-        <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
+        <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>{record.kind === "param" ? "读取当前值" : record.kind === "retention" ? "读取最近清理" : "查询原操作"}</Button>
         <Button size="sm" disabled={!!submitting} disabledReason={retryBlock(record)} onClick={() => void retryPending(record)}>按原操作重试</Button>
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
@@ -3071,7 +3071,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const pendingTab = (
     <>
       {mainError && !main ? (
-        <BlockState state="error" title="审批单读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
+        <BlockState state="error" title="审批单加载失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} afterRetryFocus={pendingTitle} />
       ) : <>
         {/* 待审批是数量不是状态，按角色色；应急、资金类只给图标底上色，数字正文色（必须改 4，同提现审核）。 */}
         <StatBand label="待审批汇总" fit>
@@ -3251,9 +3251,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const orderedParams = [...mechanismParams].sort((a, b) => (PARAM_ORDER.indexOf(a.key) + 1 || 99) - (PARAM_ORDER.indexOf(b.key) + 1 || 99));
   const schemaNow = schemaVersion(mechanismParams.find((p) => p.key === "schema")?.value);
   const settingsTab = mainError && !main ? (
-    <BlockState retryKey="a2-audit-3198" state="error" title="机制设置读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
+    <BlockState retryKey="a2-audit-3198" state="error" title="机制设置加载失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
   ) : !main ? (
-    <BlockState state="loading" title="正在读取机制设置…" />
+    <BlockState state="loading" title="正在加载机制设置…" />
   ) : (
     <>
       <Panel icon={SlidersHorizontal} tone="role-4" title="审批与记录规则">
@@ -3424,7 +3424,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         nav={{ hasPrev: Boolean(prevTicket), hasNext: Boolean(nextTicket), onPrev: () => { if (prevTicket) setTicketId(prevTicket.id); }, onNext: () => { if (nextTicket) setTicketId(nextTicket.id); } }}
         footer={ticketFooter}>
         {shown && <>
-          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次决定结果未知，先到页面上方「查询原结果」，查清前不要重复处理。</Notice>}
+          {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次决定结果未知，先到页面上方「查询原操作」，查清前不要重复处理。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shownCoverageMode === "onApproval" && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
           {shownCoverageMode === "amplifies" && <Notice tone="warn">{shownFundCheck}</Notice>}

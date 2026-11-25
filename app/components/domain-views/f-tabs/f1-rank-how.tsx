@@ -225,7 +225,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
         action={<Button size="sm" loading={loading} onClick={() => void checkOriginal()}>重新读取核对</Button>}>
         {comparison
           ? <p>{`现在的内容和原提交对不上：修订号应为 ${comparison.revision.expected}，实际是 ${comparison.revision.current}，内容${comparison.contentMatches ? "相同" : "不同"}。请到操作记录与审批核对。`}</p>
-          : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先刷新核对；你填的内容还在下面。</p>}
+          : <p>提交时没收到确定结果，可能已经保存。不能按原操作重发，先刷新核对；你填的内容还在下面。</p>}
       </Notice>}
       {preserveDraft.current && document && baseline && (() => {
         const diff = draftDiff(document, baseline);
@@ -235,8 +235,8 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
         </Notice>;
       })()}
       {error && !(preserveDraft.current && error === CONFLICT) && <Notice tone={document ? "warn" : "danger"}>{error}</Notice>}
-      {loading && !document ? <BlockState state="loading" title="正在读取等级说明" />
-        : !document ? <BlockState state="error" title="等级说明读取失败，现在的状态没确认" detail={error ?? undefined} onRetry={() => void refresh()} />
+      {loading && !document ? <BlockState state="loading" title="正在加载等级说明" />
+        : !document ? <BlockState state="error" title="等级说明加载失败，现在的状态没确认" detail={error ?? undefined} onRetry={() => void refresh()} />
           : <>
             <div className="f1-how-head">{statusLine}</div>
             <div className="rd-split f1-how" data-detail="" data-preview="">
@@ -306,7 +306,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
               </div>
               <div className="rd-toolbar" data-end="">
                 <span className="rd-toolbar-note">{status === "PUBLISHED" ? "发布后替换 App 正在读的版本" : "草稿不替换 App 正在读的版本"}</span>
-                <Button variant="primary" loading={saving} disabledReason={unknown ? "保存结果未知，请先重新读取核对" : loading ? "正在读取" : publishIssue ?? (!hasChanges ? "内容没有变化" : undefined)} onClick={() => void save()}>{status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Button>
+                <Button variant="primary" loading={saving} disabledReason={unknown ? "保存结果未知，请先重新读取核对" : loading ? "正在加载" : publishIssue ?? (!hasChanges ? "内容没有变化" : undefined)} onClick={() => void save()}>{status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Button>
               </div>
             </div>}
           </>}

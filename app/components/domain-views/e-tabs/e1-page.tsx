@@ -52,9 +52,9 @@ const APPROVAL = "由另一位有批准及商品业务权限的管理员批准�
 const SKU_APPROVAL = "由另一位超级管理员（需有商品修改权限）批准。批准前目录不变。";
 const approvalText = (op?: string) => op === "e1_sku_create" || op === "e1_sku_update" || op === "sku-save" ? SKU_APPROVAL : APPROVAL;
 const RECEIPT_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
-const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；请先查询原结果，查不到才能按原操作重试。";
+const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；请先查询原操作，查不到才能按原操作重试。";
 const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
-const RETRY_REQUIRES_LOOKUP = "先查询原结果，查不到才能重试";
+const RETRY_REQUIRES_LOOKUP = "先查询原操作，查不到才能重试";
 const endToast = (obj: string, id: string, status: string) => PROPOSAL_END[status] ? `${obj} · 审批单 ${id} ${PROPOSAL_END[status].tag}：${PROPOSAL_END[status].text}` : `${obj} · 审批单 ${id} 状态待核实`;
 
 function e1Error(error: unknown) {
@@ -62,7 +62,7 @@ function e1Error(error: unknown) {
   const value = error as { backendMessage?: string; message?: string } | null;
   const code = value?.backendMessage ?? value?.message ?? "";
   if (code.includes("TASK_POOL_FORMAT_RETIRED")) return "原商品操作使用旧任务格式，请先核对原申请，再从商品管理与上架条件重新配置任务等级。";
-  if (code.startsWith("IDEMPOTENCY_")) return "原请求的结果还在核对，记录保留；请先查询原结果，不要重新填写提交。";
+  if (code.startsWith("IDEMPOTENCY_")) return "原请求的结果还在核对，记录保留；请先查询原操作，不要重新填写提交。";
   return displayAdminError(error);
 }
 
@@ -567,7 +567,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           : recovery.expired ? RETRY_EXPIRED_TEXT
             : record.receivedTicketId ? "审批单已经建了，只能查询"
               : recovery.replayBlock ? RETRY_REQUIRES_LOOKUP : undefined;
-      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原结果」再查。" }
+      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原操作」再查。" }
         : canRelease ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
           : recovery.expired ? { tag: "结果未知", line: RETRY_EXPIRED_TEXT, more: "原记录继续保留。" }
             : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
@@ -575,7 +575,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
         actions: <>
-          {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原结果</Button>}
+          {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原操作</Button>}
           {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原操作重试</Button>}
           {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>解除原操作记录</Button>}
         </>,
@@ -593,7 +593,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     })),
     ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留",
       tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
-      actions: canQuery ? <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => void check(record)}>查询原结果</Button> : undefined,
+      actions: canQuery ? <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => void check(record)}>查询原操作</Button> : undefined,
       detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
     ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
@@ -603,7 +603,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   ];
   return <RdPage className="e1-page">
     {discardRecovery.dialog}
-    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? "目录读取失败" : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在读取目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); receipts.filter(row => row.status === "pending").forEach(row => { void refreshReceipt(row); }); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
+    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? undefined : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在加载目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<Button icon={<RefreshCw size={14} />} disabled={loading} onClick={() => { void refresh(); void refreshEarly(); receipts.filter(row => row.status === "pending").forEach(row => { void refreshReceipt(row); }); }}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
       <RecoveryPanel tone={recovery.every(item => item.key.startsWith("receipt:")) ? "progress" : "warn"} title={recoveryTitle(recovery.filter(item => !item.key.startsWith("receipt:")).length, recovery.filter(item => item.key.startsWith("receipt:")).length)}
@@ -622,7 +622,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         : skuChanges.length > 4
         ? <>{skuChanges.some(row => E1_DECISION_KEYS.includes(row.key)) && <Facts>{skuChanges.filter(row => E1_DECISION_KEYS.includes(row.key)).map(row => <Fact key={row.key} k={row.label}><Change from={row.before ?? ""} to={row.after ?? ""} /></Fact>)}</Facts>}<Fold inset title="完整商品变更" summary={`${skuChanges.length} 项改动`}><DiffList rows={skuDiff} /></Fold></>
         : <DiffList rows={skuDiff} /> : <>{mc.businessForm?.kind === "multi-field" && (mc.op === "bundle-discount" || mc.op === "early-access" || mc.op === "generation-gate-save" && !!mc.generationGateId || mc.op === "phase-save" && !!mc.phaseId) && <Facts>{mc.businessForm.fields.map(f => <Fact key={f.key} k={f.label}><Change from={f.optionLabels?.[f.current ?? ""] ?? (f.current || "未设置")} to={(f.optionLabels?.[businessValues[f.key] ?? f.current ?? ""] ?? (businessValues[f.key] ?? f.current)) || "未填写"} /></Fact>)}</Facts>}{mc.content}</>}
-      blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原结果" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
+      blockedReason={currentPending && currentPending.commandKey !== busy ? "这个对象有一次结果未知的提交，先在页面上方查询原操作" : (reviewingSku ? hasSkuVersionConflict(mc) : conflict) ? <>
         <ConflictBar message="商品或配置已被别人改过，你填的内容还在；读取最新后重新核对。" onRead={readConflict} />
         {conflictRead && <Notice tone="warn" title="核对别人改了什么，再决定是否保留你的修改">
           {mc.op === "bundle-discount" && conflictLatest ? <DiffList rows={[{ key: "two", label: "2件折扣", before: `${mc.discount?.twoItemsPct}%`, after: `${conflictLatest.bundleDiscount.twoItemsPct}%` }, { key: "three", label: "3件折扣", before: `${mc.discount?.threeItemsPct}%`, after: `${conflictLatest.bundleDiscount.threeItemsPct}%` }, { key: "four", label: "4+件折扣", before: `${mc.discount?.fourPlusItemsPct}%`, after: `${conflictLatest.bundleDiscount.fourPlusItemsPct}%` }]} /> : mc.sku && latestConflictSku ? <DiffList rows={e1ShownDiff(e1SkuDiff(mc.beforeSku ?? mc.sku, latestConflictSku), mc.beforeSku ?? mc.sku, latestConflictSku)} /> : <p>原对象未读取到，请保留草稿并核查。</p>}
@@ -637,7 +637,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           throw failure;
         }
       }} />}
-    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在读取…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
+    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在加载…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
     {release && <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => {
       if (recoveryFor(release).releaseRejectedReplay(release)) { syncPending(); setRelease(null); toast("已解除这条记录", "success"); }
     }} />}

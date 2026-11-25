@@ -118,8 +118,8 @@ export function PendingList({ items, onOpen }: { items: PendingPromotion[]; onOp
         <span className="h4-pending-what"><b>{OPERATION_LABELS[p.operation] || '促销操作'}</b>{!COLLECTION_TARGETS.has(p.targetId) && <span className="h4-mono" title={p.targetId}>{p.targetId}</span>}</span>
         <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(p.createdAt).toISOString(), 'Asia/Shanghai')}</span>（北京时间）</span>
         <StatusTag tone="warn">{p.receipt ? '已成功，待读回' : '结果未知'}</StatusTag>
-        <Button size="sm" onClick={() => onOpen(p)}>查询原结果</Button>
-    </li>)}</ul>}>关闭或刷新页面不会重新提交。先查询原结果，查不到时才可以按原操作重试。</Notice>;
+        <Button size="sm" onClick={() => onOpen(p)}>查询原操作</Button>
+    </li>)}</ul>}>关闭或刷新页面不会重新提交。先查询原操作，查不到时才可以按原操作重试。</Notice>;
 }
 
 /** 首屏：一句结论 + 四个数 + 等我处理。数都来自列表接口的 summary 和这一页的活动。 */
@@ -195,7 +195,7 @@ export function EditorSummary({ draft, preview, catalog, onPreview }: { draft: D
     const people = preview ? (preview.estimatedAccounts ?? preview.matched) : null;
     return <dl className="h4-summary" aria-label="这个草稿现在是什么样">
         <div><dt>类别和时间</dt><dd>{draft.category === 'REFERRAL' ? '邀请推广' : '促销'} · {TEMPLATE_LABELS[draft.template]}<span>{draft.startsAt && draft.endsAt ? `${formatTime(draft.startsAt, zone)} → ${formatTime(draft.endsAt, zone)}（${zoneLabel(zone)}）` : '时间还没填'}</span></dd></div>
-        <div><dt>人群</dt><dd>{preview ? <>{people == null ? '人数未提供' : `约 ${people} 人`}<span>预览于 {formatTime(preview.asOf, zone)}{preview.unknown ? `，${preview.unknown} 人无法判断` : ''}</span></> : <>还没预览<span><button type="button" className="rd-link" onClick={onPreview}>去第二步预览</button></span></>}</dd></div>
+        <div><dt>人群</dt><dd>{preview ? <>{people == null ? '人数未提供' : `约 ${people} 人`}<span>预览于 {formatTime(preview.asOf, zone)}{preview.unknown ? `，${preview.unknown} 人无法判断` : ''}</span></> : <>还没预览<span><button type="button" className="rd-link" onClick={onPreview}>去第二步预览 →</button></span></>}</dd></div>
         <div><dt>每台设备的奖励</dt><dd>{rules.length ? `${rules.length} 条规则` : '还没加规则'}<span>{assets.length ? assets.join('、') : '奖励还没配'}</span></dd></div>
         <div><dt>预算</dt><dd>{budgets.length ? `${budgets.length} 项` : '还没填'}<span>{budgets.join('；') || '各资产分开填，不相加'}</span></dd></div>
         <div><dt>用到的政策</dt><dd>{`已批准 ${approved} 条`}<span>{missing ? `还缺 ${missing} 条` : refs.length - approved > 0 ? `${refs.length - approved} 条当前不可用` : '五条都已选'}</span></dd></div>

@@ -365,7 +365,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
     button: ctx.canExport ? (<>
       <Button
         icon={<Download size={14} aria-hidden />}
-        disabledReason={pending ? "上一次导出结果未知，先到页面上方查询原结果" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
+        disabledReason={pending ? "上一次导出结果未知，先到页面上方查询原操作" : exportMode === null || ctx.biLoading ? exportUnavailableReason : undefined}
         onClick={() => { if (exportMode) { setFinished(null); openConfirm(exportMode); } }}
       >
         {exportMode === "series" || (!exportMode && query.granularity) ? "导出关键指标序列 CSV" : "导出关键指标当前汇总 CSV"}
@@ -1057,8 +1057,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       : refreshing || ctx.biLoading
         ? <BlockState state="loading" title="正在加载…" />
         : firstError
-          ? <BlockState state="error" title="关键指标加载失败" detail={firstError} onRetry={retryFirstRead} retryLabel="重新加载" />
-          : <BlockState state="empty" title="这个范围还没有指标数据" detail="请先刷新；仍然为空，说明还没有产生数据。" onRetry={retryFirstRead} retryLabel="重新加载" />;
+          ? <BlockState state="error" title="关键指标加载失败" detail={firstError} onRetry={retryFirstRead} />
+          : <BlockState state="empty" title="这个范围还没有指标数据" detail="请先刷新；仍然为空，说明还没有产生数据。" onRetry={retryFirstRead} />;
 
   return (
     <>

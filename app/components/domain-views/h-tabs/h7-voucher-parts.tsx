@@ -181,7 +181,7 @@ export const H7_DIRECT_RETRY_COPY = "按原操作重试会用原编号、原内�
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
     ? "提交时没收到确定结果，可能已经生效。可读取当前配置供核对，24 小时内可按原操作重试。"
-    : "提交时没收到确定结果，可能已经建了审批单。先查询原结果；明确查不到、没过 24 小时才能按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
+    : "提交时没收到确定结果，可能已经建了审批单。先查询原操作；明确查不到、没过 24 小时才能按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 /** 后端读到的审批锁：读得出单子就写是哪张、谁什么时候提交的；四项都是空的只说明有锁。 */
@@ -203,7 +203,7 @@ export function pendingTag(pending?: H7PendingApproval | null) {
 
 /** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */
 export function acknowledgedTag() {
-  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
+  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原操作」再查；不会重发。">已建单</StatusTag>;
 }
 
 export function expiredTag() {

@@ -216,7 +216,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
   const enabled = centers.filter(center => center.enabled);
   const total = enabled.reduce((sum, center) => sum + center.weight, 0);
   const pending = receipts.find(receipt => receipt.status === "pending" || receipt.status === "unknown");
-  const editBlock = !state ? "清单读到之后才能编辑" : pending ? pending.status === "pending" ? "有一份修改在等批准，批准或驳回后才能再改" : "上一次提交结果未知，先查询原结果" : undefined;
+  const editBlock = !state ? "清单读到之后才能编辑" : pending ? pending.status === "pending" ? "有一份修改在等批准，批准或驳回后才能再改" : "上一次提交结果未知，先查询原操作" : undefined;
 
   const draftChanges = draft && baseline ? changesOf(baseline.centers, draft) : [];
   const draftIssues = draft ? draft.map(row => ({ id: row.id, name: nameIssue(row.name), weight: weightIssue(row.weight) })) : [];
@@ -255,7 +255,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
       tag,
       line,
       actions: <>
-        {(receipt.status === "unknown" || receipt.status === "pending") && <Button size="sm" loading={receiptBusy} onClick={() => void recover(receipt, false)}>查询原结果</Button>}
+        {(receipt.status === "unknown" || receipt.status === "pending") && <Button size="sm" loading={receiptBusy} onClick={() => void recover(receipt, false)}>查询原操作</Button>}
         {receipt.status === "unknown" && <Button size="sm" disabledReason={canWrite ? undefined : "当前账号没有提交权限"} loading={receiptBusy} onClick={() => void recover(receipt, true)}>按原操作重试</Button>}
         {receipt.status !== "unknown" && receipt.status !== "pending" && <Button size="sm" variant="ghost" onClick={() => dismiss(receipt)}>知道了</Button>}
       </>,
@@ -278,7 +278,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
       meta={readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : undefined}
       readOnly={canRead && !canWrite ? "当前账号只能查看" : undefined}
       actions={canRead ? <>
-        <Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void reload()}>刷新</Button>
+        <Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} loadingText="正在加载…" onClick={() => void reload()}>刷新</Button>
         {canWrite && <Button variant="primary" icon={<Pencil size={14} aria-hidden />} disabledReason={editBlock} onClick={() => openEdit()}>编辑清单</Button>}
       </> : undefined} />
   );
@@ -287,7 +287,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
     <RecoveryPanel tone={unknown ? "warn" : "progress"} title={recoveryTitle(unknown, waiting, ended)} label="托管机房清单的修改"
       explain={<>
         <p>整份清单一次只能有一份修改在等批准；批准或驳回之前，这页不能再提交。</p>
-        <p>结果未知：提交时没收到确定结果。先查询原结果；查不到、又没过 24 小时，可以按原操作重试，不会建第二张审批单。</p>
+        <p>结果未知：提交时没收到确定结果。先查询原操作；查不到、又没过 24 小时，可以按原操作重试，不会建第二张审批单。</p>
         <p>批准时会再核对清单有没有被别人改过；改过就不执行，要按现在的清单重新提交。</p>
       </>}
       foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit?domain=E" prefetch={false}>到操作记录与审批核对</Link> : undefined}
@@ -328,7 +328,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
         {!enabled.length ? "没有启用的机房，新设备分不到机房" : enabled.length === centers.length ? `${centers.length} 个机房都启用` : `${enabled.length} 个机房启用，${centers.length - enabled.length} 个停用`}
         {defaults && enabled.length > 0 && "；用的是系统默认清单"}
         {waiting > 0 && "；有一份修改在等批准"}
-        {unknown > 0 && "；上一次提交结果未知，先查询原结果"}
+        {unknown > 0 && "；上一次提交结果未知，先查询原操作"}
       </Conclusion>
       <Panel title="机房和分配比例" icon={Server} tone="role-2" flush sub={`${centers.length} 个 · 启用的权重合计 ${total}`}
         explain="「新设备约占」是一台新设备分到这个机房的机会，等于它的权重除以启用机房的权重合计。实际分配是随机的，台数少时会和比例有出入。">

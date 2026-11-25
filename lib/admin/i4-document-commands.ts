@@ -78,7 +78,7 @@ export function i4DocumentRetryBlocked(record: I4DocumentCommand) {
   const state = i4DocumentRecovery.state(record);
   if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
-  return i4DocumentPermission(record.document.slot) ?? (state.replayBlock ? "请查询原结果" : undefined);
+  return i4DocumentPermission(record.document.slot) ?? (state.replayBlock ? "请查询原操作" : undefined);
 }
 
 async function finish(command: I4DocumentCommand) {
@@ -119,7 +119,7 @@ async function send(command: I4DocumentCommand, retry: boolean, file?: File): Pr
 export async function submitI4Document(document: TrustDocument, fields: TrustDocumentUpload, file?: File): Promise<void> {
   const permission = i4DocumentPermission(document.slot);
   if (permission) throw new Error(permission);
-  if (pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) throw new Error("这份资料有结果未知的原操作，请先查询原结果。");
+  if (pendingI4DocumentCommands().some(row => row.document.slot === document.slot)) throw new Error("这份资料有结果未知的原操作，请先查询原操作。");
   const owner = useAdminAuth.getState().session!.adminId;
   const commandKey = createA2CommandKey("i4-trust-document");
   const fingerprint = `${owner}|${document.slot}`;

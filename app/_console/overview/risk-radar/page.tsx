@@ -68,11 +68,11 @@ const QUEUE_TRIAGE: Record<string, keyof typeof TRIAGE> = {
 
 /** 五项分诊的按钮名：写去哪一页。 */
 const TRIAGE_LABEL: Record<DimensionKey, string> = {
-  bankrun: "去提现审核",
-  "abnormal-accounts": "去多账户风险排查",
-  "withdraw-backlog": "去提现审核",
-  "kill-switches": "去紧急停用开关",
-  coverage: "去资金与应付款总览",
+  bankrun: "去提现审核 →",
+  "abnormal-accounts": "去多账户风险排查 →",
+  "withdraw-backlog": "去提现审核 →",
+  "kill-switches": "去紧急停用开关 →",
+  coverage: "去资金与应付款总览 →",
 };
 
 const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
@@ -111,7 +111,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
       {items.map((item) => (
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b5-row-actions">
-            {item.onQuery && <Button size="sm" onClick={item.onQuery}>查询原结果</Button>}
+            {item.onQuery && <Button size="sm" onClick={item.onQuery}>读取当前值</Button>}
             {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
             {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
             {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
@@ -705,7 +705,7 @@ export default function RiskRadarPage() {
         {pendingApproval && (
           <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
             action={<span className="b5-row-actions">
-              <Button size="sm" onClick={() => openThreshold()}>查询原结果</Button>
+              <Button size="sm" onClick={() => openThreshold()}>查询原操作</Button>
               {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>解除原操作记录</Button>}
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
@@ -717,9 +717,9 @@ export default function RiskRadarPage() {
         )}
         {!data || radar.error ? <>
           <Conclusion state="unknown" icon={ShieldQuestion} hint={radar.loading && !radar.error ? undefined : "数据读到之前不判断有没有风险。"}>
-            {radar.loading && !radar.error ? "风险提醒：正在读取" : "风险提醒：读取失败，暂时无法判断"}
+            {radar.loading && !radar.error ? "风险提醒：正在加载" : "风险提醒：读取失败，暂时无法判断"}
           </Conclusion>
-          <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在读取五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
+          <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在加载五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
         </> : <>
         {conclusion}
 
@@ -758,7 +758,7 @@ export default function RiskRadarPage() {
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
                 <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
-                  {inboxLoading ? "正在读取…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
+                  {inboxLoading ? "正在加载…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
                 </TabNote>
                 <InboxTable state={inboxError ? "error" : inboxLoading || inboxNeedsRead ? "loading" : "ready"} items={inbox} error={inboxError}
                   onRetry={() => setInboxReload((value) => value + 1)} canTriage={canTriage} acknowledging={acknowledgingDelivery}
@@ -799,16 +799,16 @@ export default function RiskRadarPage() {
             footer={<>
               <Button disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</Button>
               {approvalRecovery && approvalReleasable && <Button disabled={savingThreshold} onClick={() => { setThreshold(null); setReleasingApproval(true); }}>解除原操作记录</Button>}
-              {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={undefined} onClick={() => void submitThreshold(true)}>查询原结果</Button>}
+              {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={undefined} onClick={() => void submitThreshold(true)}>查询原操作</Button>}
               {!lookupOnly && <Button variant="primary" loading={savingThreshold} loadingText="提交中…" disabledReason={canSubmitThreshold ? undefined : blocked ?? "暂不能提交"} onClick={() => void submitThreshold()}>{submitLabel}</Button>}
             </>}>
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
               {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
               {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
-                ? approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原结果」；查不到时 24 小时内可以按原操作重试，不会建第二张单。"
-                : thresholdUnknown ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「查询原结果」。" : thresholdError}</Notice>}
-              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "先点「查询原结果」查原审批单；查到了就不用再提交。"}</Notice>}
+                ? approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原操作」；查不到时 24 小时内可以按原操作重试，不会建第二张单。"
+                : thresholdUnknown ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。" : thresholdError}</Notice>}
+              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "先点「查询原操作」查原审批单；查到了就不用再提交。"}</Notice>}
               {otherThresholdChanges.length > 0 && <Notice tone="neutral" title="别人改了什么">{otherThresholdChanges.join(" · ")}</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
@@ -832,7 +832,7 @@ export default function RiskRadarPage() {
                   <Facts>
                     <Fact k="谁来批">另一位超级管理员，自己不能批</Fact>
                     <Fact k="批准人需有">审批批准权限</Fact>
-                    <Fact k={recovering ? "提交时的红线" : "批准前的红线"}>{fmtConfigPct(threshold.redPct)}{recovering ? "；批没批以查询原结果为准" : ""}</Fact>
+                    <Fact k={recovering ? "提交时的红线" : "批准前的红线"}>{fmtConfigPct(threshold.redPct)}{recovering ? "；批没批以查询原操作为准" : ""}</Fact>
                   </Facts>
                 </Notice>
               )}
@@ -847,8 +847,8 @@ export default function RiskRadarPage() {
       {subscriptionOpen && (canReadSubscription || subscriptionOriginal) && (() => {
         // 恢复原请求时，上面是冻结的原内容（重试只发它），现在的订阅读不到放在后面，不挡原内容。
         const subscriptionReadState = (
-          <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在读取现在的订阅…" : subscriptionOriginal ? "现在的订阅没读到，不影响按原操作重试" : "现在的订阅没读到"} detail={subscriptionError || undefined}
-            onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} retryLabel="重新读取" />
+          <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在加载现在的订阅…" : subscriptionOriginal ? "现在的订阅没读到，不影响按原操作重试" : "现在的订阅没读到"} detail={subscriptionError || undefined}
+            onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} />
         );
         const subscriptionConflict = subscriptionDraftPreserved && !subscriptionOriginal && !subscriptionLoading && !subscriptionError;
         // 只有查看权限：只看现在的订阅，不讲保存后会怎样。
@@ -860,7 +860,7 @@ export default function RiskRadarPage() {
           footer={<>
             <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
             <Button variant="primary" loading={savingSubscription} loadingText="保存中…"
-              disabledReason={!canSubscribe ? "需要告警订阅权限才能保存" : subscriptionOriginal ? b5Recovery.state(subscriptionOriginal).expired ? RETRY_EXPIRED_TEXT : b5Recovery.state(subscriptionOriginal).replayBlock ? "原请求不能重试" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
+              disabledReason={!canSubscribe ? "需要告警订阅权限才能保存" : subscriptionOriginal ? b5Recovery.state(subscriptionOriginal).expired ? RETRY_EXPIRED_TEXT : b5Recovery.state(subscriptionOriginal).replayBlock ? "原请求不能重试" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在加载现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
               onClick={() => void saveSubscription()}>{subscriptionOriginal ? "按原操作重试" : "保存订阅"}</Button>
           </>}>
           <div className="b5-dialog">
@@ -869,7 +869,7 @@ export default function RiskRadarPage() {
               <>
                 {subscriptionOriginal && subscriptionUnknown && (
                   <Notice tone="warn" title="结果未知，可能已经生效">
-                    下面是提交时的内容，已锁定。按原操作重试只发这一份，不会重复执行；也可以关掉后点「查询原结果」。
+                    下面是提交时的内容，已锁定。按原操作重试只发这一份，不会重复执行；也可以关掉后点「读取当前值」。
                   </Notice>
                 )}
                 {subscriptionConflict && (() => {
@@ -944,7 +944,7 @@ export default function RiskRadarPage() {
                 <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="8–200 字，例如：已核实、工单号" count={`${statusReason.trim().length} / 200`} onChange={(event) => setStatusReason(event.target.value)} />
               </Field>
               {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果未知，可能已经生效" : "没有标记成功"}>
-                {statusUnknown ? "理由已锁住，只能按原操作重试；也可以关掉后点「查询原结果」，看这条的处理进度变了没有。" : statusError}
+                {statusUnknown ? "理由已锁住，只能按原操作重试；也可以关掉后点「读取当前值」，看这条的处理进度变了没有。" : statusError}
               </Notice>}
             </div>
           </Modal>

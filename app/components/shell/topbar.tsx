@@ -141,7 +141,7 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
         ? "warn"
         : "ok";
   const label = unavailable ? "—" : fmtPct(cov);
-  const statusLabel = bDomain.loading && !bDomain.hasData ? "正在读取" : unavailable ? "暂不可用" : label;
+  const statusLabel = bDomain.loading && !bDomain.hasData ? "正在加载" : unavailable ? "暂不可用" : label;
   return (
     <Link
       href="/overview/dual-ledger"

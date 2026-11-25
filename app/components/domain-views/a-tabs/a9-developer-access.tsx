@@ -63,8 +63,8 @@ const developerAccessAttempts = createPendingMutationStore<DeveloperAccessAttemp
 });
 
 /** Real server-backed developer access governance. Navigation ownership remains with the A-domain integrator. */
-/** 过期后能做的事在本页：查询原结果，读到结论就解除。不借用指向「操作记录与审批」的通用句。 */
-const A9_EXPIRED_TEXT = "已超过 24 小时，不能再重试；点「查询原结果」核对。";
+/** 过期后能做的事在本页：查询原操作，读到结论就解除。不借用指向「操作记录与审批」的通用句。 */
+const A9_EXPIRED_TEXT = "已超过 24 小时，不能再重试；点「查询原操作」核对。";
 const developerStatusText = (value: string) => ({ PENDING: "待审批", APPROVED: "已批准", REJECTED: "已驳回", REVOKED: "已撤销", EXPIRED: "已过期" } as Record<string,string>)[value] ?? "未知状态";
 
 type StatusFilter = "" | DeveloperAccessRequest["status"];
@@ -384,7 +384,7 @@ export function A9DeveloperAccess() {
     const row = record.row ?? current;
     const reason = isRetryExpired(record) ? A9_EXPIRED_TEXT
       : !reviewPermissions[action] ? `这个账号现在没有${reviewActionLabel[action]}的权限`
-      : !row ? "先点「查询原结果」，读到这条申请后才能重试"
+      : !row ? "先点「查询原操作」，读到这条申请后才能重试"
         : undefined;
     return (
       <li key={record.fingerprint}>
@@ -393,11 +393,11 @@ export function A9DeveloperAccess() {
         <span className="a9-rec-time">{businessStamp(record.createdAt)} 提交</span>
         <span className="a9-rec-state">
           {isRetryExpired(record)
-            ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试。点「查询原结果」：状态没变说明没有执行，记录会解除。">已过期</StatusTag>
+            ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试。点「查询原操作」：状态没变说明没有执行，记录会解除。">已过期</StatusTag>
             : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。按原操作重试不会重复执行。">结果未知</StatusTag>}
         </span>
         <span className="a9-rec-actions">
-          <Button size="sm" variant="ghost" onClick={() => void findOriginal(record)}>查询原结果</Button>
+          <Button size="sm" variant="ghost" onClick={() => void findOriginal(record)}>查询原操作</Button>
           <Button size="sm" disabledReason={reason} onClick={() => restoreReview(record, current)}>按原操作重试</Button>
         </span>
       </li>
@@ -448,7 +448,7 @@ export function A9DeveloperAccess() {
 
     {recoveryRows.length > 0 && <Notice tone="warn" title={<>{recoveryRows.length} 个操作结果未知<Explain label="结果未知怎么处理" content={<>
       <p>提交时没收到确定结果，可能已经生效。24 小时内按原操作重试不会重复执行。</p>
-      <p>「查询原结果」读这条申请现在的状态。已经变了（比如已批准、已驳回），说明处理过了，记录解除。</p>
+      <p>「查询原操作」读这条申请现在的状态。已经变了（比如已批准、已驳回），说明处理过了，记录解除。</p>
       <p>状态没变：24 小时内记录保留，可以重试；超过 24 小时说明原操作没有执行，记录解除，可以重新提交。</p>
     </>} /></>}>
       <ul className="a9-rec" aria-label="结果未知的操作">{recoveryRows}</ul>

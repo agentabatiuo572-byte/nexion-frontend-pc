@@ -124,7 +124,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const [powerDirection, setPowerDirection] = useState<"approval" | "direct" | null>(null);
   const openActionConfirm = (req: H5Confirm) => {
     if (!req.original && (!fresh.current || mutations.record(req.target))) {
-      toast("请先查询原结果并成功刷新签到数据，再发起新的修改。");
+      toast("请先在页面上方核对原操作并成功刷新签到数据，再发起新的修改。");
       return;
     }
     const next = conflictDraft.action(req, () => !!mutations.record(req.target)), values = next.getPendingBusinessValue?.();
@@ -535,7 +535,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const original = mutations.record(target);
     return original?.ticket?.status === "pending" ? target.startsWith("rule:") ? { approver: RULE_APPROVER, note: RULE_PENDING_NOTE } : { approver: FUND_APPROVER, note: FUND_PENDING_NOTE } : undefined;
   };
-  const blocked = (target: string) => mutations.record(target) ? "这一项有未结束的原操作，请先查询原结果" : !fresh.current ? "请先成功刷新签到数据" : undefined;
+  const blocked = (target: string) => mutations.record(target) ? "这一项有未结束的原操作，请先在页面上方核对" : !fresh.current ? "请先成功刷新签到数据" : undefined;
   const restore = (original: H5PendingCommand) => {
     const snapshot = original.change.snapshot;
     const [kind, ...idParts] = original.change.target.split(":");
@@ -554,6 +554,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       if (original.request.kind === "direct") toast(displayAdminError(err));
     }
   };
+  const readLabel = (original: H5PendingCommand) => original.request.kind === "direct" ? "读取当前配置"
+    : mutations.ticketReadErrors[original.commandKey] ? "重试" : "查询原操作";
 
   // 连签档后端存的旧名称（+5 NEX）原样标成旧名称，不让裸的 NEX 出现。
   const shownReward = (value: string) => /\bNEX\b/i.test(value) ? `旧名称「${value}」` : value;
@@ -572,7 +574,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         : record.acknowledged ? acknowledgedTag() : state.replayRejection ? rejectedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
       ticket: record.ticket?.id,
       actions: <>
-        <Button size="sm" disabled={state.busy === "replay"} onClick={() => void queryOriginal(record)}>查询原操作</Button>
+        <Button size="sm" disabled={state.busy === "replay"} onClick={() => void queryOriginal(record)}>{readLabel(record)}</Button>
         {!state.expired && !record.acknowledged && !record.ticket && !state.replayRejection && <Button size="sm" disabledReason={retryReason} onClick={() => restore(record)}>按原操作重试</Button>}
         {state.replayRejection && !record.acknowledged && !record.ticket && <VerifiedReleaseButton disabled={!!state.busy} onClick={() => verifiedRelease.ask({ operation: record.change.name, target: h5OriginalNonMultiplierPowerUpSummary(record) ?? `${record.change.before} → ${record.change.after}`, createdAt: record.createdAt, getSnapshot: mutations.recovery.releaseSnapshot(record), release: () => mutations.release(record) })} />}
       </>,
@@ -585,11 +587,11 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     <H5RecoveryNotice title={[unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
         <p>原修改（改的是哪一项、从多少到多少、理由）保存在这个浏览器标签页里。</p>
-        <p>审批申请结果未知时，先「查询原操作」。明确查无、仍有修改权限且未超过 24 小时，才可「按原操作重试」。直接保存可用同一操作编号重试。超过 24 小时后保留记录，可继续查询。</p>
+        <p>审批申请结果未知时，先「查询原操作」。明确查无、仍有修改权限且未超过 24 小时，才可「按原操作重试」。直接生效的修改可「读取当前配置」核对，现值不能证明原操作成没成。有效期内可用同一操作编号重试。超过 24 小时后保留记录，可继续核对。</p>
         <p>待审批、已建单：点「查询原操作」查看审批进度。</p>
         <p>结果确认之前，这页不能再改同一项。</p>
       </>}
-      link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
+      link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>去操作记录与审批 →</Link> : undefined} />
   );
   const staleNotice = stale && <Notice tone="warn" title={`没有保存：「${stale.name}」已被别人改过`}
     action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>
@@ -638,7 +640,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         if (!original) return undefined;
         return {
           state: mutations.recovery.state(original), expiresAt: original.expiresAt, blockedReason: mutations.retryReason(original),
-          query: async () => { await mutations.query(original); }, queryLabel: "查询原操作",
+          query: async () => { await mutations.query(original); }, queryLabel: readLabel(original),
           subscribe: mutations.recovery.subscribe, getRevision: mutations.recovery.getRevision,
         };
       }}
@@ -741,14 +743,14 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           : "兑付覆盖率高于红线";
     // 结论只写状态和下一步（ST-74）：签到人数和签到率在「今日签到」卡里，原操作的条数在页顶恢复条里。
     const summary = [stats.todaySign == null ? "今天签到人数读不到" : undefined, coverageText,
-      unknownCount > 0 ? "有修改结果未知，先查询原结果" : undefined, pendingCount > 0 ? "有修改在等批准" : undefined].filter(Boolean).join("；");
+      unknownCount > 0 ? "有修改结果未知，先在页面上方核对" : undefined, pendingCount > 0 ? "有修改在等批准" : undefined].filter(Boolean).join("；");
     return (
       <Conclusion state={unknownCount || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
         explain={<>
           <p>兑付覆盖率低于红线或不可靠时，要放大奖励的修改会被拒。连签、签到倍率和收益里程碑的相关申请提交和批准时都查，签到规则只在批准时查。徽章和入口类权益改天数立即生效。</p>
           <p>统计读不到时也显示 0，这页暂时分不出「真的是 0」和「没读到」。</p>
         </>}
-        action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>看待批准的申请</Link> : undefined}>
+        action={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>去操作记录与审批 →</Link> : undefined}>
         {summary}
       </Conclusion>
     );
@@ -991,7 +993,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 ]} />
                 : <p className="h5-note">{p15 && p2 ? "两档概率读不出或合计超过 100%，不画；到「签到规则」核对。" : "没有读到幸运倍率的设置。"}</p>}
             </div>
-            {legacyCount > 0 && <Notice tone="warn" actionBelow action={<Button size="sm" variant="ghost" onClick={() => openTab("streak")}>去连签奖励改</Button>}>
+            {legacyCount > 0 && <Notice tone="warn" actionBelow action={<Button size="sm" variant="ghost" onClick={() => openTab("streak")}>去连签奖励修改</Button>}>
               {`有 ${legacyCount} 档连签奖励的名称还是旧写法（NEX）；App 按种类和数量显示，不显示名称。`}
             </Notice>}
           </div>

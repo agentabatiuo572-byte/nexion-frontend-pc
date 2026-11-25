@@ -48,7 +48,7 @@ function ConflictNotice({ ready, latestRevision, rows, error, loading, onReread,
     {ready
       ? <>已读到最新版本，你改的都还在。{rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。"}
         {rows.length > 0 && <div className="a3-conflict-diff"><Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts></div>}</>
-      : loading ? "正在读取最新版本，你改的都还在。"
+      : loading ? "正在加载最新版本，你改的都还在。"
         : <>最新版本没读到，你改的都还在；先重新读取再核对。{error?.includes("；") ? <span className="rd-note"> {error.split("；").slice(1).join("；")}</span> : null}</>}
   </Notice>;
 }
@@ -110,10 +110,10 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
 const SAVE_UNKNOWN_NOTE = <>没收到结果时别再点一次：页面会留下这次提交，<KeepText text="24 小时内可以按原操作重试。" /></>;
 /** 原提交框里还没有对比结果时：能重试的说重试会怎样，不能重试的说查询会怎样。 */
 function OriginalNote({ expired, retryable }: { expired: boolean; retryable: boolean }) {
-  if (expired) return <>已超过 24 小时，不能再重试。当前内容供核对，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
+  if (expired) return <>已超过 24 小时，不能再重试。可用「读取当前内容」核对现值，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
   return retryable
     ? <>重试按原提交的内容、方式和理由再发一次：<KeepText text="已经保存过的不会重复保存，也不会盖掉别人后来的修改。" /></>
-    : <>可读取当前内容核对，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
+    : <>可用「读取当前内容」核对现值，原操作记录和修改锁保留，请到操作记录与审批核对。</>;
 }
 
 function Preview({ title, children }: { title: string; children: ReactNode }) {
@@ -228,8 +228,8 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
   return <div className="rd-tab-stack" data-testid="published-content-developerDocs">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedLocales.map(localeName).join("、") || "版本"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在读取" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <Button disabledReason={original ? "结果未知" : loading || !readReady ? "正在加载" : saving ? "正在保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在加载" : saving ? "正在保存" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
       ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交"
@@ -249,7 +249,7 @@ function DeveloperDocs({ commands, recovery, onRecovered, nonce, current: curren
         <Segments label="内容语言" value={locale} onChange={(value) => setLocale(String(value))} items={localeKeys.map((key) => ({ value: key, label: localeName(key), tone: changedLocales.includes(key) ? "progress" as const : undefined }))} />
         {canWrite && <span className="rd-row-actions">
           <Button size="sm" icon={<Plus size={14} aria-hidden />} aria-expanded={addingLocale} disabled={disabled} onClick={() => setAddingLocale(!addingLocale)}>新增语言</Button>
-          <MoreMenu label="内容语言的更多操作" items={[{ key: "remove", label: "删除当前语言", danger: true, disabledReason: disabled ? "正在读取或保存" : localeKeys.length <= 1 ? "至少保留一种语言。" : undefined, onSelect: removeLocale }]} />
+          <MoreMenu label="内容语言的更多操作" items={[{ key: "remove", label: "删除当前语言", danger: true, disabledReason: disabled ? "正在加载或保存" : localeKeys.length <= 1 ? "至少保留一种语言。" : undefined, onSelect: removeLocale }]} />
         </span>}
         <div className="a3-versions">
           <Field label="正文版本" hint="最多 64 字">{(control) => <Input {...control} className="a3-version" maxLength={64} value={document.version} disabled={disabled} onChange={(event) => setDocument({ ...document, version: event.target.value })} />}</Field>
@@ -405,7 +405,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
   useEffect(() => { onDirty(hasChanges); }, [hasChanges, onDirty]);
   if (!canRead) return <BlockState state="denied" title="没有查看业务说明的权限" />;
   if (loading && !document) return <BlockState state="loading" title="读取说明内容中…" />;
-  if (!document) return <BlockState state="error" title="说明内容读取失败" detail={<>{error} 读不到不等于没有内容：App 可能仍在显示之前发布的或系统自带的说明。</>} onRetry={() => void refresh()} />;
+  if (!document) return <BlockState state="error" title="说明内容加载失败" detail={<>{error} 读不到不等于没有内容：App 可能仍在显示之前发布的或系统自带的说明。</>} onRetry={() => void refresh()} />;
 
   const locked = !canWrite || loading || saving || Boolean(original) || !readReady;
   const patchLocale = (next: Row) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); const locales = row(entry.locales); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [locale]: next } } } }); };
@@ -502,8 +502,8 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
   return <div className="rd-tab-stack" data-testid="published-content-how">
     {canWrite && <div className="rd-toolbar a3-savebar" data-end="">
       <span className="rd-toolbar-note" data-tone={hasChanges ? "warn" : undefined}>{hasChanges ? `有未保存的修改：${changedPages.map((item) => PAGE_LABELS[item]).join("、") || "文档版本或状态"}` : "没有未保存的修改"}</span>
-      <Button disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
-      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在读取或保存" : publishBlockedReasons.length ? "还有没替换的占位符，不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
+      <Button disabledReason={original ? "结果未知" : locked ? "正在加载或保存" : !canSave("DRAFT") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("DRAFT"); }}>保存草稿…</Button>
+      <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在加载或保存" : publishBlockedReasons.length ? "还有没替换的占位符，不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
       ? <ConflictNotice ready={readReady && Boolean(baseline)} latestRevision={baseline?.revision} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交"
@@ -548,7 +548,7 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
 
       <div className="rd-toolbar a3-locale-bar">
         <Segments label="内容语言" value={locale} onChange={(value) => setLocale(String(value))} items={localeKeys.map((item) => ({ value: item, label: localeName(item) }))} />
-        {canWrite && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在读取或保存" : undefined} aria-expanded={addingLocale} onClick={() => setAddingLocale(!addingLocale)}>新增语言</Button>}
+        {canWrite && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在加载或保存" : undefined} aria-expanded={addingLocale} onClick={() => setAddingLocale(!addingLocale)}>新增语言</Button>}
         <div className="a3-versions">
         <Field label={`本页版本（${PAGE_LABELS[key] ?? key}）`} explain="不填就用文档版本；填过再清空会保存不了。" hint="最多 64 字">
           {(control) => <Input {...control} className="a3-version" value={entryVersion} maxLength={64} disabled={locked} placeholder="例如 2026.09.01-genesis-guide" onChange={(event) => patchEntryVersion(event.target.value)} />}
@@ -587,12 +587,12 @@ function HowContent({ commands, recovery, onRecovered, nonce, current: currentRe
                   <Textarea aria-label={`列表项 ${itemIndex + 1}`} rows={1} value={text(value)} maxLength={2000} disabled={locked} onChange={e => patchBlock(index, { items: items.map((entryValue, i) => i === itemIndex ? e.target.value : entryValue) })} />
                   {canWrite && <IconButton aria-label={`删除 ${key} 内容块 ${text(item.id)} 的列表项 ${itemIndex + 1}${text(value) ? `：${text(value)}` : ""}`} disabled={locked || items.length <= 1} onClick={() => removeListItem(index, itemIndex)}><Trash2 size={14} aria-hidden /></IconButton>}
                 </div>)}
-                {canWrite && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在读取或保存" : Array.isArray(item.items) && item.items.length >= 50 ? "最多 50 项" : undefined} onClick={() => patchBlock(index, { items: [...(Array.isArray(item.items) ? item.items : []), ""] })}>新增列表项</Button></div>}
+                {canWrite && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在加载或保存" : Array.isArray(item.items) && item.items.length >= 50 ? "最多 50 项" : undefined} onClick={() => patchBlock(index, { items: [...(Array.isArray(item.items) ? item.items : []), ""] })}>新增列表项</Button></div>}
               </fieldset>}
-              {canWrite && <div><Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} aria-label={`删除内容块 ${text(item.id)}（${key}）`} disabledReason={locked ? "正在读取或保存" : currentBlocks.length <= 1 ? "至少保留一个内容块" : undefined} onClick={() => removeBlock(index)}>删除内容块</Button></div>}
+              {canWrite && <div><Button size="sm" variant="ghost" icon={<Trash2 size={14} aria-hidden />} aria-label={`删除内容块 ${text(item.id)}（${key}）`} disabledReason={locked ? "正在加载或保存" : currentBlocks.length <= 1 ? "至少保留一个内容块" : undefined} onClick={() => removeBlock(index)}>删除内容块</Button></div>}
             </div>
           </Fold>)}
-          {canWrite && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在读取或保存" : !current ? "先新增语言" : currentBlocks.length >= 200 ? "最多 200 个内容块" : undefined} onClick={addBlock}>新增内容块</Button></div>}
+          {canWrite && <div><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={locked ? "正在加载或保存" : !current ? "先新增语言" : currentBlocks.length >= 200 ? "最多 200 个内容块" : undefined} onClick={addBlock}>新增内容块</Button></div>}
         </div>
         <Preview title={PAGE_LABELS[key] ?? key}>
           <div className="a3-how-preview" data-user-content="">

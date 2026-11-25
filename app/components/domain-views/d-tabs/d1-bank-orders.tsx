@@ -201,7 +201,7 @@ export function D1BankOrders({ refreshKey, onCount, allManualReviewCount, onRefr
       footer={current && actions.canManage && !credited(current) ? <Decision note={creditBlock(current, actions)}
         explain="确认后立即入账到用户钱包，不能撤销。实际到账金额必须等于应付金额。"
         primary={<Button variant="primary" disabledReason={creditBlock(current, actions)} onClick={() => actions.onManualCredit(current, async () => { await load(); void loadCounts(); })}>人工确认入账</Button>} /> : undefined}>
-      {!current ? <BlockState state="loading" title="正在读取订单…" /> : <>
+      {!current ? <BlockState state="loading" title="正在加载订单…" /> : <>
         <JudgmentPoints rows={[
           { label: "应付", icon: Coins, tone: "money", value: `${vnd(current.payableVnd)} ₫`, reason: `申请 ${usdt(current.requestedUsdt)} USDT · 锁价 1 USDT = ${vnd(current.lockedFxRateVndPerUsdt)} ₫` },
           { label: "实际收款", state: current.receivedVnd !== null && current.payableVnd !== null && current.receivedVnd !== current.payableVnd ? "warn" : undefined,

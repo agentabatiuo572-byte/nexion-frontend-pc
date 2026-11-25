@@ -96,7 +96,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
   }
 
   const actions = canWrite && <div className="e6-hw-actions">
-    <Button disabled={!editable || loading || importOpen || !!form} onClick={()=>void loadPresets()}>{loading ? "正在读取预设…" : "载入 iPhone 机型预设"}</Button>
+    <Button disabled={!editable || loading || importOpen || !!form} onClick={()=>void loadPresets()}>{loading ? "正在加载预设…" : "载入 iPhone 机型预设"}</Button>
     <Button variant="primary" disabled={!editable || rules.length >= 500 || !!form || importOpen || loading} onClick={()=>openForm(editing(null,blankIosRule(rules,androidRuleIds)))}>新增机型</Button>
   </div>;
 
@@ -108,7 +108,7 @@ export function IosModelRulesSection({ rules, published, androidRuleIds, editing
       explain="只补草稿中缺少的机型，不覆盖已维护的范围、别名和停用状态。加入草稿后仍需试算和提交审批。"
       onClose={()=>{setImportOpen(false);setPresets(null);}} footer={<Decision primary={presets && <Button variant="primary" disabledReason={!editable ? "硬件草稿暂不可修改" : presets.selected.size === 0 && !(presets.fillFacts && presets.plan.factsFilled.length > 0) ? "请选择待新增机型或补充设备信息" : undefined} onClick={applyImport}>加入草稿</Button>} others={<Button onClick={()=>{setImportOpen(false);setPresets(null);}}>取消</Button>}/> }>
       <div className="rd-form-stack e6-hw-drawer" aria-label="iPhone 预设导入预览">
-        {!presets ? <BlockState state={loading?"loading":"error"} title={loading?"正在读取预设…":"预设加载失败"} detail={error} onRetry={loading?undefined:()=>void loadPresets()}/> : <>
+        {!presets ? <BlockState state={loading?"loading":"error"} title={loading?"正在加载预设…":"预设加载失败"} detail={error} onRetry={loading?undefined:()=>void loadPresets()}/> : <>
           <Facts><Fact k="将新增" lead unit="个">{presets.plan.added.length}</Fact><Fact k="已存在 · 跳过">{presets.plan.skipped.length} 个</Fact><Fact k="补充设备信息">{presets.plan.factsFilled.length} 个</Fact><Fact k="名称冲突" tone={presets.plan.conflicts.length ? "warn" : undefined}>{presets.plan.conflicts.length} 个</Fact><Fact k="目录版本">{presets.catalog.catalogVersion}</Fact><Fact k="核验日期">{presets.catalog.verifiedOn}</Fact></Facts>
           {presets.plan.conflicts.length > 0 && <Notice tone="warn" title="名称或编号冲突"><ul className="e6-hw-list">{presets.plan.conflicts.map(({preset,reason})=><li key={preset.id}><strong>{preset.model}</strong><span>{reason}</span></li>)}</ul></Notice>}
           {presets.plan.added.length > 0 && <><Check label={`全选 ${presets.plan.added.length} 个待新增机型（已选 ${presets.selected.size}）`} checked={presets.selected.size === presets.plan.added.length} onChange={event=>setPresets({...presets,selected:new Set(event.target.checked ? presets.plan.added.map(rule=>rule.id) : [])})}/>

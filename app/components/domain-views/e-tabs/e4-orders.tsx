@@ -186,7 +186,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       link={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined}
       rows={[...ctx.e4ReceiptAttempts.map((record): FundRecoveryRow => ({ key: record.commandKey, title: record.orderNo, expired: false, canRetry: false,
         status: { tone: "warn", label: "结果未知", line: ctx.canQueryE4 ? "可能已经建了审批单，查到之前不要重复处理。" : "可能已经建了审批单，请有操作记录读取权限的同事核对。" },
-        actions: ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原结果</Button>,
+        actions: ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原操作</Button>,
         tech: `操作编号 ${record.commandKey}` })),
       ...ctx.e4Pending.map((record): FundRecoveryRow => {
         const recovery = ctx.e4RecoveryState(record);
@@ -196,26 +196,26 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         const canRetry = !writeBlock;
         const created = !!record.receivedTicketId || record.creationConfirmed === true;
         const needQuery = !!recovery.replayBlock;
-        const retryBlock = expired ? undefined : writeBlock ?? (needQuery ? "先查询原结果，明确查不到才能重试" : undefined);
+        const retryBlock = expired ? undefined : writeBlock ?? (needQuery ? "先查询原操作，明确查不到才能重试" : undefined);
         const waiting = record.proposalStatus === "pending";
         const outcome = ctx.e4InvestigationResults[record.commandKey];
         const access = ctx.e4InvestigationAccess(record);
         const ticket = record.receivedTicketId ? `审批单 ${record.receivedTicketId}` : "审批单";
         const replayRejected = !!recovery.replayRejection;
         return { key: record.fingerprint, title: record.label, record: created ? undefined : record, outcome, createdAt: record.createdAt, expired, canRetry: !recovery.replayBlock && canRetry,
-          canQuery: ctx.canQueryE4, copy: { missingOrigin: expired ? "这条记录早于执行核查，查询原结果只查审批单。超过 24 小时不能再重试。" : "这条记录早于执行核查，查询原结果只查审批单。" },
+          canQuery: ctx.canQueryE4, copy: { missingOrigin: expired ? "这条记录早于执行核查，查询原操作只查审批单。超过 24 小时不能再重试。" : "这条记录早于执行核查，查询原操作只查审批单。" },
           status: waiting ? { tone: "warn", label: "待审批", line: `${ticket}已建好，在等另一位超级管理员批准。` }
             : created ? { tone: "warn", label: "进度没读到", line: `${ticket}已建好，审批进度没读到，再查一次，不要重新提交。` }
               : replayRejected ? { tone: "warn", label: "重试被拒绝", line: "核对原操作的结果后可以解除这条记录。" }
                 : expired ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT } : undefined,
           actions: <>
-            {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原结果"}</Button>}
+            {ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint && created} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Pending(record)}>{waiting ? "刷新审批进度" : "查询原操作"}</Button>}
             {!created && access.canSubmit && eCommandClosureOffer(outcome, expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ctx.e4Retrying} onClick={() => setClosing(record)}>核查结案</Button>}
             {!expired && !created && <Button size="sm" loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} disabledReason={retryBlock} onClick={() => void ctx.retryE4Pending(record)}>按原操作重试</Button>}
             {replayRejected && !created && <Button size="sm" disabled={!!ctx.e4Retrying} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
           </>,
           detail: <>
-            <p>{waiting ? "批准前这单不能再操作。" : created ? "点「查询原结果」再读一次审批进度。"
+            <p>{waiting ? "批准前这单不能再操作。" : created ? "点「查询原操作」再读一次审批进度。"
               : expired ? RETRY_EXPIRED_TEXT
               : `可能已经提交，有结果前这单不能再操作。${!expired && writeBlock ? writeBlock : ""}`}</p>
             {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
@@ -225,7 +225,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
 
     {ctx.e4CountsFailed
       ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单数量读不到，还不知道有没有要处理的</Conclusion>
-      : waitCount === undefined ? <Conclusion state="unknown">正在读取有没有要处理的订单…</Conclusion>
+      : waitCount === undefined ? <Conclusion state="unknown">正在加载有没有要处理的订单…</Conclusion>
         : waitCount > 0
           ? <Conclusion state="warn" lead hint={waitHint} explain={waitExplain}
               action={<>
@@ -387,10 +387,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const index = orders.findIndex((order) => order.id === o.id);
   const prev = index > 0 ? orders[index - 1] : undefined;
   const next = index >= 0 ? orders[index + 1] : undefined;
-  const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在读取…" };
+  const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在加载…" };
   // 读完详情才能做决定（OP-150）：下一步、退款条件都靠详情里的事实。
   const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id) || ctx.e4ReceiptAttempts.some((record) => record.orderNo === o.id);
-  const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未知的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
+  const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未知的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在加载订单事实" : ctx.e4ReadBlock;
   const approvalTag = <StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag>;
   // 批准后收不回来的操作：不能撤销，红按钮（VS-25、VS-106）。
   const irreversibleApproval = <>{approvalTag}<IrreversibleTag /></>;
@@ -554,7 +554,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
           detail: `手动推进 ${o.id}：${stateLabel(eff)} → ${stateLabel(nextState)}` })}>推进到下一步</Button>}
       />}>
       {!finalized && <Steps label="订单进度" items={orderFlow.map((state, position) => ({ label: stateLabel(state), state: position < idx ? "done" as const : position === idx ? "current" as const : "todo" as const }))} />}
-      {orderPending && <Notice tone="warn">{ctx.canQueryE4 ? "这单有结果未知的操作，先到页面上方查询原结果，不要重复处理。状态变了也不算确认。" : "这单有结果未知的操作，不要重复处理，状态变了也不算确认。请有操作记录读取权限的同事核对。"}</Notice>}
+      {orderPending && <Notice tone="warn">{ctx.canQueryE4 ? "这单有结果未知的操作，先到页面上方查询原操作，不要重复处理。状态变了也不算确认。" : "这单有结果未知的操作，不要重复处理，状态变了也不算确认。请有操作记录读取权限的同事核对。"}</Notice>}
       {pendingApproval && <Notice tone="warn" title="这单已有待审批操作">批准后才执行原操作。审批结束后才能发起新操作。<E4PendingApprovalDetails approval={pendingApproval} /></Notice>}
       {e4DetailError && <Notice tone="danger" title="详情加载失败" actionBelow action={<Button size="sm" onClick={() => ctx.openOrder(o)}>重试</Button>}>
         {e4DetailError} · 为避免按旧数据操作，已暂停处理。

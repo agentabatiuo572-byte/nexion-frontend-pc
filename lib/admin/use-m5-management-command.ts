@@ -96,11 +96,11 @@ export function useM5ManagementCommand<T, B, R>(options: {
     if (action === "replay" && recovery?.controller.state(record).replayBlock) return;
     if (action === "replay" && options.requireMissingReceipt && !canReplay) return;
     if (action === "replay" && isRetryExpired(record)) {
-      setMessage("原请求已超过 24 小时，不能再重试，只能查询原结果；请核对最新规则。");
+      setMessage("原请求已超过 24 小时，不能再重试，只能查询原操作；请核对最新规则。");
       return;
     }
     if (!read && !store.isDurablyStored(record.fingerprint, record.commandKey)) {
-      setMessage(action === "replay" ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+      setMessage(action === "replay" ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
       return;
     }
     const current = () => actorId === useAdminAuth.getState().session?.adminId && epoch === useAdminAuth.getState().authEpoch;
@@ -165,7 +165,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
       const receipt = querying ? await options.query(record.commandKey, record.payload) : undefined;
       if (!current()) return;
       if (receipt && receipt.status !== "SUCCEEDED" && receipt.status !== "FAILED") {
-        setMessage("原操作结果未知，请稍后再查询原结果。");
+        setMessage("原操作结果未知，请稍后再查询原操作。");
         return;
       }
       store.forget(record.fingerprint, record.commandKey); setPending(undefined);
@@ -199,7 +199,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
         setPending(record);
         if (querying && error instanceof SupportClientError && error.status === 404 && error.backendMessage === "SUPPORT_COMMAND_NOT_FOUND") setReceiptMissing(!record.denied);
         setMessage(querying ? `暂时查不到原结果；你填的内容和原请求都还在。${displayAdminError(error)}`
-          : recovery ? mUnknownText(displayAdminError(error)) : `结果未知：请查询原结果，或按原操作重试。${displayAdminError(error)}`);
+          : recovery ? mUnknownText(displayAdminError(error)) : `结果未知：请查询原操作，或按原操作重试。${displayAdminError(error)}`);
       }
     } finally {
       running.current = false;

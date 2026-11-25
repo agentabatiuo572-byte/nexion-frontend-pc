@@ -113,7 +113,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
   const waiting = items.filter((item) => item.tag.label === "待审批").length;
   const recoveryInstruction = items.some(item => item.queryLabel)
     ? "请按各条提示核对。"
-    : "先查询原结果；";
+    : "先查询原操作；";
   // 只剩旧的储备注入记录时这页只能查询，不写「按原操作重试」（OP-95）。
   const retryNote = items.some(item => item.onRetry) ? "24 小时内只能按原操作重试，不能改值。" : "";
   return (
@@ -123,7 +123,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
       items={items.map((item): RecoveryItem => ({
         key: item.commandKey, object: item.object, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
         actions: <>
-          {item.onQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>{item.queryLabel ?? "查询原结果"}</Button>}
+          {item.onQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>{item.queryLabel ?? "查询原操作"}</Button>}
           {item.queryHref && <Link className="rd-link" href={item.queryHref} prefetch={false}>{item.queryHrefLabel}</Link>}
           {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
           {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
@@ -520,7 +520,7 @@ export default function DualLedgerPage() {
   };
   const queryInjection = async (record: B1PendingWrite) => {
     const show = (note: string) => setInjectionNotes(current => ({ ...current, [record.commandKey]: note }));
-    show("正在查询原结果…");
+    show("正在查询原操作…");
     try {
       const receipt = await queryB1InjectionReceipt(record), result = receipt.state;
       if (result === "SUCCEEDED") {
@@ -536,7 +536,7 @@ export default function DualLedgerPage() {
     finally { syncPending(); }
   };
   const unregisteredNotices = unregistered.map(({ record, why }) => <Notice key={record.commandKey} tone="warn" title="没有登记储备注入" actionBelow
-    action={<>{reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link>}
+    action={<>{reach("/finance/pool") && <Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link>}
       <Button size="sm" variant="ghost" onClick={() => setUnregistered(rows => rows.filter(row => row.record.commandKey !== record.commandKey))}>知道了</Button></>}>
     <p>{why}要登记的，到资金储备与应付款重新登记。</p>
     <Facts>
@@ -555,8 +555,8 @@ export default function DualLedgerPage() {
       commandKey: record.commandKey,
       object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
       tag: { tone: "warn", label: expired ? "已过期" : "结果未知" },
-      line: record.kind === "injection" ? `${expired ? RETRY_EXPIRED_TEXT : ""}${injectionNotes[record.commandKey] ?? (expired ? "" : canReadInjectionReceipt ? "可能已经登记，先查询原结果。" : "这个账号查不了原结果，请有权限的同事核对。")}`
-        : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先查询原结果。",
+      line: record.kind === "injection" ? `${expired ? RETRY_EXPIRED_TEXT : ""}${injectionNotes[record.commandKey] ?? (expired ? "" : canReadInjectionReceipt ? "可能已经登记，先查询原操作。" : "这个账号查不了原结果，请有权限的同事核对。")}`
+        : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经生效，先读取当前值核对。",
       body: `${record.kind === "threshold" ? [["红线", record.facts.redlinePct, Number(record.form.redlinePct)], ["健康线", record.facts.healthyPct, Number(record.form.healthyPct)]]
         .map(([name, from, to]) => `${name} ${from === to ? `${fmtConfigPct(Number(to))}（不变）` : `${fmtConfigPct(Number(from))} → ${fmtConfigPct(Number(to))}`}`).join(" · ") : record.kind === "injection" ? `${money(Number(record.form.amount))} · ${record.form.voucherType === "BANK" ? "银行流水号" : "链上交易哈希"} ${record.form.voucher}` : "标记覆盖率告警已处理"} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
       expired,
@@ -564,9 +564,9 @@ export default function DualLedgerPage() {
         : expired ? "当前值仅供核对，原操作记录继续保留。" : "24 小时内只能按原操作重试，不能改值。",
       onRetry: !recovery.replayBlock ? () => recoverWrite(record) : undefined,
       onRelease: record.kind !== "injection" && recovery.replayRejection ? () => setReleasing(record) : undefined,
-      queryLabel: record.kind !== "injection" && expired ? READ_CURRENT_VALUE : undefined,
+      queryLabel: record.kind !== "injection" ? READ_CURRENT_VALUE : undefined,
       queryHref: injectionPage ? "/finance/pool" : undefined,
-      queryHrefLabel: "去资金储备与应付款 →",
+      queryHrefLabel: "去资金储备与应付款 →",
       onQuery: injection ? canReadInjectionReceipt ? () => void queryInjection(record) : undefined
         : () => void readCurrentForWrite(record),
     };
@@ -579,7 +579,7 @@ export default function DualLedgerPage() {
       commandKey: pendingApproval.commandKey,
       object: "降低红线的审批",
       tag: verified ? { tone: "warn", label: "待审批" } : { tone: "warn", label: expired ? "已过期" : "结果未知" },
-      line: verified ? "等另一位超级管理员批准，批准前红线不变。" : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经提交，先查询原结果。",
+      line: verified ? "等另一位超级管理员批准，批准前红线不变。" : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经提交，先查询原操作。",
       body: `红线 ${fmtConfigPct(pendingApproval.values.redlinePct)} · 健康线 ${fmtConfigPct(pendingApproval.values.healthyPct)} · ${timeText(new Date(pendingApproval.createdAt).toISOString())}提交`,
       expired,
       note: verified ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
@@ -610,7 +610,7 @@ export default function DualLedgerPage() {
   // ---------- 结论 ----------
   const alertActive = valuationReliable && zone !== "success";
   const withdrawalsLink = reach("/finance/withdrawals") && !alertAcked && (
-    <Link href="/finance/withdrawals" prefetch={false} className="rd-btn" data-variant={zone === "danger" ? "danger-outline" : "secondary"} data-size="md"><span className="rd-btn-face">去提现审核 →</span></Link>
+    <Link href="/finance/withdrawals" prefetch={false} className="rd-btn" data-variant={zone === "danger" ? "danger-outline" : "secondary"} data-size="md"><span className="rd-btn-face">去提现审核 →</span></Link>
   );
   const ackButton = alertActive && !alertAcked && canAcknowledge && (
     <Button disabledReason={newWriteBlocked || pendingWrites.some(record => record.kind === "ack") ? "请先重新读取并核对原操作，再发起新修改。" : undefined} onClick={() => setActionConfirm(command("ack"))}>标记已处理</Button>
@@ -738,10 +738,10 @@ export default function DualLedgerPage() {
           },
         ]} />
         {reserveLink && (
-          <nav className="rd-links" aria-label="储备注入"><span>储备注入</span><Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link></nav>
+          <nav className="rd-links" aria-label="储备注入"><span>储备注入</span><Link className="rd-link" href="/finance/pool" prefetch={false}>去资金储备与应付款 →</Link></nav>
         )}
         {reach("/emergency/kill-switch") && (
-          <nav className="rd-links" aria-label="紧急处理"><span>紧急处理</span><Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关 →</Link></nav>
+          <nav className="rd-links" aria-label="紧急处理"><span>紧急处理</span><Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>去紧急停用开关 →</Link></nav>
         )}
       </div>
     </Panel>
@@ -801,12 +801,12 @@ export default function DualLedgerPage() {
       <p className="b1-caliber">历史点 = 当时的储备 − 现在的应付款，只反映储备变化</p>
       <div className="rd-toolbar">
         <Segments label="储备与应付款差额趋势时间范围" value={exposureWindow} onChange={setExposureWindow} items={WINDOWS} />
-        <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天${axisWan ? " · 纵轴单位 万 USDT" : ""}` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在读取…"}</span>
+        <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天${axisWan ? " · 纵轴单位 万 USDT" : ""}` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在加载…"}</span>
       </div>
       {exposureError ? (
-        <BlockState state="error" title="差额走势读取失败，已暂停显示" detail={`${exposureError} 切换时间范围或刷新页面会重新读取。`} />
+        <BlockState state="error" title="差额走势加载失败，已暂停显示" detail={`${exposureError} 切换时间范围或刷新页面会重新读取。`} />
       ) : exposureLoading ? (
-        <BlockState state="loading" title="正在读取差额走势…" />
+        <BlockState state="loading" title="正在加载差额走势…" />
       ) : currentExposure?.valuationReliable === false ? (
         <BlockState state="empty" title={`差额${TREASURY_VALUATION_UNAVAILABLE}`} detail="计入的 UVT 应付款缺少有效价格。" />
       ) : exposureSeries.length === 0 || !latest ? (
@@ -1014,10 +1014,10 @@ export default function DualLedgerPage() {
       <RdPage className="b1-page">
         {header()}
         {savedWhileUnread && !loading && <Notice tone="ok" title={savedWhileUnread}>现在的数据没读到，读到后才能再改。</Notice>}
-        <Conclusion state="unknown" icon={ShieldQuestion}>{loading ? "资金状态：正在读取" : "资金状态：暂时无法判断"}</Conclusion>
+        <Conclusion state="unknown" icon={ShieldQuestion}>{loading ? "资金状态：正在加载" : "资金状态：暂时无法判断"}</Conclusion>
         {loading
-          ? <BlockState state="loading" title="正在读取储备、应付款和覆盖率…" />
-          : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} retryLabel="重新读取" />}
+          ? <BlockState state="loading" title="正在加载储备、应付款和覆盖率…" />
+          : <BlockState state="error" title="资金数据加载失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} />}
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}
@@ -1036,7 +1036,7 @@ export default function DualLedgerPage() {
         <BlockState state="error"
           title={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "应付款明细是空的，暂时算不出构成" : b1DataError}
           detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "九类应付款一项都没读到。重读一次；仍是空的请联系值班人员核对账本。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
-          onRetry={refreshB1} retryLabel="重新读取" />
+          onRetry={refreshB1} />
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}
