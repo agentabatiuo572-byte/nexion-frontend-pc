@@ -447,7 +447,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         else if (result?.conclusion === "rejected") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, ticket: undefined, verifiedNotExecuted: true });
         else recoveryFor(full).settleFromQuery(full, "succeeded");
         syncPending();
-        if (row.status !== "pending" && attemptKey !== full.commandKey && !edit && !confirmation) { await refresh(); await refreshEarly(); }
+        // 只在同一张单还在发送时跳过；发起人在原页签查到终态后也要重读目录，否则编辑抽屉拿到的是批准前的值。
+        if (row.status !== "pending" && busy !== full.commandKey && !edit && !confirmation) { await refresh(); await refreshEarly(); }
       }
     } catch (failure) {
       const message = full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? (failure as Error).message : `这次没查到：${eReadError(failure)}`;
