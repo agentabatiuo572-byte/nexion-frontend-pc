@@ -74,9 +74,11 @@ const draftAction = (payload: Payload) => payload.kind === "proposal" ? payload.
 type RefreshYieldBinding = () => Promise<E2YieldComparison[] | undefined>;
 type RefreshSection = (section: E6Section) => Promise<boolean>;
 const READBACK_FAILED = "当前数据没有重新读到，请重试读取。";
-function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: RefreshSection) {
+function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: RefreshSection, phoneWriteBlock?: string) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const owner = session!.adminId, rights = session!.authorities;
+  const currentPhoneWriteBlock = useRef(phoneWriteBlock);
+  currentPhoneWriteBlock.current = phoneWriteBlock;
   const [records, setRecords] = useState<E6Pending[]>([]);
   const pending = records.filter(isE6ActiveRecord);
   const [settledByKey, setSettledByKey] = useState<Record<string, { outcome: "succeeded" | "not-executed"; result?: E6WriteReceipt }>>({});
@@ -91,7 +93,8 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     if (restoredDraft.current && operations.includes(draftAction(restoredDraft.current.payload))) restoredDraft.current = undefined;
   }, []);
   const prepareDraft = async (record: E6Pending) => {
-    const stillAvailable = () => canWriteOriginal(record) && !locked(record.scope) && [...editors.current.values()].every(editor => !editor.isOpen);
+    const stillAvailable = () => (record.section !== "phones" || !currentPhoneWriteBlock.current)
+      && canWriteOriginal(record) && !locked(record.scope) && [...editors.current.values()].every(editor => !editor.isOpen);
     if (preparingDraft.current || !stillAvailable()) return false;
     preparingDraft.current = true;
     try {
@@ -156,9 +159,13 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
       : scope.startsWith("phone:") && (String(r.device.deviceId) === scope.split(":")[1]
         || r.device.userId === scope.split(":")[2] && ["pause", "resume"].includes(r.intent)));
   const allowed = canWriteOriginal;
-  const canRetry = (record?: E6Pending) => !!record && !e6Recovery.state(record).replayBlock;
+  const canRetry = (record?: E6Pending) => !!record && (record.section !== "phones" || !phoneWriteBlock) && !e6Recovery.state(record).replayBlock;
+  const assertSectionWritable = (section: E6Section) => {
+    if (section === "phones" && currentPhoneWriteBlock.current) throw new Error(currentPhoneWriteBlock.current);
+  };
   async function sendOriginal(record: E6Pending, retry: boolean): Promise<E6WriteReceipt | undefined> {
     if (sending.current || !allowed(record)) throw new Error("当前没有这项操作的提交权限。");
+    assertSectionWritable(record.section);
     if (retry) {
       const current = currentRecord(record.commandKey);
       if (!current || isE6VerifiedDraft(current) || current.terminal || inFlight.current.has(current.commandKey)) {
@@ -221,6 +228,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     } finally { sending.current = false; end(record.commandKey); }
   }
   async function send(original: E6Pending, retry: boolean) {
+    assertSectionWritable(original.section);
     const result = retry
       ? await e6Recovery.replay(original, record => sendOriginal(record, true)).finally(sync)
       : await sendOriginal(original, false);
@@ -233,6 +241,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
   }
   async function start(scope: string, section: E6Section, label: string, payload: Payload) {
     if (sending.current) throw new Error("正在提交原操作，请等结果。");
+    assertSectionWritable(section);
     if (isYieldSkuProposal(payload) && (!visible(section) || !canBindYieldSku)) throw new Error("当前没有这项操作的提交权限。");
     if (locked(scope)) throw new Error("这个对象有结果未知的原操作，请先核对原操作。");
     const commandKey = createA2CommandKey("e6"), fingerprint = `${owner}|${scope}`;
@@ -311,6 +320,18 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     sync();
     return released;
   };
+  async function rereadApprovedPhone(record: E6Pending) {
+    if (!visible("phones") || inFlight.current.has(record.commandKey)) return;
+    begin(record.commandKey);
+    try {
+      if (!await refreshSection("phones")) return;
+      const current = currentRecord(record.commandKey);
+      if (current?.terminal === "approved") {
+        commands.forget(current.fingerprint, current.commandKey);
+        sync();
+      }
+    } finally { end(record.commandKey); }
+  }
   async function settleDirect(record: E6Pending, conclusion: Parameters<typeof e6Recovery.settleFromQuery>[1], originalRiskResponse?: PhoneRiskOverview) {
     const current = currentRecord(record.commandKey);
     if (!current) return;
@@ -371,7 +392,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     } finally { if (active.current) sync(); end(record.commandKey); }
   }
   return { records, pending, settledByKey, registerDraftEditor, clearDraftEditor, prepareDraft, settleDirect, devicePending, legacy, busy: busyKeys.size > 0, isBusy: (key: string) => busyKeys.has(key), sending: sending.current,
-    notes, technicalErrors, rejected: pending.filter(r => !!e6Recovery.state(r).replayRejection).map(r => r.commandKey), recovery: e6Recovery, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseRejected, checkDirect, send, refreshYieldBinding,
+    notes, technicalErrors, rejected: pending.filter(r => !!e6Recovery.state(r).replayRejection).map(r => r.commandKey), recovery: e6Recovery, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseRejected, checkDirect, send, refreshYieldBinding, phoneWriteBlock, rereadApprovedPhone,
     canInvestigate: canInvestigateECommand("device_e5_read"),
     canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
@@ -381,8 +402,8 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     forget: (record: E6Pending) => { commands.forget(record.fingerprint, record.commandKey); sync(); },
   };
 }
-export function E6MutationProvider({ children, refreshYieldBinding, refreshSection }: { children: ReactNode; refreshYieldBinding: RefreshYieldBinding; refreshSection: RefreshSection }) {
-  const mutations = useMutations(refreshYieldBinding, refreshSection);
+export function E6MutationProvider({ children, refreshYieldBinding, refreshSection, phoneWriteBlock }: { children: ReactNode; refreshYieldBinding: RefreshYieldBinding; refreshSection: RefreshSection; phoneWriteBlock?: string }) {
+  const mutations = useMutations(refreshYieldBinding, refreshSection, phoneWriteBlock);
   return <Context.Provider value={mutations}>{children}</Context.Provider>;
 }
 export function useE6Mutations() { return useContext(Context)!; }
@@ -474,7 +495,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         result: (r.payload.kind === "device" || r.payload.kind === "risk") && !refused ? commandOutcomeSummary(outcomes[r.commandKey], expired, r.payload.kind === "risk" ? m.canInvestigateRisk : m.canInvestigate) : undefined,
         note: noteOf(r) || outcomes[r.commandKey] || riskShown || closureOpen(outcomes[r.commandKey], expired) ? note : undefined,
         noteKey: [noteOf(r) ?? "", outcomes[r.commandKey] ? JSON.stringify(outcomes[r.commandKey]) : "", riskReceipts[r.commandKey]?.status ?? ""].join("|").replace(/^\|+$/, ""),
-        actions: verified ? <><Button size="sm" onClick={() => {
+        actions: verified ? <><Button size="sm" disabledReason={section === "phones" ? m.phoneWriteBlock : undefined} onClick={() => {
           void m.prepareDraft(r).then(opened => {
             if (!opened) toast("暂时不能打开原草稿，请核对当前编辑和对象状态。", "warn");
           }).catch(failure => toast(eReadError(failure), "warn"));
@@ -492,9 +513,13 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
           }, () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
           {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
           {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
-          {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.canRetry(r) || m.busy} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
+          {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.canRetry(r) || m.busy} disabledReason={section === "phones" ? m.phoneWriteBlock : undefined} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
           {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
-          {r.terminal && <Button size="sm" onClick={() => { m.forget(r); onRead?.(); }}>准备新变更</Button>}
+          {r.terminal && <Button size="sm" disabled={section === "phones" && m.isBusy(r.commandKey)} onClick={() => {
+            if (section === "phones" && r.terminal === "approved") {
+              void m.rereadApprovedPhone(r).catch(failure => toast(eReadError(failure), "warn"));
+            } else { m.forget(r); onRead?.(); }
+          }}>准备新变更</Button>}
           {(refused && !r.ticketId) && <Button size="sm" disabled={!refused && m.isBusy(r.commandKey)} onClick={() => m.setRelease(r)}>解除原操作记录</Button>}
         </>,
         detail: <><p>{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")} 提交，理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary={r.commandKey}>{technical(r)}</Fold> };

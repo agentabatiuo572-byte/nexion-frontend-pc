@@ -27,6 +27,7 @@ import { b1Commands, b1Recovery, executeB1Command, queryB1InjectionReceipt, type
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
+import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { DOutcomeUnknownError } from "@/lib/admin/d-client";
 import { TREASURY_VALUATION_UNAVAILABLE } from "@/lib/admin/treasury-valuation";
 import { amountDigits, amountText } from "@/lib/admin/treasury-amount";
@@ -48,6 +49,18 @@ type Mc = (
 
 function command(kind: Exclude<Mc["kind"], "threshold">): Mc {
   return { kind, idempotencyKey: `b1-${kind}-${crypto.randomUUID()}` };
+}
+
+function rebaseThreshold(before: { redlinePct: number; healthyPct: number },
+  mine: { redlinePct: number; healthyPct: number }, latest: typeof before) {
+  const merged = rebaseRecoveryFields(before, mine, latest);
+  return {
+    draft: { redlinePct: String(merged.redlinePct), healthyPct: String(merged.healthyPct) },
+    otherChanges: [
+      before.redlinePct !== latest.redlinePct && `红线 ${fmtConfigPct(before.redlinePct)} → ${fmtConfigPct(latest.redlinePct)}`,
+      before.healthyPct !== latest.healthyPct && `健康线 ${fmtConfigPct(before.healthyPct)} → ${fmtConfigPct(latest.healthyPct)}`,
+    ].filter((value): value is string => !!value),
+  };
 }
 
 /** 全页时间一种写法：2026-11-13 14:30（北京时间），和资金储备与应付款一致。 */
@@ -157,9 +170,6 @@ export default function DualLedgerPage() {
   useEffect(() => {
     if (bDomain.hasData && !bDomain.loading && !bDomain.error) {
       setNeedsRead(false);
-      setActionConfirm(current => current?.kind === "threshold" && !current.original && !current.approvalRecovery
-        && current.baseline.thresholdVersion !== bDomain.ledger.thresholdVersion
-        ? { ...current, baseline: bDomain.ledger, facts: undefined } : current);
     }
   }, [bDomain.data, bDomain.hasData, bDomain.loading, bDomain.error]);
   const [showZero, setShowZero] = useState(false);
@@ -319,11 +329,7 @@ export default function DualLedgerPage() {
     setNeedsRead(true);
     setExposureRevision(value => value + 1);
     const next = await bDomain.reload();
-    if (next) {
-      setNeedsRead(false);
-      setActionConfirm(current => current?.kind === "threshold" && !current.original && !current.approvalRecovery
-        ? { ...current, baseline: next.ledger, facts: undefined } : current);
-    }
+    if (next) setNeedsRead(false);
     return next;
   };
   const readActive = async () => {
@@ -331,6 +337,21 @@ export default function DualLedgerPage() {
     if (!next) throw new Error("资金数据读取失败，不显示旧数据");
     return next;
   };
+  const thresholdConflict = (current: Extract<Mc, { kind: "threshold" }>, values: BusinessFormValue) =>
+    new ConfirmReadConflict({
+      readLatest: async () => {
+        const { ledger } = await readActive();
+        const rebased = rebaseThreshold(current.baseline, {
+          redlinePct: round2(Number(values.redlinePct)), healthyPct: round2(Number(values.healthyPct)),
+        }, ledger);
+        setActionConfirm(open => open?.idempotencyKey === current.idempotencyKey ? {
+          kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
+          baseline: ledger, recoveryDraftKey: current.recoveryDraftKey, ...rebased,
+        } : open);
+        return true;
+      },
+      renderNotice: readLatest => <BlockState state="error" title={THRESHOLD_REFRESHED} onRetry={readLatest} retryLabel="读取最新" />,
+    }, THRESHOLD_REFRESHED);
   // 框关掉之后框里的错误行看不到，原因改用提示条写一次；缺权限由外壳统一提示。
   const toastClosedDialogError = (error: unknown) => { if (!isPermissionDenied(error)) setToast(displayAdminError(error)); };
   const submitThresholdApproval = async (reason: string, values: BusinessFormValue, lookupOnly = false) => {
@@ -352,6 +373,9 @@ export default function DualLedgerPage() {
     } catch (error) {
       if (!original && isBCommandRejection(error, false)) {
         if (mc?.kind === "threshold") setActionConfirm({ ...mc, approvalRecovery: undefined, draft: values, draftReason: reason });
+        if (mc?.kind === "threshold" && error instanceof Error && "backendMessage" in error && error.backendMessage === "CONFIG_VERSION_CONFLICT") {
+          throw thresholdConflict(mc, values);
+        }
         await refreshB1();
       } else if (original && !pendingThresholdConfigApproval("B1", session.adminId)) {
         setActionConfirm(null);
@@ -396,10 +420,7 @@ export default function DualLedgerPage() {
           if (!Number.isFinite(redline) || redline < 80 || redline > 150) throw new Error("红线必须在 80%–150%");
           if (!Number.isFinite(healthy) || healthy < 100 || healthy > 200) throw new Error("健康线必须在 100%–200%");
           if (healthy <= redline) throw new Error("健康线必须高于红线");
-          if (current.baseline.thresholdVersion !== LEDGER.thresholdVersion) {
-            setActionConfirm({ ...current, baseline: LEDGER, facts: undefined, draft: form, draftReason: reason });
-            throw new Error(THRESHOLD_REFRESHED);
-          }
+          if (current.baseline.thresholdVersion !== LEDGER.thresholdVersion) throw thresholdConflict(current, form);
           if (redline < current.baseline.redlinePct) {
             if (current.baseline.thresholdVersion === null) throw new Error("暂未取得当前阈值版本，请刷新后重试。");
             await submitThresholdApproval(reason, form);
@@ -432,10 +453,11 @@ export default function DualLedgerPage() {
             ? () => discardThresholdRecoveryDraft("B1", session.adminId, current.recoveryDraftKey!) : undefined);
       } catch (error) {
         if (!current.original && isBCommandRejection(error, false)) {
-          setActionConfirm(current.original ? null : { ...current, requestKey: `b1-${current.kind}-${crypto.randomUUID()}`, original: undefined, draft: original.form, draftReason: JSON.parse(original.body).reason });
-          if (current.original) toastClosedDialogError(error);
+          const conflict = current.kind === "threshold" && error instanceof Error && "reasonCode" in error && error.reasonCode === "CONFIG_VERSION_CONFLICT";
+          setActionConfirm({ ...current, requestKey: `b1-${current.kind}-${crypto.randomUUID()}`, original: undefined, draft: original.form,
+            draftReason: conflict ? undefined : JSON.parse(original.body).reason });
+          if (conflict && current.kind === "threshold") throw thresholdConflict(current, original.form);
           const fresh = await refreshB1();
-          if (fresh && !current.original && error instanceof Error && "reasonCode" in error && error.reasonCode === "CONFIG_VERSION_CONFLICT") throw new Error(THRESHOLD_REFRESHED);
           if (fresh && error instanceof Error && "reasonCode" in error && error.reasonCode === "B1_THRESHOLDS_APPROVAL_REQUIRED") {
             setActionConfirm({ kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
               baseline: fresh.ledger, draft: original.form, draftReason: JSON.parse(original.body).reason, recoveryDraftKey: current.recoveryDraftKey });
@@ -553,22 +575,11 @@ export default function DualLedgerPage() {
   const openThreshold = (draft?: ReturnType<typeof thresholdRecoveryDrafts<"B1">>[number]) => {
     if (mc || !canConfigureThresholds || newWriteBlocked || pendingApproval || pendingWrites.some(record => record.kind === "threshold")) return;
     const latest = { redlinePct, healthyPct };
-    let recovered: BusinessFormValue | undefined;
-    let otherChanges: string[] | undefined;
-    if (draft) {
-      if (!draft.b1Facts || !session) return;
-      const { redlinePct: savedRed, healthyPct: savedHealthy } = draft.values;
-      const next = rebaseRecoveryFields(draft.b1Facts, { redlinePct: savedRed, healthyPct: savedHealthy }, { ...draft.b1Facts, ...latest });
-      recovered = { redlinePct: String(next.redlinePct), healthyPct: String(next.healthyPct) };
-      const before = draft.b1Facts;
-      otherChanges = [
-        before.redlinePct !== redlinePct && `红线 ${fmtConfigPct(before.redlinePct)} → ${fmtConfigPct(redlinePct)}`,
-        before.healthyPct !== healthyPct && `健康线 ${fmtConfigPct(before.healthyPct)} → ${fmtConfigPct(healthyPct)}`,
-      ].filter((value): value is string => !!value);
-    }
+    if (draft && (!draft.b1Facts || !session)) return;
     setActionConfirm({
       kind: "threshold", idempotencyKey: `b1-threshold-${crypto.randomUUID()}`,
-      baseline: { ...latest, thresholdVersion: LEDGER.thresholdVersion }, draft: recovered, otherChanges, recoveryDraftKey: draft?.commandKey,
+      baseline: { ...latest, thresholdVersion: LEDGER.thresholdVersion }, recoveryDraftKey: draft?.commandKey,
+      ...(draft?.b1Facts && rebaseThreshold(draft.b1Facts, draft.values, latest)),
     });
   };
   if (session) for (const draft of thresholdRecoveryDrafts("B1", session.adminId)) pendingItems.push({

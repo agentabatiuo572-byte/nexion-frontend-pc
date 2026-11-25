@@ -521,10 +521,13 @@ export default function RiskRadarPage() {
       if (rejected) {
         if (thresholdOriginal || pendingApproval) await refreshAfterWrite();
         else {
+          const versionConflict = cause instanceof Error && "backendMessage" in cause
+            && cause.backendMessage === "B5_THRESHOLD_VERSION_CONFLICT";
+          if (versionConflict) setReason("");
           setThresholdOriginal(null); setApprovalRecovery(null); setPreview(null);
           setNeedsFreshRadar(true);
           const fresh = await radar.reload();
-          rereadAfterConflict = !!fresh && cause instanceof Error && "backendMessage" in cause && cause.backendMessage === "B5_THRESHOLD_VERSION_CONFLICT";
+          rereadAfterConflict = !!fresh && versionConflict;
         }
       } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
       setThresholdUnknown(!!original && !rejected);

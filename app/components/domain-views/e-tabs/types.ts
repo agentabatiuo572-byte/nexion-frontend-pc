@@ -142,7 +142,7 @@ export interface EViewCtx {
   e2Loading: boolean;
   e2Error: string | null;
   e2TaskCatalogReady: boolean;
-  refreshE2: () => Promise<E2OnboardingYieldConfig | undefined>;
+  refreshE2: () => Promise<{ taskCatalogReady: boolean; phone?: E2OnboardingYieldConfig }>;
   openAddTask: () => void;
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   // E3 生命周期 & Trade-in(配置/指标/tx 监控均走后端 API)

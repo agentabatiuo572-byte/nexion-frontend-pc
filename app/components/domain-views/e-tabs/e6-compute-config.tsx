@@ -22,12 +22,17 @@ export function E6ComputeConfig({ctx}:{ctx:EViewCtx}) {
   const session=useAdminAuth(s=>s.session),epoch=useAdminAuth(s=>s.authEpoch);
   if(!session)return <BlockState state="denied" title="请重新登录后查看手机算力配置"/>;
   const refreshYieldBinding = async () => {
-    const [phone, candidatesReady] = await Promise.all([ctx.refreshE2(), ctx.refreshE6SkuCandidates()]);
+    const [{ phone }, candidatesReady] = await Promise.all([ctx.refreshE2(), ctx.refreshE6SkuCandidates()]);
     return candidatesReady && phone?.tiers.length === 5 ? phone.comparisons : undefined;
   };
-  const refreshSection = async (section: E6Section) => section === "phones" ? ctx.refreshE5()
-    : section === "calibration" ? ctx.refreshE6() : !!await ctx.refreshE2();
-  return <E6MutationProvider refreshSection={refreshSection} key={`${session.adminId}:${epoch}`} refreshYieldBinding={refreshYieldBinding}><E6Content ctx={ctx}/></E6MutationProvider>;
+  const refreshSection = async (section: E6Section) => {
+    if (section === "phones") return ctx.canReadE5 && await ctx.refreshE5();
+    if (section === "calibration") return ctx.refreshE6();
+    const { taskCatalogReady, phone } = await ctx.refreshE2();
+    return section === "tasks" ? taskCatalogReady : !!phone;
+  };
+  const phoneWriteBlock = ctx.e5Loading ? "正在读取手机列表" : ctx.e5DeviceError ? "手机列表读取失败，请先重试" : undefined;
+  return <E6MutationProvider refreshSection={refreshSection} phoneWriteBlock={phoneWriteBlock} key={`${session.adminId}:${epoch}`} refreshYieldBinding={refreshYieldBinding}><E6Content ctx={ctx}/></E6MutationProvider>;
 }
 function E6Content({ctx}:{ctx:EViewCtx}) {
   const m=useE6Mutations(),ids=useTabIds();

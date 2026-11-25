@@ -324,7 +324,10 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
-    return phoneResult.status === "fulfilled" && canReadE2 ? phoneResult.value : undefined;
+    return {
+      taskCatalogReady: canReadE2 && tasksResult.status === "fulfilled",
+      phone: canReadE2 && phoneResult.status === "fulfilled" ? phoneResult.value : undefined,
+    };
   }, [canReadE2]);
   useEffect(() => { if (tab === "E6" && canReadE2) void refreshE2(); }, [tab, canReadE2, refreshE2]);
 
@@ -745,7 +748,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── E5 设备管理:服务端 fleet / overview 为单一来源 ──
   const [e5Devices, setE5Devices] = useState<E5Device[]>([]);
   const [e5Overview, setE5Overview] = useState<E5Overview | null>(null);
-  const [e5Loading, setE5Loading] = useState(tab === "E5");
+  const [e5Loading, setE5Loading] = useState(tab === "E5" || tab === "E6");
   const [e5DeviceError, setE5DeviceError] = useState<string | null>(null);
   const [e5OverviewError, setE5OverviewError] = useState<string | null>(null);
   const [e5Page, setE5Page] = useState(1);

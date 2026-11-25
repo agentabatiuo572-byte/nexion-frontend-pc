@@ -33,7 +33,7 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
   const columns=useTableColumns("e6-user-phones",[{key:"device",label:"设备",locked:"设备不能隐藏"},{key:"user",label:"用户"},{key:"state",label:"状态",locked:"状态不能隐藏"},{key:"daily",label:"每日收益"},{key:"battery",label:"电量和心跳"},...(canAct?[{key:"action",label:"操作",locked:"操作不能隐藏"}]:[]),{key:"task",label:"当前任务",extra:true}]);
   const [confirm,setConfirm]=useState<{device:E5Device;action:Action}|null>(null);
   const confirmRef = useRef(confirm); confirmRef.current = confirm;
-  const readBlock = ctx.e5Loading ? "正在读取手机列表" : ctx.e5DeviceError ? "手机列表读取失败，请先重试" : undefined;
+  const readBlock = m.phoneWriteBlock;
   const precision=e6AmountPrecision(ctx.e5Devices.flatMap(d=>d.dailyUsdt==null?[]:[d.dailyUsdtText??String(d.dailyUsdt)]));
   const query=(values:Record<string,string|number>)=>{const u=new URL(window.location.href);for(const [k,v]of Object.entries(values))u.searchParams.set(k,String(v));window.history.replaceState(window.history.state,"",`${u.pathname}${u.search}${u.hash}`);};
   useEffect(()=>{const u=new URLSearchParams(window.location.search),size=Number(u.get("phonePageSize")),page=Number(u.get("phonePage"));if([10,20,50].includes(size))ctx.setE5PageSize(size);if(u.has("phoneKeyword"))ctx.setE5Keyword(u.get("phoneKeyword")!);if(Number.isSafeInteger(page)&&page>0)ctx.setE5Page(page);},[]);
@@ -77,9 +77,9 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
       return;
     }
     if (!result) return;
-    if (result.readbackFailed) ctx.toast("原操作已执行，最新手机列表暂时读不到，请重试读取。", "warn");
+    if (result.pendingDeactivate) ctx.toast(`已申请，任务结算后停用。${result.readbackFailed ? "最新手机列表暂时读不到，请重试读取。" : ""}`, result.readbackFailed ? "warn" : undefined);
+    else if (result.readbackFailed) ctx.toast("原操作已执行，最新手机列表暂时读不到，请重试读取。", "warn");
     else if (result.changedCount !== undefined && (action === "pause" || action === "resume")) ctx.toast(`${action === "pause" ? "已暂停" : "已恢复"} ${result.changedCount} 台设备`);
-    else if (result.pendingDeactivate) ctx.toast("已申请停用，等待当前任务结算后自动停用");
     else ctx.toast("原操作已执行，已重新读取手机列表。");
   };
   const scope=confirm?(confirm.action==="pause"||confirm.action==="resume"?`user:${confirm.device.userId}`:phoneScope(confirm.device)):"";

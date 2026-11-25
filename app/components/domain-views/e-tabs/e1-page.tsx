@@ -175,12 +175,15 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const currentPhase = e1CurrentPhase(gates);
   const phaseBlock = currentPhase.phaseId ? undefined : `${E1_CURRENT_PHASE_UNVERIFIED}，暂不能提交`;
   const archiveCurrentBlock = (phaseId?: string) => phaseBlock ?? (phaseId === currentPhase.phaseId ? "当前阶段不能删除" : undefined);
+  const skuMediaBlock = (skuId?: string, draftId?: string) =>
+    actor && e1PendingMediaFor(actor, skuId, draftId) ? E1_PENDING_MEDIA : undefined;
   const readBlock: E1CatalogContext["writeBlockedReason"] = (input, values) => {
     switch (input.op) {
       case "sku-save": return catalogReadBlock ?? (gatesReadBlock ? "商品编辑需要开放阶段和审核契约，请先读取开放阶段" : edit?.unlock ? phaseBlock : undefined);
-      case "sku-delete": return catalogReadBlock;
+      case "sku-delete": return catalogReadBlock ?? skuMediaBlock(input.target);
       case "sku-status": {
-        if (catalogReadBlock || input.status !== "on") return catalogReadBlock;
+        const blocked = catalogReadBlock ?? skuMediaBlock(input.target);
+        if (blocked || input.status !== "on") return blocked;
         const sku = skus.find(item => item.id === input.target);
         if (sku && !supportsDeviceMonthlyTarget(sku.seriesCode)) return E1_MISSING_SERIES_REASON;
         if (gatesReadBlock) return gatesReadBlock;
@@ -359,8 +362,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const submit = async (spec: ProposeSpec) => {
     if (!canWrite || !actor || sending.current) throw new Error("正在提交或账号没有提交权限，本次没有提交");
     const object = e1Object(spec);
-    if (object.startsWith("device_sku|") && (e1PendingMediaFor(actor, spec.obj)
-      || spec.command.op === "e1_sku_create" && e1PendingMediaFor(actor, undefined, edit?.draftId))) throw new Error(E1_PENDING_MEDIA);
+    const mediaBlock = object.startsWith("device_sku|") && (skuMediaBlock(spec.obj)
+      ?? (spec.command.op === "e1_sku_create" ? skuMediaBlock(undefined, edit?.draftId) : undefined));
+    if (mediaBlock) throw new Error(mediaBlock);
     if (e1Pending(actor).some(r => !r.verifiedNotExecuted && e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有待审批或待核对的操作，请先核对原操作");
     const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
     const savedSpec = JSON.parse(JSON.stringify(spec)) as ProposeSpec;
