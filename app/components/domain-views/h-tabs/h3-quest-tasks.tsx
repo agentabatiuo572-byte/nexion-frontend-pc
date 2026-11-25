@@ -1094,7 +1094,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           reasonMax={mc.reasonMax}
           initialReason={mc.initialReason}
           getPendingReason={mc.getPendingReason}
-          getPendingRecovery={() => savedForConfirm && { ...recoveryFor(savedForConfirm), query: undefined }} /* 框里已有原操作的「查询原结果」，不再出第二个 */
+          getPendingRecovery={() => savedForConfirm && recoveryFor(savedForConfirm)}
           getPendingBusinessValue={mc.getPendingBusinessValue}
           completionCopy={mc.inlineApproval ? mc.completionCopy : undefined}
           onClose={() => setMc(current => current === mc ? null : current)}
