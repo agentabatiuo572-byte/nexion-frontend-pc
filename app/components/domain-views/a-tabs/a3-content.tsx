@@ -42,7 +42,7 @@ const localeName = (key: string) => LANGUAGE_LABELS[key] ?? key;
 const STATUS_NAME: Record<string, string> = { DRAFT: "草稿", PUBLISHED: "已发布", UNPUBLISHED: "已撤下公开版本" };
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const contentMap = (value: unknown): value is Row => !!value && typeof value === "object" && !Array.isArray(value);
-type DeletedEdit = { path: string[]; before: Row; draft: Row };
+type DeletedEdit = { path: string[]; draft: Row };
 const UNRESOLVED_DELETION = "先核对最新版本中已删除的内容。";
 
 function blocksById(value: unknown) {
@@ -69,7 +69,7 @@ function rebaseContent(latest: Row, submitted: Row, baseline: Row, deleted: Dele
       delete rebased[key];
     } else if (contentMap(draft) && contentMap(before)) {
       if (contentMap(current)) rebased[key] = rebaseContent(current, draft, before, deleted, itemPath);
-      else if (!Object.hasOwn(latest, key)) deleted.push({ path: itemPath, before, draft });
+      else if (!Object.hasOwn(latest, key)) deleted.push({ path: itemPath, draft });
       else rebased[key] = draft;
     } else if (key === "blocks") {
       const currentBlocks = blocksById(current), draftBlocks = blocksById(draft), baselineBlocks = blocksById(before);
@@ -93,12 +93,17 @@ function rebaseDocument<K extends "locales" | "contents", T extends { version: s
   };
 }
 
-function deletedEditRows(edits: DeletedEdit[]) {
-  return edits.map(({ path }) => ({
-    key: JSON.stringify(path),
-    label: path.filter(item => item !== "locales" && item !== "blocks").map(item => PAGE_LABELS[item] ?? localeName(item)).join(" · "),
-    text: "最新版本已删除这项内容，你修改过它。你的修改仍保留，尚未恢复到草稿。",
-  }));
+function restoreDeletedEdit(content: Row, [key, ...path]: readonly string[], draft: Row): Row {
+  if (!path.length) return { ...content, [key]: draft };
+  if (key === "blocks") {
+    const [id, ...fields] = path;
+    const current = blocks(content.blocks);
+    const index = current.findIndex(item => item.id === id);
+    if (index < 0) return { ...content, blocks: [...current, draft] };
+    const restored = fields.length ? restoreDeletedEdit(current[index], fields, draft) : draft;
+    return { ...content, blocks: current.map((item, i) => i === index ? restored : item) };
+  }
+  return { ...content, [key]: restoreDeletedEdit(row(content[key]), path, draft) };
 }
 
 function useContentDelivery(read: A3ContentRead | undefined, ready: boolean, apply: (read: A3ContentRead) => Promise<boolean>) {
@@ -119,14 +124,33 @@ function localeParts(mine: unknown, latest: unknown, parts: Array<[string, (valu
 const DOC_PARTS: Array<[string, (value: Row) => unknown]> = [["请求示例", (v) => row(v.example).request], ["响应示例", (v) => row(v.example).response], ["接口列表", (v) => v.endpoints], ["事件列表", (v) => v.events]];
 
 /** 版本冲突后的提示：你留着的修改和刚读到的最新版本差在哪，重读和重新提交在哪。 */
-function ConflictNotice({ ready, rows, error, loading, onReread, submitHint, originalFailure, hasDeletion, intent }: {
+function ConflictNotice({ ready, rows, error, loading, onReread, submitHint, originalFailure, deletedEdits, onResolveDeletion, restoreBlocked, contentKind, intent }: {
   ready: boolean; rows: Array<{ key: string; label: string; text: ReactNode }>; error: string | null; loading: boolean; onReread: () => void;
-  submitHint: string; originalFailure?: string | null; hasDeletion: boolean; intent: Mode | null;
+  submitHint: string; originalFailure?: string | null; deletedEdits: DeletedEdit[]; onResolveDeletion?: (edit: DeletedEdit, restore: boolean) => void;
+  restoreBlocked: (edit: DeletedEdit) => string | undefined; contentKind: "docs" | "how"; intent: Mode | null;
 }) {
-  const next = hasDeletion ? UNRESOLVED_DELETION : intent === "PUBLISHED" ? "原发布尚未完成。核对后点上方「发布…」重新确认。"
+  const next = deletedEdits.length ? "最新版本已删除下列内容，你修改过它。请逐项选择是否恢复。" : intent === "PUBLISHED" ? "原发布尚未完成。核对后点上方「发布…」重新确认。"
     : intent === "DRAFT" ? "原保存草稿尚未完成。核对后点上方「保存草稿…」重新确认。"
       : rows.length ? `和最新版本不同的有 ${rows.length} 处，核对后${submitHint}：` : "你改的和最新版本一样，不用再提交。";
-  return <Notice tone="warn" title={originalFailure ?? "别人刚保存过，你的修改没有保存"} action={<Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>}>
+  const reread = <Button size="sm" loading={loading} onClick={onReread}>重新读取</Button>;
+  const choose = ready && deletedEdits.length > 0;
+  return <Notice tone="warn" title={originalFailure ?? "别人刚保存过，你的修改没有保存"} actionBelow={choose} action={choose ? <div className="rd-stack">
+    {deletedEdits.map(edit => {
+      const [page, group, language, , block, field] = edit.path;
+      const label = contentKind === "docs" ? localeName(page)
+        : [PAGE_LABELS[page] ?? page, language && localeName(language), block, field].filter(Boolean).join(" · ");
+      const restoreLabel = contentKind === "docs" || group === "locales" && edit.path.length === 3 ? "恢复这种语言"
+        : edit.path.length === 1 ? "恢复这个页面" : block && !field ? "恢复这个内容块" : "恢复这项内容";
+      return <div key={JSON.stringify(edit.path)} className="rd-row-actions">
+        <span>{label}</span>
+        {onResolveDeletion && <>
+          <Button size="sm" disabledReason={restoreBlocked(edit)} onClick={() => onResolveDeletion(edit, true)}>{restoreLabel}</Button>
+          <Button size="sm" onClick={() => onResolveDeletion(edit, false)}>按最新版本删除</Button>
+        </>}
+      </div>;
+    })}
+    <div>{reread}</div>
+  </div> : reread}>
     {ready
       ? <>已读到最新版本，你改的都还在。{next}
         {rows.length > 0 && <div className="a3-conflict-diff"><Facts>{rows.map((item) => <Fact key={item.key} k={item.label}>{item.text}</Fact>)}</Facts></div>}</>
@@ -335,6 +359,13 @@ function DeveloperDocs({ commands, recovery, onRecovered, incoming, toast, onDir
   const current = row(document.locales[locale]);
   const example = row(current.example); const endpoints = list(current.endpoints).map(row); const events = list(current.events).map(text);
   const disabled = !canWrite || loading || saving || Boolean(original) || !readReady;
+  const restoreBlocked = ({ path: [language] }: DeletedEdit) => !Object.hasOwn(document.locales, language) && localeKeys.length >= 10
+    ? "最多维护 10 种语言。" : undefined;
+  const resolveDeletion = (edit: DeletedEdit, restore: boolean) => {
+    if (disabled || reading.current || restore && restoreBlocked(edit)) return;
+    if (restore) setDocument(value => value && { ...value, locales: { ...value.locales, [edit.path[0]]: edit.draft } });
+    setDeletedEdits(edits => edits.filter(item => item !== edit));
+  };
   const setExample = (key: string, next: string) => updateLocale({ ...current, example: { ...example, [key]: next } });
   const changedLocales = baseline ? [...new Set([...Object.keys(document.locales), ...Object.keys(baseline.locales)])].filter((key) => JSON.stringify(document.locales[key]) !== JSON.stringify(baseline.locales[key])) : [];
   const empties = [endpoints.length === 0 && "接口列表是空的", events.filter((item) => item.trim()).length === 0 && "事件列表没有内容", (!text(example.request).trim() || !text(example.response).trim()) && "请求或响应示例是空的"].filter(Boolean) as string[];
@@ -348,9 +379,9 @@ function DeveloperDocs({ commands, recovery, onRecovered, incoming, toast, onDir
       <Button variant="primary" disabledReason={original ? "结果未知" : loading || !readReady ? "正在加载" : saving ? "正在保存" : deletedEdits.length ? UNRESOLVED_DELETION : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
-      ? <ConflictNotice ready={readReady && Boolean(baseline)} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交" originalFailure={originalFailure} hasDeletion={deletedEdits.length > 0} intent={remainingIntent}
+      ? <ConflictNotice ready={readReady && Boolean(baseline)} error={error} loading={loading} onReread={() => void refresh()} submitHint="点上方「保存草稿…」或「发布…」重新提交" originalFailure={originalFailure}
+        deletedEdits={deletedEdits} onResolveDeletion={disabled ? undefined : resolveDeletion} restoreBlocked={restoreBlocked} contentKind="docs" intent={remainingIntent}
         rows={baseline ? [
-          ...deletedEditRows(deletedEdits),
           ...(document.version !== baseline.version ? [{ key: "version", label: "正文版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
           ...[...new Set([...Object.keys(baseline.locales), ...localeKeys])].filter((key) => !same(document.locales[key], baseline.locales[key]))
             .map((key) => ({ key, label: localeName(key), text: localeParts(document.locales[key], baseline.locales[key], DOC_PARTS) })),
@@ -460,6 +491,19 @@ function previewText(page: string, value: string): ReactNode {
 const hasAppToken = (blocks: Row[]) => blocks.some((block) => [block.title, block.body, ...list(block.items)].some((value) => /\{[A-Za-z]+\}/.test(text(value))));
 const refBlocksOf = (entry: unknown) => Object.values(row(row(entry).locales)).flatMap((locale) => blocks(row(locale).blocks)).filter((block) => block.kind === "ruleRef");
 
+function changedHowPageLabel(page: string, before: Row | undefined, after: Row | undefined) {
+  const label = PAGE_LABELS[page];
+  if (!before && after) return `${label}（新增页面）`;
+  const latestLocales = row(before?.locales);
+  const additions = Object.entries(row(after?.locales)).flatMap(([locale, value]) => {
+    if (!Object.hasOwn(latestLocales, locale)) return [`新增语言：${localeName(locale)}`];
+    const latestIds = new Set(blocks(row(latestLocales[locale]).blocks).map(block => block.id));
+    const addedIds = blocks(row(value).blocks).filter(block => !latestIds.has(block.id)).map(block => text(block.id)).filter(Boolean);
+    return addedIds.length ? [`${localeName(locale)}新增内容块：${addedIds.join("、")}`] : [];
+  });
+  return additions.length ? `${label}（${additions.join("，")}）` : label;
+}
+
 function HowContent({ commands, recovery, onRecovered, incoming, toast, onDirty, retry, feedback }: ContentEditorProps) {
   const session = useAdminAuth((state) => state.session);
   const canRead = session?.role === "superadmin" || session?.authorities?.includes("platform_a3_read") === true;
@@ -546,6 +590,22 @@ function HowContent({ commands, recovery, onRecovered, incoming, toast, onDirty,
   if (!document) return <BlockState state="error" title="说明内容加载失败" detail={<>{error} 读不到不等于没有内容：App 可能仍在显示之前发布的或系统自带的说明。</>} onRetry={() => void refresh()} />;
 
   const locked = !canWrite || loading || saving || Boolean(original) || !readReady;
+  const restoreBlocked = ({ path: [page, , language, collection, id, field] }: DeletedEdit) => {
+    if (!language) return;
+    const locales = row(document.contents[page]?.locales);
+    if (!collection) return !Object.hasOwn(locales, language) && Object.keys(locales).length >= 10 ? "单页最多 10 种语言。" : undefined;
+    if (collection !== "blocks") return;
+    const current = blocks(row(locales[language]).blocks);
+    const block = current.find(item => item.id === id);
+    if (!field) return !block && current.length >= 200 ? "单种语言最多 200 个内容块。" : undefined;
+    if (!block) return "请先恢复这个内容块。";
+    if (field === "ref" && block.kind !== "ruleRef") return "请先将内容块类型改为「引用系统规则」。";
+  };
+  const resolveDeletion = (edit: DeletedEdit, restore: boolean) => {
+    if (locked || busyRef.current || restore && restoreBlocked(edit)) return;
+    if (restore) setDocument(value => value && { ...value, contents: restoreDeletedEdit(value.contents, edit.path, edit.draft) as PublishedHowContentDocument["contents"] });
+    setDeletedEdits(edits => edits.filter(item => item !== edit));
+  };
   const patchLocale = (next: Row) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); const locales = row(entry.locales); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [locale]: next } } } }); };
   const patchEntryVersion = (next: string) => { if (!document || locked || busyRef.current) return; const entry = row(document.contents[key]); setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, version: next } } }); };
   const addLocale = () => { if (!document || locked || busyRef.current) return; const normalized = newLocale.trim().toLowerCase().replace("_", "-"); if (!/^(?:[a-z]{2}|fil)(?:-[a-z0-9]{2,8})?$/.test(normalized)) { setError("语言代码格式无效，例如 en、zh、vi 或 zh-cn。"); return; } const entry = row(document.contents[key]); const locales = row(entry.locales); if (locales[normalized]) { setLocale(normalized); setNewLocale(""); setAddingLocale(false); return; } if (Object.keys(locales).length >= 10) { setError("单页最多 10 种语言。"); return; } setDocument({ ...document, contents: { ...document.contents, [key]: { ...entry, locales: { ...locales, [normalized]: { blocks: [{ id: "intro", kind: "text", title: key, body: "" }] } } } } }); setLocale(normalized); setNewLocale(""); setError(null); setAddingLocale(false); };
@@ -648,9 +708,9 @@ function HowContent({ commands, recovery, onRecovered, incoming, toast, onDirty,
       <Button variant="primary" disabledReason={original ? "结果未知" : locked ? "正在加载或保存" : deletedEdits.length ? UNRESOLVED_DELETION : publishBlockedReasons.length ? "还有没替换的占位符，不能发布" : !canSave("PUBLISHED") ? "内容没有变化，无需提交。" : undefined} onClick={() => { if (original || !readReady) return; setError(null); setMode("PUBLISHED"); }}>发布…</Button>
     </div>}
     {conflictDraft.current && !mode
-      ? <ConflictNotice ready={readReady && Boolean(baseline)} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交" originalFailure={originalFailure} hasDeletion={deletedEdits.length > 0} intent={remainingIntent}
+      ? <ConflictNotice ready={readReady && Boolean(baseline)} error={error} loading={loading} onReread={() => void refresh(false)} submitHint="点上方「保存草稿…」或「发布…」重新提交" originalFailure={originalFailure}
+        deletedEdits={deletedEdits} onResolveDeletion={locked ? undefined : resolveDeletion} restoreBlocked={restoreBlocked} contentKind="how" intent={remainingIntent}
         rows={baseline ? [
-          ...deletedEditRows(deletedEdits),
           ...(document.version !== baseline.version ? [{ key: "version", label: "文档版本", text: <Change from={baseline.version || "空"} to={document.version || "空"} /> }] : []),
           ...changedPages.map((item) => {
             const mineLocales = row(row(document.contents[item]).locales), latestLocales = row(row(baseline.contents[item]).locales);
@@ -759,7 +819,7 @@ function HowContent({ commands, recovery, onRecovered, incoming, toast, onDirty,
       facts={<DiffList rows={[
         { key: "status", label: "状态", before: STATUS_NAME[baseline?.status ?? ""] ?? "—", after: mode === "DRAFT" && baseline?.hasPublishedVersion ? "草稿，公开版不变" : STATUS_NAME[mode] },
         { key: "version", label: "文档版本", before: baseline?.version || "—", after: document.version || "—" },
-        { key: "pages", label: "有改动的页面", before: "—", after: changedPages.map((item) => PAGE_LABELS[item]).join("、") || "—" },
+        { key: "pages", label: "有改动的页面", before: "—", after: changedPages.map((item) => changedHowPageLabel(item, baseline?.contents[item], document.contents[item])).join("、") || "—" },
       ]} />}
       extra={<>
         {mode === "PUBLISHED" && refPages.length > 0 && <Notice tone="danger" title="规则引用块发布不了">{refPages.map((item) => PAGE_LABELS[item]).join("、")}含规则引用块，系统会拒绝这次发布。先删掉这些块，或改成「正文」写上实际文字。</Notice>}
