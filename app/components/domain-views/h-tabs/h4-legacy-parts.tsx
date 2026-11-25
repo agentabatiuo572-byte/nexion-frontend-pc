@@ -31,18 +31,21 @@ export function H4LeaveDialog({ title, guard, saveLabel, saveReason, onSave }: {
 }
 
 const buttonName = (element: Element) => element.getAttribute("aria-label") ?? element.textContent ?? "";
+/** 一张卡、一行是谁：重新读取会换节点，靠名字和编号认回来。 */
+const areaKey = (element: Element) => [element.getAttribute("aria-label"), element.querySelector("h3")?.textContent, element.querySelector(".h4-mono")?.textContent].join("|");
 /**
  * 抽屉关上后焦点回打开它的按钮（CP-66）：按钮重画过就在原来那张卡、那一行里找同名的，没有就落到这一块的标题，不落到 body。
- * 抽屉收起和确认框关闭的动画都在 0.16 秒内，收完再看；焦点已被点到别处时不动。
+ * 抽屉和确认框都收完再看（都收完前不抢焦点）；焦点已被点到别处时不动。
  */
 export function useH4DrawerFocus(open: boolean, panelId: string) {
-  const opener = useRef<{ node: HTMLElement; area: Element | null; name: string } | null>(null);
+  const opener = useRef<{ node: HTMLElement; area: Element | null; key: string; name: string } | null>(null);
   const wasOpen = useRef(false);
   const shown = useRef(false);
   // 打开那一刻按钮还没重画，先记下来。
   if (open && !wasOpen.current) {
     const node = document.activeElement;
-    opener.current = node instanceof HTMLElement && node !== document.body ? { node, area: node.closest("article, li, section"), name: buttonName(node) } : null;
+    const area = node?.closest("article, li, section") ?? null;
+    opener.current = node instanceof HTMLElement && node !== document.body ? { node, area, key: area ? areaKey(area) : "", name: buttonName(node) } : null;
   }
   wasOpen.current = open;
   useEffect(() => {
@@ -52,12 +55,17 @@ export function useH4DrawerFocus(open: boolean, panelId: string) {
     const from = opener.current;
     let timer = 0, waits = 20;
     const settle = () => {
-      // 确认框可能比抽屉晚一步关（还在读最新）：等它收起再看，最多 6 秒。
-      if (document.querySelector(".rd-modal") && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
+      // 抽屉还在收、或确认框比抽屉晚一步关（还在读最新）：等它们收完再看，最多 6 秒。
+      if (document.querySelector(".rd-modal, .rd-drawer[data-state='closed']") && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
       if (document.activeElement && document.activeElement !== document.body) return;
       const usable = (element: HTMLElement) => element.isConnected && element.getClientRects().length > 0 && !(element instanceof HTMLButtonElement && element.disabled);
-      const same = from?.area?.isConnected ? [...from.area.querySelectorAll<HTMLElement>("button")].filter(element => usable(element) && buttonName(element) === from.name) : [];
-      const target = from && usable(from.node) ? from.node : same.length === 1 ? same[0] : document.getElementById(panelId)?.querySelector<HTMLElement>(".rd-panel-title");
+      const panel = document.getElementById(panelId);
+      // 提交成功后列表重读，卡片换了节点：按名字和编号找回那一张；列表还没读回来就再等。
+      const rows = panel ? [...panel.querySelectorAll("article, li.h4l-draw")] : [];
+      if (from?.area && !from.area.isConnected && !rows.length && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
+      const area = from?.area?.isConnected ? from.area : rows.find(row => areaKey(row) === from?.key);
+      const same = area && from ? [...area.querySelectorAll<HTMLElement>("button")].filter(element => usable(element) && buttonName(element) === from.name) : [];
+      const target = from && usable(from.node) ? from.node : same.length === 1 ? same[0] : panel?.querySelector<HTMLElement>(".rd-panel-title");
       if (target?.matches(".rd-panel-title")) target.tabIndex = -1;
       target?.focus();
     };
