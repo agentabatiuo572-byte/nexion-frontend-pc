@@ -251,6 +251,7 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
   const policyNow = ctx.f2DirectPolicyError ? undefined : ctx.f2DirectPolicy;
   const settle = !policyNow ? "unknown" : !policyNow.sevenLayerEnabled ? "off" : policyNow.sevenLayerPaused ? "paused" : "on";
   const sendingNow = settle === "on";
+  const sumName = settle === "on" ? "发放中的层合计" : settle === "off" ? "启用后的层合计" : settle === "paused" ? "恢复后的层合计" : "逐层合计";
 
   return (
     <Panel title="每层分多少" icon={Layers} tone="role-4" sub={`示例订单 ${num(SAMPLE_ORDER)} USDT`}
@@ -268,14 +269,14 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
           <div className="f2-sum-graphic">
             {ranked ? <ScaleBar label="七层合计占订单" max={axisMax} range={sumRange ? { low: Number(sumRange.low), high: Number(sumRange.high) } : undefined} target={m.cap ?? undefined} tone="role-4"
               ticks={[{ value: 0, text: "0%" }, ...(m.cap !== null && m.cap <= axisMax ? [{ value: m.cap, text: `上限 ${num(m.cap)}%` }] : []), { value: axisMax, text: `${axisMax}%` }]}
-              valueText={sumRange ? `发放中的层合计按受益人等级 ${rangeText(sumRange.low, sumRange.high)}${m.cap !== null ? `，总额上限 ${num(m.cap)}%` : "，总额上限未配置"}` : "第 1、2 层的九级比例没读到，合计这次没有算"} />
+              valueText={sumRange ? `${sumName}按受益人等级 ${rangeText(sumRange.low, sumRange.high)}${m.cap !== null ? `，总额上限 ${num(m.cap)}%` : "，总额上限未配置"}` : "第 1、2 层的九级比例没读到，合计这次没有算"} />
               : <ScaleBar label="七层合计占订单" max={axisMax} value={activeSum} fill target={m.cap ?? undefined} tone="role-4"
                 ticks={[{ value: 0, text: "0%" }, ...(m.cap !== null && m.cap <= axisMax ? [{ value: m.cap, text: `上限 ${num(m.cap)}%` }] : []), { value: axisMax, text: `${axisMax}%` }]}
-                valueText={`发放中的层合计 ${num(activeSum)}%${m.cap !== null ? `，总额上限 ${num(m.cap)}%` : "，总额上限未配置"}`} />}
+                valueText={`${sumName} ${num(activeSum)}%${m.cap !== null ? `，总额上限 ${num(m.cap)}%` : "，总额上限未配置"}`} />}
             <p className="f2-sum-cap">{m.cap === null ? "总额上限未配置" : `上限 ${num(m.cap)}%：${num(SAMPLE_ORDER)} USDT 订单最多分 ${num(sampleUsdt(m.cap))} USDT`}<Explain label="总额上限怎么用" content="一笔订单七层 USDT 奖励最多占订单金额的这个比例。超出时从 L1 往下分，分完为止，后面的层少发或不发；旧 UVT 系数另发的 UVT 不算在内。" /></p>
           </div>}>
           <dl className="f2-sum">
-            <div><dt>{ranked && ctx.f2DirectPolicy && !ctx.f2DirectPolicy.sevenLayerEnabled ? "启用后的合计" : "发放中的层合计"}</dt>{ranked
+            <div><dt>{sumName}</dt>{ranked
               ? <dd data-empty={sumRange ? undefined : ""}>{sumRange ? <><strong>{rangeText(pctSample(sumRange.low), pctSample(sumRange.high), "USDT").replace(/ USDT$/, "")}</strong> USDT<span>占订单 {rangeText(sumRange.low, sumRange.high)}，按受益人等级</span>
                 <Explain label="合计为什么是一段" content={`第 1、2 层按受益人等级取比例：各级比例里最低一档合计 ${num(sumRange.low)}%，最高一档合计 ${num(sumRange.high)}%。${pausedLayers.length ? `${pausedLayers.join("、")} 现在暂停，不算在内。` : ""}`} /></> : "—"}</dd>
               : <dd><strong>{num(sampleUsdt(activeSum))}</strong> USDT<span>占订单 {num(activeSum)}%</span></dd>}</div>
@@ -320,14 +321,14 @@ export function F2Layers({ ctx, openConfirm, bootDraft, setBootDraft }: { ctx: F
                   : noRateSource(level) ? "另发 — UVT" : byRank ? rng && rate.nexText !== null ? `另发 ${rangeText(f2DecimalTimes(pctSample(rng.min), rate.nexText), f2DecimalTimes(pctSample(rng.max), rate.nexText), "USDT").replace(/ USDT$/, "")} UVT` : "另发 — UVT"
                   : `另发 ${num(rate.usdt === null || rate.nex === null ? null : sampleUsdt(rate.usdt)! * rate.nex)} UVT`} /> : <span className="f2-muted">{rate ? "未配置" : "—"}</span>}</Td>
                 <Td><span className="f2-tags">
-                  {rate && (settle === "off" || settle === "paused") && (byRank || (rate.usdt !== null && rate.nex !== null && pause !== "on" && pause !== "invalid")) ? settle === "off" ? <StatusTag tone="neutral" icon={PowerOff} explain={byRank ? "整体结算启用后，这一层按受益人等级发放。" : "整体结算启用后，这一层按这里的比例发放。"}>未启用</StatusTag>
+                  {rate && (settle === "off" || settle === "paused") && rate.nex !== null && pause !== "on" && pause !== "invalid" && (byRank || rate.usdt !== null) ? settle === "off" ? <StatusTag tone="neutral" icon={PowerOff} explain={byRank ? "整体结算启用后，这一层按受益人等级发放。" : "整体结算启用后，这一层按这里的比例发放。"}>未启用</StatusTag>
                     : <StatusTag tone="warn" icon={PauseCircle} explain="整体结算已暂停，这一层先不算；恢复后按这里的设置发。">整体已暂停</StatusTag>
                     : !rate ? <StatusTag tone="neutral" explain={`这一层还没有规则，没有规则时这一层不发。${rates.length === 0 ? "七层都没有时，用上面的「首次配置」。" : "后台补不了，需要技术同事处理。"}`}>没有规则</StatusTag>
                     : rate.usdt === null || rate.nex === null ? <StatusTag tone="warn" explain={`这一层的 ${rate.usdt === null ? "USDT 比例" : "UVT 系数"} 没配置，这页看不出这一层会怎么发。${(rate.usdt === null ? direct : nexLocked) ? "这一项后台不能改，需要技术同事处理。" : `点「${rate.usdt === null ? "改比例" : "改系数"}」补上，批准后生效。`}`}>规则不完整</StatusTag>
                     : pause === "on" ? <StatusTag tone="warn" icon={PauseCircle} explain="之后新算的订单这一层记 0，不补发；已经算好的不变。">已暂停</StatusTag>
-                    : pause === "off" ? <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
+                    : pause === "off" ? settle === "unknown" ? <StatusTag tone="neutral" explain="整体结算状态没读到，这里只显示逐层设置。">已设为发放</StatusTag> : <StatusTag tone="neutral" icon={ShieldCheck}>发放中</StatusTag>
                       : pause === "invalid" ? <StatusTag tone="danger" explain={`存的是「${configuredValue(m.pauseValue(level))}」，不是暂停或发放。按层暂停里重新选一次。`}>配置无效</StatusTag>
-                        : <><StatusTag tone="neutral" icon={ShieldCheck} explain="这一层的暂停开关没配，结算按发放算。要停发到下面「按层暂停」设置。">发放中</StatusTag>{unsetPause.length < LAYERS.length && <span className="f2-muted">暂停开关未配</span>}</>}
+                        : <>{settle === "unknown" ? <StatusTag tone="neutral" explain="整体结算状态没读到，这里只显示逐层设置。">已设为发放</StatusTag> : <StatusTag tone="neutral" icon={ShieldCheck} explain="这一层的暂停开关没配，结算按发放算。要停发到下面「按层暂停」设置。">发放中</StatusTag>}{unsetPause.length < LAYERS.length && <span className="f2-muted">暂停开关未配</span>}</>}
                   {rate && gated && m.rank?.legal && <StatusTag tone="neutral" icon={Lock} explain={`上级要到 ${m.rank.normalized} 及以上才拿得到这一层；等级不够这一层记 0。`}>需 {m.rank.normalized}+</StatusTag>}
                   {(usdtPending || nexPending) && <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员批准；批准前这一层不变，也不能再提交。">待审批</StatusTag>}
                 </span></Td>

@@ -595,9 +595,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       businessForm: {
         kind: "multi-field",
         requireAnyChange: false,
-        feedback: draft ? values => values.targetV && values.targetV === currentRank
-          ? { invalid: true, field: "targetV", live: true, message: "这位用户已达到所选等级，无需提交。" }
-          : { invalid: false, message: "" } : undefined,
+        feedback: values => values.direction === "rollback" && values.targetV === "V8"
+          ? { invalid: true, field: "targetV", live: true, message: "V8 是最高等级，不能降级到 V8。" }
+          : draft && values.targetV && values.targetV === currentRank
+            ? { invalid: true, field: "targetV", live: true, message: "这位用户已达到所选等级，无需提交。" }
+            : { invalid: false, message: "" },
         amplifies: (values) => !skipsOverrideCoverage(values),
         onFieldChange: (field, next) => {
           if (field === "userId" && fixedUser) return { ...next, userId: fixedUser };

@@ -87,9 +87,9 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
       const per100 = text.replace(/^0+(?=\d)/, "");
       return `改成 ${text}%：${field === "purchaseL1Rate" ? "一级好友" : "二级好友（好友的好友）"}每付款 100 USDT 买设备，${row.v} 用户按基础比例算的奖励从 ${current} 变成 ${per100} USDT 等值；实际发多少还看结算时的暂停、拆分和上限。`;
     }
-    if (Number(text) === 0) return `改成 0：之后本月首次升到 ${row.v}（且是本月最高等级）、还没领的人，次日起按 ${row.v} 的 0 算，领不了（月末最后一天升到的，下月 1 日补领也是 0）；已经锁定金额的照常领。`;
+    if (Number(text) === 0) return `改成 0：之后本月首次升到 ${row.v}（且是本月最高等级）、还没领的人，次日起按 ${row.v} 的 0 算，领不了（月末最后一天升到的，下月 1 日也不能补领）；先前已按本级金额锁定的人不受影响。`;
     if (prevSalary !== undefined && compareDecimal(text, prevSalary) === -1) {
-      return `改成 ${amountDisplay(text)}：比 ${rows[index - 1].v} 的 ${amountDisplay(prevSalary)} 还低。之后本月首次从 ${rows[index - 1].v} 升到 ${row.v}（且是本月最高等级）、还没领的人，次日起按 ${amountDisplay(text)} USDT 领（月末最后一天升到的，下月 1 日补领也按这个）；已经锁定金额的照常领。`;
+      return `改成 ${amountDisplay(text)}：比 ${rows[index - 1].v} 的 ${amountDisplay(prevSalary)} 还低。之后本月首次从 ${rows[index - 1].v} 升到 ${row.v}（且是本月最高等级）、还没领的人，次日起按 ${amountDisplay(text)} USDT 领（月末最后一天升到的，下月 1 日补领也按这个）；先前已按本级金额锁定的人不受影响。`;
     }
     return undefined;
   };

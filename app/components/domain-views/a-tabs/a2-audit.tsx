@@ -253,7 +253,7 @@ function V8PromotionRewardFact() {
         const { main, unit, missing } = rewardText(item, overview);
         return missing ? "—" : unit ? `${main} ${unit}` : main;
       });
-      setReward({ readerId, text: rewards.length ? `${rewards.join("、")}；以前到过 V8 的不再发` : "没有晋级奖励" });
+      setReward({ readerId, text: rewards.length ? `${rewards.join("、")}（现在的模板，执行时按当时的配置；以前到过 V8 的不再发）` : "没有晋级奖励" });
     }).catch(() => { if (active) setReward(undefined); });
     return () => { active = false; };
   }, [readerId]);
