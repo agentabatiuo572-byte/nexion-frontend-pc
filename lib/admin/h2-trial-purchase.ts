@@ -1,5 +1,4 @@
 export type BuyListVersion = number;
-type StoreStatus = "ON_SALE" | "ACTIVE" | "PENDING" | "OFF_SALE";
 
 export type BuyDevice = {
   productNo: string;
@@ -8,7 +7,7 @@ export type BuyDevice = {
   inventoryMode: string | null;
   priceUsdt: string | null;
   stock: number | null;
-  status: StoreStatus | null;
+  status: string | null;
   listingAllowed: boolean;
   visibleToUser: boolean;
   selectable: boolean;
@@ -41,10 +40,6 @@ export function buyProductReason(reason: unknown): string {
   }
 }
 
-function isStoreStatus(value: unknown): value is StoreStatus {
-  return value === "ON_SALE" || value === "ACTIVE" || value === "PENDING" || value === "OFF_SALE";
-}
-
 function nullableText(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
@@ -57,7 +52,7 @@ function readDevice(raw: unknown): BuyDevice | undefined {
   if (typeof productNo !== "string" || !nullableText(name) || !nullableText(productType) || !nullableText(inventoryMode)
     || !(priceUsdt === null || typeof priceUsdt === "string" && /^-?\d+\.\d{6}$/.test(priceUsdt))
     || !(stock === null || typeof stock === "number" && Number.isInteger(stock))
-    || !(status === null || isStoreStatus(status))
+    || !nullableText(status)
     || typeof listingAllowed !== "boolean" || typeof visibleToUser !== "boolean" || typeof selectable !== "boolean"
     || !nullableText(unavailableReason)) return;
   return {

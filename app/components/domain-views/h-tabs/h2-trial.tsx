@@ -109,6 +109,8 @@ type H2Model = {
 };
 
 const H2_WRITE_PERMISSION = "growth_h2_write";
+/** 试用目标商品的商城状态；没列的状态只看上架判定，不显示原始值。 */
+const TARGET_STATUS: Record<string, string | undefined> = { ON_SALE: "在售", ACTIVE: "在售", PENDING: "草稿", OFF_SALE: "已下架" };
 
 /** 系统或别处决定的值：只读，不给修改入口（PCM-36）。 */
 const READ_ONLY_KEYS = ["phaseOpen", "trialPriceUSD", "chargeFailRate"];
@@ -380,9 +382,7 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
 
   // 名称这一列只放名称和提示图标（PG-46）；库存、阻断原因和入口是值的补充，排在值后面。
   const productLine = [
-    targetStatusUnknown ? "商城状态暂时无法判断" : currentTarget?.status && ({
-      ON_SALE: "在售", ACTIVE: "在售", PENDING: "草稿", OFF_SALE: "已下架",
-    })[currentTarget.status],
+    targetStatusUnknown ? "商城状态暂时无法判断" : currentTarget?.status && TARGET_STATUS[currentTarget.status],
     !targetStatusUnknown && currentDisplayProduct && stockText(currentDisplayProduct),
     currentTarget?.listingAllowed === false && buyProductReason(currentTarget.unavailableReason),
     productMissing && "不在可选列表",
