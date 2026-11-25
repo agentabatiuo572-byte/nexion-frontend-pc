@@ -45,13 +45,13 @@ import { configApprovalOriginalInput, g4FirstDividendRejectionSnapshot, pendingC
 import G4AdminOperations, { G4_CONFIGS, g4ConfigValueShown, g4Count, type G4ConfirmReq } from "./g4-admin-operations";
 import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
-import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, g4DividendRejectionSnapshot, G4DividendRerunOutcomeUncertainError, G4_DIVIDEND_REPLAY_HINT, G4_DIVIDEND_UNKNOWN, isG4DividendRerun, listG4DirectCommands, releaseG4DividendRejection, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
+import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, g4DividendRejectionSnapshot, G4DividendRerunOutcomeUncertainError, G4_DIVIDEND_REPLAY_HINT, isG4DividendRerun, listG4DirectCommands, releaseG4DividendRejection, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { canProposeGParam, gParamApprovalFeedback, useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRejectedRelease, GReplayRejectionNote, unknownTag } from "./g-recovery";
 import { rejectedTag } from "../verified-release";
-import { replayRejectionText } from "@/lib/admin/retry-rejected";
+import { replayRejectionText, RETRY_REJECTED_NEXT } from "@/lib/admin/retry-rejected";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { G4_FIRST_DIVIDEND_TICKET_STATUS, G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
 
@@ -376,8 +376,8 @@ function G4GenesisPage() {
           ? gParamApprovalFeedback(err) : undefined;
         const directUncertain = err instanceof G4DividendRerunOutcomeUncertainError;
         const message = directUncertain ? err.confirmCopy : approvalMessage ?? messageOf(err);
-        setError(message);
-        // 补发的结果未知写在原框里（outcomeMessage），不再弹同一句提示条（ST-57）。
+        // 补发的结果未知写在原框里（outcomeMessage）和恢复行上，页面不再写同一段、也不弹提示条（ST-57）。
+        if (!directUncertain) setError(message);
         if (!directUncertain) toast(approvalMessage ?? (uncertain ? message : `操作失败 · ${message}`));
       }
       throw err;
@@ -412,8 +412,9 @@ function G4GenesisPage() {
         if (saved && isG4DividendRerun(saved)) {
           const retryAllowed = canRetryG4DirectCommand(saved);
           return { expiresAt: saved.expiresAt, queryOnly: !retryAllowed,
-            outcomeMessage: saved.replayRejection ? messageOf(saved.replayRejection) : G4_DIVIDEND_UNKNOWN,
-            statusText: replayRejectionText(saved) ?? (g4DirectCommandExpired(saved) ? RETRY_EXPIRED_TEXT
+            // 框顶说发生了什么，理由下方只说下一步，同一句不写两遍（ST-57）。
+            outcomeMessage: saved.replayRejection ? `重试被拒绝：${messageOf(saved.replayRejection)}` : "补发结果未知，可能已经提交。",
+            statusText: saved.replayRejection ? RETRY_REJECTED_NEXT : (g4DirectCommandExpired(saved) ? RETRY_EXPIRED_TEXT
               : retryAllowed ? G4_DIVIDEND_REPLAY_HINT : "当前没有重试权限，原记录继续保留。") };
         }
         return mc.approvalObject === undefined ? undefined
