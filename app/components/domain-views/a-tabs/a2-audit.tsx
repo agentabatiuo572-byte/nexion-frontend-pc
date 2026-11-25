@@ -12,6 +12,7 @@ import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCo
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
+import { V8PromotionFacts } from "../f-tabs/v8-promotion-facts";
 import { aTicketPermissionText } from "@/lib/admin/a-approval-names";
 import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText, H8_SETTLEMENT_APPROVAL_PERMISSION } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
@@ -272,6 +273,13 @@ function V8PromotionRewardFact() {
   }, [readerId]);
 
   return <Fact k="V8 晋级奖励 · 首次到达发给本人">{reward && reward.readerId === readerId ? reward.text : "—"}</Fact>;
+}
+
+function v8PromotionFacts(ticket: A2OperationRow) {
+  const snapshot = ticket.v8PromotionSnapshot;
+  return snapshot
+    ? <V8PromotionFacts rewards={snapshot.v8Rewards} v7={snapshot.v7} v8={snapshot.v8} snapshot />
+    : <V8PromotionRewardFact />;
 }
 
 /** 批准后 App 读不到团队奖励配置：首次配置单看票上的七层；单层比例单只带这一层，其余各层按现在读到的算（OP-69）。 */
@@ -2630,7 +2638,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
             : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}
-                facts={v8Promotion ? <V8PromotionRewardFact /> : f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
+                facts={v8Promotion ? v8PromotionFacts(w) : f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
                 {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
                 <A2I5DisclosureReview key={w.id} ticket={w} />
               </A2ChangeReview>}
@@ -3328,6 +3336,10 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const historyNote = shownHistory?.note.startsWith("原因:") ? { label: "原因", text: shownHistory.note.slice(3).trim() || "—" } : { label: "说明", text: shownHistory?.note || "—" };
   // 已批准的券冲正：和历史表同一份总览里的审批单按单号对上，读批准时记下的结果（F1-BE-19）。
   const voucherResult = a2VoucherReversalResult(shownHistory, records?.operationQueue ?? []);
+  // 同一份总览按单号找有权读取的终态审批单，处理历史自己不带快照。
+  const historyV8Ticket = shownHistory && records?.operationQueue.find(w => w.id === shownHistory.id
+    && (w.status === "approved" || w.status === "rejected" || w.status === "withdrawn")
+    && w.v8PromotionSnapshot && isV8PromotionTicket(w));
 
   const readOnly = canApprove ? undefined : canPropose ? "你不能批准，只能看进度和撤回自己发起的申请。" : canMakeV8 ? "你不能批准，只能看进度和撤回自己发起的 V8 晋升申请。" : "你不能批准审批单，只能查看。";
 
@@ -3384,7 +3396,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
-                facts={isV8PromotionTicket(shown) ? <V8PromotionRewardFact />
+                facts={isV8PromotionTicket(shown) ? v8PromotionFacts(shown)
                   : shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
                 <A2I5DisclosureReview key={shown.id} ticket={shown} />
@@ -3438,6 +3450,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },
             { label: historyNote.label, value: historyNote.text },
           ]} />
+          {historyV8Ticket && <A2ChangeReview before={changeBefore(historyV8Ticket)} after={changeAfter(historyV8Ticket)}
+            operationCode={reviewOperation(historyV8Ticket)} amountKey={a2TicketKey(historyV8Ticket)} facts={v8PromotionFacts(historyV8Ticket)} />}
           {voucherResult && <section className="a2-change-review" aria-label="实际结果">
             <div className="a2-change-title">实际结果<Explain label="实际结果说明" content="批准执行时系统记下的券处置和扣款，不是申请时的选择。" /></div>
             {voucherResult.state === "available" ? <Facts>
