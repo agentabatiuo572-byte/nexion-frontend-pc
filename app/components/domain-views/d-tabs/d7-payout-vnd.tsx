@@ -40,8 +40,9 @@ import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import {
   canManageD7Approval, checkWithdrawalApprovalCommand, configApprovalOriginalInput, pendingConfigApproval, useWithdrawalApprovals,
   releaseConfigApproval, releaseRejectedWithdrawalApproval, submitWithdrawalConfigApproval, withdrawalApprovalDisabledReason,
+  withdrawalApprovalReplayQueryBlock,
   withdrawalDirectRecoveryStatus, withdrawalReplayQueryBlock, withdrawalReplayReadError, rememberWithdrawalProcessing,
-  WITHDRAWAL_COMMAND_PROCESSING, WITHDRAWAL_CONFIG_READ_FAILED, WITHDRAWAL_REPLAY_PROCESSED, WITHDRAWAL_REPLAY_RESEND,
+  WITHDRAWAL_COMMAND_PROCESSING, WITHDRAWAL_CONFIG_READ_FAILED, WITHDRAWAL_REPLAY_RESEND,
   WITHDRAWAL_SUBMISSION_CONFIRMED, type WithdrawalReplayObservation, type WithdrawalApprovalReceipt,
 } from "@/lib/admin/withdrawal-config-approval";
 import { useReach } from "@/lib/nav/use-reach";
@@ -646,7 +647,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     if (withdrawalApprovalDisabledReason(rights)) return NO_WRITE;
     try { if (!canManageD7Approval(rights, configApprovalOriginalInput("D7", record.input)[0])) return NO_WRITE; }
     catch { return "原审批内容读不到，请核对原操作"; }
-    return withdrawalReplayQueryBlock(investigationResults[record.commandKey], fundInvestigationAccess(record).canRead, queryMissing.includes(record.commandKey));
+    return withdrawalApprovalReplayQueryBlock(investigationResults[record.commandKey], fundInvestigationAccess(record).canRead, queryMissing.includes(record.commandKey));
   };
 
   /** 查不到原单后按原操作重试。明确拒绝后保留原记录供核实。 */
@@ -697,7 +698,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
     return { key: record.commandKey, title: "参数修改", record: target, outcome, createdAt: record.createdAt, expired, canRetry: !expired && !retryBlock && !processing,
       status: withdrawalDirectRecoveryStatus(outcome, { canInvestigate, expired, processing, retryDisabled: retryBlock }),
-      copy: { processedWithoutRetry: WITHDRAWAL_REPLAY_PROCESSED },
       actions: <>
         <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === `verify:${record.commandKey}`}
           onCheck={() => void verifyDirect(record)} onClose={() => setDirectClosing(record)} />
@@ -724,7 +724,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       original = cause instanceof Error ? cause.message : "原审批内容读不到";
     }
     return { key: approval.commandKey, title: "放宽提交", record: approval, outcome, createdAt: approval.createdAt, expired, canRetry: !expired && !confirmed && !retryDisabled,
-      canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。", processedWithoutRetry: WITHDRAWAL_REPLAY_PROCESSED },
+      canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。" },
       status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED
         : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: withdrawalReplayReadError(outcome.error) }
         : approval.withdrawalStillProcessing ? WITHDRAWAL_COMMAND_PROCESSING

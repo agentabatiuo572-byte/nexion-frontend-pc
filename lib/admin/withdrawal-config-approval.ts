@@ -332,18 +332,21 @@ export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
 
 export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，确认查不到原操作后才能按原请求重试。";
 export const WITHDRAWAL_REPLAY_RESEND = "按原请求重试会重发原内容，已成功的不会重复执行。";
-export const WITHDRAWAL_REPLAY_PROCESSED = "后台已处理，看不出成没成；请核对原操作的结果。";
+
+/** 直接写只在尚未查询或查询失败时阻止重试，查到的回执按原有规则处理。 */
+export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean) {
+  if (!canInvestigate) return undefined;
+  if (!outcome) return WITHDRAWAL_REPLAY_QUERY_REQUIRED;
+  if ("error" in outcome) return withdrawalReplayReadError(outcome.error);
+}
 
 /** 放宽须先按原号查单；能读命令回执时，还须确认查无原命令。 */
-export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing?: boolean) {
-  if (outcome && "receipt" in outcome && outcome.receipt) {
-    return outcome.receipt.originalStatus === "PROCESSING" ? WITHDRAWAL_COMMAND_PROCESSING.line
-      : "已查到原操作的结果记录，不能按原请求重试。";
+export function withdrawalApprovalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing: boolean) {
+  if (outcome && "receipt" in outcome && outcome.receipt) return "已查到原操作的结果记录，不能按原请求重试。";
+  if (!proposalMissing && !(canInvestigate && outcome && "error" in outcome)) {
+    return "先查询原结果，确认查不到原审批单后才能按原请求重试。";
   }
-  if (canInvestigate && outcome && "error" in outcome) return withdrawalReplayReadError(outcome.error);
-  if (proposalMissing === false) return "先查询原结果，确认查不到原审批单后才能按原请求重试。";
-  if (!canInvestigate || outcome && "receipt" in outcome && outcome.receipt === null) return undefined;
-  return WITHDRAWAL_REPLAY_QUERY_REQUIRED;
+  return withdrawalReplayQueryBlock(outcome, canInvestigate);
 }
 
 export function withdrawalReplayReadError(error: string) {

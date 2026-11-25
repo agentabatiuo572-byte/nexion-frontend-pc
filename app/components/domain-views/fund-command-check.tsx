@@ -24,8 +24,6 @@ export type FundCheckCopy = {
   where?: string;
   /** 没有记下原请求出处的旧记录，页面还能查什么（例如只能查审批单）。 */
   missingOrigin?: string;
-  /** 读到处理记录后已禁止同号重试时的下一步。 */
-  processedWithoutRetry?: string;
 };
 /** proposal：原请求是提交审批申请，查到已执行只说明审批单建成了。 */
 export type FundSettled = { key: string; label: string; status: FundCommandInvestigation["originalStatus"]; proposal?: boolean; proposalConclusion?: string; batch?: FundCommandBatch };
@@ -124,7 +122,7 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE) };
   // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", more, line: row.expired ? `后台已处理，看不出成没成；${closure}`
-    : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : row.copy?.processedWithoutRetry ?? "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
+    : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
   return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
 
