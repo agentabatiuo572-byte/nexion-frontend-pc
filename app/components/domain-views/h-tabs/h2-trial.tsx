@@ -884,7 +884,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       }
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
-      notePending(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
+      notePending(record, `查询没有成功：${displayAdminReadError(cause)} 记录继续保留。`);
     } finally {
       setRecovering("");
     }
@@ -906,7 +906,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       toast(`已找回原审批单 ${original.id}，${PROPOSAL_STATUS[original.status]}。结果到「操作记录与审批」看。`, "success");
       await reload();
     } catch (cause) {
-      notePending(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
+      notePending(record, `查询没有成功：${displayAdminReadError(cause)} 记录继续保留。`);
     } finally {
       setRecovering("");
     }
