@@ -23,7 +23,7 @@
  *
  * - 宽 540px，顶部上一条、下一条、关闭；wide 只给长表单和整页证据，不给单条详情。
  * - busy 时 Esc、关闭、上一条下一条和抽屉外的点击全部锁住（CP-06）。
- * - nav 只在当前页已读到的行里切；有未保存内容时页面在 onPrev、onNext 和行的 onOpen 里先拦（OP-29），
+ * - nav 只在当前页已读到的行里切；列表在加载、这一条不在当前结果里时传 unavailable 写原因，不写成首末条；有未保存内容时页面在 onPrev、onNext 和行的 onOpen 里先拦（OP-29），
  *   切条时让旧请求失效也由页面管（D2-H01）。上一条下一条切换后焦点留在抽屉，读屏读出新标题。
  * - footer 固定在底部，内容滚动时决定按钮一直可见（OP-150）。详情读取失败时页面把决定按钮禁用。
  * - 抽屉上最多再叠一层弹窗，弹窗上不再叠弹窗（PG-38）；错误写在最上层。
@@ -113,7 +113,7 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
   const host = useRef<HTMLElement | null>(null);
   const hostHandoff = useRef<(() => HTMLElement | null) | null>(null);
   const wasOpen = useRef(false);
-  const content = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement | null>(null);
   if (open && !wasOpen.current) {
     // 焦点在页面上（body）不算打开者，关掉时按下面的顺序另找。
     const active = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
@@ -149,6 +149,17 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
   latest.current = target;
   /** 开着时的内容节点：卸下后 ref 已清空，用它认「真的摘掉了」。 */
   const opened = useRef<HTMLDivElement | null>(null);
+  /**
+   * 真实内容节点一挂上就记下这一次打开，和它关掉后焦点的去处。不靠 onOpenAutoFocus 记：框里的控件自己取焦（autoFocus）时，
+   * Radix 看到焦点已经在框里就不派发打开自动聚焦，onGone 会认不出这一次打开，焦点落到页面上直到它的定时器（BUG-746 F01）。
+   * 卸下时（node 为 null）不清 opened，onGone 用它核对摘掉的是不是这一个。
+   */
+  const attach = useRef((node: HTMLDivElement | null) => {
+    content.current = node;
+    if (!node) return;
+    opened.current = node;
+    handoffs.set(node, () => latest.current());
+  }).current;
   /** 关掉后焦点交给谁。Radix 卸下内容后要等下一个定时器才调 onCloseAutoFocus；内容卸下时 onGone 先调一次，两次走同一套判断，第二次焦点已有去处就什么都不做。 */
   const settle = () => {
     const self = content.current;
@@ -180,12 +191,10 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
     }
   };
   return {
-    ref: content,
+    ref: attach,
     previous,
     onOpenAutoFocus: (event: Event) => {
       event.preventDefault();
-      if (content.current) handoffs.set(content.current, () => latest.current());
-      opened.current = content.current;
       content.current?.focus();
     },
     onCloseAutoFocus: (event: Event) => {
@@ -220,6 +229,8 @@ export interface DrawerNav {
   onNext: () => void;
   hasPrev: boolean;
   hasNext: boolean;
+  /** 上一条、下一条现在都不能用的原因：列表正在加载、这一条不在当前结果里。不传时按首末条写（BUG-746 I07）。 */
+  unavailable?: string;
 }
 
 export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-other", nav, footer, busy = false, wide = false, keepOnControls = false, children, onKeyDown, ...rest }: Omit<ComponentProps<typeof Dialog.Content>, "title"> & {
@@ -297,8 +308,8 @@ export function Drawer({ open, onClose, title, sub, explain, icon, tone = "role-
             <div className="rd-drawer-tools">
               {nav && (
                 <>
-                  <IconButton aria-label="上一条" disabledReason={busy ? "正在提交" : nav.hasPrev ? undefined : "已经是第一条"} onClick={nav.onPrev}><ChevronUp size={16} aria-hidden /></IconButton>
-                  <IconButton aria-label="下一条" disabledReason={busy ? "正在提交" : nav.hasNext ? undefined : "已经是最后一条"} onClick={nav.onNext}><ChevronDown size={16} aria-hidden /></IconButton>
+                  <IconButton aria-label="上一条" disabledReason={busy ? "正在提交" : nav.unavailable ?? (nav.hasPrev ? undefined : "已经是第一条")} onClick={nav.onPrev}><ChevronUp size={16} aria-hidden /></IconButton>
+                  <IconButton aria-label="下一条" disabledReason={busy ? "正在提交" : nav.unavailable ?? (nav.hasNext ? undefined : "已经是最后一条")} onClick={nav.onNext}><ChevronDown size={16} aria-hidden /></IconButton>
                 </>
               )}
               <IconButton aria-label="关闭" disabled={busy} onClick={close}><X size={16} aria-hidden /></IconButton>

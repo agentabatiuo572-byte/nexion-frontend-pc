@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Pager 分页（CP-36，ST-13、ST-14）。放在表格下面，有数据才渲染，0 条和读取失败时页面不要渲染它。
+ * Pager 分页（CP-36，ST-13、ST-14）。放在表格下面，有数据才渲染：total 为 0 时自己不渲染（加载中也不，没有数据就没有页可翻）；读取失败时页面不要渲染它。
  *
  * <Pager label="提现单" sizeLabel="提现队列" total={rows.total} page={page} pageSize={pageSize} sizes={[10, 20, 50]}
  *   loading={loading} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1); }} note="已收起 …" />
@@ -27,6 +27,7 @@ export function Pager({ label, sizeLabel, total, page, pageSize, sizes, loading 
   onPage: (page: number) => void;
   onPageSize: (size: number) => void;
 }) {
+  if (total <= 0) return null;
   const pages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
   return (
     <div className="rd-pager" data-list-pager="" data-list-label={label}>

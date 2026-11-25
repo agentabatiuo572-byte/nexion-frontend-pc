@@ -7,7 +7,8 @@
  * <BlockState state="denied" title="无权限访问" detail="这个账号没有这块内容的读取权限。" />
  *
  * 失败和空不共用文字（T09）。重试只重读这一块。失败带 data-module-health-state="error"。compact 时一行写完，用在折叠摘要里，重试是文字链，和 InlineRetry 同一个样子。
- * 重读期间「重试」写「重试中…」、aria-busy，用 aria-disabled 不用原生 disabled，焦点不掉到页面上（CP-05、CP-28）。这时还没有结果，失败卡是 status，不是 alert（ST-30、ST-31）。
+ * 重读期间「重试」写「重试中…」、aria-busy，用 aria-disabled 不用原生 disabled，焦点不掉到页面上（CP-05、CP-28）。这时还没有结果，失败卡画成加载中：
+ * 旧的失败标题、原因先收起，写「正在加载…」，是 status 不是 alert；同一个「重试」节点留着。新回包仍失败才放回失败标题、原因和 alert（ST-30、ST-31，BUG-746 F02）。
  * 按过「重试」之后：这一块换成加载中时焦点交给这一块；仍失败焦点回到「重试」；读到了（这一块卸下）焦点交给 afterRetryFocus 指的标题。
  * 没传标题、或这一块重读时被换成别的占位时，焦点交给还挂着的最近一层外框（tabIndex=-1），不掉到页面上；这一层接不到焦点（display: contents、隐藏）就再往外一层。
  * 有的页面点「重试」只改一个计数，下一轮由父层的 effect 才开始读：交接要等真看到重读开始、结束后才算完，不在点完的第一轮就清掉（BUG-710）。
@@ -71,6 +72,9 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
 }) {
   const failed = state === "error";
   const busy = state === "loading" || !!retrying;
+  /** 失败卡按过「重试」、还没有结果：只换样子，交接焦点仍按失败卡算（failed 不变）。 */
+  const rereading = failed && !!retrying;
+  const shown = rereading ? "loading" : state;
   const box = useRef<HTMLDivElement>(null);
   const retryButton = useRef<HTMLButtonElement>(null);
   /** 按过「重试」、这次重读还没有结果：at 是按下的时间，started 是已经看到重读开始（这一块变成忙），target 是按下时给的标题（重读中换成不带标题的加载占位时还用它）。 */
@@ -133,10 +137,10 @@ export function BlockState({ state, title, detail, onRetry, retrying, retryLabel
     });
   }, []);
   return (
-    <div ref={box} tabIndex={-1} className="rd-block-state" data-state={state} data-compact={compact ? "" : undefined} data-module-health-state={failed ? "error" : undefined} role={failed && !retrying ? "alert" : "status"} aria-busy={busy || undefined}>
-      {state === "loading" && <Loader2 className="rd-spin" size={16} aria-hidden />}
-      <div className="rd-block-state-title">{title}</div>
-      {detail && <div className="rd-block-state-detail">{detail}</div>}
+    <div ref={box} tabIndex={-1} className="rd-block-state" data-state={shown} data-compact={compact ? "" : undefined} data-module-health-state={failed && !rereading ? "error" : undefined} role={failed && !rereading ? "alert" : "status"} aria-busy={busy || undefined}>
+      {shown === "loading" && <Loader2 className="rd-spin" size={16} aria-hidden />}
+      <div className="rd-block-state-title">{rereading ? "正在加载…" : title}</div>
+      {detail && !rereading && <div className="rd-block-state-detail">{detail}</div>}
       {retry && (compact ? <InlineRetry ref={retryButton} onRetry={retry} retrying={retrying} label={retryLabel} /> : <Button ref={retryButton} size="sm" loading={retrying} loadingText="重试中…" onClick={retry}>{retryLabel}</Button>)}
     </div>
   );

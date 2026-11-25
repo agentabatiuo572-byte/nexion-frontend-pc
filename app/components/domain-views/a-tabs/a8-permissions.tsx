@@ -2,7 +2,7 @@
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import "../a-domain.css";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check as CheckIcon, Coins, Eye, KeyRound, PenLine, ShieldAlert, Users } from "lucide-react";
 import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8PermissionPage } from "@/lib/admin/a8-client";
 import { fetchA6RolesOverview, fetchA6RoleDetail, type A6RoleSummary } from "@/lib/admin/a6-client";
@@ -59,6 +59,8 @@ export default function A8Permissions() {
   const [detailCode, setDetailCode] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "matrix">("list");
   const reach = useReach();
+  /** 读失败时焦点还在分页条上（键盘翻页）：分页条跟着失败摘掉，记下它所在的面板，失败卡挂上后把焦点交给「重试」（ST-56，BUG-746 F04）。 */
+  const failFocus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,11 +71,29 @@ export default function A8Permissions() {
       .then((data) => { if (!cancelled) setResult(data); })
       .catch((err) => {
         // 失败只写在列表那一块的失败卡里，不再弹提示条（ST-34、ST-57）。
-        if (!cancelled) { setResult(null); setLoadError(displayAdminReadError(err)); }
+        if (!cancelled) {
+          const active = document.activeElement;
+          failFocus.current = active instanceof HTMLElement ? active.closest<HTMLElement>("[data-list-pager]")?.closest<HTMLElement>(".rd-panel") ?? null : null;
+          setResult(null);
+          setLoadError(displayAdminReadError(err));
+        }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [pageNum, pageSize, keyword, domain, permType, reloadKey, setToast]);
+
+  useLayoutEffect(() => {
+    const panel = failFocus.current;
+    if (!panel) return;
+    if (!loadError) { failFocus.current = null; return; }
+    // 失败卡和分页条摘掉不一定在同一次提交里（加载状态后一步才收）：等失败卡挂上再交。焦点已经去了别处就不动。
+    const card = panel.isConnected ? panel.querySelector<HTMLElement>('.rd-block-state[data-state="error"]') : null;
+    if (!card) return;
+    failFocus.current = null;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    (card.querySelector<HTMLElement>("button") ?? card).focus({ preventScroll: true });
+  }, [loadError, loading, view]);
 
   // 矩阵按需拉:每个角色的授权明细要单独一次请求,不开矩阵就不发。
   useEffect(() => {
@@ -220,7 +240,9 @@ export default function A8Permissions() {
             ) : !grants || grants.length === 0 ? (
               <BlockState state="empty" title="没有可展示的角色" />
             ) : records.length === 0 ? (
-              <BlockState state="empty" title="当前筛选下没有权限" />
+              filtered
+                ? <BlockState state="empty" title="没有符合条件的权限" detail={<Button size="sm" onClick={clearFilters}>清除筛选</Button>} />
+                : <BlockState state="empty" title="暂无已登记的权限" detail="在运营账号与权限登记后会显示在这里。" />
             ) : (
               <>
                 {unreadableRoles.length > 0 && (
@@ -286,7 +308,7 @@ export default function A8Permissions() {
           <tbody>
             {loading ? <TableLoading columns={4} rows={Math.min(pageSize, 10)} />
                 : records.length === 0 ? <TableMessage columns={4} role="status">
-                  {filtered ? <>无匹配权限：换个关键词，或把模块、类型改回全部。 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "无匹配权限"}
+                  {filtered ? <>没有符合条件的权限 <Button size="sm" onClick={clearFilters}>清除筛选</Button></> : "暂无已登记的权限；在运营账号与权限登记后会显示在这里。"}
                 </TableMessage>
                   : records.map((p) => (
                     <Tr key={p.permissionCode} selected={p.permissionCode === current} onOpen={() => openDetail(p.permissionCode)}>
@@ -319,6 +341,7 @@ export default function A8Permissions() {
         sub={detail ? operatorCopyText(detail.permissionName || detail.permissionCode) : current ?? undefined}
         explain="每次打开都重新读取这项权限，可能和列表里的略有不同。这里只能查看。"
         nav={{ hasPrev: currentIndex > 0, hasNext: currentIndex >= 0 && currentIndex < records.length - 1,
+          unavailable: loading ? "列表正在加载" : loadError ? "列表加载失败" : currentIndex < 0 ? "这一条不在当前结果里" : undefined,
           onPrev: () => openDetail(records[currentIndex - 1].permissionCode), onNext: () => openDetail(records[currentIndex + 1].permissionCode) }}>
         {detailLoading || !detail ? <JudgmentPoints loading rows={[]} /> : (
           <>

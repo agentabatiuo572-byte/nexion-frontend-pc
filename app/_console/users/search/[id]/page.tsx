@@ -852,7 +852,8 @@ export default function UserDetailPage() {
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !controller.signal.aborted;
     // Keep folds that were open or closed by default before replacing the data.
     setOpenFolds(current => ({
-      security: securityAlert || securityFailed,
+      // 支付安全正在重读时「安全」组也按开着存，不存成收起（BUG-746 I05）。
+      security: securityKeepOpen,
       funds: fundsFailed || fundsAlert,
       devices: devicesFailed || devicesAlert,
       team: teamFailed || countsAlert,
@@ -1766,7 +1767,7 @@ export default function UserDetailPage() {
               <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment} writeBlockedReason={profileWriteBlockedReason} onWriteBusy={setPaymentWriteBusy}
                 onState={onPaymentSecurity} onRetry={() => keepFoldOpen("security")} />
             </div>}
-            {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError} failureRetry={{ onRetry: () => { keepFoldOpen("security"); void loadPaymentMethods(); }, retrying: paymentLoading }}
+            {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError} failureRetry={{ onRetry: () => { keepFoldOpen("security"); void loadPaymentMethods(); }, retrying: paymentLoading }} reloading={paymentLoading && !!paymentError}
               sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
               issue={unfinishedRevokes.length > 0 ? `${unfinishedRevokes.length} 张卡仍可能被扣款` : undefined} issueTone="danger"
               actions={<Button size="sm" aria-label="刷新支付方式" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新</Button>}>
