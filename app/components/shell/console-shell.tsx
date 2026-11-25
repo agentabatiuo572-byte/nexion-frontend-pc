@@ -19,7 +19,7 @@ import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, installAdminAuthFe
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
-import { ADMIN_SESSION_EXPIRED_EVENT, resetAdminSession } from "@/lib/admin/auth-session";
+import { ADMIN_SESSION_EXPIRED_EVENT, adminSessionExpiryPending, resetAdminSession } from "@/lib/admin/auth-session";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
 import { ALL_L2, canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminTheme } from "@/app/components/rd/theme-switch";
@@ -284,17 +284,15 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated) return;
     let disposed = false;
     let refreshing = false;
+    const logoutOwned = () => useAdminAuth.getState().logoutPending || adminSessionExpiryPending();
     const refreshSession = async () => {
-      if (disposed || refreshing) return;
+      if (disposed || refreshing || logoutOwned()) return;
       refreshing = true;
       try {
         const auth = await currentAdminSession();
-        if (disposed) return;
+        if (disposed || logoutOwned()) return;
         if (auth) signIn(auth);
-        else {
-          signOut();
-          setBootstrapState("anonymous");
-        }
+        else resetAdminSession();
       } catch {
         // Keep the current session on transient network errors; protected APIs remain server-authoritative.
       } finally {
@@ -311,7 +309,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener(PERMISSION_DENIED_EVENT, onFocus);
       window.clearInterval(timer);
     };
-  }, [bootstrapState, isAuthenticated, mounted, signIn, signOut]);
+  }, [bootstrapState, isAuthenticated, mounted, signIn]);
 
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || logoutPending || logoutUnknown || !session) return;
@@ -321,11 +319,10 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       touch: async () => {
         try {
           const auth = await recordAdminActivity(session.adminId);
-          if (disposed) return false;
+          if (disposed || useAdminAuth.getState().logoutPending || adminSessionExpiryPending()) return false;
           if (!auth) {
             activity.stop();
-            signOut();
-            setBootstrapState("anonymous");
+            resetAdminSession();
             return false;
           }
           signIn(auth);
@@ -347,7 +344,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       activity.stop();
       for (const event of events) window.removeEventListener(event, onInput);
     };
-  }, [authEpoch, bootstrapState, isAuthenticated, logoutPending, logoutUnknown, mounted, session?.adminId, signIn, signOut, restoreAdminSession]);
+  }, [authEpoch, bootstrapState, isAuthenticated, logoutPending, logoutUnknown, mounted, session?.adminId, signIn, restoreAdminSession]);
 
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || !canReadA3) {

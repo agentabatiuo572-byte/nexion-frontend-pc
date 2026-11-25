@@ -1,6 +1,6 @@
 import { guardedFetch, formatAdminApiError } from "@/lib/admin/error-messages";
 import { adminAuthLifecycleEpoch, AdminAuthEpochChangedError } from "@/lib/admin/auth-lifecycle";
-import { isAdminAuthFailure } from "@/lib/admin/auth-session";
+import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
@@ -21,7 +21,7 @@ async function request(path: string, method = "GET", body?: unknown, key?: strin
   if (epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
   const raw = await response.json().catch(() => null);
   if (epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
-  if (method !== "GET" && response.status !== 401 && isAdminAuthFailure(response.status, raw?.message)) useAdminAuth.getState().signOut();
+  if (method !== "GET" && response.status !== 401 && isAdminAuthFailure(response.status, raw?.message)) resetAdminSession(epoch);
   if (!response.ok || raw?.code !== 0 || raw?.data == null) {
     const unknown = body !== undefined && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || outcomeStaysUnknown(response.status, raw?.code)
       || raw?.message === "IDEMPOTENCY_REQUEST_IN_PROGRESS" || raw?.message === "IDEMPOTENCY_RESULT_UNKNOWN");
