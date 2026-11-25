@@ -459,6 +459,8 @@ export default function A8Permissions() {
           unavailable: loading ? "列表正在加载" : loadError ? "列表加载失败" : currentIndex < 0 ? "这一条不在当前结果里" : undefined,
           onPrev: () => openDetail(records[currentIndex - 1].permissionCode), onNext: () => openDetail(records[currentIndex + 1].permissionCode) }}>
         {detailFailure?.kind === "denied" ? <BlockState state="denied" title={detailFailure.message} />
+          // 权限已删除是结论，不是读取失败：不画成失败卡，写去处（ST-35）。
+          : detailFailure?.kind === "missing" ? <BlockState state="empty" title="这项权限已被删除" detail="列表里可能还显示着它，点页头「刷新」按最新内容重读。" />
           : detailFailure ? <BlockState state="error" title="权限详情加载失败" detail={detailFailure.message}
             retryKey="a8-detail" retrying={detailLoading}
             onRetry={detailFailure.kind === "error" && current ? () => openDetail(current, true) : undefined} />
