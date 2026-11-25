@@ -222,10 +222,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     return <div className="e3p">
       {header}
       {recovery}
-      {e3Loading && !e3Ready ? <BlockState state="loading" title="正在读取规则和统计…" />
-        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={e3Error} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
-        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系技术同事核对配置。`} retryLabel="重新读取" retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
-        : <BlockState state="loading" title="正在读取规则和统计…" />}
+      {e3Loading && !e3Ready ? <BlockState state="loading" title="正在加载规则和统计…" />
+        : e3Error ? <BlockState state="error" title="规则和统计没有读到" detail={e3Error} retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : e3Ready ? <BlockState state="error" title={`规则没有读全：缺 ${missing.length} 项`} detail={`缺 ${[...new Set(missing.map(keyName))].slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。读全之前不显示规则，也不能修改，请稍后重新读取或联系技术同事核对配置。`} retrying={e3Loading} onRetry={() => void ctx.refreshE3()} />
+        : <BlockState state="loading" title="正在加载规则和统计…" />}
       {manual}
     </div>;
   }

@@ -832,7 +832,7 @@ export default function A6Roles() {
               </Panel>
             ) : !detail ? (
               <Panel title={summary?.roleName || "角色详情"} icon={KeyRound} tone="role-4">
-                <BlockState state="loading" title="角色详情加载中…" />
+                <BlockState state="loading" title="正在加载角色详情…" />
               </Panel>
             ) : (
               <RoleDetail detail={detail} summary={summary} canWrite={canWrite} canGrant={canGrant}

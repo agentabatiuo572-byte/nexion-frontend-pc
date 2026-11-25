@@ -191,9 +191,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
       explain="核验结论直接记录到当前这一版材料，不批准预算。批准和驳回要另一位管理员批准；核验过这一版材料的人不能做最终批准。申请人补交材料会形成新的一版，旧结论要重新核验。"
       footer={<Decision
         note={!final && !ctx.can("network_f4_ambassador_approve") ? "当前账号没有大使最终批准权限，只能查看和核验。" : final ? "这份申请已经处理，只能查看。" : undefined}
-        danger={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="danger-outline" disabledReason={operable ? expiredReason : loading ? "正在读取材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试"} onClick={reject}>驳回申请</Button> : undefined}
+        danger={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="danger-outline" disabledReason={operable ? expiredReason : loading ? "正在加载材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试"} onClick={reject}>驳回申请</Button> : undefined}
         others={<Button onClick={onClose}>关闭</Button>}
-        primary={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="primary" disabledReason={canProposeApproval ? expiredReason : !operable ? (loading ? "正在读取材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试") : proposalBlockers[0] ?? "还不满足批准条件"} onClick={approve}>发起批准</Button> : undefined} />}>
+        primary={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="primary" disabledReason={canProposeApproval ? expiredReason : !operable ? (loading ? "正在加载材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试") : proposalBlockers[0] ?? "还不满足批准条件"} onClick={approve}>发起批准</Button> : undefined} />}>
       <div className="f4-materials" aria-busy={loading}>
         {recoveryNotice && <Notice tone="progress">{recoveryNotice}</Notice>}
         {pending && (() => {
@@ -222,7 +222,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
           <Fact k="活动或服务日期">{packet?.eventDate || application.eventDate || "—"}</Fact>
           <Fact k="材料">{packet ? `${ambassadorMaterialStateLabel(packet.materialState)} · 第 ${packet.materialRevision} 版` : "—"}</Fact>
         </Facts>
-        {loading ? <BlockState state="loading" title="正在读取当前材料和核验状态…" />
+        {loading ? <BlockState state="loading" title="正在加载当前材料和核验状态…" />
           : error ? <BlockState state="error" title="材料加载失败" detail={error} onRetry={() => void refresh()} />
           : packet && <>
             {packet.legacyApproved && <Notice tone="neutral">历史已批准的申请：保留原额度和状态，没有材料，不补作核验通过。</Notice>}

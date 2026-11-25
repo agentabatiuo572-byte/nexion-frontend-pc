@@ -249,7 +249,7 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
   if (!data) {
     return error
       ? <BlockState state="error" title="创世认购设置加载失败" detail={error} retryLabel="重试" onRetry={() => void load()} />
-      : <BlockState state="loading" title="创世认购设置加载中…" />;
+      : <BlockState state="loading" title="正在加载创世认购设置…" />;
   }
 
   const configuredCount = G4_CONFIGS.filter((definition) => data.config[definition.key] != null && data.config[definition.key] !== "").length;

@@ -887,14 +887,14 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
     ? <Notice tone="progress" title="原操作已有结果，正在重新读取">读完后命中和参数按最新数据显示；这期间不能发起新的操作。</Notice> : null;
 
   if (ctx.contentLoading && !overview) {
-    return <>{header}{pendingNotices}<BlockState state="loading" title="正在读取并检测命中" /></>;
+    return <>{header}{pendingNotices}<BlockState state="loading" title="正在加载并检测命中" /></>;
   }
 
   if (ctx.contentError) {
     return (
       <>{header}{pendingNotices}
         <div data-module-health-state="error">
-          <BlockState state="error" title="套利与刷量数据加载失败" detail={errorText(ctx.contentError).includes("已隐藏数据") ? errorText(ctx.contentError) : `${errorText(ctx.contentError)} 为避免误操作，已隐藏数据和操作按钮。`} onRetry={reload} retrying={ctx.contentLoading} retryLabel="重新加载" />
+          <BlockState state="error" title="套利与刷量数据加载失败" detail={errorText(ctx.contentError).includes("已隐藏数据") ? errorText(ctx.contentError) : `${errorText(ctx.contentError)} 为避免误操作，已隐藏数据和操作按钮。`} onRetry={reload} retrying={ctx.contentLoading} />
         </div>
       </>
     );
@@ -1088,7 +1088,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
         <Panel plain headingLevel={3} title="相关设置" explain="这两项归别的页面管，这里只读。">
           <ConfigList label="相关设置">
             <ConfigRow name="升级置换首档抵扣" explainLabel="升级置换首档抵扣" what="升级置换第一档的抵扣比例，和置换套利有关。" where="在「设备使用与升级置换」设置，这里只读。"
-              value={ladderReference.status === "loading" ? "读取中…"
+              value={ladderReference.status === "loading" ? "正在加载…"
                 : ladderReference.status === "error" ? <span className="k2-ref-failed" role="alert" title={ladderReference.message}>抵扣比例加载失败 · 请稍后重试<Button size="sm" aria-label="重试加载升级置换首档抵扣" onClick={() => setLadderReferenceAttempt((attempt) => attempt + 1)}>重试</Button></span>
                 : <>{ladderReference.value === null ? "未提供" : `${ladderReference.value}%`}{reach("/devices/trade-in", "device_e3_read") && <> · <Link className="rd-link" href="/devices/trade-in">设备使用与升级置换</Link></>}</>} />
             <ConfigRow name="新人礼金额与发放规则" explainLabel="新人礼金额与发放规则" what="新人礼和邀请奖励发多少、怎么发。" where="在「新人礼与邀请奖励」设置，本页不改金额。"

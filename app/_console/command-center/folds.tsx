@@ -66,7 +66,7 @@ function Amount({ label, value, tone, note, href, reach }: { label: string; valu
 
 function fundFoldSummary(ledger: BLedger | null, liquidity: BLiquidity | null, error: string | null, level: FundLevel) {
   if (error) return "读取失败";
-  if (!ledger || !liquidity) return "正在读取…";
+  if (!ledger || !liquidity) return "正在加载…";
   const net = ledger.reserveUsd - ledger.liabilitiesUsd;
   const word = net > 0 ? "储备多于应付款" : net === 0 ? "储备刚好够付应付款" : "储备不够付应付款";
   // 摘要上色时文字也要说出状态（VS-21）。
@@ -99,7 +99,7 @@ export function FundFold({ ledger, liquidity, error, retrying, onRetry, alert, l
     <Fold title="资金明细" summary={fundFoldSummary(ledger, liquidity, error, level)} icon={Wallet} tone="role-1" alert={alert} alertTone={level === "danger" ? "danger" : "warn"} open={open} onOpenChange={onOpenChange}
       actions={linkInBrief ? undefined : <FoldLink reach={reach} href="/overview/dual-ledger">查看资金与应付款总览</FoldLink>}>
       {error ? <BlockState compact state="error" title="资金数据读取失败" detail={error} onRetry={onRetry} retrying={retrying} />
-        : !ledger || !liquidity ? <BlockState compact state="loading" title="正在读取…" />
+        : !ledger || !liquidity ? <BlockState compact state="loading" title="正在加载…" />
           : (
             <div className="cc-fold-stack">
               <div className="cc-amounts">
@@ -157,7 +157,7 @@ export function pressureLevel(ledger: BLedger | null, risk: BRiskRadar | null) {
 
 function riskFoldSummary(ledger: BLedger | null, risk: BRiskRadar | null, error: string | null) {
   if (error) return "读取失败";
-  if (!ledger || !risk) return "正在读取…";
+  if (!ledger || !risk) return "正在加载…";
   const gates = availableGates(risk);
   const closed = gates.filter((gate) => !gate.on);
   const parts = [
@@ -191,7 +191,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
       actions={<FoldLink reach={reach} href="/overview/risk-radar">查看风险提醒</FoldLink>}>
       <div className="cc-fold-stack">
       {error ? <BlockState compact state="error" title="风险数据读取失败" detail={error} onRetry={onRetry} retrying={retrying} />
-        : !ledger || !risk ? <BlockState compact state="loading" title="正在读取…" />
+        : !ledger || !risk ? <BlockState compact state="loading" title="正在加载…" />
           : (
             <>
               {(closed.length > 0 || switchLink) && (
@@ -333,7 +333,7 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
 }) {
   const opened = useOpenedOnce(open);
   const redemption = useBlock(fetchB0Redemption, opened && blocks.redemption, refreshKey);
-  const title = !blocks.netFlow ? "入金和提现明细" : historyError ? "读取失败" : history ? flowConclusion(history) : "正在读取…";
+  const title = !blocks.netFlow ? "入金和提现明细" : historyError ? "读取失败" : history ? flowConclusion(history) : "正在加载…";
   const todayFlow = history?.flowWindows.at(-1);
   const moved = history?.flowWindows.some((item) => item.inflowWan > 0 || item.outflowWan > 0);
   // 近 8 天全是 0 时结论在标题行写过，这里不再写，今日明细左右排。
@@ -343,12 +343,12 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
       {summary ? <PeriodDetail period={period} summary={summary} />
         : (blocks.deposits || blocks.withdrawals) && (summaryError
           ? <BlockState retryKey="folds-345" compact state="error" title="入金和提现明细读取失败" detail={summaryError} onRetry={onRetrySummary} retrying={summaryLoading} />
-          : <BlockState compact state="loading" title="正在读取…" />)}
+          : <BlockState compact state="loading" title="正在加载…" />)}
       {blocks.topup && (
         <section aria-label="今日充值">
           <h3 className="cc-sub">今日充值</h3>
           {topup.error ? <BlockState retryKey="folds-350" compact state="error" title="今日充值读取失败" detail={topup.error} onRetry={topup.reload} retrying={topup.loading} />
-            : !topup.data ? <BlockState compact state="loading" title="正在读取…" />
+            : !topup.data ? <BlockState compact state="loading" title="正在加载…" />
               : (
                 <>
                   {/* 合计已在入金卡上时不再写，同一个数一页只出现一次（DP-61）；各渠道金额和笔数只在这里。 */}
@@ -368,7 +368,7 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
         <section aria-label="今日提现">
           <h3 className="cc-sub">今日提现申请</h3>
           {redemption.error ? <BlockState retryKey="folds-370" compact state="error" title="今日提现读取失败" detail={redemption.error} onRetry={redemption.reload} retrying={redemption.loading} />
-            : !redemption.data ? <BlockState compact state="loading" title="正在读取…" />
+            : !redemption.data ? <BlockState compact state="loading" title="正在加载…" />
               : <p className="cc-line">提交 {fmtNum(redemption.data.submitted)} 笔，完成 {fmtNum(redemption.data.confirmed)} 笔，拒绝 {fmtNum(redemption.data.rejected)} 笔{redemption.data.averageLatencyHours == null ? "" : `，平均到账 ${redemption.data.averageLatencyHours} 小时`}</p>}
         </section>
       )}
@@ -385,7 +385,7 @@ export function FlowFold({ blocks, period, summary, summaryError, summaryLoading
         {blocks.netFlow && !quiet && (
           <section aria-label="近 8 天资金进出">
             {historyError ? <BlockState retryKey="folds-387" compact state="error" title="资金进出读取失败" detail={historyError} onRetry={onRetryHistory} retrying={historyRetrying} />
-              : !history ? <BlockState compact state="loading" title="正在读取…" />
+              : !history ? <BlockState compact state="loading" title="正在加载…" />
                 : <Bars label="近 8 天每天流入和流出" series={[{ name: "流入", slot: 2 }, { name: "流出", slot: 4 }]} rows={history.flowWindows.map((item) => ({ label: item.label, values: [item.inflowWan * 10_000, item.outflowWan * 10_000] }))} format={usdt} height={96} />}
             {todayFlow && <p className="cc-line">今日流入 {usdt(todayFlow.inflowWan * 10_000)}，流出 {usdt(todayFlow.outflowWan * 10_000)}</p>}
           </section>
@@ -409,7 +409,7 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
     return !found || stage.cvrFromPrev < found.cvr ? { from: previous.stage, to: stage.stage, cvr: stage.cvrFromPrev } : found;
   }, null);
   const conclusion = error ? "读取失败"
-    : !data ? "正在读取…"
+    : !data ? "正在加载…"
       : !data.available || !stages.length ? (data.message ?? "暂无转化数据")
         : tooFew ? "注册不足 5 人，样本过小"
           : allSmall ? "每一步人数都太少，样本过小"
@@ -417,7 +417,7 @@ function FunnelBody({ onSummary }: { onSummary: (text: string) => void }) {
               : worst ? `流失最多的一步是${worst.from}到${worst.to}` : "每一步人数都太少，样本过小";
   useEffect(() => { onSummary(conclusion); }, [conclusion, onSummary]);
   if (error) return <BlockState compact state="error" title="用户转化读取失败" detail={error} onRetry={() => void reload()} retrying={loading} />;
-  if (!data) return <BlockState compact state="loading" title="正在读取…" />;
+  if (!data) return <BlockState compact state="loading" title="正在加载…" />;
   if (!data.available || !stages.length) return <BlockState compact state="error" title="用户转化暂无数据" detail={data.message ?? "暂无转化数据"} onRetry={() => void reload()} retrying={loading} />;
   // 结论已经写在折叠标题行，这里不再写一遍（VS-105），只说什么时候会有图。
   if (tooFew || allSmall) return <p className="cc-line" data-muted="">满 5 人的步骤显示人数，不满 5 人的步骤先不显示。</p>;
@@ -463,9 +463,9 @@ export function FunnelFold({ funnel, period, registrations, refreshKey, reach, o
   const opened = useOpenedOnce(open);
   const [summary, setSummary] = useState<string | null>(null);
   const trend = registrations && period !== "today" ? <RegistrationTrend period={period} registrations={registrations} /> : null;
-  const title = funnel ? summary ?? (opened ? "正在读取…" : "点开看注册到提现各步人数")
+  const title = funnel ? summary ?? (opened ? "正在加载…" : "点开看注册到提现各步人数")
     : registrations ? (period === "today" ? "选本周、本月或全部看新注册走势" : `${PERIODS.find((item) => item.value === period)!.label}新注册 ${fmtNum(registrations.count)} 人的走势`)
-      : "正在读取…";
+      : "正在加载…";
   return (
     <Fold title="用户与转化" summary={title} icon={Users} tone="role-3" open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/overview/funnel">查看明细</FoldLink>}>
@@ -512,7 +512,7 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
   const passedKpis = effective.filter((kpi) => kpi.pass === true);
   const summary = kpis.error ? "读取失败"
     : !opened ? "点开看哪些目标没达到"
-      : !kpis.data ? "正在读取…"
+      : !kpis.data ? "正在加载…"
         : rows.length === 0 ? "关键指标暂无数据"
           : rollup.failed === 0 && rollup.unknown === 0 && rollup.suppressed === 0 ? (rollup.total === 8 ? "八项都达标" : `${rollup.total} 项都达标`)
             : [rollup.failed > 0 ? `未达标 ${rollup.failed} 项` : "", rollup.unknown > 0 ? `暂无法计算 ${rollup.unknown} 项` : "", rollup.suppressed > 0 ? `样本过小 ${rollup.suppressed} 项` : ""].filter(Boolean).join("，");
@@ -529,7 +529,7 @@ export function KpiFold({ refreshKey, reach, open, onOpenChange }: FoldProps & {
     <Fold title="关键指标" summary={summary} icon={Target} tone="role-3" open={open} onOpenChange={onOpenChange}
       actions={<FoldLink reach={reach} href="/analytics/kpi">查看关键指标</FoldLink>}>
       {opened && (kpis.error ? <BlockState compact state="error" title="关键指标读取失败" detail={kpis.error} onRetry={kpis.reload} retrying={kpis.loading} />
-        : !kpis.data ? <BlockState compact state="loading" title="正在读取…" />
+        : !kpis.data ? <BlockState compact state="loading" title="正在加载…" />
           : rows.length === 0 ? <BlockState state="empty" title="关键指标暂无数据" />
             : (
               <div className="cc-fold-stack">

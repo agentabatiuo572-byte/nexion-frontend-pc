@@ -1207,7 +1207,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   );
 
   if (loading && !params) {
-    return <>{header}{pendingNotices}{queueNoticeOutsideConfig}{queueReadNotice}<BlockState state="loading" title="提现参数加载中…" />{releaseModal}</>;
+    return <>{header}{pendingNotices}{queueNoticeOutsideConfig}{queueReadNotice}<BlockState state="loading" title="正在加载…" />{releaseModal}</>;
   }
 
   if (!params) {

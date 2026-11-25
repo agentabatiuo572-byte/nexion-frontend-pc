@@ -239,10 +239,10 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       readOnly={readOnly ? "当前账号只能查看这页" : undefined}
       meta={readAt ? <span className="rd-toolbar">
         <span>{`${businessClock(readAt)} 读取（${businessZone().label}）`}</span>
-        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>
+        <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="正在加载…" onClick={() => void ctx.refreshF4()}>刷新</Button>
       </span> : undefined}
       actions={<>
-        {!readAt && <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="读取中…" onClick={() => void ctx.refreshF4()}>刷新</Button>}
+        {!readAt && <Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.f4Loading} loadingText="正在加载…" onClick={() => void ctx.refreshF4()}>刷新</Button>}
         <Button icon={<ArrowRight size={14} aria-hidden />} onClick={onOpenCommissions}>奖励记录核对</Button>
       </>} />
   );

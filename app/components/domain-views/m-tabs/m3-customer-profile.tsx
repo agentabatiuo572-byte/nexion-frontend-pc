@@ -601,7 +601,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
       {/* 资料重读期间标签和备注都不能改：原因在这一组顶上常显一次（OP-126）；有更优先的原因（不能写、正在保存、上次刷新失败）时不写。 */}
       {writable && !writing && !annotationsStale && invitationWriteBlock && <p className="rd-toolbar-note">{invitationWriteBlock}</p>}
       {/* 已保存、正在读回最新资料：编辑入口都禁用着，原因在这里常显一次（OP-126，R25）。 */}
-      {writable && readingBack && <p className="rd-toolbar-note">保存后正在读取最新资料，读完再编辑</p>}
+      {writable && readingBack && <p className="rd-toolbar-note">保存后正在加载最新资料，读完再编辑</p>}
       <p className="rd-form-group-title">自定义标签</p><div className="m3-profile-tags">{Array.isArray(annotations?.customTags)&&annotations.customTags.map(t=><span key={String(t)}>{show(t)} {!readOnlyAnnotations && <IconButton aria-label={`删除标签 ${show(t)}`} disabled={!writable||writing||annotationsStale} disabledReason={writable && !writing && !annotationsStale ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.removeCustomerTag(id,String(t)),()=>{})}><Icon name="x" size={12}/></IconButton>}</span>)}</div>
       {writable&&<div className="m3-profile-editor"><Field label="新标签">{control=><Input {...control} value={tag} maxLength={30} disabled={!writable||writing||statisticsRetrying||annotationsStale} onChange={e=>setTag(e.target.value)}/>}</Field><Button size="sm" disabled={!writable||writing||annotationsStale||!tag.trim()} disabledReason={writable && !writing && !annotationsStale && tag.trim() ? invitationWriteBlock : undefined} onClick={()=>void annotate(id=>ctx.addCustomerTag(id,tag.trim()),()=>setTag(""))}>添加标签</Button></div>}
       {asRows(annotations?.notes).length === 0 ? <p className="m-admin-muted">暂无内部备注。</p> : <Timeline label="内部备注" entries={asRows(annotations?.notes).map((r,i) => ({

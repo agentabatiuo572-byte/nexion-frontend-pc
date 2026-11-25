@@ -535,7 +535,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       <>
         {header}
         {pendingBars}
-        <div className="k4-loading" aria-label="正在读取风险评分">
+        <div className="k4-loading" aria-label="正在加载风险评分">
           <div className="rd-skeleton k4-skel-line" />
           <div className="rd-skeleton k4-skel-tabs" />
           <div className="k4-skel-grid"><div className="rd-skeleton" /><div className="rd-skeleton" /></div>
@@ -553,7 +553,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         {pendingBars}
         <Panel title="风险评分">
           <BlockState state="error" title="风险评分加载失败" detail={<><p>{ctx.contentError}</p><p>为避免误判，不显示旧数据，也不能保存、发布或改分。</p></>}
-            retryLabel="重新加载" onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
+            onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
         </Panel>
       </>
     );
@@ -567,7 +567,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         {pendingBars}
         <Panel title="风险评分">
           <BlockState state="error" title="没有拿到当前生效的评分规则" detail="生效的评分规则暂时读不到，这页不拿默认值代替。请重新加载，仍然没有就联系值班人员。"
-            retryLabel="重新加载" onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
+            onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
         </Panel>
       </>
     );
@@ -979,7 +979,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         sub={alertsLoaded && !withdrawalAlertError ? `最近 ${withdrawalAlerts.length} 条 · 未读 ${unreadAlerts}` : undefined}
         explain={<><p>新提现时用户的风险分达到当时的自动升级线，就给当时有改分权限的管理员和超级管理员各发一条；这笔提现怎么走，「提现风险规则」的冻结和延迟优先，其余转人工审核。</p><p>这里只有发给你本人的最近 50 条；标为已读只改你自己的收件状态，不影响提现，也不影响别人的未读。</p><p>时间为{businessZone().label}。</p></>}
         actions={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={alertsReading} onClick={() => void readWithdrawalAlerts()}>重新读取</Button>}>
-        {!alertsLoaded ? <BlockState state="loading" title="正在读取告警" />
+        {!alertsLoaded ? <BlockState state="loading" title="正在加载告警" />
           : withdrawalAlertError ? <BlockState state="error" title="告警加载失败" detail={withdrawalAlertError} onRetry={() => void readWithdrawalAlerts()} />
             : withdrawalAlerts.length === 0 ? <BlockState state="empty" title="暂无提现升级告警" detail="有新提现的风险分达到自动升级线时，会在这里提醒你。" />
               : (

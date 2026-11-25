@@ -271,7 +271,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
 
   /* ---------------- 页头 ---------------- */
   const readAt = useMemo(() => (overviewRaw ? formatBusinessTimeCompact(new Date().toISOString(), "") : ""), [overviewRaw]);
-  const allBlocked = parentLoading ? "正在读取，读完再导出" : parentFailed ? "行为数据读取失败，暂时不能导出" : !parent.available ? "近 7 天没有页面浏览和点击，没有可导出的数据" : undefined;
+  const allBlocked = parentLoading ? "正在加载，读完再导出" : parentFailed ? "行为数据读取失败，暂时不能导出" : !parent.available ? "近 7 天没有页面浏览和点击，没有可导出的数据" : undefined;
   const currentBlocked = refreshing ? "正在按新条件读取，读完再导出"
     : liveError ? "这组条件有读取失败，刷新或换一个条件后再导出"
       : !heatmapData.available || !stats.length ? "这组条件下没有页面浏览和点击，没有可导出的数据" : undefined;
@@ -311,7 +311,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
           onChange={(value) => { setDepth(value); setSel(null); }} />
       </>}
       sort={<span className="l6-now rd-filter-result">
-        现在看：{refreshing ? `${scope} · 正在读取` : scope}
+        现在看：{refreshing ? `${scope} · 正在加载` : scope}
         <Explain label="这几个条件管什么" content={<>
           <p>时间范围从读取那一刻往前滚动 24 小时、7 天、30 天，不是自然日、周、月；时区 {heatmapData.available ? zoneWord(heatmapData.businessTimeZone) : businessZone().label}。</p>
           <p>页面层级：{DEPTH_HINT[depth]}。按一级、二级汇总时一行是一组页面，同一人在一组里只算一次。</p>
@@ -359,12 +359,12 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
     const loading = refreshing || ctx.biLoading;
     const error = liveError || ctx.biError;
     return page(<>
-      <Conclusion state="unknown">{loading ? "用户行为热力图：正在读取" : error ? "用户行为热力图：读取失败，暂时无法判断" : "用户行为热力图：没有读到要统计的页面"}</Conclusion>
+      <Conclusion state="unknown">{loading ? "用户行为热力图：正在加载" : error ? "用户行为热力图：读取失败，暂时无法判断" : "用户行为热力图：没有读到要统计的页面"}</Conclusion>
       {loading
-        ? <BlockState state="loading" title="正在读取页面目录和行为数据…" />
+        ? <BlockState state="loading" title="正在加载页面目录和行为数据…" />
         : error
-          ? <BlockState state="error" title="行为数据读取失败，不显示旧数据" detail={<>{error === ctx.biError ? `${error} ` : ""}筛选条件还留着，重新加载后按这组条件再读；还是失败的话，请把错误信息发给技术同事。{error !== ctx.biError && <ErrorText text={error} />}</>} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-          : <BlockState state="empty" title="没有读到要统计的页面" detail="页面目录里可能没有开启统计的页面，或这次没读到。请重新加载；仍然没有，请告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+          ? <BlockState state="error" title="行为数据读取失败，不显示旧数据" detail={<>{error === ctx.biError ? `${error} ` : ""}筛选条件还留着，重新加载后按这组条件再读；还是失败的话，请把错误信息发给技术同事。{error !== ctx.biError && <ErrorText text={error} />}</>} onRetry={() => void ctx.reloadBi?.()} />
+          : <BlockState state="empty" title="没有读到要统计的页面" detail="页面目录里可能没有开启统计的页面，或这次没读到。请重新加载；仍然没有，请告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
     </>);
   }
 
@@ -408,7 +408,7 @@ export function L6BehaviorHeatmap({ ctx, title, summary }: { ctx: LCtx; title: R
   if (refreshing) {
     return page(<>
       <Conclusion state="unknown">用户行为热力图：正在按新条件读取</Conclusion>
-      <BlockState state="loading" title={`正在读取 ${scope} 的页面数据…`} detail="读完自动显示；这期间不能导出当前筛选。" />
+      <BlockState state="loading" title={`正在加载 ${scope} 的页面数据…`} detail="读完自动显示；这期间不能导出当前筛选。" />
     </>);
   }
 

@@ -674,7 +674,7 @@ function G7RepurchasePage() {
       <>
         {header}
         {recoveryNotice()}
-        <BlockState state="loading" title="正在读取锁定计划…" />
+        <BlockState state="loading" title="正在加载锁定计划…" />
         {confirmModal}
       </>
     );
@@ -686,8 +686,8 @@ function G7RepurchasePage() {
         {header}
         {recoveryNotice()}
         <BlockState state="error" title="锁定计划数据读取失败"
-          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据。"} /></>}
-          retryLabel="重新加载" onRetry={() => void reload()} />
+          detail={error || "没有收到数据。"}
+          onRetry={() => void reload()} />
         {confirmModal}
       </>
     );
@@ -711,7 +711,7 @@ function G7RepurchasePage() {
     const direct = directRecord(param.key);
     const recovery = record ? records.find((row) => row.commandKey === record.commandKey) : undefined;
     const editable = canEdit(param.key);
-    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record && !direct ? "当前值没读到，重新加载后再改"
+    const disabledReason = busy ? "正在处理上一项，稍候再操作" : readFailed && !record && !direct ? "当前值没读到，重试成功后再改"
       : lockedParams[param.key] && !record && !direct ? lockedParams[param.key].message : undefined;
     return (
       <ConfigRow key={param.key} name={name}
@@ -918,7 +918,7 @@ function G7RepurchasePage() {
           </tbody>
         </Table>
         {hasMore && nextCursor !== null && <div className="g7x-more">
-          <Button size="sm" loading={loadingMore} loadingText="读取中…" disabledReason={loading ? "正在重新读取" : undefined} onClick={() => void loadMore()}>加载更多</Button>
+          <Button size="sm" loading={loadingMore} loadingText="正在加载…" disabledReason={loading ? "正在重新读取" : undefined} onClick={() => void loadMore()}>加载更多</Button>
         </div>}
       </Panel>
 

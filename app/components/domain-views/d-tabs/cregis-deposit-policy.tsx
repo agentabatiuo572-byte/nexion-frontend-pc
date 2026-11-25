@@ -187,7 +187,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
     } finally { mutation.current = false; if (owns()) setBusy(false); }
   }
   const retryBlock = pending && (!retryWindowOpen(pending) ? RETRY_EXPIRED : missingProposalKey !== pending.commandKey ? CHECK_FIRST : undefined);
-  const entryBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : !policy ? "规则没读到，刷新后再试" : pending && !pending.terminal ? "有一个提案还没结束，先在上面查询原提案" : pending ? "先点「核对完成，准备新变更」" : undefined;
+  const entryBlock = loading ? "正在加载最新数据" : busy ? "正在提交" : !policy ? "规则没读到，刷新后再试" : pending && !pending.terminal ? "有一个提案还没结束，先在上面查询原提案" : pending ? "先点「核对完成，准备新变更」" : undefined;
   const audit = reach("/platform/audit", "platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=D">查看操作记录与审批</Link>;
   return <Panel icon={Scale} tone="role-4" title="USDT 共同充值规则"
     explain={<><p>三个网络共用这三项，三项一起提交审批。TRC20 通道暂未开放。</p><p>{APPROVAL_TEXT}未入账交易仍须满足环境安全确认数下限，TRC20 还须通过固化区块核验。</p>{policy && <p>现在生效的是第 {policy.version} 版。</p>}</>}
@@ -208,7 +208,7 @@ function Editor({ owner, epoch, operator, canManage, openActionConfirm, onActivi
       </Notice>}
       {error && <Notice tone="warn">{error}</Notice>}
       {message && <Notice tone="progress">{message}</Notice>}
-      {loading && !policy ? <BlockState state="loading" title="正在读取充值规则…" />
+      {loading && !policy ? <BlockState state="loading" title="正在加载充值规则…" />
         : !policy ? <BlockState state="error" title="充值规则读取失败" detail={error} onRetry={() => void refresh()} />
           : <ConfigList label="USDT 共同充值规则">
             <ConfigRow name="最低充值额" what="USDT 充值的最低金额" when="超级管理员批准后生效" where="App 充值页 › USDT 链上「最低充值」" effect="低于它的到账不自动入账"

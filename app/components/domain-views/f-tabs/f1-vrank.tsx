@@ -279,7 +279,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
 
   if (rows.length === 0) {
     const body = ctx.f1Loading
-      ? <><Conclusion state="unknown">正在读取会员等级…</Conclusion>{recovery}<Panel title="九级阶梯"><BlockState state="loading" title="正在读取会员等级" /></Panel></>
+      ? <><Conclusion state="unknown">正在加载会员等级…</Conclusion>{recovery}<Panel title="九级阶梯"><BlockState state="loading" title="正在加载会员等级" /></Panel></>
       : ctx.f1Error
         ? <><Conclusion state="unknown" hint="点页头「刷新」重试；其他页签照常能看。">会员等级：暂时无法判断</Conclusion>
           {recovery}

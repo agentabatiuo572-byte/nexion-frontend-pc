@@ -576,7 +576,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     {acknowledgedReadFailure && <Notice tone="ok" title="原操作已成功">{acknowledgedReadFailure}</Notice>}
     {!canRead ? <BlockState state="denied" title="无权查看提现风险规则" detail="需要提现风险规则查看权限，请联系管理员核对。" />
       : ctx.contentError ? <BlockState state="error" title="提现风险规则读取失败" detail={readError} onRetry={() => void reload().catch(() => undefined)} />
-      : ctx.contentLoading || !overview ? <><div className="k3-cover-loading" aria-label="正在读取四类检查">{DECLARED_DIMENSIONS.map((name) => <div key={name} className="rd-skeleton" />)}</div><Panel title="规则总表" flush><Table label="规则总表"><tbody><TableLoading columns={6} /></tbody></Table>{lastRulePage && lastRulePage.total > 0 && <Pager label="规则总表" total={lastRulePage.total} page={lastRulePage.pageNum} pageSize={lastRulePage.pageSize} sizes={[5, 10, 20]} loading onPage={(page) => setQuery({ rulePage: page })} onPageSize={(size) => setQuery({ rulePage: 1, rulePageSize: size })} />}</Panel></>
+      : ctx.contentLoading || !overview ? <><div className="k3-cover-loading" aria-label="正在加载四类检查">{DECLARED_DIMENSIONS.map((name) => <div key={name} className="rd-skeleton" />)}</div><Panel title="规则总表" flush><Table label="规则总表"><tbody><TableLoading columns={6} /></tbody></Table>{lastRulePage && lastRulePage.total > 0 && <Pager label="规则总表" total={lastRulePage.total} page={lastRulePage.pageNum} pageSize={lastRulePage.pageSize} sizes={[5, 10, 20]} loading onPage={(page) => setQuery({ rulePage: page })} onPageSize={(size) => setQuery({ rulePage: 1, rulePageSize: size })} />}</Panel></>
       : <>
         {invalidActive && <Notice tone="warn">生效规则包含历史放行或未知格式条件，请由风控负责人核查；只按原权限停用、归档。</Notice>}
         <Conclusion state={invalidActive || missing.length ? "warn" : "neutral"} icon={missing.length ? ShieldAlert : ShieldCheck}
@@ -624,7 +624,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
         <div className="rd-links">{[["提现审核", "/finance/withdrawals"], ["USDT 提现参数", "/finance/params"], ["多账户风险排查", "/risk/multi-account"], ["操作记录与审批", "/platform/audit"]].map(([label, href]) => reach(href) && <Link key={href} href={href}>{label}</Link>)}</div>
       </>}
     <Drawer open={hitsOpen && canRead} onClose={() => { setHitDetail(null); setQuery({ section: null }); }} title="触发记录" icon={History} wide data-k3-hits="" data-k3-extra={hitColumns.isVisible("reason") || hitColumns.isVisible("time") ? "" : undefined} explain="一条记录是一条规则命中，同一提现可以有多条记录；不是最终提现单状态。">
-      {!healthy ? <BlockState state={ctx.contentError ? "error" : "loading"} title={ctx.contentError ? "触发记录读取失败" : "正在读取触发记录"} detail={readError} onRetry={ctx.contentError ? () => void reload().catch(() => undefined) : undefined} /> : <>
+      {!healthy ? <BlockState state={ctx.contentError ? "error" : "loading"} title={ctx.contentError ? "触发记录读取失败" : "正在加载触发记录"} detail={readError} onRetry={ctx.contentError ? () => void reload().catch(() => undefined) : undefined} /> : <>
         <Panel title="历史命中处置分布" plain explain="累计现存的全部命中记录，没有时间筛选、不随下方动作筛选改变；不是全部提现的放行率。"><Distribution rows={overview!.routeCounts} total={overview!.routeTotal} /></Panel>
         <div className="k3-hit-filters"><Segments label="命中处置筛选" value={hitAction} items={[{ value: "all", label: "全部" }, { value: "delay", label: "延迟" }, { value: "freeze", label: "冻结" }, { value: "manual", label: "转人工" }]} onChange={(value) => setQuery({ hitPage: 1, hitAction: value })} />
           <Button variant="ghost" disabledReason={hitAction === "all" ? "当前没有动作筛选" : undefined} onClick={() => setQuery({ hitAction: "all", hitPage: 1 })}>清除筛选</Button><ColumnPicker columns={hitColumns} /></div>
@@ -727,7 +727,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage, can
   const changed = draft.kind === "create" ? hasDraftChanges : condition !== buildK3Condition(k3KindFromDimension(dimension), originalValue)
     || actionFromBusinessValue(value) !== rule!.action || priorityFromBusinessValue(value) !== rule!.priority;
   const dirty = hasDraftChanges || reason.length > 0;
-  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原操作或按原操作重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在读取理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage, canReadCoverage) : undefined);
+  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原操作或按原操作重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在加载理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage, canReadCoverage) : undefined);
   const effect = draft.kind === "create" ? CREATE_EFFECT : rule!.state === "active" ? ACTIVE_EFFECT : rule!.state === "draft" ? "仍为草稿，启用后才参与检查。" : "仍为已停用，重新启用后才参与检查。";
   const save = async () => {
     if (busy || disabledReason) return;
@@ -765,7 +765,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage, can
               onBlur={() => setTouched((current) => ({ ...current, [field.key]: true }))} onChange={(event) => setValue((current) => ({ ...current, [field.key]: event.target.value }))} />}
         </Field>
       </div>)}</div>
-      <Field label="操作理由" required hint={policy ? `至少 ${policy.min} 字` : "正在读取理由规则"} error={touched.reason ? reasonError : undefined}>
+      <Field label="操作理由" required hint={policy ? `至少 ${policy.min} 字` : "正在加载理由规则"} error={touched.reason ? reasonError : undefined}>
         {(control) => <Textarea {...control} value={pending?.reason ?? reason} maxLength={policy?.max ?? 200} count={`${visibleReasonLength(pending?.reason ?? reason)}/${policy?.max ?? 200}`} placeholder={REASON_PLACEHOLDER} onBlur={() => setTouched((current) => ({ ...current, reason: true }))} onChange={(event) => setReason(event.target.value)} />}
       </Field></fieldset>
       {policyError && <Notice tone="danger">{policyError}</Notice>}

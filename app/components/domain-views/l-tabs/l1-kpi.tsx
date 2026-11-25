@@ -1057,8 +1057,8 @@ export function L1Kpi({ ctx, onExportSource, source, title, summary }: { ctx: LC
       : refreshing || ctx.biLoading
         ? <BlockState state="loading" title="正在加载…" />
         : firstError
-          ? <BlockState state="error" title="关键指标加载失败" detail={firstError} onRetry={retryFirstRead} retryLabel="重新加载" />
-          : <BlockState state="empty" title="这个范围还没有指标数据" detail="请先刷新；仍然为空，说明还没有产生数据。" onRetry={retryFirstRead} retryLabel="重新加载" />;
+          ? <BlockState state="error" title="关键指标加载失败" detail={firstError} onRetry={retryFirstRead} />
+          : <BlockState state="empty" title="这个范围还没有指标数据" detail="请先刷新；仍然为空，说明还没有产生数据。" onRetry={retryFirstRead} />;
 
   return (
     <>

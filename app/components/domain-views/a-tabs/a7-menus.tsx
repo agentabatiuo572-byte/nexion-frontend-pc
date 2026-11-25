@@ -416,7 +416,7 @@ export default function A7Menus() {
           <Panel title="菜单树" icon={FolderTree} tone="role-other" sub={overview ? `${overview.domainCount + overview.pageCount} 个` : undefined}
             explain="一级菜单下面是页面，最多两级。点一行在右边看详情和动作；排序数字小的排前面。"
             actions={parents.length > 0 ? <Button variant="ghost" onClick={() => setExpanded(allOpen ? new Set() : new Set(parents))}>{allOpen ? "全部收起" : "全部展开"}</Button> : undefined}>
-            {loading ? <BlockState state="loading" title="加载中…" />
+            {loading ? <BlockState state="loading" title="正在加载…" />
               : loadError ? <BlockState state="error" title="菜单列表加载失败，请重试。" detail={readDetail} onRetry={() => void refresh()} />
               : tree.length === 0 ? <BlockState state="empty" title="暂无菜单" detail={canWrite ? "点页头「新建一级菜单」开始。" : undefined} />
               : (

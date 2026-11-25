@@ -58,7 +58,7 @@ const QUOTE_KEYS: Key[] = ["sellSpreadPct", "quoteTtlMinWithdraw", "requoteToler
 const RELATED: Partial<Record<Key, Key>> = { feeMinUsd: "minAmountUsd", feeMaxUsd: "feeMinUsd", maxAmountUsd: "minAmountUsd" };
 const FORCE_PHRASE = "确认价格倒挂风险";
 /** 读取中不能依据旧数据写入（ST-32）。 */
-const READING = "正在读取最新数据，读完再操作";
+const READING = "正在加载最新数据，读完再操作";
 const LOCKED = "上一次提交的结果未知，处理完再改";
 const CONFLICT = "越南盾提现参数已被其他人员更新，当前输入已保留。请读取最新后重新核对。";
 /** 抽屉没有改动时，底部问号只写规则，不说哪条路（「写的必须是真的」）。 */
@@ -809,7 +809,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       {ownApprovalNotice}
       {queueReadNotice}
       {loading
-        ? <BlockState state="loading" title="正在读取越南盾提现参数…" />
+        ? <BlockState state="loading" title="正在加载越南盾提现参数…" />
         // 资金页读取失败不留旧值（ST-36），写法和汇率设置一样：一句话加「失败原因」问号，汇率来源不可用时另起一行给去处。
         : <BlockState state="error" title="越南盾提现参数加载失败" onRetry={() => void reload()}
           detail={<>

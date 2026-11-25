@@ -677,7 +677,7 @@ export function D3Treasury() {
   const exportBlocked = (kind: ExportKind) => (unknownCommands.exports.some((record) => record.exportKind === kind) ? "上次导出结果未知，先到页面上方查询原操作" : dataBlocked);
   const mainFailed = canReadMain && !main && !loading;
   // 读取失败只在页签上方写一条，带重新加载（VS-107）。
-  const mainState = loading && !main ? <BlockState state="loading" title="正在读取资金数据…" /> : null;
+  const mainState = loading && !main ? <BlockState state="loading" title="正在加载资金数据…" /> : null;
   const tier = main?.reserve.waterLevel.tier;
   const fundAlarm = tier === "DANGER" || tier === "WARNING";
   const fundConclusion = main ? <FundConclusion main={main} emergencyLink={crossLink("/emergency/kill-switch", "去紧急停用开关 →")} withdrawalsLink={crossLink("/finance/withdrawals", "去提现审核 →")} /> : null;
@@ -835,7 +835,7 @@ export function D3Treasury() {
         )
         : (
           <>
-            {loading && <Conclusion state="unknown">资金状态：正在读取</Conclusion>}
+            {loading && <Conclusion state="unknown">资金状态：正在加载</Conclusion>}
             {mainState}
           </>
         ))}

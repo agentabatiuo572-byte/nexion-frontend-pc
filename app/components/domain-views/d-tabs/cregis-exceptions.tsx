@@ -135,7 +135,7 @@ function OwnedExceptionOperations({ canManage, openActionConfirm, sources, claim
       if (owns()) { setBusy(false); onChanged(); await refresh(); }
     }
   };
-  const readBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : undefined;
+  const readBlock = loading ? "正在加载最新数据" : busy ? "正在提交" : undefined;
   const approval = <StatusTag tone="progress" filled>另一位管理员复核后生效</StatusTag>;
   const confirm = (spec: { kind: OperatorBriefKind; action: string; title: string; path: string; body: ExceptionRecord; detail: string; confirmLabel: string; danger?: boolean; review?: boolean; facts?: React.ReactNode; completion?: string }) => {
     const held = d1PendingObjectReason(`/cregis${spec.path}`, spec.body);

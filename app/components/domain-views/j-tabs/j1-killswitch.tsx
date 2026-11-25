@@ -68,7 +68,7 @@ function ruleModeText(rule: AutoRuleRow) {
 /** 阈值在别的页设置，这里只引用（J1-S03）。 */
 const RULE_SOURCE: Record<string, string> = { withdrawSurge: "/overview/risk-radar", tamperCluster: "/emergency/tamper" };
 const EXPIRED = "已超过 24 小时，不能再重试，请到操作记录与审批核对";
-const READING = "正在读取最新状态，读完再操作";
+const READING = "正在加载最新状态，读完再操作";
 const LOCKED = "这项有结果未知的操作，先到页面上方查询原操作";
 /** 查到的原恢复申请已经有结论时怎么说。 */
 const TICKET_DONE: Record<string, string> = { approved: "已批准", rejected: "已被驳回", withdrawn: "已撤回", expired: "已过期" };
@@ -739,7 +739,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     const backfill = backfillOf(gate.key);
     if (backfill) return canKill ? <Button disabledReason={block} onClick={() => confirmAutoTrigger(backfill)}>补录结论</Button> : undefined;
     if (!canResume) return undefined;
-    if (approvalsLoading || approvalsError) return <Button disabledReason={approvalsLoading ? "正在读取恢复审批状态，读完再操作" : approvalsError}>提交恢复审批</Button>;
+    if (approvalsLoading || approvalsError) return <Button disabledReason={approvalsLoading ? "正在加载恢复审批状态，读完再操作" : approvalsError}>提交恢复审批</Button>;
     // 按钮写动作，状态写在标签上（DT-20）。
     if (gate.coveragePrecheckRequired && !covPass) return <Button disabledReason={recoveryBlock}>提交恢复审批</Button>;
     return <Button disabledReason={block} onClick={() => resumeGate(gate)}>提交恢复审批</Button>;

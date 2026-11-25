@@ -504,8 +504,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       {recovery}
       {showReadState ? <>
         {ctx.f3Loading
-          ? <BlockState state="loading" title="正在读取团队平衡奖励…" />
-          : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} retryLabel="重新加载" />}
+          ? <BlockState state="loading" title="正在加载团队平衡奖励…" />
+          : <BlockState state="error" title="团队平衡奖励数据加载失败" detail={ctx.f3Error ?? undefined} onRetry={() => void ctx.refreshF3()} />}
       </> : <>
       {ctx.f3Error && <Notice tone="warn" title="团队平衡奖励数据刷新失败">{ctx.f3Error}</Notice>}
       {ctx.f3ApprovalReadError && <Notice tone="warn" title="审批队列读取失败"

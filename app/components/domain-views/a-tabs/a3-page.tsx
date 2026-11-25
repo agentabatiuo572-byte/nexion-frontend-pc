@@ -508,7 +508,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       : issues.some((issue) => issue.tone === "warn") ? "warn"
         : issues.length ? "neutral" : "ok";
   const conclusionText = !overview
-    ? (loading ? "正在读取开关、门槛和运行状况…" : "开关、门槛和运行状况读取失败，这部分没有判断")
+    ? (loading ? "正在加载开关、门槛和运行状况…" : "开关、门槛和运行状况读取失败，这部分没有判断")
     : issues.length === 0 ? "系统配置：一切正常，没有要处理的事"
       : issues.length === 1 ? issues[0].title
         : <>系统配置：有 {issues.length} 件事要留意</>;
@@ -523,7 +523,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 页签：开关与门槛 ────────────────── */
 
   const switchesPanel = !overview ? (
-    loading ? <BlockState state="loading" title="正在读取开关和门槛…" />
+    loading ? <BlockState state="loading" title="正在加载开关和门槛…" />
       : <BlockState state="error" title="开关和门槛读取失败" detail={loadError ?? undefined} onRetry={() => void refreshOverview()} />
   ) : (
     <div className="rd-tab-stack">
@@ -542,7 +542,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
               value={<StatusTag tone={on ? "warn" : flag.status === "off" ? "neutral" : "progress"} icon={on ? Megaphone : flag.status === "off" ? CircleOff : undefined}>{on ? "已开启" : flag.status === "off" ? "已关闭" : "部分开放"}</StatusTag>}
               sub={`最近变更 ${timeText(flag.lastChange)}`}
               action={flag.writable
-                ? <Button size="sm" loading={mutating === flag.key} disabledReason={commands.find(`flag:${flag.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== flag.key ? "另一项正在提交" : undefined} onClick={() => flagChg(flag)}>{on ? "关闭" : "开启"}</Button>
+                ? <Button size="sm" loading={mutating === flag.key} disabledReason={commands.find(`flag:${flag.key}`) ? "结果未知" : !overviewReady.current ? "正在加载" : mutating && mutating !== flag.key ? "另一项正在提交" : undefined} onClick={() => flagChg(flag)}>{on ? "关闭" : "开启"}</Button>
                 : <span className="rd-note">只读</span>} />;
           })}
         </ConfigList>}
@@ -562,7 +562,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
                 <p>只有超级管理员能改，不走审批。系统里叫「{param.name}」。</p>
                 <p className="rd-note" data-mono>{param.key}</p>
               </>}
-              actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在读取" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
+              actions={param.writable ? <Button size="sm" loading={mutating === param.key} disabledReason={commands.find(`param:${param.key}`) ? "结果未知" : !overviewReady.current ? "正在加载" : mutating && mutating !== param.key ? "另一项正在提交" : undefined} onClick={() => paramChg(param)}>调整</Button> : <span className="rd-note">只读</span>}>
               <div className="a3-param-value" data-empty={value === null ? "" : undefined}>
                 <strong>{value === null ? (param.value || "—") : grouped(value)}</strong>
                 <span>{param.unit}</span>
@@ -594,7 +594,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 页签：应急与运行（只读） ────────────────── */
 
   const statusPanel = !overview ? (
-    loading ? <BlockState state="loading" title="正在读取应急状态和运行状况…" />
+    loading ? <BlockState state="loading" title="正在加载应急状态和运行状况…" />
       : <BlockState state="error" title="应急状态和运行状况读取失败" detail={<>{loadError} 读不到时不能当作正常。</>} onRetry={() => void refreshOverview()} />
   ) : (
     <div className="rd-tab-stack">

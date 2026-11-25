@@ -235,7 +235,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
         </Notice>;
       })()}
       {error && !(preserveDraft.current && error === CONFLICT) && <Notice tone={document ? "warn" : "danger"}>{error}</Notice>}
-      {loading && !document ? <BlockState state="loading" title="正在读取等级说明" />
+      {loading && !document ? <BlockState state="loading" title="正在加载等级说明" />
         : !document ? <BlockState state="error" title="等级说明读取失败，现在的状态没确认" detail={error ?? undefined} onRetry={() => void refresh()} />
           : <>
             <div className="f1-how-head">{statusLine}</div>
@@ -306,7 +306,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
               </div>
               <div className="rd-toolbar" data-end="">
                 <span className="rd-toolbar-note">{status === "PUBLISHED" ? "发布后替换 App 正在读的版本" : "草稿不替换 App 正在读的版本"}</span>
-                <Button variant="primary" loading={saving} disabledReason={unknown ? "保存结果未知，请先重新读取核对" : loading ? "正在读取" : publishIssue ?? (!hasChanges ? "内容没有变化" : undefined)} onClick={() => void save()}>{status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Button>
+                <Button variant="primary" loading={saving} disabledReason={unknown ? "保存结果未知，请先重新读取核对" : loading ? "正在加载" : publishIssue ?? (!hasChanges ? "内容没有变化" : undefined)} onClick={() => void save()}>{status === "PUBLISHED" ? "保存并发布" : "保存草稿"}</Button>
               </div>
             </div>}
           </>}

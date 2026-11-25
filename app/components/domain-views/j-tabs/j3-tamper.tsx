@@ -442,7 +442,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       {header}
       {savedNotice}
       {ctx.contentLoading
-        ? <BlockState state="loading" title="篡改防御数据加载中" detail="正在读取拦截统计和告警账户" />
+        ? <BlockState state="loading" title="篡改防御数据加载中" detail="正在加载拦截统计和告警账户" />
         : <BlockState state="empty" title="暂无篡改防御数据" detail="请稍后点「刷新」。" />}
       {modal}
     </div>;
@@ -777,7 +777,7 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, receiptStat
     }
   };
   const queryOriginal = async () => {
-    setReadBack("正在读取…");
+    setReadBack("正在加载…");
     let found = "";
     if (pending) {
       try {

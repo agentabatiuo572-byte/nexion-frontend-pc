@@ -29,7 +29,7 @@ export function PhoneModelLockSection({ userId, userCode, userLabel, rights, act
   }, [userId, owner, onPendingChange]);
   useEffect(() => { live.current = true; void load(); return () => { live.current = false; generation.current++; }; }, [load]);
   const hasPending = records.some(row => !row.rejection);
-  const blocked = busy ? "正在提交" : hasPending ? "原解除结果待核实，请先核对原操作" : loading ? "正在读取机型锁" : undefined;
+  const blocked = busy ? "正在提交" : hasPending ? "原解除结果待核实，请先核对原操作" : loading ? "正在加载机型锁" : undefined;
   const recover = async (row: PendingModelLockCommand, retry: boolean) => {
     if (mutation.current || retry && !canRelease) return;
     mutation.current = true; setBusy(true); onBusyChange?.(true); setError(""); setMessage("");

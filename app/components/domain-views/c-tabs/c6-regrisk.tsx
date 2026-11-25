@@ -337,14 +337,14 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         {header}
         {pendingNotices}
         {loading ? (
-          <BlockState state="loading" title="正在读取注册与登录风险" />
+          <BlockState state="loading" title="正在加载注册与登录风险" />
         ) : error && !error.startsWith("加载失败") ? (
           <Notice tone={error.startsWith("操作失败") ? "danger" : "warn"} title={error.startsWith("操作失败") ? "这次修改没有保存，重新加载后再改" : "重新加载后再看当前规则"}
             action={<Button size="sm" onClick={() => void loadData()}>重新加载</Button>}>
             {error.startsWith("操作失败") && error.replace(/^操作失败 · /, "")}
           </Notice>
         ) : (
-          <BlockState state="error" title="数据暂不可用，已暂停显示和修改" detail={error ?? "没有读到这页的数据。"} onRetry={() => void loadData()} retrying={loading} retryLabel="重新加载" />
+          <BlockState state="error" title="数据暂不可用，已暂停显示和修改" detail={error ?? "没有读到这页的数据。"} onRetry={() => void loadData()} retrying={loading} />
         )}
       </div>
     );

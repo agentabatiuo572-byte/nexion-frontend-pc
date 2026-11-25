@@ -436,7 +436,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, [e4Query]);
   /** 列表或开着的详情在读、读失败时事实不是最新的，抽屉和确认框都不能提交（OP-150）。 */
-  const e4ReadBlock = e4Reading || e4DetailReading ? "正在读取最新订单状态，读完才能操作"
+  const e4ReadBlock = e4Reading || e4DetailReading ? "正在加载最新订单状态，读完才能操作"
     : e4Error ? "订单列表读取失败，重试成功后才能操作"
       : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : undefined;
   const e4OrderWriteBlock = (operation: string) => e4ReadBlock

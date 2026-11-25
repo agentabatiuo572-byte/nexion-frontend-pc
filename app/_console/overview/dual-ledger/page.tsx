@@ -801,12 +801,12 @@ export default function DualLedgerPage() {
       <p className="b1-caliber">历史点 = 当时的储备 − 现在的应付款，只反映储备变化</p>
       <div className="rd-toolbar">
         <Segments label="储备与应付款差额趋势时间范围" value={exposureWindow} onChange={setExposureWindow} items={WINDOWS} />
-        <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天${axisWan ? " · 纵轴单位 万 USDT" : ""}` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在读取…"}</span>
+        <span className="rd-toolbar-note b1-window-note">{currentExposure && latest ? `截至 ${latest.date} · 共 ${exposureSeries.length} 天${axisWan ? " · 纵轴单位 万 USDT" : ""}` : exposureError ? "没有读到" : currentExposure ? "这段时间没有点" : "正在加载…"}</span>
       </div>
       {exposureError ? (
         <BlockState state="error" title="差额走势读取失败，已暂停显示" detail={`${exposureError} 切换时间范围或刷新页面会重新读取。`} />
       ) : exposureLoading ? (
-        <BlockState state="loading" title="正在读取差额走势…" />
+        <BlockState state="loading" title="正在加载差额走势…" />
       ) : currentExposure?.valuationReliable === false ? (
         <BlockState state="empty" title={`差额${TREASURY_VALUATION_UNAVAILABLE}`} detail="计入的 UVT 应付款缺少有效价格。" />
       ) : exposureSeries.length === 0 || !latest ? (
@@ -1014,10 +1014,10 @@ export default function DualLedgerPage() {
       <RdPage className="b1-page">
         {header()}
         {savedWhileUnread && !loading && <Notice tone="ok" title={savedWhileUnread}>现在的数据没读到，读到后才能再改。</Notice>}
-        <Conclusion state="unknown" icon={ShieldQuestion}>{loading ? "资金状态：正在读取" : "资金状态：暂时无法判断"}</Conclusion>
+        <Conclusion state="unknown" icon={ShieldQuestion}>{loading ? "资金状态：正在加载" : "资金状态：暂时无法判断"}</Conclusion>
         {loading
-          ? <BlockState state="loading" title="正在读取储备、应付款和覆盖率…" />
-          : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} retryLabel="重新读取" />}
+          ? <BlockState state="loading" title="正在加载储备、应付款和覆盖率…" />
+          : <BlockState state="error" title="资金数据读取失败，不显示旧数据" detail={bDomain.error ? displayAdminReadError(bDomain.error) : undefined} onRetry={refreshB1} />}
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}
@@ -1036,7 +1036,7 @@ export default function DualLedgerPage() {
         <BlockState state="error"
           title={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "应付款明细是空的，暂时算不出构成" : b1DataError}
           detail={b1DataError === "B1_LEDGER_ACCOUNTS_EMPTY" ? "九类应付款一项都没读到。重读一次；仍是空的请联系值班人员核对账本。" : "覆盖率走势少于 2 个点。重读一次；仍不足请联系值班人员。"}
-          onRetry={refreshB1} retryLabel="重新读取" />
+          onRetry={refreshB1} />
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={!!reach("/platform/audit")} />{unregisteredNotices}
         {dialog}

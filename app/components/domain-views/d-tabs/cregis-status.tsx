@@ -520,7 +520,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
 
   const alerts = [...(data?.riskAlerts ?? []), ...extraAlerts];
   const reviewCases = [...(data?.reviewCases ?? []), ...extraReviewCases];
-  const readBlock = loading ? "正在读取最新数据" : busy ? "正在提交" : !data ? "收款状态没读到，刷新后再试" : undefined;
+  const readBlock = loading ? "正在加载最新数据" : busy ? "正在提交" : !data ? "收款状态没读到，刷新后再试" : undefined;
   const gate = data?.provisionGate;
   const emergencyBlock = readBlock ?? (data?.mode !== "PROVIDER" ? "没有接入收款服务，没有可关闭的开关。" : gate?.version == null ? "开关状态读不到，刷新后再试。" : undefined);
   const switchBlock = readBlock ?? (data?.mode !== "PROVIDER" ? "没有接入收款服务，开关不能修改。" : gate?.version == null ? "开关状态读不到，刷新后再试。" : undefined);
@@ -658,7 +658,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
   };
   const pools = FUNDS_NETWORKS.map(network => ({ network, pool: data ? poolOf(data, network) : undefined }));
   const connected = data?.mode === "PROVIDER" || data?.mode === "provider";
-  const statusSummary = !data ? (loading ? "正在读取" : "读取失败") : !connected ? "未接入"
+  const statusSummary = !data ? (loading ? "正在加载" : "读取失败") : !connected ? "未接入"
     : [MODE_TEXT[data.mode] ?? "接入模式未知", ...pools.map(({ network, pool }) => pool?.available ? `${network} 可分配 ${pool.unassigned}` : pool || !data.addressPools ? `${network} 不可用` : `${network} 未配置`)].join(" · ");
   const reconLatest = (network: FundsNetwork) => data?.reconcileRuns?.find((row) => row.status === "COMPLETE" && rowNetwork(row) === network)?.completedAt;
   const openCases = reviewCases.filter(row => row.status === "MAKER_DONE" || row.status == null);
@@ -703,7 +703,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
     </StatBand>
 
     {(data || loading) && <Fold title="收款状态" icon={ShieldCheck} tone="role-2" summary={statusSummary}>
-      {!data ? <BlockState state="loading" title="正在读取收款状态…" />
+      {!data ? <BlockState state="loading" title="正在加载收款状态…" />
         : <div className="rd-stack">
           <ConfigList label="收款状态">
             <ConfigRow name="接入模式" value={MODE_TEXT[data.mode] ?? "未知"} />
@@ -820,7 +820,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       <Panel icon={Power} tone="role-4" title="收款与出款开关"
         explain={<><p>BEP20、ERC20 各有一个充值开关，选目标状态后提交审批，另一位管理员复核后生效。关闭一条网络会停止这条网的地址分配、链上直付新下单和自动入账，原交易继续核验，其他网络不受影响。TRC20 通道暂未开放，开关开着时只能关闭。</p><p>全局链上出款总闸是三条网共用的出款上限。BEP20、ERC20 分别是否允许提现，在「USDT 提现参数」设置。</p></>}
         actions={reach("/finance/params", "finance_d5_read") ? <Link className="rd-link" href="/finance/params">前往 USDT 提现参数</Link> : undefined}>
-        {!data ? <BlockState state={loading ? "loading" : "error"} compact title={loading ? "正在读取开关…" : "开关读取失败"} onRetry={loading ? undefined : () => void refresh()} />
+        {!data ? <BlockState state={loading ? "loading" : "error"} compact title={loading ? "正在加载开关…" : "开关读取失败"} onRetry={loading ? undefined : () => void refresh()} />
           : <div className="rd-stack">
             {!data.networkSwitches ? <Notice tone="warn">读不到分网络充值开关，当前不能修改。请刷新后再试。</Notice>
               : <Table label="分网络充值开关">
@@ -928,7 +928,7 @@ export function CregisStatus({ ctx, onCount, onActivity, onAlert, reloadTick }: 
       {data ? <>
         <CregisAutoForward key={`auto-${childKey}`} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
         <CregisFundsPreparation reloadKey={childKey} canManage={canManage} openActionConfirm={openActionConfirm} onChanged={syncPending} />
-      </> : <BlockState state={loading ? "loading" : "error"} title={loading ? "正在读取…" : "收款状态读取失败，自动流程与人工准备先不显示"} onRetry={loading ? undefined : () => void refresh()} />}
+      </> : <BlockState state={loading ? "loading" : "error"} title={loading ? "正在加载…" : "收款状态读取失败，自动流程与人工准备先不显示"} onRetry={loading ? undefined : () => void refresh()} />}
     </div>
 
     <Drawer open={alertsOpen} onClose={() => setAlertsOpen(false)} title="最近对账与告警" icon={BellRing} tone={alertCount > 0 ? "danger" : "role-other"}>

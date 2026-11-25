@@ -153,7 +153,7 @@ export function SelfInviteCodeBar({ toast }: { toast: (message: string) => void 
       <Notice tone="warn" action={<><Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void reconcile()}>{busy ? "正在处理…" : "查询原操作"}</Button>{unresolved && canReplayGroupCommand(pending) && <Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" disabled={busy} onClick={() => void replay()}>按原操作重试</Button>}</>}>上次{pending.intent.payload.expectedVersion === null ? "生成" : "重置"}邀请码结果未知；查到结果前不能复制，也不显示链接和二维码。</Notice>
     </> : readFailed ? <>
       <Notice tone="danger" action={<Button type="button" size="sm" className="m1-invite-btn m1-invite-retry" onClick={() => setReload(n => n + 1)}>重试</Button>}>暂时无法读取邀请码，请重试。</Notice>
-    </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在读取邀请码…</p>
+    </> : !view ? <p className="m1-invite-note m1-invite-muted" role="status">正在加载邀请码…</p>
       : view.code === null ? <>
         <p className="m1-invite-note">生成后可以复制邀请码、链接或二维码发给新用户。</p>
         <Button type="button" variant="primary" disabled={busy} onClick={() => void issue()}>{busy ? "正在生成…" : "生成邀请码"}</Button>

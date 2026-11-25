@@ -717,9 +717,9 @@ export default function RiskRadarPage() {
         )}
         {!data || radar.error ? <>
           <Conclusion state="unknown" icon={ShieldQuestion} hint={radar.loading && !radar.error ? undefined : "数据读到之前不判断有没有风险。"}>
-            {radar.loading && !radar.error ? "风险提醒：正在读取" : "风险提醒：读取失败，暂时无法判断"}
+            {radar.loading && !radar.error ? "风险提醒：正在加载" : "风险提醒：读取失败，暂时无法判断"}
           </Conclusion>
-          <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在读取五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
+          <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在加载五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
         </> : <>
         {conclusion}
 
@@ -758,7 +758,7 @@ export default function RiskRadarPage() {
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
                 <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
-                  {inboxLoading ? "正在读取…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
+                  {inboxLoading ? "正在加载…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
                 </TabNote>
                 <InboxTable state={inboxError ? "error" : inboxLoading || inboxNeedsRead ? "loading" : "ready"} items={inbox} error={inboxError}
                   onRetry={() => setInboxReload((value) => value + 1)} canTriage={canTriage} acknowledging={acknowledgingDelivery}
@@ -847,8 +847,8 @@ export default function RiskRadarPage() {
       {subscriptionOpen && (canReadSubscription || subscriptionOriginal) && (() => {
         // 恢复原请求时，上面是冻结的原内容（重试只发它），现在的订阅读不到放在后面，不挡原内容。
         const subscriptionReadState = (
-          <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在读取现在的订阅…" : subscriptionOriginal ? "现在的订阅没读到，不影响按原操作重试" : "现在的订阅没读到"} detail={subscriptionError || undefined}
-            onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} retryLabel="重新读取" />
+          <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在加载现在的订阅…" : subscriptionOriginal ? "现在的订阅没读到，不影响按原操作重试" : "现在的订阅没读到"} detail={subscriptionError || undefined}
+            onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} />
         );
         const subscriptionConflict = subscriptionDraftPreserved && !subscriptionOriginal && !subscriptionLoading && !subscriptionError;
         // 只有查看权限：只看现在的订阅，不讲保存后会怎样。
@@ -860,7 +860,7 @@ export default function RiskRadarPage() {
           footer={<>
             <Button disabled={savingSubscription} onClick={() => setSubscriptionOpen(false)}>取消</Button>
             <Button variant="primary" loading={savingSubscription} loadingText="保存中…"
-              disabledReason={!canSubscribe ? "需要告警订阅权限才能保存" : subscriptionOriginal ? b5Recovery.state(subscriptionOriginal).expired ? RETRY_EXPIRED_TEXT : b5Recovery.state(subscriptionOriginal).replayBlock ? "原请求不能重试" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在读取现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
+              disabledReason={!canSubscribe ? "需要告警订阅权限才能保存" : subscriptionOriginal ? b5Recovery.state(subscriptionOriginal).expired ? RETRY_EXPIRED_TEXT : b5Recovery.state(subscriptionOriginal).replayBlock ? "原请求不能重试" : undefined : subscriptionNeedsRead || subscriptionLoading ? "正在加载现在的订阅" : subscriptionError ? "现在的订阅没读到，不能保存" : !subscriptionChanged ? "还没有改动" : !subscriptionValid ? "至少开一个渠道" : undefined}
               onClick={() => void saveSubscription()}>{subscriptionOriginal ? "按原操作重试" : "保存订阅"}</Button>
           </>}>
           <div className="b5-dialog">

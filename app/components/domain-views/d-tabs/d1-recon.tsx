@@ -204,7 +204,7 @@ function D1Workspace({ ctx }: { ctx: DCtx }) {
   const conclusion = failed.length === D1_SECTIONS.length
     ? <Conclusion state="danger" explain={explain} action={retryAll}>读取失败，不知道有没有要处理的事</Conclusion>
     : loadingCount && !usdtAlert
-      ? <Conclusion state="unknown" explain={explain}>正在读取要处理的事</Conclusion>
+      ? <Conclusion state="unknown" explain={explain}>正在加载要处理的事</Conclusion>
       : total > 0
         ? <Conclusion state={usdtAlert ? "danger" : "warn"} lead explain={explain} hint={failed.length ? undefined : "点页签上带数字的区处理"} action={failed.length ? retryAll : undefined}>
           {alertLead && `${alertLead}；`}有 <b>{totalText}</b> 项要处理{failed.length ? `，${failedNames}读取失败，这个数不全` : ""}
@@ -536,10 +536,10 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   ];
   const ledgerItems = ledgerPending.map(command => pendingItem(command, () => retryD1PendingTopupCommand(command.commandKey), canReconcile));
 
-  const readingReason = overviewLoading ? "正在读取最新数据" : busy ? "正在提交" : undefined;
+  const readingReason = overviewLoading ? "正在加载最新数据" : busy ? "正在提交" : undefined;
   const bankChannels = (overview?.channels ?? []).filter((channel) => ["vietqr", "hdpay"].includes(channel.code));
   const perTxLimit = vietQr?.config.perTxLimitUsd;
-  const bankSummary = overviewLoading && !overview ? "正在读取"
+  const bankSummary = overviewLoading && !overview ? "正在加载"
     : !overview && !vietQr ? "读取失败"
       : [bankChannels.length ? (bankChannels.every(channel => channel.enabled) ? "启用" : bankChannels.some(channel => channel.enabled) ? "部分停用" : "停用") : null,
         perTxLimit != null ? `单笔上限 ${perTxLimit.toLocaleString("en-US")} USDT` : null].filter(Boolean).join(" · ") || "—";
@@ -547,7 +547,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
   const reconRows = overview?.reconciliation ?? [];
   const hasDiff = (overview?.diffCount ?? 0) > 0;
   const registered = reconRows.filter(row => row.reconciled && mismatched(row)).length;
-  const reconSummary = overviewLoading && !overview ? "正在读取" : !overview ? "读取失败"
+  const reconSummary = overviewLoading && !overview ? "正在加载" : !overview ? "读取失败"
     : reconRows.length === 0 ? "今天还没有支付商流水或入账记录"
       : hasDiff ? "有通道没对上，要挂账"
         : registered ? `没有待挂账的差异；${registered} 个通道的差异已挂账，金额仍对不上` : "今天的通道金额与笔数都一致";
@@ -620,7 +620,7 @@ function RechargeAreas({ ctx, section, tabIds, onGo, reloadTick, onBankCount, on
         </StatBand>}
       <Fold title="对账差异" icon={Scale} tone="role-2" summary={reconSummary} alert={hasDiff} open={reconOpen ?? hasDiff} onOpenChange={setReconOpen}
         explain="支付商记录和平台账目按通道比对，今天的数。有数据后会自动对比；没有数据不代表已经对上。">
-        {overviewLoading && !overview ? <BlockState state="loading" title="正在读取对账差异…" />
+        {overviewLoading && !overview ? <BlockState state="loading" title="正在加载对账差异…" />
           : !overview ? <BlockState state="error" title="对账差异读取失败" detail={overviewError} onRetry={() => void loadOverview()} />
             : reconRows.length === 0 ? <BlockState state="empty" title="今天还没有支付商流水或入账记录。有数据后会自动对比；没有数据不代表已经对上。" />
               : <Table label="对账差异">

@@ -394,7 +394,7 @@ export default function H1Phase({ ctx,
   const ratio = number(coverage?.coverageRatio);
   const redline = number(coverage?.redlinePct);
   const fundingBlocked = !coverage?.reliable || coverage.redlineBreached || ratio == null || ratio <= 0 || redline == null || redline <= 0;
-  const freshBlock = loading ? "正在读取最新数据，请稍后操作" : error ? "数据没读到，请先刷新" : undefined;
+  const freshBlock = loading ? "正在加载最新数据，请稍后操作" : error ? "数据没读到，请先刷新" : undefined;
   const scopeBlock = (scope: string) => freshBlock ?? (pending.some((row) => row.scope === scope) ? LOCKED : undefined);
   const precision = useMemo(() => Object.fromEntries(DIALS.map((dial) => [dial.key,
   dial.key === "withdrawCooldownDays" || dial.key === "complianceReviewThresholdUsdt" || dial.key === "complianceHoldEnabled" ? 0 : Math.max(2,

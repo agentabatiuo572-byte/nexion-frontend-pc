@@ -70,14 +70,14 @@ export function CregisPoolPolicy({canManage,openActionConfirm,onChanged,trc20Dep
         finally{if(owns())setBusy(false);onChanged?.();}
       }});
   };
-  const block=loading?"正在读取最新数据":busy?"正在提交":!saved?"地址池配置没读到，刷新后再试":d1PendingObjectReason("/cregis/addresses/policy");
+  const block=loading?"正在加载最新数据":busy?"正在提交":!saved?"地址池配置没读到，刷新后再试":d1PendingObjectReason("/cregis/addresses/policy");
   return <Panel icon={MapPin} tone="role-4" title="专属充值地址 · 库存与自动补充"
     explain={`首次进入充值页时分配专属地址，后续重复使用。BEP20、ERC20 与 TRC20 分别计算库存，共用以下补充目标；TRC20 通道暂未开放，不能手动补充。低于补充阈值后，分批补至目标库存；已分配地址不计入备用库存。保存后直接生效；收款服务限流或额度不足时延后补充。${saved?` 现在是第 ${saved.version} 版。`:""}`}
     actions={<>
       <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden/>} loading={loading} disabled={busy} onClick={()=>void refresh()}>刷新</Button>
       {canManage && <Button size="sm" disabledReason={block} onClick={save}>调整</Button>}
     </>}>
-    {loading && !saved ? <BlockState state="loading" title="正在读取地址池配置…"/>
+    {loading && !saved ? <BlockState state="loading" title="正在加载地址池配置…"/>
       : !saved ? <BlockState state="error" title="地址池配置读取失败" detail={error} onRetry={()=>void refresh()}/>
         : <ConfigList label="地址池补充">
           <ConfigRow name="自动补充" what="库存低时自动补地址" when="保存后立即生效" value={<SwitchTag on={saved.enabled}>{saved.enabled?"开启":"关闭"}</SwitchTag>}/>

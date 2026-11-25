@@ -167,7 +167,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
   };
   const balance = preflight?.balance && typeof preflight.balance === "object" ? preflight.balance as ExceptionRecord : null;
   const gasSymbol = balance?.gasSymbol ?? PREPARATION_GAS[network];
-  const block = loading ? "正在读取最新数据" : busy ? "正在提交" : undefined;
+  const block = loading ? "正在加载最新数据" : busy ? "正在提交" : undefined;
   const records = page.records, index = records.findIndex(row => String(row.planNo) === selected), plan = index >= 0 ? records[index] : null;
   const planActions = (row: ExceptionRecord) => canWrite ? [
     ...(row.state === "DRAFT" && String(row.makerId) !== String(owner) ? [{ key: "review", label: "复核准备", primary: true, run: () => decide(row, "REVIEW") }] : []),
@@ -186,7 +186,7 @@ function OwnedPreparation({ canManage, openActionConfirm, onChanged, owner, owne
       {canWrite && config && <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={block} onClick={() => setCreating(true)}>新建准备单</Button>}
     </>}>
     {error && config && <Notice tone="warn">{error}</Notice>}
-    {loading && !config ? <BlockState state="loading" title="正在读取资金准备记录…" />
+    {loading && !config ? <BlockState state="loading" title="正在加载资金准备记录…" />
       : unconfigured ? <BlockState state="empty" title={configurationTitle(network)} detail={`请联系管理员核对 ${network} 的收款服务项目和钱包地址配置，配好后点「刷新」。`} />
       : !config ? <BlockState state="error" title="资金准备读取失败" detail={error} onRetry={() => void refresh()} />
         : <div className="rd-stack">

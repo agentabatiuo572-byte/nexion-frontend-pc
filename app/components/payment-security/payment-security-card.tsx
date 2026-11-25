@@ -55,7 +55,7 @@ export function PaymentSecurityCard({ port, userLabel, compact = false, recovery
   // 侧栏里没有异常时一行带过（DP-05）。有异常、读取失败、有待确认的解除都照常全展开。
   const quiet = compact && Boolean(summary) && !record && !pending;
   if (surface) return <Panel title="支付安全" icon={ShieldAlert} actions={<>{record && <Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>}{record && record.state === "ACTIVE" && mayRelease(session) && <Button size="sm" disabledReason={pending ? "先查询原操作" : !record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "当前记录不可解除" : undefined} onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}<Button size="sm" disabled={loading} onClick={() => void load()}>重新加载</Button></>}>
-    {loading && <BlockState state="loading" title="正在读取支付安全信息" />}{error && <Notice tone="warn">{error}</Notice>}
+    {loading && <BlockState state="loading" title="正在加载支付安全信息" />}{error && <Notice tone="warn">{error}</Notice>}
     {summary && !record && <span>当前没有支付密码异常，历史处置记录仍保留。</span>}
     {summary && <RdFacts>{record && <><RdFact k="当前状态"><PaymentSecurityState record={record} /></RdFact><RdFact k="异常原因">{record.reason}</RdFact></>}<RdFact k="查询时间">{time(summary.observedAt)}</RdFact></RdFacts>}
     {pending && <Notice tone="warn" title="解除结果未知" action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</Button>}>原请求已保留，先查询原操作。</Notice>}
@@ -64,12 +64,12 @@ export function PaymentSecurityCard({ port, userLabel, compact = false, recovery
   return <section className={`payment-security ps-card ${compact ? "ps-compact" : ""}`} data-quiet={quiet ? "" : undefined} aria-label="支付安全">
     <header className="ps-header"><h3 className="ps-payment">支付安全</h3>{record && <PaymentSecurityState record={record} />}</header>
     {!quiet && <p className="ps-description">支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>}
-    {loading && <div className="ps-skeleton" role="status" aria-label="正在读取支付安全信息"><span /><span /></div>}
+    {loading && <div className="ps-skeleton" role="status" aria-label="正在加载支付安全信息"><span /><span /></div>}
     {error && <p className="ps-reason" role="alert">{error}</p>}
     {record && <><Facts record={record} /><p className="ps-description">仅处理本条支付密码异常，登录状态不受影响。</p><div className="ps-actions"><button className="ps-button" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</button>{record.state === "ACTIVE" && mayRelease(session) && <button className="ps-button ps-primary" disabled={!record.capabilities.releaseAllowed || pending} onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</button>}</div>{record.state === "ACTIVE" && !record.capabilities.releaseAllowed && <p className="ps-secondary">{record.capabilities.disabledReason}</p>}</>}
     {summary && !record && <p>当前没有支付密码异常。历史处置记录仍保留。</p>}
     {pending && <p className="ps-secondary">有一笔解除结果未知。<button className="ps-link" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</button></p>}
-    <div className="ps-card-footer">{!quiet && <span className="ps-secondary">{summary ? `查询时间：${time(summary.observedAt)}` : "信息尚未确认"}</span>}<button className="ps-link" disabled={loading} onClick={() => void load()}>{loading ? "读取中…" : error ? "重试查询" : "重新加载"}</button></div>
+    <div className="ps-card-footer">{!quiet && <span className="ps-secondary">{summary ? `查询时间：${time(summary.observedAt)}` : "信息尚未确认"}</span>}<button className="ps-link" disabled={loading} onClick={() => void load()}>{loading ? "正在加载…" : error ? "重试查询" : "重新加载"}</button></div>
     {selected && <PaymentSecurityDetail key={`${port.key}:${owner}:${epoch}:${selected.id}`} port={port} recordId={selected.id} userLabel={userLabel} initialAction={selected.release} onClose={() => setSelected(null)} />}
   </section>;
 }
@@ -155,8 +155,8 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
     finally { if (live.current && id === generation.current) setLoading(false); }
   }
   if (!session) return null;
-  if (surface) return <RdDrawer open title="支付密码异常详情" icon={ShieldAlert} onClose={onClose} busy={busy} footer={<Decision note={record?.state === "ACTIVE" && mayRelease(session) && !busy && !loading && !pending && record.capabilities.releaseAllowed ? writeBlockedReason : undefined} others={<Button disabled={busy} onClick={onClose}>关闭</Button>} primary={record?.state === "ACTIVE" && mayRelease(session) && <Button disabledReason={busy ? "正在提交" : loading ? "正在读取" : pending ? "请先查询原解除结果" : !record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "当前记录不可解除" : writeBlockedReason} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</Button>} />}>
-    {loading && <BlockState state="loading" title="正在读取异常详情" />}
+  if (surface) return <RdDrawer open title="支付密码异常详情" icon={ShieldAlert} onClose={onClose} busy={busy} footer={<Decision note={record?.state === "ACTIVE" && mayRelease(session) && !busy && !loading && !pending && record.capabilities.releaseAllowed ? writeBlockedReason : undefined} others={<Button disabled={busy} onClick={onClose}>关闭</Button>} primary={record?.state === "ACTIVE" && mayRelease(session) && <Button disabledReason={busy ? "正在提交" : loading ? "正在加载" : pending ? "请先查询原解除结果" : !record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "当前记录不可解除" : writeBlockedReason} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</Button>} />}>
+    {loading && <BlockState state="loading" title="正在加载异常详情" />}
     {/* 详情没读到又有待确认时，读取失败和待确认并成一条：标题说待确认，正文先说为什么读不到，重新加载贴在正文下面；同一句「原操作已保留」不说两遍。 */}
     {error && !(pending && !detail) && <Notice tone={pending ? "warn" : "danger"} action={<Button size="sm" disabled={busy} onClick={() => void load()}>重新加载详情</Button>}>{error}</Notice>}
     {pending && !detail && <Notice tone="warn" title="解除结果未知" actionBelow action={error ? <Button size="sm" disabled={busy} onClick={() => void load()}>重新加载详情</Button> : undefined}>{error ? <><p>{error}</p>{!error.includes("原操作已保留") && <p>原操作已保留，详情读取成功后可查询。</p>}</> : "原操作已保留，详情读取成功后可查询。"}</Notice>}
@@ -181,7 +181,7 @@ export function PaymentSecurityDetail({ port, recordId, userLabel, initialAction
   </RdDrawer>;
   return <div className="payment-security"><Modal className="payment-security" icon="shield" sub={reviewing ? <StatusTag tone="progress" filled>立即生效</StatusTag> : undefined} title={reviewing && record ? `解除支付密码${record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "异常标记" : "锁定"}` : "支付密码异常详情"} onClose={onClose} busy={busy} wide footer={<><PsButton disabled={busy} onClick={() => reviewing ? setReviewing(false) : onClose()}>{reviewing ? "返回详情" : "关闭"}</PsButton>{reviewing ? <PsButton primary disabled={busy || !canRelease || !reasonRule.ok(reason) || !confirmed || !!writeBlockedReason} title={canRelease && reasonRule.ok(reason) && confirmed && !busy ? writeBlockedReason : undefined} onClick={() => void execute(false)}>{busy ? "正在提交…" : "确认解除"}</PsButton> : record?.state === "ACTIVE" && mayRelease(session) && <PsButton primary disabled={busy || loading || !canRelease || !!writeBlockedReason} title={!busy && !loading && canRelease ? writeBlockedReason : undefined} onClick={() => { setReviewing(true); setConfirmed(false); }}>{actionText(record)}</PsButton>}</>}>
     <div ref={contentRef} className="ps-modal-content">
-      {loading && <div className="ps-skeleton" role="status" aria-label="正在读取异常详情"><span /><span /><span /></div>}
+      {loading && <div className="ps-skeleton" role="status" aria-label="正在加载异常详情"><span /><span /><span /></div>}
       {error && (surface
         ? <Notice tone={pending ? "warn" : "danger"} action={!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}>{error}</Notice>
         : <p className="ps-reason" role="alert">{error} {!busy && <button className="ps-link" onClick={() => void load()}>重新加载详情</button>}</p>)}

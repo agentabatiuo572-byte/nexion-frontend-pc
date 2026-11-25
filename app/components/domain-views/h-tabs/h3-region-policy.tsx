@@ -249,7 +249,7 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
   if (!canRead) return null;
   const now = Date.now();
   const firstUnset = policy?.revision === 0 && !policy.nextActivation;
-  const editBlock = loading ? "正在读取地区规则" : error ? "地区规则读取失败，读到后才能编辑" : reviewError ? reviewError : pending ? "已有一份修改在等批准，批准或驳回前不能再改" : commandBlocked ? "这一项结果未知，请先查询原操作" : firstUnset ? "首次生效时间还没确定，暂时不能提交修改" : undefined;
+  const editBlock = loading ? "正在加载地区规则" : error ? "地区规则读取失败，读到后才能编辑" : reviewError ? reviewError : pending ? "已有一份修改在等批准，批准或驳回前不能再改" : commandBlocked ? "这一项结果未知，请先查询原操作" : firstUnset ? "首次生效时间还没确定，暂时不能提交修改" : undefined;
   const rows = draft ?? policy?.mappings ?? [];
   // 编辑时只看规则本身；实际一列只在查看时出现，旧后端没给就不出现。
   const actual = !draft ? policy?.actualAssignments : undefined;
@@ -269,7 +269,7 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
         <p>按用户注册手机号的区号决定时区，每周一 00:00（那个时区）开始新的一周。没设置的区号用越南时间。看的是注册时的区号，不是语言或现在的 IP。</p>
         <p>修改要提交审批，{REGION_APPROVER}批准后，每个用户从他自己的下一周开始按新规则；本周已开始的不变。团队和财务的周期不受影响。</p>
       </>}>
-      {loading && !policy && <BlockState state="loading" title="地区规则读取中…" />}
+      {loading && !policy && <BlockState state="loading" title="地区规则正在加载…" />}
       {error && <BlockState state="error" title="地区规则读取失败" detail={`${error} · 读到之前不能编辑。`} onRetry={() => void reload()} />}
       {pending && <Notice tone="warn" title="区号规则的修改在等批准">
         <p>{`${REGION_APPROVER}批准前仍按下面的规则；批准后刷新这里核对。`}{canReadA2 ? "" : "你没有查看审批的权限，请让有权限的同事核对结果。"}</p>

@@ -280,7 +280,7 @@ export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal
         actions={<Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => void refresh()}>刷新</Button>}>
         {error && documents.length > 0 && <div className="rd-panel-line"><Notice tone="danger" title="资料没读到最新">{error} 下面是上次读到的。</Notice></div>}
         {!documents.length
-          ? loading || !read ? <BlockState state="loading" title="资料文件加载中…" />
+          ? loading || !read ? <BlockState state="loading" title="正在加载资料文件…" />
             : <BlockState state="error" title="四份资料没读到" detail={error ?? "暂时读不到，请稍后重试。"} onRetry={() => void refresh()} />
           : <div className="i4-docs">
             {documents.map((document) => {

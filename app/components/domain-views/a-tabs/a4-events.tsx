@@ -1371,7 +1371,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {registryModal}
         <Panel title="用户行为事件">
           <BlockState state="error" title="事件数据读取失败" detail={<><p>{loadError}</p><p>为避免误判，页面已停止展示和写入。</p></>}
-            retryLabel="重新读取" onRetry={() => void refreshOverview()} />
+            onRetry={() => void refreshOverview()} />
         </Panel>
       </div>
     );
@@ -1383,7 +1383,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         {recoveryNotice}
         {ticketNotice}
         {registryModal}
-        <div className="a4-loading" aria-label="正在读取用户行为事件">
+        <div className="a4-loading" aria-label="正在加载用户行为事件">
           <div className="rd-skeleton a4-skel-line" />
           <div className="a4-skel-stats">{[0, 1, 2, 3].map((index) => <div key={index} className="rd-skeleton" />)}</div>
           <div className="rd-skeleton a4-skel-tabs" />

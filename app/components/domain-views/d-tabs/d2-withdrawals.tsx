@@ -1590,7 +1590,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   }
 
   function detailBlockedReason(row: D2Withdrawal, action?: D2ReviewAction) {
-    if (detailLoading) return "正在读取详情";
+    if (detailLoading) return "正在加载详情";
     if (detailError) return "为避免按旧数据操作，已暂停处理";
     const blocked = blockedReason(row, action);
     if (blocked) return blocked;

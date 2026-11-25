@@ -455,7 +455,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     ? <Link className="rd-link" href={EXPORT_PAGE}>{text}</Link>
     : <>你没有「{exportPageName}」的权限，请找有权限的同事核对。</>);
 
-  const readBlocked = ctx.biLoading ? "正在读取，读完再导出" : ctx.biError ? "运营数据读取失败，暂时不能导出" : !data ? "还没有读到所选时间段的数据" : undefined;
+  const readBlocked = ctx.biLoading ? "正在加载，读完再导出" : ctx.biError ? "运营数据读取失败，暂时不能导出" : !data ? "还没有读到所选时间段的数据" : undefined;
   const aggBlocked = readBlocked ?? (!queryMatchesData ? "先应用所选的时间段，再导出" : !data?.available ? "这个时间段没有可导出的数据" : undefined);
   const treeBlocked = pendingTree ? formatAdminApiError("L4_TREE_PENDING", "L4_TREE_PENDING") : readBlocked ?? (!queryMatchesData ? "先应用所选的时间段，再导出" : query.period === "custom" ? "团队明细只能按日、周、月导出" : (data?.liveFacts.teamRelationships ?? 0) <= 0 ? "当前没有可导出的团队关系" : undefined);
   const actions = (ctx.canExport || ctx.canExportNetworkTree) ? (
@@ -550,7 +550,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
     ? `${data.period.label}（${data.period.from} 至 ${data.period.to}）· ${phaseText(data.phaseFilter, phaseNames)}`
     : query.period === "custom" && !(query.from && query.to)
       ? `自定义日期还没应用 · ${phaseText(query.phase, phaseNames)}`
-      : `${PERIODS.find(([value]) => value === query.period)?.[1] ?? ""}${query.period === "custom" ? `（${query.from} 至 ${query.to}）` : ""} · ${phaseText(query.phase, phaseNames)} · 正在读取`;
+      : `${PERIODS.find(([value]) => value === query.period)?.[1] ?? ""}${query.period === "custom" ? `（${query.from} 至 ${query.to}）` : ""} · ${phaseText(query.phase, phaseNames)} · 正在加载`;
   const scopeExplain = (
     <Explain label="时间段和阶段管哪几块" content={<>
       <p>日、周、月是从现在往前滚动的近 24 小时、7 天、30 天，不是自然日、周、月。自定义按业务日（{businessZone().label}）算，含首尾两天，结束日不能晚于今天，最长 400 天。</p>
@@ -603,14 +603,14 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
   if (!data) {
     const waitingCustom = !ctx.biLoading && !ctx.biError && query.period === "custom" && !(query.from && query.to);
     return page(<>
-      <Conclusion state="unknown">{ctx.biLoading ? "运营报表：正在读取" : ctx.biError ? "运营报表：读取失败，暂时无法判断" : waitingCustom ? "运营报表：等待所选时间段的数据" : "运营报表：没有读到数据"}</Conclusion>
+      <Conclusion state="unknown">{ctx.biLoading ? "运营报表：正在加载" : ctx.biError ? "运营报表：读取失败，暂时无法判断" : waitingCustom ? "运营报表：等待所选时间段的数据" : "运营报表：没有读到数据"}</Conclusion>
       {ctx.biLoading
-        ? <BlockState state="loading" title="正在读取设备、任务、团队和各阶段的数…" />
+        ? <BlockState state="loading" title="正在加载设备、任务、团队和各阶段的数…" />
         : ctx.biError
-          ? <BlockState state="error" title="运营数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以换一个时间段再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
+          ? <BlockState state="error" title="运营数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以换一个时间段再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
           : waitingCustom
             ? <BlockState state="empty" title="选好开始和结束日期，点「应用日期」后读取" detail="自定义日期按业务日算，含首尾两天。" />
-            : <BlockState state="empty" title="这次没有读到运营数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+            : <BlockState state="empty" title="这次没有读到运营数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
     </>);
   }
 

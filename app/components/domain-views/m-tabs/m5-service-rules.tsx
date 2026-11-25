@@ -357,7 +357,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
             ))}
           </div>
           {(conflict || externalChanges.length > 0) && <Notice tone="warn" title="规则已被别人改过" actionBelow
-            action={conflict ? latest ? <Button size="sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</Button> : <Button size="sm" loading={rereadBusy} loadingText="正在读取…" onClick={() => void refreshLatest()}>读取最新规则</Button> : undefined}>
+            action={conflict ? latest ? <Button size="sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</Button> : <Button size="sm" loading={rereadBusy} loadingText="正在加载…" onClick={() => void refreshLatest()}>读取最新规则</Button> : undefined}>
             <p>{comparisonAfter && comparisonBefore ? `现在是第 ${comparisonAfter.version} 版，你改的是第 ${comparisonBefore.version} 版。` : "还没读到最新版本。"}{conflict ? "你填的内容还在。" : "你改过的项目已带到最新规则，请核对后重新确认。"}</p>
             {conflict && !latest && error && <p>{error}</p>}
             {comparisonBefore && comparisonAfter && <ul className="m5-plain-list">{externalChanges.map((field) => <li key={field}>{LABELS[field]}：{labelValue(field, comparisonBefore[field])} → {labelValue(field, comparisonAfter[field])}</li>)}</ul>}

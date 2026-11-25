@@ -43,7 +43,7 @@ import {
 } from "./j4-parts";
 import type { ActionConfirmReq, JCtx } from "./types";
 
-const READING = "正在读取最新状态，读完再操作";
+const READING = "正在加载最新状态，读完再操作";
 const NOT_READY = "应急执行服务尚未就绪，请联系技术人员检查";
 const REASON_HINT = "例如：监管来函编号、事件编号、工单号";
 const NO_REAL = <StatusTag tone="neutral" icon={FlaskConical}>不动真实业务</StatusTag>;
@@ -1057,7 +1057,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {recovery}
       {activePanel}
       {contentLoading
-        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在读取预案、执行记录和通知活动" />
+        ? <BlockState state="loading" title="应急预案数据加载中" detail="正在加载预案、执行记录和通知活动" />
         : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
     </>);
   }

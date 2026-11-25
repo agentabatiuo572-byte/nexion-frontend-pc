@@ -1167,7 +1167,7 @@ export default function UserDetailPage() {
   const nicknameBlock = pendingCommands.some((command) => command.kind === "nickname") ? "重置昵称的结果未知，先到页面上方核对" : busyReason ?? staleWriteReason;
   const methodBlock = (method: UserPaymentMethod) => pendingCommands.some((command) => command.methodId === method.id)
     ? "这张卡有结果未知的操作，先到页面上方核对"
-    : paymentLoading ? "正在读取支付方式，读完再操作" : busyReason;
+    : paymentLoading ? "正在加载支付方式，读完再操作" : busyReason;
   const deviceBlock = (deviceId: number) => pendingCommands.some((command) => command.deviceId === deviceId) ? "这台设备有结果未知的操作，先到页面上方核对" : busyReason ?? staleWriteReason;
 
   const openNicknameReset = () => setActionConfirm({ briefKind: "record",
@@ -1688,7 +1688,7 @@ export default function UserDetailPage() {
       <PageHeader pageId={supportScope ? "C1S" : "C1D"} title={displayNickname}
         summary={supportScope ? "这个客户的资料、资金、设备和记录。" : "这个用户的资料、资金、设备和记录。"}
         back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>}
-        actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void load()}>刷新</Button>}
+        actions={<Button icon={<RefreshCcw size={14} aria-hidden />} loading={loading} loadingText="正在加载…" onClick={() => void load()}>刷新</Button>}
         status={<StatusTag tone={statusTone(status)} icon={STATUS_ICON[status]} filled>{statusLabel(status)}</StatusTag>}
         level={`用户分层 ${asText(profile.userLevel)} · 团队等级 ${asText(profile.vRank)}`}
         facts={[
@@ -1776,7 +1776,7 @@ export default function UserDetailPage() {
                   <Explain label="撤销详情" content={[method.revokeCommandNo && `命令 ${method.revokeCommandNo}`, method.revokeAttempts && `已重试 ${method.revokeAttempts} 次`, method.revokeLastError].filter(Boolean).join(" · ") || "暂无更多信息"} />
                 </Notice>
               ))}
-              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在读取支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
+              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在加载支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
               {!!paymentMethods && paymentMethods.total > paymentMethods.pageSize && <Pager label="支付方式" total={paymentMethods.total} page={paymentMethods.page} pageSize={paymentMethods.pageSize} sizes={[paymentMethods.pageSize]} loading={paymentLoading} onPage={(page) => { setRecord(null); setPaymentPage(page); }} onPageSize={() => undefined} />}
             </Block>}
           </Fold>

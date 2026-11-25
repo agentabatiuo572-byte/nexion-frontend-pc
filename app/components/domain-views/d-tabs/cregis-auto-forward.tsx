@@ -132,8 +132,8 @@ function Owned({canManage,openActionConfirm,onChanged,owner,epoch,network,onNetw
     catch(failure){if(owns()&&at===taskRead.current)setMoreError(displayAdminReadError(failure));}
     finally{if(owns()&&at===taskRead.current)setTasksLoading(false);}
   };
-  const block=statusLoading?"正在读取最新数据":busy?"正在提交":undefined;
-  const taskBlock=tasksLoading?"正在读取最新数据":busy?"正在提交":undefined;
+  const block=statusLoading?"正在加载最新数据":busy?"正在提交":undefined;
+  const taskBlock=tasksLoading?"正在加载最新数据":busy?"正在提交":undefined;
   const trc20Off=trc20&&status?.collectionEnabled!==true&&status?.paymentEnabled!==true;
   const proposeBlock=block??(trc20Off?TRC20_CLOSED:undefined)??d1PendingObjectReason(`/cregis${ROOT}/policy${networkQuery}`,{action:"PROPOSE"})??(!trc20?readinessBlock:undefined)??(status?.makerId!==null?"有待复核的提案，先复核或取消":undefined);
   const records=page.records,index=records.findIndex(row=>String(row.id)===selected),task=index>=0?records[index]:null;

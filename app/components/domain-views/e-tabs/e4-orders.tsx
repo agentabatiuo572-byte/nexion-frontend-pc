@@ -225,7 +225,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
 
     {ctx.e4CountsFailed
       ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单数量读不到，还不知道有没有要处理的</Conclusion>
-      : waitCount === undefined ? <Conclusion state="unknown">正在读取有没有要处理的订单…</Conclusion>
+      : waitCount === undefined ? <Conclusion state="unknown">正在加载有没有要处理的订单…</Conclusion>
         : waitCount > 0
           ? <Conclusion state="warn" lead hint={waitHint} explain={waitExplain}
               action={<>
@@ -387,10 +387,10 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const index = orders.findIndex((order) => order.id === o.id);
   const prev = index > 0 ? orders[index - 1] : undefined;
   const next = index >= 0 ? orders[index + 1] : undefined;
-  const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在读取…" };
+  const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在加载…" };
   // 读完详情才能做决定（OP-150）：下一步、退款条件都靠详情里的事实。
   const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id) || ctx.e4ReceiptAttempts.some((record) => record.orderNo === o.id);
-  const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未知的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在读取订单事实" : ctx.e4ReadBlock;
+  const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未知的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在加载订单事实" : ctx.e4ReadBlock;
   const approvalTag = <StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag>;
   // 批准后收不回来的操作：不能撤销，红按钮（VS-25、VS-106）。
   const irreversibleApproval = <>{approvalTag}<IrreversibleTag /></>;

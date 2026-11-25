@@ -36,7 +36,7 @@ const TRIGGER_BASES = ["", "监管点名", "挤兑风险", "安全事件", "其�
 const TRIGGER_LABELS = { "": "请选择触发依据" };
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
-const READING = "正在读取最新状态，读完再操作";
+const READING = "正在加载最新状态，读完再操作";
 const FROZEN = "结果未知期间原请求已锁定，不能改";
 /** 断网、连接中断时提交结果未知：全站同一句；页面也刷新不了时说清先等网络。 */
 const UNKNOWN_TEXT = "结果未知，可能已经生效。不要重复操作，到页面上方查询原操作。";
@@ -798,7 +798,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     return renderPage(<>
       {header()}
       {recovery}
-      <BlockState state="loading" title="地区限制加载中" detail="正在读取名单、入口规则和地区识别源" />
+      <BlockState state="loading" title="地区限制加载中" detail="正在加载名单、入口规则和地区识别源" />
     </>);
   }
 

@@ -112,7 +112,7 @@ export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewC
   const numberOf = (raw: string) => raw === "" ? NaN : Number(raw);
   const lock = disabled || submitted;
   const lockReason = ctx.f2WriteBlocked("f-direct-referral-policy") ?? (!allowed ? "只能查看：改好友奖励政策需有「团队奖励比例」权限"
-    : busy ? "正在读取" : ctx.f2DirectPolicyError ? "政策没读到，先刷新" : !policy?.sevenLayerEnabled ? "整体结算启用后才能改"
+    : busy ? "正在加载" : ctx.f2DirectPolicyError ? "政策没读到，先刷新" : !policy?.sevenLayerEnabled ? "整体结算启用后才能改"
       : stale ? "政策刚被别人改过，先放弃修改并刷新" : submitted ? "已提交，等另一位超级管理员批准" : invalid ?? (!changed ? "还没有改动" : undefined));
 
   const share = (key: "purchaseSplit" | "deviceEarning", label: string) => draft && <>

@@ -1546,7 +1546,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const conclusionExplain = "待审核和审核中的注销申请都要人处理。已拒绝的申请可以重新审核或取消；用户也可以在 App 取消。";
   const conclusion = !canReadDeletions ? null
-    : deletionCounts.loading && !deletionCounts.data ? <Conclusion state="unknown">正在读取…</Conclusion>
+    : deletionCounts.loading && !deletionCounts.data ? <Conclusion state="unknown">正在加载…</Conclusion>
       : deletionCounts.error || pendingDeletions === null ? <Conclusion state="unknown" action={<InlineRetry onRetry={() => void loadDeletionCounts()} />}>暂时读不到注销申请的数量</Conclusion>
         : pendingDeletions > 0 ? (
           <Conclusion state="warn" lead icon={Inbox} explain={conclusionExplain}
@@ -1778,11 +1778,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const prevAccount = accountIndex > 0 ? accountRows[accountIndex - 1] : undefined;
   const nextAccount = accountIndex >= 0 ? accountRows[accountIndex + 1] : undefined;
 
-  const drawerBase = !ctxData ? (context.loading ? "正在读取…" : NO_CONTEXT) : locked.has(`user|${shownId}`) ? LOCKED_USER : submitting ? SUBMITTING : undefined;
+  const drawerBase = !ctxData ? (context.loading ? "正在加载…" : NO_CONTEXT) : locked.has(`user|${shownId}`) ? LOCKED_USER : submitting ? SUBMITTING : undefined;
   const unfreezeBlock = drawerBase ?? (sourceCode === "K1_MULTI_ACCOUNT_CLUSTER" ? K1_BLOCK : sourceCode === "CREGIS_DEPOSIT_INCIDENT" ? CREGIS_BLOCK : undefined);
   const revokeBlock = drawerBase ?? (!pendingRevoke && (shownActiveCount ?? 0) <= 0 ? NO_SESSION_TO_REVOKE : undefined);
   const viewBlock = drawerBase ?? (shownStatus !== "ACTIVE" ? VIEW_NEEDS_ACTIVE : shownActiveView ? VIEW_ALREADY_OPEN : undefined);
-  const listBase = !ctxData ? (context.loading ? "正在读取…" : NO_CONTEXT) : locked.has(`list|${shownId}`) ? LOCKED_LIST : submitting ? SUBMITTING : undefined;
+  const listBase = !ctxData ? (context.loading ? "正在加载…" : NO_CONTEXT) : locked.has(`list|${shownId}`) ? LOCKED_LIST : submitting ? SUBMITTING : undefined;
 
   const moreItems: MoreMenuItem[] = !shown ? [] : [
     ...(canStartImpersonation ? [{ key: "view", label: "查看这个用户的数据", disabledReason: viewBlock, onSelect: () => startView(shown) }] : []),
@@ -1931,7 +1931,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         </Notice>
         <Segments label="用户数据只读视图页面" value={mirrorPage} onChange={(page) => void switchMirror(page)}
           items={MIRROR_PAGES.map((item) => ({ ...item, disabled: mirrorLoading || busy }))} />
-        {mirrorLoading ? <BlockState state="loading" title="正在读取…" /> : <ImpersonationUserScreen screen={jsonRecord(mirror.screen)} />}
+        {mirrorLoading ? <BlockState state="loading" title="正在加载…" /> : <ImpersonationUserScreen screen={jsonRecord(mirror.screen)} />}
       </div>}
     </Drawer>
   );

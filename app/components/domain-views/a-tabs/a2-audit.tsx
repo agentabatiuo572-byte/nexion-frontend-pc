@@ -1936,7 +1936,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       : { state: "error", message: "退款金额未读取" }
     : undefined;
   const refundAmountText = (amount: RefundAmount) => amount.state === "ok" ? `${orderAmount(amount.amount)} USDT`
-    : amount.state === "loading" ? "正在读取" : "退款金额未读取";
+    : amount.state === "loading" ? "正在加载" : "退款金额未读取";
 
   // 已应用的条件后端查过了，以后端的结果为准；对象还会命中详情里的命令号这类字段，前端再按窄的字段筛会把查到的记录删掉（M4）。
   const logRows = records?.recentLogs ?? [];
@@ -2200,7 +2200,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const d5Block = d5RetryBlock(record);
     if (d5Block) return d5Block;
     const amount = retryAmount(record);
-    if (amount?.state === "loading") return "正在读取退款金额，读完再重试";
+    if (amount?.state === "loading") return "正在加载退款金额，读完再重试";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
     return undefined;
   };
@@ -2319,7 +2319,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /** 框标题只写「批准审批单」，动作名放在标题下面一行，长了省略、悬停看全文（设计偏差二选一的第一种）。 */
   const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w)}>{shortCodes(actionName(w))}</span>;
 
-  /** 本人、已退役、解析不了、有未确认操作、正在读取、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
+  /** 本人、已退役、解析不了、有未确认操作、正在加载、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
   const decideBlock = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
     if (submitting) return SUBMITTING;
     if (pendingTicketIds.has(w.id)) return PENDING_LOCK;
@@ -2336,7 +2336,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     }
     // 读不到退款金额时不能批准（协调人定，同 C3 读不到详情）；驳回不受影响。
     const amount = kind === "approve" ? refundAmount(w) : undefined;
-    if (amount?.state === "loading") return "正在读取退款金额，读完再批准";
+    if (amount?.state === "loading") return "正在加载退款金额，读完再批准";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
     return undefined;
   };
@@ -3206,7 +3206,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const settingsTab = mainError && !main ? (
     <BlockState retryKey="a2-audit-3198" state="error" title="机制设置读取失败，不显示旧数据" detail={mainError} onRetry={() => void loadMain().catch(() => undefined)} retrying={mainLoading} />
   ) : !main ? (
-    <BlockState state="loading" title="正在读取机制设置…" />
+    <BlockState state="loading" title="正在加载机制设置…" />
   ) : (
     <>
       <Panel icon={SlidersHorizontal} tone="role-4" title="审批与记录规则">

@@ -278,7 +278,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
       meta={readAt ? `${businessClock(readAt)} 读取（${businessZone().label}）` : undefined}
       readOnly={canRead && !canWrite ? "当前账号只能查看" : undefined}
       actions={canRead ? <>
-        <Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} loadingText="读取中…" onClick={() => void reload()}>刷新</Button>
+        <Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} loadingText="正在加载…" onClick={() => void reload()}>刷新</Button>
         {canWrite && <Button variant="primary" icon={<Pencil size={14} aria-hidden />} disabledReason={editBlock} onClick={() => openEdit()}>编辑清单</Button>}
       </> : undefined} />
   );

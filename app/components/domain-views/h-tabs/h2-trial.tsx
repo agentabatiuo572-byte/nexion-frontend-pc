@@ -122,7 +122,7 @@ const TERMINAL_STATES = ["cancelled", "redeemed", "failed"];
 const STATE_TONE: Record<string, StateTone> = { dim: "done", ok: "ok", warn: "warn", bad: "danger" };
 
 /** 读取中不能依据旧数据写入（ST-32）。 */
-const READING = "正在读取最新数据，读完再操作";
+const READING = "正在加载最新数据，读完再操作";
 const LOCKED = "这条记录有一次操作结果未知，先到页面上方处理";
 const PARAM_LOCKED = "这项有一次修改结果未知，先到页面上方处理";
 const APPROVAL_SENT = "已提交审批，超级管理员批准后执行，进度到「操作记录与审批」看。";

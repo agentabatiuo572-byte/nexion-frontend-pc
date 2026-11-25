@@ -53,7 +53,7 @@ const VOUCHER_TITLE = { get current() { return document.querySelector<HTMLElemen
 type OpsVoucher = H7Voucher;
 
 /** 谁来批：后端要另一位有效管理员，有审批权限和代金券修改权限，不限超级管理员。 */
-const APPROVER = "另一位管理员";
+const APPROVER = "另一位超级管理员";
 const LOCAL_PENDING = "这张券有结果未知的删除或作废申请，先处理页面上方的提醒";
 
 type Filter = "all" | "active" | "paused";
@@ -207,7 +207,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
 
   const directRecord = (id: string) => adminId === undefined ? undefined : pendingH7VoucherMutations(adminId).find(r => r.voucherId === id);
   const blockNew = (id?: string) => !canWrite ? "你只能查看；新增、编辑和处置代金券要有这页的修改权限。"
-    : !fresh.current ? loading ? "正在读取最新数据，读完再操作" : "读取失败，读到最新数据后才能新增"
+    : !fresh.current ? loading ? "正在加载最新数据，读完再操作" : "读取失败，读到最新数据后才能新增"
       : (id ? directRecord(id) : directUnknown.some(record => record.context.kind === "create")) ? "已有原操作待确认，请先处理原操作。"
         : id && adminId !== undefined && pendingH7VoucherApprovals(adminId).some(r => r.voucherId === id) ? pendingH7VoucherApprovals(adminId).some(r => r.voucherId === id && r.ticket) ? "这张券已有等批准的申请，审批结束前不能再提交" : LOCAL_PENDING
         : id && currentData.current.find(v => v.id === id)?.pendingApproval ? "这张券已有等批准的申请，审批结束前不能再提交" : undefined;
@@ -477,7 +477,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         if (observed) approvalQuery.clear(observed);
         if (!ticket) return false;
         if (ticket.status === "pending") {
-          toast(`已提交审批 · 审批单 ${ticket.id} · 等待${APPROVER}批准`);
+          toast(`已提交，等待审批后执行 · 审批单 ${ticket.id}`);
         } else {
           toast(`已找到原审批单 ${ticket.id}，请在操作记录查看处理结果`);
         }
@@ -678,7 +678,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     />
   );
 
-  const formBlocked = form && (pendingForm ? "原操作结果待确认，请先处理原操作。"
+  const formBlocked = form && (pendingForm ? "原操作结果未知，请先处理原操作。"
     : form.conflict ? "请先读取最新代金券。" : blockNew(form.voucher?.id)
       ?? (!dirty && form.voucher ? "还没有改动" : undefined));
   const reviewForm = (after?: () => void) => {
@@ -690,7 +690,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const formDrawer = form && <>
     <H7VoucherForm key={form.key} voucher={form.voucher} baseline={form.baseline} value={form.value} dirty={dirty}
       blocked={formBlocked || undefined} busy={submittingForm} skuOptions={skuOptions} skuLabels={skuLabels} toMs={toMs}
-      recovery={pendingForm && <H7RecoveryNotice title="原操作结果待确认" rows={[directRecoveryRow(pendingForm, form)]}
+      recovery={pendingForm && <H7RecoveryNotice title="原操作结果未知" rows={[directRecoveryRow(pendingForm, form)]}
         explain={H7_DIRECT_RETRY_COPY}
         link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />}
       conflict={form.conflict ? () => void readLatest(form).catch(() => {}) : undefined}

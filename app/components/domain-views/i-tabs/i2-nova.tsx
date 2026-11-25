@@ -1127,11 +1127,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   </>;
 
   if (contentLoading && !data) {
-    return <>{header}{unknownNotice}{conflictUi}<BlockState state="loading" title="正在读取推送数据…" /></>;
+    return <>{header}{unknownNotice}{conflictUi}<BlockState state="loading" title="正在加载推送数据…" /></>;
   }
   if (!data) {
     return <>{header}{unknownNotice}{conflictUi}{contentError
-      ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} retryLabel="重新加载" />
+      ? <BlockState state="error" title="推送数据读取失败" detail={contentError} onRetry={() => void actions.reloadIContent()} />
       : <BlockState state="empty" title="暂无推送数据" />}</>;
   }
 

@@ -323,7 +323,7 @@ function G2ExchangePage() {
   const openActionConfirm = useCallback((request: G2ConfirmReq | null) => {
     const view = latest.current;
     if (request && (view.loading || view.readFailed || view.rereadPending) && request.getPendingReason?.() === undefined) {
-      setError("当前值没读到，重新加载后再改");
+      setError("当前值没读到，重试成功后再改");
       return;
     }
     setActionConfirm(request);
@@ -664,7 +664,7 @@ function G2ExchangePage() {
       coverageLead={mc.coverageLead}
       coverageCheck={mc.coverageCheck}
       reasonPlaceholder={mc.reasonPlaceholder}
-      blockedReason={pendingConfirmReason === undefined && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : undefined}
+      blockedReason={pendingConfirmReason === undefined && (loading || readFailed || rereadPending) ? "当前值没读到，重试成功后再改" : undefined}
       onClose={() => openActionConfirm(null)}
       onConfirm={async (reason, newValue, businessValue) => {
         const saved = mc.getPendingReason?.() !== undefined;
@@ -675,7 +675,7 @@ function G2ExchangePage() {
         const view = latest.current;
         if (!saved && (view.loading || view.readFailed || view.rereadPending)) {
           openActionConfirm(null);
-          throw new Error("当前值没读到，重新加载后再改");
+          throw new Error("当前值没读到，重试成功后再改");
         }
         if (saved) confirmationRecovery.current = { request: mc, saved: true };
         try {
@@ -694,7 +694,7 @@ function G2ExchangePage() {
   const pendingPause = directCommands.find(record => record.path === "/exchange/swap");
   const pauseAction = overview && (emergencyPaused !== true || pendingPause
     ? (allowed("finprod_g2_swap_toggle") || pendingPause) && <Button variant="danger-outline" size="sm" icon={<PauseCircle size={14} aria-hidden />}
-      disabledReason={busyKey ? "正在处理上一项，稍候再操作" : !pendingPause && (loading || readFailed || rereadPending) ? "当前值没读到，重新加载后再改" : !pendingPause ? switchBlockedReason : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
+      disabledReason={busyKey ? "正在处理上一项，稍候再操作" : !pendingPause && (loading || readFailed || rereadPending) ? "当前值没读到，重试成功后再改" : !pendingPause ? switchBlockedReason : undefined} onClick={() => toggleSwap()}>紧急暂停兑换</Button>
     : reach("/emergency/kill-switch") && <Link className="rd-link" href="/emergency/kill-switch" prefetch={false}>{disclosureBlocked ? "去「紧急停用开关」恢复兑换开关 →" : "去「紧急停用开关」恢复 →"}</Link>);
   const header = (
     <PageHeader pageId="G2" title="兑换额度与规则"
@@ -1083,7 +1083,7 @@ function G2ExchangePage() {
       <>
         {header}
         {recoveryNotice()}
-        <BlockState state="loading" title="正在读取兑换额度与规则…" />
+        <BlockState state="loading" title="正在加载兑换额度与规则…" />
         {confirmModal}
       </>
     );
@@ -1096,8 +1096,8 @@ function G2ExchangePage() {
         {operationNotice}
         {recoveryNotice()}
         <BlockState state="error" title="兑换数据读取失败"
-          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={overviewReadError || "没有收到数据。"} /></>}
-          retryLabel="重新加载" onRetry={() => void reload()} />
+          detail={overviewReadError || "没有收到数据。"}
+          onRetry={() => void reload()} />
         {confirmModal}
       </>
     );
@@ -1106,7 +1106,7 @@ function G2ExchangePage() {
   const { stats, swap, caps, queue, gateDetails, geoBlocked } = overview;
   const busy = !!busyKey;
   const busyReason = busy ? "正在处理上一项，稍候再操作" : undefined;
-  const newWriteBlockedReason = loading || readFailed || rereadPending ? "当前值没读到，重新加载后再改" : undefined;
+  const newWriteBlockedReason = loading || readFailed || rereadPending ? "当前值没读到，重试成功后再改" : undefined;
   const totalGate = stats.gateUser + stats.gatePlatform + stats.gateGeo;
   const selectedQueue = queueDrawer ? queue.find((row) => row.exchangeNo === queueDrawer) : null;
   const gateTiles: { key: GateKey; label: string; count: number; explain: string }[] = [
@@ -1154,7 +1154,7 @@ function G2ExchangePage() {
       if (!saved) {
         const view = latest.current;
         if (!view.overview || view.loading || view.readFailed || view.rereadPending || view.busyKey) {
-          throw new Error("当前值没读到，重新加载后再改");
+          throw new Error("当前值没读到，重试成功后再改");
         }
         if (view.batchBlockedReason) throw new Error(view.batchBlockedReason);
       }

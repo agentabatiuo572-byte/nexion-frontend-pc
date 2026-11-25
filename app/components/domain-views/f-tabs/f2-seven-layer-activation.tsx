@@ -92,7 +92,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
   const checkedReason = incomplete ? ctx.f2Loading ? "七层规则读取中" : ctx.f2Error ? "七层规则没读到"
     : "配齐七层 USDT 比例和 UVT 系数并通过下方检查后才能启用" : undefined;
   const blocked = !!writeBlocked || incomplete || busy || !policy || !!ctx.f2DirectPolicyError || !!ctx.f2ActivationPendingError && canAudit || !supported || !!ctx.f2ActivationPending || !!ctx.f2ActivationAttempt || submitted || recovering;
-  const blockedReason = writeBlocked ?? (busy ? "正在读取结算状态"
+  const blockedReason = writeBlocked ?? (busy ? "正在加载结算状态"
     : ctx.f2DirectPolicyError || !policy ? "结算状态没读到，刷新后再试"
       : ctx.f2ActivationPendingError && canAudit ? "审批进度没读到，刷新后再试"
         : !supported ? "后台页面和系统版本对不上，暂时只能查看；请刷新后再试"
@@ -118,7 +118,7 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
       actions={allowed ? <Button variant={action === "PAUSE" ? "secondary" : "primary"} disabledReason={blockedReason} onClick={submit}>{label}</Button> : undefined}>
       <div className="f2-settle-body">
         <div className="f2-settle-state" role="status" aria-live="polite">
-          {busy ? <span className="f2-settle-name" data-state="loading">正在读取…</span>
+          {busy ? <span className="f2-settle-name" data-state="loading">正在加载…</span>
             : !state ? <span className="f2-settle-name" data-state="failed">读不到</span>
               : <span className="f2-settle-name" data-state={state}>{stateName[state]}{state === "running" && policy?.cutoverAt && <span className="f2-settle-since"> · 启用于 <time dateTime={policy.cutoverAt}>{stamp(policy.cutoverAt)}</time></span>}</span>}
           {state !== "running" && <p className="f2-settle-what">

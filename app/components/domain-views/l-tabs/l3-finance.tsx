@@ -365,7 +365,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     });
   };
 
-  const readBlocked = ctx.biLoading ? "正在读取，读完再导出" : ctx.biError ? "财务数据读取失败，暂时不能导出" : undefined;
+  const readBlocked = ctx.biLoading ? "正在加载，读完再导出" : ctx.biError ? "财务数据读取失败，暂时不能导出" : undefined;
   const summaryBlocked = readBlocked ?? (!exportable ? "暂无可导出的财务数据" : undefined);
   const detailBlocked = pendingDetail ? formatAdminApiError("L3_DETAIL_PENDING", "L3_DETAIL_PENDING") : readBlocked ?? (!detailExportable ? "当前周期没有起止日期，不能导出明细" : undefined);
   const actions = (ctx.canExport || ctx.canExportFinanceDetail) ? (
@@ -497,7 +497,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
           <Input id="l3-custom-from" aria-label="自定义开始日期" type="date" value={customFrom} max={customTo} aria-invalid={customInvalid || undefined} onChange={(event) => setCustomFrom(event.target.value)} />
           <label className="rd-note" htmlFor="l3-custom-to">止</label>
           <Input id="l3-custom-to" aria-label="自定义结束日期" type="date" value={customTo} min={customFrom} aria-invalid={customInvalid || undefined} onChange={(event) => setCustomTo(event.target.value)} />
-          <Button disabledReason={ctx.biLoading ? "正在读取" : customInvalid ? "开始日期不能晚于结束日期" : undefined} onClick={() => selectPeriod("custom")}>应用日期</Button>
+          <Button disabledReason={ctx.biLoading ? "正在加载" : customInvalid ? "开始日期不能晚于结束日期" : undefined} onClick={() => selectPeriod("custom")}>应用日期</Button>
           <Explain label="自定义日期的说明" content={`按平台业务日（${businessZone().label}）算，含首尾两天，最长一年。超过一年时读取失败，改短后再应用。`} />
         </div>
       )}
@@ -514,12 +514,12 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
   );
 
   if (!data) return page(<>
-    <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "财务状况：正在读取" : ctx.biError ? "财务状况：读取失败，暂时无法判断" : "财务状况：没有读到数据"}</Conclusion>
+    <Conclusion state="unknown" icon={ShieldQuestion}>{ctx.biLoading ? "财务状况：正在加载" : ctx.biError ? "财务状况：读取失败，暂时无法判断" : "财务状况：没有读到数据"}</Conclusion>
     {ctx.biLoading
-      ? <BlockState state="loading" title="正在读取本期收入、提现、储备和到期…" />
+      ? <BlockState state="loading" title="正在加载本期收入、提现、储备和到期…" />
       : ctx.biError
-        ? <BlockState state="error" title="财务数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以改上面的周期再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
-        : <BlockState state="empty" title="这次没有读到财务数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />}
+        ? <BlockState state="error" title="财务数据读取失败，不显示旧数据" detail={`${ctx.biError} 可以改上面的周期再读；还是失败的话，请把错误信息发给技术同事。`} onRetry={() => void ctx.reloadBi?.()} />
+        : <BlockState state="empty" title="这次没有读到财务数据" detail="请重新加载；仍然没有，请把情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />}
   </>);
 
   /* ---------------- 读到的数：映射和完整性检查沿用改版前（L3-S04、L3-V06） ---------------- */
@@ -558,7 +558,7 @@ export function L3Finance({ ctx, title, summary }: { ctx: LCtx; title: ReactNode
     && Number.isFinite(Number(data.reserveCoverDays));
   if (!fullContractReady) return page(<>
     <Conclusion state="unknown" icon={ShieldQuestion}>财务状况：数据不完整，暂时无法判断</Conclusion>
-    <BlockState state="error" title="收到的财务数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请先重新加载；仍然这样，请把这页的情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} retryLabel="重新加载" />
+    <BlockState state="error" title="收到的财务数据不完整，已停止显示" detail="页面不显示不可靠的数字，也不能导出。请先重新加载；仍然这样，请把这页的情况告诉技术同事。" onRetry={() => void ctx.reloadBi?.()} />
   </>);
 
   /* The authoritative treasury snapshot owns valuation, not the separately read legacy overview. */

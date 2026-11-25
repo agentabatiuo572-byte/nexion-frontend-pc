@@ -351,7 +351,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const noCandidates = [...referenced.values()].filter(levels => levels.every(level => level.enabledCount === 0)).length;
   const emptyNames = emptyLevels.map(level => `${level.code} ${level.name}`).join("、");
   const onlineEmpty = emptyLevels.some(level => level.referencedBy.some(product => product.state !== "DRAFT"));
-  const conclusion = pools.state !== "ready" ? pools.state === "loading" ? "正在读取任务等级…" : "任务等级暂时读不到，无法判断哪些等级需要补任务"
+  const conclusion = pools.state !== "ready" ? pools.state === "loading" ? "正在加载任务等级…" : "任务等级暂时读不到，无法判断哪些等级需要补任务"
     : !emptyLevels.length ? "四个等级都有启用的任务"
       : emptyLevels.length === FIXED_DEVICE_LEVELS.length ? `四个等级都没有启用的任务${noCandidates > 0 ? `，${noCandidates} 个商品的设备之后接不到新任务` : "，当前没有商品因此失去候选任务"}`
       : noCandidates > 0 ? `${emptyNames}没有启用的任务，${noCandidates} 个商品的设备之后接不到新任务`
@@ -600,7 +600,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   if (!ctx.canReadE2 || denied) return <><BlockState state="denied" title="无权限访问" detail="这个账号没有任务池读取权限，请从侧栏返回有权查看的页面。" /><Button onClick={() => window.history.back()}>返回</Button></>;
   return <>
     <PageHeader pageId="E2" title={<>任务池<Explain label="任务池的说明" content="补充和修改商城任务，查看等级和停用影响。" /></>}
-      meta={pools.state === "loading" || readingTasks ? "正在读取…" : readAt ? `${businessClock(readAt)} 读取 · ${businessZoneText()}` : `尚未成功读取 · ${businessZoneText()}`}
+      meta={pools.state === "loading" || readingTasks ? "正在加载…" : readAt ? `${businessClock(readAt)} 读取 · ${businessZoneText()}` : `尚未成功读取 · ${businessZoneText()}`}
       readOnly={!ctx.canWriteE2 ? "只读，你只能查看任务池" : undefined}
       actions={<Button icon={<RefreshCw size={16} />} loading={pools.state === "loading" || tasks.state === "loading"} data-e2-editor-leave
         onClick={() => { if (editorDirty) leaveEditorThen(() => void refresh(query)); else void refresh(query); }}>刷新</Button>} />
@@ -647,11 +647,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           openLabel={`${card.code} ${card.name}，启用 ${loaded ? level.enabledCount : "未知"} 个，共 ${loaded ? level.taskCount : "未知"} 个${current ? "，当前等级" : ""}`}
           role="tab" id={tabIds.tab(card.code)} aria-selected={current} aria-controls="e2-current-tasks" tabIndex={current || !query.code && index === 0 ? 0 : -1}
           onKeyDown={event => { const next = nextTabValue(pools.data.map(item => item.code), query.code, event.key); if (next === null) return; event.preventDefault(); selectPool(next, true); }}>
-          <div className="e2-card-ratio">{!loaded ? <RatioBar state="loading" label="启用占比" value={0} total={1} valueText="正在读取" />
+          <div className="e2-card-ratio">{!loaded ? <RatioBar state="loading" label="启用占比" value={0} total={1} valueText="正在加载" />
             : level.enabledCount === 0 ? <StatusTag tone="warn" icon={TriangleAlert}>{level.taskCount === 0 ? "还没有任务" : "没有启用的任务"}</StatusTag>
               : <RatioBar label="启用占比" value={level.enabledCount} total={level.taskCount} valueText={level.enabledCount === level.taskCount ? `全部启用，共 ${level.taskCount} 个` : `启用 ${level.enabledCount} 个，共 ${level.taskCount} 个`} tone="role-2" />}</div>
           <dl className="rd-stat-rows e2-card-metrics"><div className="rd-stat-row"><dt>平均时长{loaded && <Explain label={`${card.code}平均时长的口径`} content={level.enabledCount === 0 ? "没有启用任务，无法计算。" : "本级启用任务时长的平均值；0–120 分钟是四级共同标尺。"} />}</dt><dd data-empty={!loaded || level.avgDurationMinutes === null ? "" : undefined}>{!loaded ? <span className="rd-skeleton">　　　</span> : level.avgDurationMinutes === null ? "—" : `${level.avgDurationMinutes} 分钟`}</dd></div>
-            <div className="e2-card-scale">{!loaded ? <ScaleBar state="loading" label="平均时长" max={120} valueText="正在读取" /> : level.avgDurationMinutes !== null && <ScaleBar quiet label="平均时长" max={120} value={Number(level.avgDurationMinutes)} ticks={MINUTES} valueText={`平均 ${level.avgDurationMinutes} 分钟，刻度 0 到 120 分钟`} tone="role-2" />}</div>
+            <div className="e2-card-scale">{!loaded ? <ScaleBar state="loading" label="平均时长" max={120} valueText="正在加载" /> : level.avgDurationMinutes !== null && <ScaleBar quiet label="平均时长" max={120} value={Number(level.avgDurationMinutes)} ticks={MINUTES} valueText={`平均 ${level.avgDurationMinutes} 分钟，刻度 0 到 120 分钟`} tone="role-2" />}</div>
             <div className="rd-stat-row"><dt>约每天单数{loaded && <Explain label={`${card.code}约每天单数的口径`} content="连续运行时的理论节奏，来自本级启用任务的均值；不承诺某商品的实际单量或收益。没有启用任务，无法计算。" />}</dt><dd data-empty={!loaded || level.estTasksPerDevicePerDay === null ? "" : undefined}>{!loaded ? <span className="rd-skeleton">　　　</span> : level.estTasksPerDevicePerDay === null ? "—" : `约 ${level.estTasksPerDevicePerDay} 单/台/天`}</dd></div></dl>
           <dl className="rd-stat-rows"><div className="rd-stat-row" data-stack=""><dt>使用它的商品{loaded && <Explain label={`查看使用${card.code}的商品`} content={ready ? <div className="rd-stack e2-product-list" tabIndex={0} aria-label={`${card.code}使用它的商品完整名单`}>{level.referencedBy.length ? Object.entries(PRODUCT_STATES).map(([state, label]) => <div key={state}><strong>{label}</strong>{level.referencedBy.filter(item => item.state === state).map(item => <p key={item.productKey}>{item.productName}</p>)}{!level.referencedBy.some(item => item.state === state) && <p>无</p>}</div>) : "还没有商品使用"}</div> : "使用它的商品暂不可用，请重新读取任务等级。"} />}</dt>
             <dd className="e2-product-counts" data-empty={!loaded || !level.referencedBy.length ? "" : undefined}>{!loaded ? <span className="rd-skeleton">　　　　　　</span> : level.referencedBy.length ? Object.entries(PRODUCT_STATES).map(([state, label], index) => {

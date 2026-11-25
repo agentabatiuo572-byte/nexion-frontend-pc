@@ -4004,7 +4004,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
     : businessNewValue(activeBusinessForm, businessValue) ?? newVal;
   const editIssue = !emptyChosen && !numberBad && isEditValueValid(spec, newVal) ? spec?.validate?.(newVal) : undefined;
   const editValueOk = !editIssue && (emptyChosen || (!numberBad && isEditValueValid(spec, newVal)));
-  const reviewBlock = editReview?.kind === "loading" ? "正在读取…" : editReview?.kind === "conflict" ? "请先读取最新" : editReview?.kind === "error" ? editReview.message : undefined;
+  const reviewBlock = editReview?.kind === "loading" ? "正在加载…" : editReview?.kind === "conflict" ? "请先读取最新" : editReview?.kind === "error" ? editReview.message : undefined;
   const sameAsCurrent = !!spec?.disallowCurrent && !!newVal.trim() && (newVal.trim() === spec.current?.trim() || (kind === "number" && compareEditDecimals(newVal, spec.current ?? "") === 0));
   const uploadBlocked = Object.values(uploadStates).some(Boolean);
   // 对象状态变了或已不在：框里只留橙黄提示和「取消」（VS-107），不再画过期的改动和理由框。
@@ -4244,11 +4244,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>{pendingRecovery.queryLabel ?? "查询原操作"}</Btn>}
         {approvalRecovery && recoverApproval && (
           <Btn variant={approvalRecovery === "lookup" ? "primary" : undefined} disabled={submitting} onClick={() => void handleApprovalLookup()}>
-            {submitting ? inlineApproval?.recoverLabel ? "读取中…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原操作"}
+            {submitting ? inlineApproval?.recoverLabel ? "正在加载…" : "查询中…" : inlineApproval?.recoverLabel ?? "查询原操作"}
           </Btn>
         )}
         {!approvalOnlyLookup && !pendingRecovery?.queryOnly && pendingRecovery?.state?.capability !== "readback" && !finalConflict && (surface ? (
-          <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在读取…" : "提交中…"}
+          <RdButton variant={confirmTone} loading={submitting || readingConflict} loadingText={readingConflict ? "正在加载…" : "提交中…"}
             disabledReason={canConfirm || submitting || readingConflict ? undefined : missing.length ? missing.map((item, index) => <Fragment key={index}>{index > 0 && "；"}{item}</Fragment>) : "暂时无法提交"}
             onBlockedClick={() => setAttempted(true)} onClick={() => void handleConfirm()}>
             {submitLabel}
@@ -4366,7 +4366,7 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
           </DiffField>
         </div>
       )}
-      {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在读取…" />}
+      {review && editReview?.kind === "loading" && <RdBlockState state="loading" compact title="正在加载…" />}
       {/* 核对只读不写：读不到用读取的说法和区块错误（标题 + 原因 + 重试），不说「结果未知、可能已生效」（OP-84，复审 V02）。 */}
       {review && editReview?.kind === "error" && !editReview.rejected && <RdBlockState state="error" title={review.readFailTitle ?? "预览没读到"} detail={editReview.message} onRetry={() => void loadEditReview(editReview.attempt)} />}
       {review && editReview?.kind === "conflict" && review.conflictNote(() => void loadEditReview({ refresh: true }))}

@@ -575,7 +575,7 @@ function G4GenesisPage() {
       <>
         {header}
         {recoveryNotice()}
-        <BlockState state="loading" title="创世节点数据加载中…" />
+        <BlockState state="loading" title="正在加载创世节点数据…" />
         {confirmModal}
         {originalDialogs}
       </>
@@ -588,8 +588,8 @@ function G4GenesisPage() {
         {header}
         {recoveryNotice()}
         <BlockState state="error" title="创世节点数据加载失败"
-          detail={<>页面不显示任何旧数据。点「重新加载」；一直失败请联系值班同事。<Explain label="失败原因" content={error || "没有收到数据，请重试；一直失败请联系值班同事。"} /></>}
-          retryLabel="重新加载" onRetry={() => void reload()} />
+          detail={error || "没有收到数据，请重试；一直失败请联系值班人员。"}
+          onRetry={() => void reload()} />
         {confirmModal}
         {originalDialogs}
       </>

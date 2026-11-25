@@ -497,7 +497,7 @@ function DraftModal({ title, icon, effect, explain, wide, busy, reading, busyLab
   explain?: readonly ExplainRow[];
   wide?: boolean;
   busy: boolean;
-  /** 正在读取最新。没读到之前旧版本不能再提交（OP-97）。 */
+  /** 正在加载最新。没读到之前旧版本不能再提交（OP-97）。 */
   reading?: boolean;
   busyLabel?: string;
   saveLabel: string;
@@ -521,7 +521,7 @@ function DraftModal({ title, icon, effect, explain, wide, busy, reading, busyLab
   const [reasonLeft, setReasonLeft] = useState(false);
   const problem = reasonProblem(reason, policy, policyFailed);
   const length = visibleReasonLength(reason);
-  const missing = error?.conflict ? (reading ? "正在读取最新" : "这项刚被别人改过，先读取最新") : [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
+  const missing = error?.conflict ? (reading ? "正在加载最新" : "这项刚被别人改过，先读取最新") : [blocked, problem && `${reasonLabel}${problem}`].filter(Boolean).join("；");
   return (
     <Modal title={<>{title}{explain && <Explain label={`${title}的说明`} rows={explain} />}</>} icon={icon} sub={effect} wide={wide} busy={busy} dirty={dirty} onClose={onClose} footer={<>
       <Button disabled={busy} onClick={onClose}>取消</Button>
@@ -1261,7 +1261,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     group === "cluster" && clusters.some((cluster) => cluster.id === target && cluster.pendingApproval) ? "这组已有待审批操作，审批结束后才能再次处理"
       : group === "cluster" && retainedEvidence.some((record) => Object.keys(LEGACY_CLUSTER_RECEIPTS).some((action) => record.fingerprint.startsWith(`cluster-${action}:${target}:`))) ? "有结果未知的原操作，先在账户组详情找回提交结果"
         : pending.some(record => (record.approval?.pendingTicketId || record.clusterReceipt?.pendingTicketId) && `${PENDING_GROUP[record.kind]}:${record.target}` === `${group}:${target}`) ? group === "entry" ? "这笔已提交审批，审批结束前不能再提交" : "这项已提交审批，审批结束前不能再改"
-          : pendingBlocks.has(`${group}:${target}`) ? "有结果未知的操作，先到页面上方处理" : loading ? "正在读取最新数据" : undefined;
+          : pendingBlocks.has(`${group}:${target}`) ? "有结果未知的操作，先到页面上方处理" : loading ? "正在加载最新数据" : undefined;
 
   /** 已冻结组里账户是冻结状态是应该的，不算异常。 */
   const expectedFrozen = (c: K1Cluster, n: K1Cluster["nodes"][number]) => c.status === "frozen" && /FROZEN/i.test(n[5]);
@@ -1921,7 +1921,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               {clusterPageData.total > 0 && <Pager label="关联账户组列表" total={clusterPageData.total} page={clusterPage} pageSize={clusterPageSize} sizes={CLUSTER_PAGE_SIZE_OPTIONS} loading={ctx.contentLoading}
                 onPage={setClusterPage} onPageSize={(next) => { setClusterPageSize(next); setClusterPage(1); }} />}
             </Panel>
-            {cur && !rowsStale ? selectedPanel(cur) : clusters.length > 0 && <BlockState state="loading" title={rowsStale ? "正在读取这些条件下的账户组" : "定位完成后显示这组的详情"} />}
+            {cur && !rowsStale ? selectedPanel(cur) : clusters.length > 0 && <BlockState state="loading" title={rowsStale ? "正在加载这些条件下的账户组" : "定位完成后显示这组的详情"} />}
           </div> : overviewState}
         </>
       )}

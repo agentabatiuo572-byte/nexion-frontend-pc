@@ -153,7 +153,7 @@ export function SnapshotLine({ state, clearedCount, versionDiff, onRetry }: { st
   const explain = <Explain label="App 实际公开怎么来的" content={<><p>取自 App 此刻对外给出的内容，在换成各语言文字之前；每种语言最终显示的文字以 App 为准。</p><p>打开这页、点刷新、有版块换版时重新取样。</p></>} />;
   if (!view) return <div className="i4-actual" role="status">
     {state.error ? <><StatusTag tone="warn">没读到</StatusTag><span>App 实际公开的内容没读到，卡上先按后台版本推断</span>{explain}<Button size="sm" onClick={onRetry}>重试</Button></>
-      : <><StatusTag tone="neutral">读取中</StatusTag><span>正在读取 App 实际公开的内容…</span></>}
+      : <><StatusTag tone="neutral">读取中</StatusTag><span>正在加载 App 实际公开的内容…</span></>}
   </div>;
   if (!view.available) return <div className="i4-actual" role="status"><StatusTag tone="danger">整页打不开</StatusTag><span>App 实际：信任中心整页打不开，{snapshotReasonText(view.reason)}</span>{sampled}{explain}</div>;
   if (view.sourceEnvironment === "SANDBOX") return <div className="i4-actual" role="status"><StatusTag tone="neutral">测试环境</StatusTag><span>App 给的是演示内容，不是后台的版本</span>{sampled}{explain}</div>;

@@ -71,7 +71,7 @@ export function kpiState(kpi: Pick<KpiRow, "value" | "target" | "dir" | "band">,
 }
 
 export function dataState(ctx: LCtx, label: string) {
-  if (ctx.biLoading) return `${label}数据加载中…`;
+  if (ctx.biLoading) return `正在加载…`;
   if (ctx.biError) return `${label} 数据加载失败 · ${ctx.biError}`;
   return `${label}暂无数据`;
 }

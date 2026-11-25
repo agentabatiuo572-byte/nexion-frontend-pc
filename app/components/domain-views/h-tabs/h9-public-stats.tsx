@@ -143,7 +143,7 @@ function centsAmount(cents: number) {
 }
 /** App 示意卡下的一行：读到时写取样时间，读不到写原因和上面显示的是什么。 */
 function AppSample({ read, found, fallback }: { read: AppDisplayRead; found: boolean; fallback: "设定值" | "推算" }) {
-  if (read.state === "loading") return <p className="h9-chart-note">正在读取 App 显示的数…</p>;
+  if (read.state === "loading") return <p className="h9-chart-note">正在加载 App 显示的数…</p>;
   if (read.state === "error") return <p className="h9-chart-note">App 显示的数没读到，上面是{fallback}<Explain label="失败原因" content={read.message} /></p>;
   if (found) return <p className="h9-chart-note">App 显示的数 · 取样 {formatBusinessTimeCompact(read.data.capturedAt, "—")}（{businessZone().label}）{read.data.sourceEnvironment === "SANDBOX" ? " · 测试环境" : ""}</p>;
   const reason = fallback === "设定值" ? APP_DISPLAY_REASON[read.data.reason ?? ""] ?? "原因不明" : "这个数现在算不出";
@@ -568,12 +568,12 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
       {recoveryNotice}
       {rankJump && <Notice tone="warn" title="设备预估排名有一次保存结果未知" action={rankJump}>{rankPending?.original?.display.change ?? "原保存的内容没有存全"} · {businessStamp(rankPending!.createdAt)} 提交（{businessZone().label}）</Notice>}
       {loading
-        ? <Conclusion state="unknown">展示设置读取中…</Conclusion>
+        ? <Conclusion state="unknown">展示设置正在加载…</Conclusion>
         /* 文案拼接走 h9PlaceholderCopy:字典整句自带句号,直接再拼「。」就是双句号(P2-15 回归)。 */
         : <Notice tone="danger" title="主配置读取失败，这页暂时不能改" action={<Button size="sm" icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>重新读取</Button>}><KeepText text={h9PlaceholderCopy(error)} /></Notice>}
       {cards}
       {module !== "rank" && <div {...ids.panel(module)}>
-        <BlockState state={loading ? "loading" : "error"} title={loading ? "读取中…" : `${moduleLabel(module)}暂时看不到`} detail={loading ? undefined : "主配置读到后才显示这一块；设备预估排名照常可用。"} />
+        <BlockState state={loading ? "loading" : "error"} title={loading ? "正在加载…" : `${moduleLabel(module)}暂时看不到`} detail={loading ? undefined : "主配置读到后才显示这一块；设备预估排名照常可用。"} />
       </div>}
       {rankPanel}
     </div>;
@@ -585,8 +585,8 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     (_, index) => bands[index]?.tops.trim() !== h9DraftText(values.hashratePercentileTable[index]?.tops) || bands[index]?.cumPct.trim() !== h9DraftText(values.hashratePercentileTable[index]?.cumPct)).filter(Boolean).length;
   const changedKeys = MODULE_KEYS[module].filter((key) => drafts[key].trim() !== h9DraftText(values[key]));
   const badCount = MODULE_KEYS[module].filter((key) => fieldErrors[key]).length + (module === "history" ? rowErrors.filter(Boolean).length + (bandCountError ? 1 : 0) : 0);
-  const saveBlock = pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在读取最新数据，读完再保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : !allValid ? "有填错的项，按框下的提示改" : undefined;
-  const toolbarNote = loading ? "正在读取…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length + changedBands || 1} 项，还没保存`;
+  const saveBlock = pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在加载最新数据，读完再保存" : conflict ? "这块已被别人改过，先刷新这一块" : !dirty ? "没有改动" : !allValid ? "有填错的项，按框下的提示改" : undefined;
+  const toolbarNote = loading ? "正在加载…" : !canWrite ? "只能查看" : !dirty ? "没有改动" : badCount ? `有 ${badCount} 处要改` : `改了 ${changedKeys.length + changedBands || 1} 项，还没保存`;
 
   const renderField = (key: ScalarKey) => {
     const field = H9_FIELDS.find((item) => item.key === key)!;
@@ -662,7 +662,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     </Panel>
     <Panel title="参数" icon={SlidersHorizontal} tone="role-4" sub={`主配置 v${data.version}`}
       actions={canWrite && <Button size="sm" variant={values.homeDisplayEnabled ? "secondary" : "primary"}
-        disabledReason={pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在读取最新数据" : conflict ? "这块已被别人改过，先刷新这一块" : !allValid ? "首页有填错的项，改好后才能切换" : undefined}
+        disabledReason={pending ? formatAdminApiError("H9_ORIGINAL_UNRESOLVED", "H9_ORIGINAL_UNRESOLVED") : error ? formatAdminApiError("H9_CURRENT_READ_REQUIRED", "H9_CURRENT_READ_REQUIRED") : saving ? "正在保存" : loading ? "正在加载最新数据" : conflict ? "这块已被别人改过，先刷新这一块" : !allValid ? "首页有填错的项，改好后才能切换" : undefined}
         onClick={() => save(!values.homeDisplayEnabled)}>{values.homeDisplayEnabled ? "暂停增长" : "开启增长"}</Button>}
       explain="开启或暂停会把首页这块填写中的改动一起保存；只保存参数不会改开关。">
       {conflictNotice}
@@ -747,7 +747,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
           sub={appJobs != null ? `基座 ${count(display!.activeJobsBase)}${jobsActual == null ? "" : `；${jobsName} ${count(jobsActual)}，仅作参考`}`
             : appJobs === null ? JOBS_REASON[jobsReason ?? ""] ?? "原因不明" : undefined} />
       </AppPreview>
-      {appDisplay.state === "loading" ? <p className="h9-chart-note">正在读取 App 显示的数…</p>
+      {appDisplay.state === "loading" ? <p className="h9-chart-note">正在加载 App 显示的数…</p>
         : appDisplay.state === "error" ? <p className="h9-chart-note">App 显示的数没读到<Explain label="失败原因" content={appDisplay.message} /></p>
           : appJobs === undefined ? <p className="h9-chart-note">App 显示的作业数现在没有</p>
             : <p className="h9-chart-note">{appJobs === null ? "App 显示的数读不到" : "App 显示的数"} · 取样 {formatBusinessTimeCompact(appDisplay.data.capturedAt, "—")}（{businessZone().label}）</p>}

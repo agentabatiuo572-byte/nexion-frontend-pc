@@ -158,22 +158,22 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
   const hasPending = pendingRows.length > 0;
   const queueRowStale = (id: string) => !queueKnown && (id !== ticket?.id || !!terminal);
   const staleRows = rows.some(row => queueRowStale(row.id));
-  const pendingTitle = checking ? "正在读取放宽单状态…"
+  const pendingTitle = checking ? "正在加载放宽单状态…"
     : stale ? "放宽单的最新状态没读到，先按等批准处理"
       : staleRows ? "待批列表正在刷新，部分记录来自上次读取" : `有 ${pendingRows.length} 项放宽等批准`;
   const ownNotice = terminal
     ? `放宽单 ${terminal.id} ${TICKET_STATUS_TEXT[terminal.status]}${terminal.status === "approved" ? "，当前值以这页读到的为准。" : "，这张单没有生效。"}`
     : ownId && (listed || pendingRows.some(row => row.id === ownId))
-      ? checking ? `正在读取放宽单 ${ownId} 的状态…`
+      ? checking ? `正在加载放宽单 ${ownId} 的状态…`
         : stale ? `放宽单 ${ownId} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
           : `放宽单 ${ownId} 已提交，${WITHDRAWAL_APPROVAL_PENDING}${queueKnown ? "" : "点「刷新」看最新状态。"}`
       : null;
   const pendingBlock = "已有放宽等批准，批准、驳回或撤回后才能再提交";
   const blockReason = ticket?.status === "pending" ? pendingBlock
-    : own?.checking ? "正在读取放宽单状态，读到后再提交放宽"
+    : own?.checking ? "正在加载放宽单状态，读到后再提交放宽"
       : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
         : canReadQueue && !queueKnown
-          ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+          ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在加载待批列表，读到后再提交放宽"
           : hasPending ? pendingBlock : undefined;
   const pendingOnTighten = pendingRows[0];
   return {

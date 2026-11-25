@@ -113,7 +113,7 @@ export default function RhythmPage() {
   const filtered = filters.phase !== ALL;
   const current = data?.rhythm.currentPhase;
   const exportBlocked = busy !== "" || loading || !data?.available || !data.distribution.length;
-  const exportReason = !data ? (loading ? "正在读取各阶段人数" : "这页没有读到数据，先重试") : busy === "export" ? undefined
+  const exportReason = !data ? (loading ? "正在加载各阶段人数" : "这页没有读到数据，先重试") : busy === "export" ? undefined
     : busy ? "正在打开运营阶段设置" : !data.available ? "还没有注册用户，没有可导出的人数" : !data.distribution.length ? "没有可导出的人数" : undefined;
 
   const header = (
@@ -133,7 +133,7 @@ export default function RhythmPage() {
       ) : undefined}
       readOnly={!canExport && !canJump ? "你只能查看；导出和去运营阶段设置需要对应权限。" : undefined}
       actions={<>
-        <Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} loadingText="正在读取…" onClick={() => void reload()}>刷新</Button>
+        <Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} loadingText="正在加载…" onClick={() => void reload()}>刷新</Button>
         {canExport && (
           <Button icon={<Download size={14} aria-hidden />} loading={busy === "export"} loadingText="正在导出…"
             disabled={exportBlocked && busy === "export"}
@@ -164,8 +164,8 @@ export default function RhythmPage() {
           </>
         ) : (
           <>
-            <Conclusion state="unknown" icon={Flag}>运营阶段：正在读取</Conclusion>
-            <BlockState state="loading" title="正在读取运营阶段状态…" />
+            <Conclusion state="unknown" icon={Flag}>运营阶段：正在加载</Conclusion>
+            <BlockState state="loading" title="正在加载运营阶段状态…" />
           </>
         )}
       </RdPage>

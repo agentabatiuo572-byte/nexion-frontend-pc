@@ -363,7 +363,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
       {discardRecovery.dialog}
       {error&&policy&&!pending&&!inDrawer&&<Notice tone="warn">{error}</Notice>}{message&&!denied&&!pending&&<Notice tone="neutral">{message}</Notice>}
       {denied?<BlockState state="denied" title="当前没有查看原结果的权限，内容已隐藏"/>:<>
-        {loading?<BlockState state="loading" title="正在读取手机策略…"/>:!policy?configReadFailed?<BlockState state="empty" title="等设备配置读取成功后可用"/>:<BlockState state="error" title="策略读取失败，暂不可提交" detail={error} onRetry={()=>void refresh(true)}/>:<>
+        {loading?<BlockState state="loading" title="正在加载手机策略…"/>:!policy?configReadFailed?<BlockState state="empty" title="等设备配置读取成功后可用"/>:<BlockState state="error" title="策略读取失败，暂不可提交" detail={error} onRetry={()=>void refresh(true)}/>:<>
           {!policy.available&&<Notice tone="warn">策略不完整。有效版本存在时，可填齐四项后提交修复；没有版本时请先重新读取。</Notice>}
           <ConfigList label="手机换机当前规则"><ConfigRow name="允许更换绑定手机" what="是否允许后续更换绑定手机" when="四项批准后同时生效" value={policy.allowReplacement==null?"未配置":policy.allowReplacement?"开启":"关闭"}/><ConfigRow name="换机最短间隔" value={policy.minReplacementIntervalDays==null?"未配置":`${policy.minReplacementIntervalDays} 天`} note="0 表示不限间隔"/><ConfigRow name="换机统计窗口" value={policy.replacementWindowDays==null?"未配置":`${policy.replacementWindowDays} 天`}/><ConfigRow name="窗口内换机上限" value={policy.maxReplacementsInWindow==null?"未配置":`${policy.maxReplacementsInWindow} 次`}/></ConfigList>
         </>}

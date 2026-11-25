@@ -163,7 +163,7 @@ export function IdlePolicyModal({
         ]} />
       </div>}
       {canSave && <RdField label="操作理由" required hint={`至少 ${rule.min} 字`} explain="待回复提醒和严重超时只做标记。"
-        error={blocked || unchanged || !orderOk || reasonOk || !reasonLeft ? undefined : rule.ready || rule.error ? rule.hint(reason) : "正在读取理由规则…"}>
+        error={blocked || unchanged || !orderOk || reasonOk || !reasonLeft ? undefined : rule.ready || rule.error ? rule.hint(reason) : "正在加载理由规则…"}>
         {(control) => <Textarea {...control} rows={3} value={reason} disabled={!canSave || blocked || confirm} maxLength={200} count={`${visibleReasonLength(reason)}/${rule.max}`}
           onChange={(event) => { setConfirm(false); setReason(event.target.value); }} onBlur={() => setReasonLeft(true)} placeholder="请说明调整的原因" />}
       </RdField>}

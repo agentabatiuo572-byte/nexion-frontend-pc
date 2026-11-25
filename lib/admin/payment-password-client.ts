@@ -18,7 +18,7 @@ async function request(path: string, body?: unknown, key?: string, originalBody?
   try {
     response = await guardedFetch(path, { method: body === undefined ? "GET" : "POST", cache: "no-store", signal: AbortSignal.timeout(20_000), ...(body === undefined ? {} : { headers: { "Content-Type": "application/json", "Idempotency-Key": key! }, body: originalBody ?? JSON.stringify(body) }) });
   } catch {
-    throw new PaymentPasswordApiError(body === undefined ? "支付密码服务暂时无法连接，请稍后重新加载。" : "处理结果未知，请查询原操作，不要重复提交。", 0, body !== undefined);
+    throw new PaymentPasswordApiError(body === undefined ? "支付密码服务暂时连不上，请稍后重试。" : "处理结果未知，请查询原操作，不要重复提交。", 0, body !== undefined);
   }
   const raw: unknown = await response.json().catch(() => null);
   const backendMessage = isPaymentRecord(raw) && typeof raw.message === "string" ? raw.message : undefined;
@@ -30,7 +30,7 @@ async function request(path: string, body?: unknown, key?: string, originalBody?
   if (!response.ok || !isPaymentRecord(raw) || raw.code !== 0 || raw.data == null) {
     const code = isPaymentRecord(raw) && typeof raw.code === "number" ? raw.code : undefined;
     if (body !== undefined && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || outcomeStaysUnknown(response.status, code))) throw new PaymentPasswordOutcomeUnknownError(response.status, backendMessage);
-    throw new PaymentPasswordApiError(response.status === 403 ? "当前没有读取或处理这项支付安全信息的权限。" : response.status === 404 || response.status === 501 ? "支付密码服务尚未提供这项信息，请稍后重新加载。" : body === undefined ? "支付密码信息读取失败，请重新加载。" : "本次操作结果需要核对，请查询原操作。", response.status, false, backendMessage);
+    throw new PaymentPasswordApiError(response.status === 403 ? "当前没有读取或处理这项支付安全信息的权限。" : response.status === 404 || response.status === 501 ? "支付密码服务尚未提供这项信息，请稍后重试。" : body === undefined ? "支付密码信息加载失败，请重试。" : "本次操作结果需要核对，请查询原操作。", response.status, false, backendMessage);
   }
   return raw.data;
 }

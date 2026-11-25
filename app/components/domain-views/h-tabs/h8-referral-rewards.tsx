@@ -217,7 +217,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   const commands = session ? pendingH8RewardCommands(session.adminId) : [];
   const policyUnknown = session ? unresolvedH8Policy(session.adminId) : undefined;
-  const policyBlocked = policyUnknown ? isRetryExpired(policyUnknown) ? RETRY_EXPIRED_TEXT : "奖励配置有原操作结果待确认，请先查询原操作。" : undefined;
+  const policyBlocked = policyUnknown ? isRetryExpired(policyUnknown) ? RETRY_EXPIRED_TEXT : "奖励配置有原操作结果未知，请先查询原操作。" : undefined;
   const queue = approvalQueue.current;
   const queueError = queue.owner === session?.adminId ? queue.error : undefined;
   const pendingPolicy = queue.owner === session?.adminId && queue.pending || hasPendingH8Policy(commands);
@@ -733,10 +733,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   if (loading && !data) return <div className="h8-page">
     {header}
-    <Conclusion state="unknown">正在读取奖励设置和结算情况…</Conclusion>
+    <Conclusion state="unknown">正在加载奖励设置和结算情况…</Conclusion>
     {recoveryNotice}
     {savedUnreadNotice}
-    <BlockState state="loading" title="正在读取新人礼与邀请奖励…" />
+    <BlockState state="loading" title="正在加载新人礼与邀请奖励…" />
     {confirmModal}
   </div>;
   if (!data) return <div className="h8-page">
@@ -916,7 +916,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {error && <div className="h8-more-error"><Notice tone="danger" title="更早的记录没读到">已读到的记录还在，列表还不完整。<Explain label="失败原因" content={error} /></Notice></div>}
         {(data.settlementHasMore || auditHref || eventsHref || ledgerHref) && (
           <div className="h8-records-foot">
-            {data.settlementHasMore && <Button size="sm" loading={loadingMore} loadingText="读取中…" onClick={() => void load(data.settlementNextCursor, true)}>{error ? "重试读取更早记录" : "读取更早记录"}</Button>}
+            {data.settlementHasMore && <Button size="sm" loading={loadingMore} loadingText="正在加载…" onClick={() => void load(data.settlementNextCursor, true)}>{error ? "重试读取更早记录" : "读取更早记录"}</Button>}
             {(auditHref || eventsHref || ledgerHref) && <div className="rd-links" aria-label="相关页面">
               <span>相关页面</span>
               {auditHref && <Link className="rd-link" href="/platform/audit" prefetch={false}>操作记录与审批</Link>}
