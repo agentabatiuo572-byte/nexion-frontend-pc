@@ -168,11 +168,13 @@ function resolveWithdrawalApprovals(queue: WithdrawalApprovalQueue, own: OwnWith
         : stale ? `放宽单 ${ownId} 的最新状态没读到，先按等批准处理，点「刷新」再读。`
           : `放宽单 ${ownId} 已提交，${WITHDRAWAL_APPROVAL_PENDING}${queueKnown ? "" : "点「刷新」看最新状态。"}`
       : null;
-  const blockReason = canReadQueue && !queueKnown
-    ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
-    : checking ? "正在读取放宽单状态，读到后再提交放宽"
+  const pendingBlock = "已有放宽等批准，批准、驳回或撤回后才能再提交";
+  const blockReason = ticket?.status === "pending" ? pendingBlock
+    : own?.checking ? "正在读取放宽单状态，读到后再提交放宽"
       : stale ? "放宽单的最新状态没读到，点「刷新」读到后再提交"
-        : hasPending ? "已有放宽等批准，批准、驳回或撤回后才能再提交" : undefined;
+        : canReadQueue && !queueKnown
+          ? queue.state === "failed" ? "待批列表暂时读不到，重试读取后再提交放宽" : "正在读取待批列表，读到后再提交放宽"
+          : hasPending ? pendingBlock : undefined;
   const pendingOnTighten = pendingRows[0];
   return {
     rows, pendingRows, ownId, queueKnown, terminal, checking, stale, pendingTitle, ownNotice, blockReason, queueRowStale,
@@ -328,15 +330,43 @@ export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
   line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
 } as const;
 
-/** A successful empty lookup is different from an unreadable receipt or a receipt with an unresolved outcome. */
-export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, proposalMissing = true) {
-  if (outcome && "error" in outcome) return withdrawalReplayReadError(outcome.error);
-  if (proposalMissing && outcome?.receipt === null) return undefined;
-  return "先查询原结果，确认查不到原操作后才能按原请求重试。";
+export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，确认查不到原操作后才能按原请求重试。";
+export const WITHDRAWAL_REPLAY_RESEND = "按原请求重试会重发原内容，已成功的不会重复执行。";
+export const WITHDRAWAL_REPLAY_PROCESSED = "后台已处理，看不出成没成；请核对原操作的结果。";
+
+/** 放宽须先按原号查单；能读命令回执时，还须确认查无原命令。 */
+export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing?: boolean) {
+  if (outcome && "receipt" in outcome && outcome.receipt) {
+    return outcome.receipt.originalStatus === "PROCESSING" ? WITHDRAWAL_COMMAND_PROCESSING.line
+      : "已查到原操作的结果记录，不能按原请求重试。";
+  }
+  if (canInvestigate && outcome && "error" in outcome) return withdrawalReplayReadError(outcome.error);
+  if (proposalMissing === false) return "先查询原结果，确认查不到原审批单后才能按原请求重试。";
+  if (!canInvestigate || outcome && "receipt" in outcome && outcome.receipt === null) return undefined;
+  return WITHDRAWAL_REPLAY_QUERY_REQUIRED;
 }
 
 export function withdrawalReplayReadError(error: string) {
-  return `原命令核查读取失败：${error.replace(/[。！]+$/, "")}。请重试查询原结果。`;
+  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原结果」。`;
+}
+
+/** 有回执时交给通用状态显示；没有回执时说明当前的查询或重试路径。 */
+export function withdrawalDirectRecoveryStatus(outcome: FundInvestigationOutcome | undefined, options: {
+  canInvestigate: boolean; expired: boolean; processing?: true; retryDisabled?: string;
+}) {
+  if (outcome && "error" in outcome) return {
+    tone: "danger" as const, label: options.expired ? "已过期" : "查询失败",
+    line: `${options.expired ? "已超过 24 小时，不能再重试。" : ""}${withdrawalReplayReadError(outcome.error)}`,
+  };
+  if (outcome && "receipt" in outcome && outcome.receipt) return undefined;
+  if (options.processing) return WITHDRAWAL_COMMAND_PROCESSING;
+  if (options.expired || outcome) return undefined;
+  if (!options.retryDisabled && !options.canInvestigate) {
+    return { tone: "warn" as const, label: "结果未知", line: WITHDRAWAL_REPLAY_RESEND };
+  }
+  if (options.retryDisabled === WITHDRAWAL_REPLAY_QUERY_REQUIRED) {
+    return { tone: "warn" as const, label: "结果未知", line: WITHDRAWAL_REPLAY_QUERY_REQUIRED };
+  }
 }
 
 /** 通用命令回执证明已建单时，仍须用原号查审批单本身。 */

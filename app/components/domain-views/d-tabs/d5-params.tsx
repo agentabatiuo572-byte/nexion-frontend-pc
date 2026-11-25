@@ -71,8 +71,10 @@ import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRec
 import {
   configApprovalOriginalInput,
   checkWithdrawalApprovalCommand,
+  withdrawalDirectRecoveryStatus,
   withdrawalReplayQueryBlock,
   withdrawalReplayReadError,
+  WITHDRAWAL_REPLAY_PROCESSED,
   pendingConfigApproval,
   useWithdrawalApprovals,
   releaseConfigApproval,
@@ -911,7 +913,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   /** 按原操作重试：同命令号、同内容、同理由（OP-94）。只有成功才解除待确认。 */
   const retryTighten = async (record: TightenRecord) => {
     if (record.expiresAt <= Date.now() || record.replayRejection) { syncPending(); return; }
-    if (recovering || record.withdrawalStillProcessing || withdrawalReplayQueryBlock(investigationResults[record.commandKey])) return;
+    const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
+    const canInvestigate = fundInvestigationAccess(target).canRead;
+    if (recovering || record.withdrawalStillProcessing || withdrawalReplayQueryBlock(investigationResults[record.commandKey], canInvestigate)) return;
     if (!commandAuthorities(record.changes).every(can)) { note(record.commandKey, NO_WRITE); return; }
     const block = tightenReplayBlock(record, params);
     if (block) { note(record.commandKey, block); return; }
@@ -926,7 +930,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     try {
       const { label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore } = record;
       const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore }, true);
-      if (outcome === "unknown") note(record.commandKey, "重试结果仍未知，原操作继续保留，请先查询原结果。");
+      if (outcome === "unknown") note(record.commandKey, canInvestigate
+        ? "重试结果仍未知，原操作继续保留，请先查询原结果。" : "重试结果仍未知，原操作继续保留。");
       else await settleDirect(record, "SUCCEEDED");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
@@ -949,7 +954,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
     if (!session || !loosenPending) return;
     const key = loosenPending.commandKey;
     if (mode === "retry" && (recovering || loosenPending.expiresAt <= Date.now() || loosenPending.replayRejection || loosenPending.withdrawalSubmissionConfirmed
-      || loosenPending.withdrawalStillProcessing || withdrawalReplayQueryBlock(investigationResults[key], queryMissing.includes(key))
+      || loosenPending.withdrawalStillProcessing || withdrawalReplayQueryBlock(investigationResults[key], fundInvestigationAccess(loosenPending).canRead, queryMissing.includes(key))
       || !loosenRecord?.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock || loosenReplayBlock)) return;
     setQueryMissing(current => current.filter(saved => saved !== key));
     setInvestigationResults(current => ({ ...current, [key]: undefined }));
@@ -1061,24 +1066,25 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const expired = loosenRecord.expiresAt <= Date.now();
       const outcome = investigationResults[key];
       const confirmed = loosenRecord.withdrawalSubmissionConfirmed;
-      const replaySuspended = confirmed || loosenRecord.withdrawalStillProcessing;
-      const queryBlock = withdrawalReplayQueryBlock(outcome, queryMissing.includes(key));
+      const processing = loosenRecord.withdrawalStillProcessing;
+      const queryBlock = withdrawalReplayQueryBlock(outcome, fundInvestigationAccess(loosenRecord).canRead, queryMissing.includes(key));
       const retryDisabled = !loosenRecord.values || !commandAuthorities(loosenRecord.values).every(can) || proposeBlock ? NO_WRITE
         : loosenRecord.replayRejection ? "重试已被拒绝，请核实后解除"
-          : loosenReplayBlock;
+          : processing ? WITHDRAWAL_COMMAND_PROCESSING.line : loosenReplayBlock ?? queryBlock;
       const expiredNote = expired && !investigationResults[key] ? canLookupOwn ? expiredNext(loosenRecord) : EXPIRED_NO_QUERY : "";
-      const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
-      return { key, title: "放宽提现参数", record: loosenRecord, outcome, createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled && !replaySuspended && !queryBlock,
+      const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。", processedWithoutRetry: WITHDRAWAL_REPLAY_PROCESSED };
+      return { key, title: "放宽提现参数", record: loosenRecord, outcome, createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled && !confirmed,
         canQuery: canLookupOwn, copy,
         status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED
           : outcome && "error" in outcome ? { tone: "danger", label: expired ? "已过期" : "查询失败", line: withdrawalReplayReadError(outcome.error) }
-          : loosenRecord.withdrawalStillProcessing ? WITHDRAWAL_COMMAND_PROCESSING : loosenReplayBlock && !expired
+          : processing ? WITHDRAWAL_COMMAND_PROCESSING : loosenReplayBlock && !expired
           ? queryOnlyStatus(loosenReplayBlock, fundRecoveryStatus({ record: loosenRecord, outcome: investigationResults[key], expired, canRetry: false, canQuery: canLookupOwn, copy }), canLookupOwn, queryMissing.includes(key))
-          : !canLookupOwn && !expired ? { tone: "warn" as const, label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" } : undefined,
+          : !expired && !canLookupOwn ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" }
+          : !expired && !outcome && retryDisabled ? { tone: "warn", label: "结果未知", line: retryDisabled } : undefined,
         actions: <>
           {canLookupOwn && <FundCheckButtons record={loosenRecord} canLookupOwnProposal={canLookupOwn} outcome={confirmed ? undefined : outcome} expired={expired} busy={!!recovering} checking={recovering === key}
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
-          {!expired && !replaySuspended && !queryBlock && <Button size="sm" disabled={!!recovering}
+          {!expired && !confirmed && <Button size="sm" disabled={!!recovering}
             disabledReason={retryDisabled}
             onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
           {!confirmed && loosenRecord.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: "放宽提现参数", slot: loosenRecord.fingerprint, commandKey: key, loosen: true })}>解除原操作记录</Button>}
@@ -1097,19 +1103,21 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       // 原请求改 TRC20 确认费，或读不到它提交时的原费率：只能查询，写明为什么和下一步（OP-93、OP-126）。
       const replayReason = replayReasonFor(replayBlock);
       const outcome = investigationResults[record.commandKey];
-      const queryBlock = withdrawalReplayQueryBlock(outcome);
-      const retryDisabled = record.replayRejection ? "重试已被拒绝，请核实后解除"
-        : !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayReason ?? queryBlock;
       // 改版前没存出处的记录按当前账号查，queryD5DirectCommand 再核原操作人。
       const target = { ...record, commandOrigin: record.commandOrigin ?? dConfigCommandOrigin("D5") };
+      const canInvestigate = fundInvestigationAccess(target).canRead;
+      const queryBlock = withdrawalReplayQueryBlock(outcome, canInvestigate);
+      const retryDisabled = record.replayRejection ? "重试已被拒绝，请核实后解除"
+        : !commandAuthorities(record.changes).every(can) ? NO_WRITE : replayReason ?? queryBlock;
       // 查到记为失败时，「可能已经生效」不再写。
       const processing = record.withdrawalStillProcessing;
       const failed = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "FAILED";
-      const shown = replayReason && !expired ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false }) : undefined;
-      return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome: investigationResults[record.commandKey],
+      const copy = { processedWithoutRetry: WITHDRAWAL_REPLAY_PROCESSED };
+      const status = withdrawalDirectRecoveryStatus(outcome, { canInvestigate, expired, processing, retryDisabled });
+      const shown = replayReason && !expired && !outcome ? fundRecoveryStatus({ record: target, outcome, expired, canRetry: false, copy }) : undefined;
+      return { key: record.commandKey, title: editTitle(record.label.replace(/^调整提现参数 · /, "")), record: target, outcome, copy,
         createdAt: record.createdAt, expired, canRetry: !expired && !retryDisabled && !processing,
-        status: processing ? WITHDRAWAL_COMMAND_PROCESSING : replayReason && shown ? queryOnlyStatus(replayReason, shown, !fundReadBlock(target))
-          : !expired && queryBlock && retryDisabled === queryBlock ? { tone: outcome && "error" in outcome ? "danger" : "warn", label: outcome && "error" in outcome ? "查询失败" : "结果未知", line: queryBlock } : undefined,
+        status: status ?? (replayReason && shown ? queryOnlyStatus(replayReason, shown, !fundReadBlock(target)) : undefined),
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
