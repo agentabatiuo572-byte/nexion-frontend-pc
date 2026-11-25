@@ -77,6 +77,8 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
   const previous = useRef<HTMLElement | null>(null);
   /** 打开者所在的行、面板或页签：原按钮被重画时只在这里面找同名的。 */
   const area = useRef<Element | null>(null);
+  /** 打开者往外的各层：按钮换了节点（带上、去掉不可用原因时外面多一层提示）后，先在还挂着的最近一层里找同名的。 */
+  const chain = useRef<HTMLElement[]>([]);
   /** 打开者所在的另一个框，和那个框自己关掉后焦点的去处。 */
   const host = useRef<HTMLElement | null>(null);
   const hostHandoff = useRef<(() => HTMLElement | null) | null>(null);
@@ -87,6 +89,8 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
     const active = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     previous.current = active;
     area.current = active?.closest("tr, section, [role=tabpanel]") ?? null;
+    chain.current = [];
+    for (let node = active?.parentElement; node && node !== document.body; node = node.parentElement) chain.current.push(node);
     host.current = active?.closest<HTMLElement>(".rd-modal, .rd-drawer") ?? null;
     hostHandoff.current = host.current ? handoffs.get(host.current) ?? null : null;
   }
@@ -95,9 +99,11 @@ function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) 
     const opener = returnFocus?.() ?? previous.current;
     if (opener?.isConnected) return opener;
     // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就在它原来那一行、那块面板里找看得见的同名那一个。
-    if (opener && area.current?.isConnected) {
+    // 先在还挂着的最近一层（同一张卡、同一行）里找：一页有好几个同名按钮（每张卡一个「配置」）时，只在大的面板里找会找到好几个（BUG-710：H4 玩法抽屉放弃后落到 body）。
+    if (opener) for (const scope of [chain.current.find((node) => node.isConnected), area.current]) {
+      if (!scope?.isConnected) continue;
       const name = opener.getAttribute("aria-label") ?? opener.textContent;
-      const same = [...area.current.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
+      const same = [...scope.querySelectorAll<HTMLElement>(opener.tagName)].filter((element) => element.getClientRects().length > 0 && (element.getAttribute("aria-label") ?? element.textContent) === name);
       if (same.length === 1) return same[0];
     }
     // 打开者所在的框还开着（抽屉里点开的确认框）：回到那个框；那个框已经关了（离开框）：用那个框关掉时的去处。
