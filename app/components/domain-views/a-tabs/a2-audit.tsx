@@ -104,7 +104,7 @@ import { normalizeSessionRole } from "@/lib/admin/session-role";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ORDER_STATES, orderAmount, stateLabel } from "../e-tabs/data";
-import { e1GateText, e1Value } from "../e-tabs/e1-state";
+import { e1DisplayEffect, e1GateText, e1Value } from "../e-tabs/e1-state";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { payoutAmount, rewardText } from "../f-tabs/f1-shared";
 import type { ActionConfirmReq, ACtx } from "./types";
@@ -410,17 +410,30 @@ function fBatchLogItems(log: { obj: string; delta: string }): FBatchItem[] | und
   return items && (F_BATCH_DIGEST.test(log.obj) || log.obj === items.map((item) => item.key).join(",")) ? items : undefined;
 }
 /**
- * E1 商品提案的操作记录：前后值是提案时冻结的两份商品快照（JSON 原文，后端 createProposalOnce 写入）。拆回两份，按审批单详情同一套行写；
- * 拆不出两份商品快照时照原文显示。
+ * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
  */
-function e1SkuLogSides(log: { delta: string }): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+function e1SkuLogSides(log: Pick<A2AuditLogRow, "action" | "domain" | "resourceType" | "delta">): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
   const isSku = (text: string) => {
     try { const value: unknown = JSON.parse(text); return isRecord(value) && typeof value.skuId === "string"; } catch { return false; }
   };
   if (log.delta.startsWith("— → ") && isSku(log.delta.slice(4))) return { before: "", after: log.delta.slice(4), operationCode: "e1_sku_create" };
-  for (let at = log.delta.indexOf("} → {"); at >= 0; at = log.delta.indexOf("} → {", at + 1)) {
-    const before = log.delta.slice(0, at + 1), after = log.delta.slice(at + 4);
-    if (isSku(before) && isSku(after)) return { before, after, operationCode: "e1_sku_update" };
+  const proposal = log.action === "A2_OPERATION_PROPOSED" && log.domain === "E";
+  // 后端的决定记录直接提供 " -> "，域可能由动作和对象推断。
+  const decision = log.resourceType === "A2_OPERATION"
+    && ["A2_OPERATION_APPROVED", "A2_OPERATION_REJECTED", "A2_OPERATION_WITHDRAWN"].includes(log.action);
+  for (const boundary of log.delta.matchAll(/\} (→|->) \{/g)) {
+    const arrow = boundary[1] === "→";
+    if (!arrow && !decision) continue;
+    const before = log.delta.slice(0, boundary.index + 1), after = log.delta.slice(boundary.index + boundary[0].length - 1);
+    if (!isSku(after)) continue;
+    if (arrow && isSku(before)) return { before, after, operationCode: "e1_sku_update" };
+    if (proposal || decision) {
+      const defaults = parseReview(before);
+      if (defaults?.kind === "object" && Object.keys(defaults.value).length === 2
+        && defaults.value.displaySoldBase === 0 && defaults.value.liveActivityVisible === true) {
+        return { before, after, operationCode: "e1_sku_create" };
+      }
+    }
   }
   return undefined;
 }
@@ -635,13 +648,36 @@ function phoneScheduledAt(w: A2OperationRow) {
 }
 
 /** 批准后什么时候生效、会怎样：标题下的标签、执行摘要的影响、抽屉底部说明用同一份（M3、M6）。 */
-function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after">) {
-  if (w.action !== "调整设备型号") return null;
+/** 审批对照里比较前后值用：空值、空字符串、缺这个键算同一个值，数字和数字字符串按数值比（显示规则 6）。 */
+const e1ReviewValue = (value: unknown): unknown => value === undefined || value === null || value === "" ? null
+  : typeof value === "string" && /^-?\d+(?:\.\d+)?$/.test(value.trim()) ? Number(value)
+    : Array.isArray(value) ? value.map(e1ReviewValue)
+      : isRecord(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, e1ReviewValue(value[key])])) : value;
+
+/** 商品编辑单改了展示基础销量、购买动态时的实际效果，句子和商品页送审确认框同一个函数（e1DisplayEffect）。冻结的前值不含累计销量，所以写「累计销量 + 基础值」；后端在后侧写入的 sold 不算改动。 */
+function e1DisplayChange(w: Pick<A2OperationRow, "operationCode" | "before" | "after">) {
+  if (w.operationCode !== "e1_sku_update") return "";
+  const { b, a } = reviewPair(w.before, w.after, w.operationCode);
+  if (b?.kind !== "object" || a?.kind !== "object") return "";
+  const changed = [...new Set([...Object.keys(b.value), ...Object.keys(a.value)])]
+    .filter(key => key !== "sold" && !same(e1ReviewValue(b.value[key]), e1ReviewValue(a.value[key])));
+  const base = changed.includes("displaySoldBase") ? Number(e1ReviewValue(a.value.displaySoldBase) ?? 0) : undefined;
+  const live = changed.includes("liveActivityVisible") && typeof a.value.liveActivityVisible === "boolean" ? a.value.liveActivityVisible : undefined;
+  const raw = parseReview(w.after);
+  const status = raw?.kind === "object" ? raw.value.status : undefined;
+  return e1DisplayEffect({ base, live, liveAfter: a.value.liveActivityVisible !== false, listed: status === undefined || status === null || status === "on" },
+    changed.every(key => key === "displaySoldBase" || key === "liveActivityVisible"));
+}
+
+function monthlyTargetChange(w: Pick<A2OperationRow, "action" | "before" | "after" | "operationCode">) {
+  // B97 起商品编辑单叫「编辑商品 · 名称」，按操作类型和月目标前后值认（显示规则 7）。
+  const e1Update = w.operationCode === "e1_sku_update";
+  if (w.action !== "调整设备型号" && !e1Update) return null;
   const before = parseReview(w.before), after = parseReview(w.after);
   if (after?.kind !== "object") return null;
   const was = before?.kind === "object" ? before.value : {};
   if (after.value.clearMonthlyTarget === true) return "close";
-  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
+  return ["monthlyTargetUsdt", "monthlyTargetBandPct"].some((key) => e1Update ? !same(e1ReviewValue(was[key]), e1ReviewValue(after.value[key])) : !same(was[key] ?? null, after.value[key] ?? null)) ? "target" : null;
 }
 
 function approvalTiming(w: A2OperationRow) {
@@ -1007,7 +1043,7 @@ const CHANGE_LABELS: Record<string, string> = {
   warranty: "保修", phoneDailyEarn: "手机日产收益", phoneDailyEarnNex: "手机日产 UVT", price: "价格", computePoints: "每件算力点",
   dailyEarn: "日产收益", dailyEarnNex: "日产 UVT", shareYieldMin: "份额收益下限", shareYieldMax: "份额收益上限",
   monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "允许波动", clearMonthlyTarget: "关闭月收益目标",
-  baseRate: "收益说明", sold: "累计销量", stock: "库存", rating: "评分", reviews: "评价数",
+  baseRate: "收益说明", sold: "累计销量", displaySoldBase: "展示基础销量", liveActivityVisible: "显示购买动态", stock: "库存", rating: "评分", reviews: "评价数",
   aiImageGenPerMin: "图像生成性能", aiLlmTokensPerSec: "大模型推理性能", aiVideoMinPerHour: "视频渲染性能",
   aiFineTuneMins: "LoRA 微调性能", aiUnlocks: "解锁算力池", features: "产品特性", generation: "产品代际",
   lifecycle: "生命周期", supersededBy: "后继商品", tradeinDiscount: "换新折扣", unlockPhase: "解锁阶段",
@@ -1178,6 +1214,8 @@ function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABE
     return "未设置";
   }
   if (key?.startsWith("taglineTranslations.")) return String(value);
+  // 「显示购买动态」和商品页确认框一样写开／关；其他布尔项照旧写是／否。
+  if (key === "liveActivityVisible" && typeof value === "boolean") return value ? "开" : "关";
   if (typeof value === "boolean") return value ? "是" : "否";
   if (key === "monthlyTargetUsdt") return `${grouped(String(value))} USDT`;
   if (key === "monthlyTargetBandPct") return `±${grouped(String(value))}%`;
@@ -1243,7 +1281,10 @@ function reviewPair(before: string, after: string, operationCode?: string) {
   const original = { b, a, labels, evidenceKeys: [] as string[] };
   // E1 商品：后端冻结的是代码值（系列、档位、商城状态、生命周期、库存模式），这里换成和商品页一样的名称，价格带币种。新建没有前值；旧票没有这一项时不补。
   if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
-    const previous = b?.kind === "object" && isSkuTaglineTranslations(b.value.taglineTranslations) ? b.value.taglineTranslations : undefined;
+    const creating = operationCode === "e1_sku_create";
+    // 新建的结构化前值是默认设置。更早的文字摘要沿用原显示。
+    const skuBefore = creating && b?.kind === "object" ? null : b;
+    const previous = skuBefore?.kind === "object" && isSkuTaglineTranslations(skuBefore.value.taglineTranslations) ? skuBefore.value.taglineTranslations : undefined;
     const next = a?.kind === "object" && isSkuTaglineTranslations(a.value.taglineTranslations) ? a.value.taglineTranslations : previous;
     // 语言按中文、越南语、其他语言的固定顺序列（TX-35），不随服务器快照里键的先后变。
     const languages = (Object.keys(SKU_TAGLINE_LABELS) as (keyof SkuTaglineTranslations)[]).filter(language => language in { ...previous, ...next });
@@ -1258,6 +1299,7 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       delete value.taglineTranslations;
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
+      if (creating && typeof value.liveActivityVisible === "boolean") value.liveActivityVisible = e1Value(value.liveActivityVisible);
       for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${String(value.price).trim()} USD`;
       const derivedDaily = "baseRate" in value ? e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) : undefined;
@@ -1268,9 +1310,9 @@ function reviewPair(before: string, after: string, operationCode?: string) {
       return { kind: "object", value };
     };
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
-    const filled = (review: Review | null): Review | null => b || review?.kind !== "object" ? review
+    const filled = (review: Review | null): Review | null => skuBefore || review?.kind !== "object" ? review
       : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(b, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
+    return { b: named(skuBefore, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
@@ -2569,6 +2611,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     const impact = v8Promotion ? "立即升到 V8，首次到达按配置发奖。"
       : scheduled || monthlyTargetChange(w) ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
+        // 新增商品批准后只是草稿（显示规则 5）；覆盖率检查提示另在事实区。
+        : w.operationCode === "e1_sku_create" ? "批准后创建商品草稿，上架前 App / H5 Lite 上看不到。"
         : coverageMode === "onApproval" ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
             // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
@@ -2579,6 +2623,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               : w.type === "acct" ? "立即执行，改账号或权限；失败不改原值。"
                 : w.type === "sos" ? "立即执行，停用或恢复业务；失败不改原值。"
                   : "立即执行，改线上配置；失败不改原值。";
+    const e1Display = scheduled ? "" : e1DisplayChange(w);
+    const shownImpact = !e1Display ? impact : e1Display.endsWith("设备不变。") ? e1Display : `${impact}${e1Display}`;
     const check = isRefund ? "核对退款金额、订单和发起理由，理由写清依据或工单号。"
       : isFunds ? "核对对象、变更前后和发起理由，理由写清依据或工单号。"
         : w.type === "acct" ? "核对目标账号、申请的角色和发起理由，理由写清依据或工单号。"
@@ -2648,7 +2694,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           {isRefund && w.refundOrderNo && <PromotionRefundImpact orderNo={w.refundOrderNo} />}
         </div>
       ),
-      statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact, check },
+      statedBrief: fund ? { impact: fund.impact, check: fund.check } : { impact: shownImpact, check },
       amplifies,
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
       // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
