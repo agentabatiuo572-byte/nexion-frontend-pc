@@ -531,6 +531,7 @@ export type MContentData = {
   conversationsError?: string;
   conversationsDenied?: boolean;
   knowledgeAvailable: boolean;
+  knowledgeError?: string;
   sessionTemplatesAvailable: boolean;
   loadWarnings: string[];
 };
@@ -1739,7 +1740,7 @@ export async function sendM5Command(command: M5Command, commandKey: string): Pro
 
 export async function readSupportKnowledge() {
   const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
-  return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
+  return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true, knowledgeError: undefined };
 }
 
 export async function readSupportTemplates() {
@@ -1872,8 +1873,8 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     }
     try {
       publish(await readSupportKnowledge());
-    } catch {
-      publish({ faqs: [], sla: [], knowledgeAvailable: false }, "响应时限");
+    } catch (error) {
+      publish({ faqs: [], sla: [], knowledgeAvailable: false, knowledgeError: displayAdminReadError(error) }, "响应时限");
     }
   })();
 
@@ -2120,6 +2121,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.session.conversationsError": data.conversationsError ?? "",
     "I.session.conversationsDenied": data.conversationsDenied ? "1" : "0",
     "I.support.knowledgeAvailable": data.knowledgeAvailable ? "1" : "0",
+    "I.support.knowledgeError": data.knowledgeError ?? "",
     "I.session.templatesAvailable": data.sessionTemplatesAvailable ? "1" : "0",
     "I.session.advisor.policy.enabled": data.advisorPolicy.enabled,
     "I.session.advisor.policy.delayMs": String(data.advisorPolicy.delayMs),

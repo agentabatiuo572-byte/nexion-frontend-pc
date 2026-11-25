@@ -654,6 +654,12 @@
 .m4-pending-zone { margin: var(--rd-space-2) 0 0; }
 .m4-pending-actions { display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; }
 .m4-pending-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+/* 「核实后解除」确认框：M4、M1、M5 共用 */
+.m-release-object { overflow-wrap: anywhere; }
+.m-release-text { margin: 0; color: var(--rd-text-2); }
+.m-release-text > p { margin: 0; }
+/* 没有操作记录与审批查看权限时链接不显示，提示条末尾不留空 */
+.rd-notice-action:empty { display: none; }
 /* ============================ M5 服务规则与话术（改版页） ============================ */
 .m5-page .rd-panel:not([data-flush]) > :not(.rd-panel-head) + * { margin-top: var(--rd-space-4); }
 .m5-page .rd-panel[data-flush] > .rd-notice { margin: 0 var(--rd-panel-pad-x) var(--rd-space-3); }
@@ -730,6 +736,7 @@
 .m5-pending-time, .m5-pending-zone { font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .m5-pending-zone { margin: var(--rd-space-2) 0 0; }
 .m5-pending-actions { grid-column: 4; display: inline-flex; gap: var(--rd-space-2); justify-content: flex-end; }
+.m5-pending-note { grid-column: 1 / -1; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
 
 /* 客服接待名册 */
 .m5-page .m5-roster th.m5-col-state { width: 132px; }
