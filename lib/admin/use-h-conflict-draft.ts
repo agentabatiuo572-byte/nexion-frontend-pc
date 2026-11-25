@@ -55,10 +55,10 @@ export function useHConflictDraft(ready: boolean, { readConflict }: {
     get business() { return restoring.current ? saved.current?.business : undefined; },
     get intent() { return restoring.current ? saved.current?.intent : undefined; },
     get rejection() { return restoring.current ? saved.current?.rejection : undefined; },
-    reopen(key: string, draft: RejectedH4Draft, beforeOpen: () => void) {
+    reopen(key: string, draft: RejectedH4Draft, beforeOpen?: () => boolean) {
       const open = openers.current.get(key);
       if (!open) return false;
-      beforeOpen();
+      if (beforeOpen && !beforeOpen()) return false;
       saved.current = { ...draft, key };
       restoring.current = true;
       opening.current = key;

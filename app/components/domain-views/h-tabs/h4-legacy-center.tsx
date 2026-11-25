@@ -53,7 +53,7 @@ import { isDeletableQuestEvent } from "@/lib/admin/activity-delete";
 import { H4_EVENT_RULE_CODES, type EventRuleView } from "@/lib/admin/event-rules-client";
 import { EVENT_CONTENT_LOCALES, eventLocalizedContentGaps, eventRuleReadiness } from "@/lib/admin/event-rule-form";
 import type { HCtx, ActionConfirmReq, ConfirmReq } from "./types";
-import { H4_APPROVAL_OPS, markH4Read, h4ReleaseSnapshot, releaseH4RejectedReplay, h4TicketResult, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, h4CommandLookupState, h4CommandResource, retryH4Command, h4RetryBlockedReason, h4WheelGuardAmplifies, h4PendingConfirmRecovery, h4ReceiptRejection, settleH4RejectedCommand, isH4MediaCommand, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4Command, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
+import { H4_APPROVAL_OPS, markH4Read, h4ReleasedReads, h4ReleaseSnapshot, releaseH4RejectedReplay, h4TicketResult, h4Scope, assertH4Fresh, h4ReadVersion, h4PendingFor, h4Blocked, h4ApprovalPending, h4ApprovalLockedReason, h4TicketObservations, replaceH4TicketObservations, h4CommandHasPendingTicket, pendingH4Commands, submitH4Proposal, queryH4Command, h4CommandLookupState, h4CommandResource, retryH4Command, h4RetryBlockedReason, h4WheelGuardAmplifies, h4PendingConfirmRecovery, h4ReceiptRejection, settleH4RejectedCommand, isH4MediaCommand, h4CommandRequest, isH4ApprovalReceipt, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4Command, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { RAFFLE_SAVE_PENDING } from "@/lib/admin/genesis-raffle-client";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import H4EventRules from "./h4-event-rules";
@@ -454,6 +454,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         currentLanguages.current = required;
         setRequiredLanguages(required);
         setModel(next);
+        setLoading(false);
         setError(null);
         markH4Read("overview", true);
       };
@@ -1312,15 +1313,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   // ===== 结果未知、待审批 =====
-  const refreshSavedCommands = async (records: readonly H4Command[], closeSaved = true) => {
-    const scopes = (resource: ReturnType<typeof h4CommandResource>) =>
-      records.filter(record => h4CommandResource(record.scope) === resource).map(record => record.scope);
-    const overview = scopes("overview"), rules = scopes("rules"), raffles = scopes("raffles");
+  const refreshSavedCommands = async (records: readonly H4Command[], closeSaved = true, released: ReturnType<typeof h4ReleasedReads> = []) => {
+    const resources = new Set([...records.map(record => h4CommandResource(record.scope)), ...released]);
     const shouldClose = (scope: string) => closeSaved && records.some(r => r.scope === scope && !anotherConfirmOpen(r));
     const results = await Promise.all([
-      overview.length === 0 || reload(false).then(Boolean),
-      rules.length === 0 || readSavedRules.current?.(shouldClose),
-      raffles.length === 0 || readSavedRaffles.current?.(shouldClose),
+      !resources.has("overview") || reload(false).then(Boolean),
+      !resources.has("rules") || readSavedRules.current?.(shouldClose),
+      !resources.has("raffles") || readSavedRaffles.current?.(shouldClose),
     ]);
     return results.every(Boolean);
   };
@@ -1339,6 +1338,13 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     closeRecovery(record);
     if (!read) throw new Error(ticket ? `${h4TicketResult(ticket)}，最新数据加载失败` : "已保存，但最新数据加载失败");
     if (!ticket) toast("原操作已保存");
+  };
+  const confirmRecovery: typeof h4PendingConfirmRecovery = (record, onSaved, onRejected) => {
+    const original = ctx.currentActionConfirm();
+    return h4PendingConfirmRecovery(record, onSaved, onRejected, async (command, ticket) => {
+      if (original && ctx.currentActionConfirm() === original) ctx.openActionConfirm(null);
+      await readOutcome(command, ticket);
+    });
   };
   const lookupOriginal = async (record: H4Command) => {
     const result = record.rejectedReceipt ? { receipt: record.rejectedReceipt } : await queryH4Command(record, true, true);
@@ -1432,7 +1438,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       if (!target) {
         await openCreateEvent({ business: savedFields(body), rejection: cause }, closeRetry);
         opened = true;
-      } else if (method === "DELETE") opened = reopen(["openEventDelete:1", target]);
+      } else if (method === "DELETE") {
+        const event = overview.events?.find(row => row.id === target);
+        if (!event || !isDeletableQuestEvent(event)) throw unavailableOperation(objectLabel);
+        if (!ctx.can("growth_h4_write")) throw new ConfirmReadConflict(undefined, "你没有删除活动的权限。", true);
+        const previous = ctx.currentActionConfirm();
+        conflictDraft.reopen(JSON.stringify(["openEventDelete:1", target]), { rejection: cause });
+        if (ctx.currentActionConfirm() && ctx.currentActionConfirm() !== previous) settleH4RejectedCommand(record);
+        return;
+      }
       else if (field === "reward") opened = reopen(["openEventReward:1", target], { value: String(body.value) });
       else if (field === "featured") opened = reopen(["openEventFeatured:1", target], { intent: String(body.value) });
       else if (field === "status") opened = reopen([body.value === "ongoing" ? "openEventStatus:2" : "openEventStatus:1", target]);
@@ -1487,6 +1501,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   const known = hiRecords.filter(record => record.rejectedReceipt || record.approvalTicket && record.approvalTicket.status !== "pending").length;
   const unknownCount = hiRecords.length - waiting - known;
   const confirmed = confirmedH4Saves();
+  const released = h4ReleasedReads();
   const raffleChecks = confirmed.filter(h4RaffleSaveNeedsVerification);
   const savedUnread = confirmed.filter(record => !h4RaffleSaveNeedsVerification(record));
   const recovery = <>
@@ -1525,7 +1540,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
     </ul>}>关闭或刷新页面不会重新提交。</Notice>}
     {stale && <Notice tone="warn" title={`没有保存：别人先改过（${stale}）`} action={<Button size="sm" variant="ghost" onClick={() => setStale(null)}>知道了</Button>}>{error ? "最新值没读到；重试读取成功后再核对，你填的还在。" : "已读到最新值，你填的还在，核对后再提交。"}</Notice>}
-    {confirmed.length > 0 && <Notice tone="warn" title={raffleChecks.length ? RAFFLE_SAVE_PENDING : "已保存，但最新数据加载失败"} action={<Button size="sm" loading={loading} onClick={() => void refreshSavedCommands(confirmed)}>重新读取</Button>}>
+    {(confirmed.length > 0 || released.length > 0) && <Notice tone="warn" title={raffleChecks.length ? RAFFLE_SAVE_PENDING : confirmed.length ? "已保存，但最新数据加载失败" : displayAdminError(new Error("H4_REFRESH_REQUIRED"))} action={<Button size="sm" loading={loading} onClick={() => void refreshSavedCommands(confirmed, true, released)}>重新读取</Button>}>
       {raffleChecks.length > 0 && `${raffleChecks.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}重新读取这一期后才能确认是否保存，之前不能再改。`}
       {savedUnread.length > 0 && `${savedUnread.map(record => `「${hiCommandSubject(record, eventName)}」`).join("、")}已保存，不用重新提交。重新读取成功后才能再改。`}
     </Notice>}
@@ -1674,8 +1689,8 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
       : <BlockState state="error" title="既有活动与转盘加载失败" detail={error ?? "没有收到数据，请重试；一直失败请联系值班同事。"} onRetry={() => void reload()} />}
 
     <div hidden={sub !== "plays"} className="h4-tabpanel">
-      <H4EventRules ctx={ctx} requiredLanguages={requiredLanguages} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} onRowsChange={setRules} reopenRejected={reopenRule} readSaved={readSavedRules} />
-      <H4GenesisRaffle ctx={ctx} readback={raffleReadback} onApprovalCompleted={reloadH4Approvals} reopenRejected={reopenRaffle} readSaved={readSavedRaffles} />
+      <H4EventRules ctx={ctx} requiredLanguages={requiredLanguages} eventContent={eventContent} contentRefresh={contentRefresh} onApprovalCompleted={reloadH4Approvals} confirmRecovery={confirmRecovery} onRowsChange={setRules} reopenRejected={reopenRule} readSaved={readSavedRules} />
+      <H4GenesisRaffle ctx={ctx} readback={raffleReadback} onApprovalCompleted={reloadH4Approvals} confirmRecovery={confirmRecovery} reopenRejected={reopenRaffle} readSaved={readSavedRaffles} />
     </div>
 
     {overviewReady && <>

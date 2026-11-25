@@ -96,7 +96,7 @@ export function useH4RaffleReadback(ctx: HCtx) {
   return { read, operator, rows, loading, readError, load, isActive };
 }
 
-export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, reopenRejected, readSaved }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void>; reopenRejected: RefObject<H4ReopenRejected | null>; readSaved: RefObject<((shouldClose: (scope: string) => boolean) => Promise<boolean>) | null> }) {
+export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, confirmRecovery, reopenRejected, readSaved }: { ctx: HCtx; readback: ReturnType<typeof useH4RaffleReadback>; onApprovalCompleted?: () => Promise<void>; confirmRecovery: typeof h4PendingConfirmRecovery; reopenRejected: RefObject<H4ReopenRejected | null>; readSaved: RefObject<((shouldClose: (scope: string) => boolean) => Promise<boolean>) | null> }) {
   const { read, operator, rows, loading, readError, load, isActive } = readback;
   const [error, setError] = useState("");
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
@@ -177,7 +177,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
     let originalKey: string | undefined;
     const pending = () => originalKey ? pendingH4Commands().find(record => record.commandKey === originalKey) : h4PendingFor(`H/h4_genesis_raffle/${savedDraft.id}`);
     ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && rejected(restored.rejection), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${nextEnabled ? "保存并开启" : "保存抽奖配置"} · ${savedDraft.titleZh || savedDraft.titleEn || savedDraft.id}`, amplifies: nextEnabled,
-      getPendingRecovery: () => h4PendingConfirmRecovery(pending(), async () => {
+      getPendingRecovery: () => confirmRecovery(pending(), async () => {
         if (opening) await onApprovalCompleted?.();
         if (!await load()) throw new Error("已保存，但最新数据加载失败");
         close();
@@ -279,6 +279,11 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
       const previous = record.opened ? parseAdminRaffle(record.opened) : creating ? null : current;
       if (creating ? record.opened !== null : !previous || previous.id !== id || previous.revision !== body.expectedRevision) {
         return () => { choose(current); setError(H4_OLD_RECORD_REJECTED); };
+      }
+      if (previous?.status === "OPEN" && body.enabled === false && current) {
+        const reason = current.status === "DRAFT" ? "这一期已回到草稿" : current.status !== "OPEN" ? "已开奖或正在开奖，只能查看"
+          : current.totalEntries > 0 ? "已有人报名，不能再关闭" : undefined;
+        if (reason) throw new ConfirmReadConflict(undefined, `${reason}。你填的内容没有提交。`, true);
       }
       const { titleZh, titleEn, titleVi, startsAt, drawAt, prizes } = body;
       const draft = raffleLocalizedDraft({ id, titleZh, titleEn, titleVi, startsAt, drawAt, prizes }, requiredLanguages, "edit");

@@ -13,7 +13,7 @@ import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
-import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, h4TicketResult, confirmedH4Saves, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
+import { beginH4RuleRead, markH4Read, assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, h4TicketResult, confirmedH4Saves, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useH4EditGuard, useH4Editor } from "./h4-edit-guard";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
@@ -69,13 +69,14 @@ function rawParams(row: Pick<EventRuleView, "kind" | "rules">): Array<[string, s
   }
 }
 
-export default function H4EventRules({ ctx, eventContent, requiredLanguages = OPERATING_LANGUAGE_CODES, contentRefresh, onRowsChange, onApprovalCompleted, reopenRejected, readSaved }: {
+export default function H4EventRules({ ctx, eventContent, requiredLanguages = OPERATING_LANGUAGE_CODES, contentRefresh, onRowsChange, onApprovalCompleted, confirmRecovery, reopenRejected, readSaved }: {
   ctx: HCtx;
   eventContent?: Record<string, EventLocalizedContent>;
   requiredLanguages?: readonly OperatingLanguageCode[];
   contentRefresh?: number;
   onApprovalCompleted?: () => Promise<void>;
   onRowsChange?: (rows: EventRuleView[] | null) => void;
+  confirmRecovery: typeof h4PendingConfirmRecovery;
   reopenRejected: RefObject<H4ReopenRejected | null>;
   readSaved: RefObject<((shouldClose: (scope: string) => boolean) => Promise<boolean>) | null>;
 }) {
@@ -100,8 +101,16 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
   const [merged, setMerged] = useState(0);
   const load = async (preserve = false) => {
     const own = ++generation.current; setLoading(true); setReadError("");
-    try { const values = await fetchEventRules(); if (own === generation.current) { setRuleRows(values); if (!preserve) close(); return values; } return null; }
-    catch (cause) { if (own === generation.current) setReadError(displayAdminReadError(cause)); return null; }
+    const readIsCurrent = beginH4RuleRead();
+    try {
+      const values = await fetchEventRules();
+      if (own !== generation.current || !readIsCurrent()) return null;
+      setRuleRows(values);
+      markH4Read("rules", true);
+      if (!preserve) close();
+      return values;
+    }
+    catch (cause) { if (own === generation.current && readIsCurrent()) setReadError(displayAdminReadError(cause)); return null; }
     finally { if (own === generation.current) setLoading(false); }
   };
   useEffect(() => {
@@ -228,11 +237,11 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     ctx.openActionConfirm({ formKey: restored ? 0 : undefined, initialRejection: restored && rejected(restored.rejection), getPendingReason: () => pending()?.reason, briefKind: "config", action: `${next.enabled ? "保存并启用" : "保存关闭状态"} · ${base.eventCode}`,
       getPendingRecovery: () => {
         const record = pending();
-        return h4PendingConfirmRecovery(record, async () => {
+        return confirmRecovery(record, async () => {
           await onApprovalCompleted?.();
           if (!await load()) throw new Error("已保存，但最新数据加载失败");
           ctx.openActionConfirm(null);
-          finished(record && "proposal" in record.request ? "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
+          finished("活动规则已保存");
         }, rejected);
       },
       title: firstOpen ? "开启玩法" : base.enabled && !next.enabled ? "关闭玩法" : draftOnly ? "保存玩法草稿" : "保存玩法配置",
@@ -280,7 +289,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
               const current = latest.find(row => row.eventCode === base.eventCode);
               if (!current) throw missingRule();
               if (current.revision !== base.revision || current.enabled !== base.enabled) throw new Error("H4_REFRESH_REQUIRED");
-              readVersion = h4ReadVersion("rules");
+              assertH4Fresh("rules", readVersion);
               checkFirstOpen(current, required);
             }
             verifiedVersion = undefined;

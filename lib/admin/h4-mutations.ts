@@ -50,19 +50,28 @@ export const H4_APPROVAL_OPS = new Set([
   "h4_wheel_guard_create", "h4_wheel_guard_update", "h4_wheel_tier_create", "h4_wheel_tier_update",
   "h4_wheel_tier_delete", "h4_wheel_probabilities_update",
 ]);
+const releasedReads = new Set<string>();
+const readKey = (resource: Resource) => `${useAdminAuth.getState().session?.adminId}:${resource}`;
+export const h4ReleasedReads = () => (["overview", "rules", "raffles"] as const).filter(resource => releasedReads.has(readKey(resource)));
 const fresh = new Map<string, number>();
 const observations = new Map<string, A2OperationRow>();
 const receiptStates = new Map<string, DirectCommandReceiptState>();
 let observationOwner: number | undefined;
 export const h4CommandResource = (scope: string): Resource => scope.includes("/h4_event_rule/") ? "rules" : scope.includes("/h4_genesis_raffle/") ? "raffles" : "overview";
 const notify = () => { if (typeof window !== "undefined") window.dispatchEvent(new Event("admin-h4-pending-changed")); };
-export function h4ReadVersion(resource: Resource) { const v = fresh.get(`${useAdminAuth.getState().session?.adminId}:${resource}`); return v && v > 0 ? v : undefined; }
+export function h4ReadVersion(resource: Resource) { const v = fresh.get(readKey(resource)); return v && v > 0 ? v : undefined; }
 export function markH4Read(resource: Resource, success: boolean) {
-  const key = `${useAdminAuth.getState().session?.adminId}:${resource}`;
+  const key = readKey(resource);
+  if (success) releasedReads.delete(key);
   fresh.set(key, (Math.abs(fresh.get(key) ?? 0) + 1) * (success ? 1 : -1));
   if (success) pendingH4Commands().filter(r => h4CommandResource(r.scope) === resource && r.acknowledged
     && (r.approvalTicket ? r.approvalTicket.status !== "pending" : resource !== "raffles" && !r.scope.includes("/h4_media/") && !("proposal" in r.request))).forEach(forget);
   notify();
+}
+export function beginH4RuleRead() {
+  markH4Read("rules", false);
+  const key = readKey("rules"), version = fresh.get(key);
+  return () => key === readKey("rules") && version === fresh.get(key);
 }
 export function assertH4Fresh(resource: Resource, version: number | undefined) {
   if (version === undefined || version !== h4ReadVersion(resource)) throw new Error("H4_REFRESH_REQUIRED");
@@ -179,8 +188,13 @@ export function h4ReleaseSnapshot(record: H4Command) {
     return JSON.stringify([current.commandKey, current.replayRejection, h4CommandLookupState(current)]);
   }
 }
-export const releaseH4RejectedReplay = (record: H4Command) =>
-  h4ReleaseSnapshot(record) !== undefined && h4Recovery.releaseRejectedReplay(record);
+export function releaseH4RejectedReplay(record: H4Command) {
+  if (h4ReleaseSnapshot(record) === undefined || !h4Recovery.releaseRejectedReplay(record)) return false;
+  const resource = h4CommandResource(record.scope);
+  if (h4ReadVersion(resource) === undefined) releasedReads.add(readKey(resource));
+  notify();
+  return true;
+}
 
 export const h4TicketResult = (ticket: Pick<A2OperationRow, "id" | "status">) =>
   `审批单 ${ticket.id} · ${({ pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" })[ticket.status]}`;
@@ -410,7 +424,7 @@ export function h4RetryBlockedReason(r: H4Command): string | undefined {
     : "先查询原结果，明确查不到后才能重试";
 }
 
-export function h4PendingConfirmRecovery(record: H4Command | undefined, onSucceeded: () => Promise<void>, onRejected?: (error: PendingConfirmRejected) => Error) {
+export function h4PendingConfirmRecovery(record: H4Command | undefined, onSucceeded: () => Promise<void>, onRejected?: (error: PendingConfirmRejected) => Error, onTicket?: (record: H4Command, ticket: A2OperationRow) => Promise<void>) {
   if (!record) return;
   return {
     expiresAt: record.expiresAt,
@@ -418,7 +432,10 @@ export function h4PendingConfirmRecovery(record: H4Command | undefined, onSuccee
     query: isH4MediaCommand(record) ? undefined : async () => {
       const result = await queryH4Command(record, true);
       if (!result) return;
-      if ("ticket" in result) { if (result.ticket) await onSucceeded(); return; }
+      if ("ticket" in result) {
+        if (result.ticket) await (onTicket ? onTicket(record, result.ticket) : onSucceeded());
+        return;
+      }
       const rejection = h4ReceiptRejection(result.receipt);
       if (rejection) throw onRejected?.(rejection) ?? rejection;
       if (result.receipt.state === "SUCCEEDED") await onSucceeded();
