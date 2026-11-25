@@ -44,7 +44,7 @@ import {
 } from "@/lib/admin/g2-exchange-command";
 import { summarizeG2BatchResult, type G2BatchResult } from "@/lib/admin/g2-batch-result";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
-import { useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
+import { gParamApprovalFeedback, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { amountDisplay } from "@/lib/format";
@@ -492,7 +492,7 @@ function G2ExchangePage() {
         if (retry) await paramApproval.retry(obj);
         else if (!await paramApproval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
       } catch (err) {
-        toast(displayAdminError(err));
+        toast(gParamApprovalFeedback(err) ?? displayAdminError(err));
       } finally {
         setRecoverBusy(false);
       }

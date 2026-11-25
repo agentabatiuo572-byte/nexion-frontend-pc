@@ -47,7 +47,7 @@ import { G4FirstDividendConfirm } from "./g4-first-dividend-confirm";
 import { G4TierConfirm, hasPendingG4TierApproval, type G4TierChange } from "./g4-tier-confirm";
 import { canRetryG4DirectCommand, g4DirectAuthority, g4DirectCommandExpired, g4DirectObject, listG4DirectCommands, subscribeG4DirectCommands, g4DirectCommandVersion, type G4DirectCommand } from "@/lib/admin/g4-direct-command";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { canProposeGParam, useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { canProposeGParam, gParamApprovalFeedback, useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, unknownTag } from "./g-recovery";
 import { G4_PARAM_NAME, G4RecoveryNotice, g4Amount, g4ParamValueText, g4Plain, g4RecoveryTag, type G4ExtraRecovery } from "./g4-recovery";
@@ -369,15 +369,18 @@ function G4GenesisPage() {
         setLockedParams(rows => ({ ...rows, [key.slice(6)]: messageOf(err) }));
       }
       if (!approvalFallback || !(err instanceof G4CatalogApprovalRequiredError)) {
-        const message = messageOf(err);
+        const uncertain = isA2OutcomeUncertainError(err);
+        const approvalMessage = !uncertain || paramApproval.record(key.slice(key.indexOf(":") + 1))?.commandKey === err.commandKey
+          ? gParamApprovalFeedback(err) : undefined;
+        const message = approvalMessage ?? messageOf(err);
         setError(message);
-        toast(isA2OutcomeUncertainError(err) ? message : `操作失败 · ${message}`);
+        toast(approvalMessage ?? (uncertain ? message : `操作失败 · ${message}`));
       }
       throw err;
     } finally {
       setBusyKey(null);
     }
-  }, [nodePageNo, nodePageSize, toast]);
+  }, [nodePageNo, nodePageSize, paramApproval, toast]);
 
   const selectedNode = useMemo(() => {
     if (!overview || !nodeDrawer) return null;

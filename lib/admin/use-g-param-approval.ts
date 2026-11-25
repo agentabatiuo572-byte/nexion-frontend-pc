@@ -3,7 +3,7 @@
 import { useReducer, useRef } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
-import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, type A2OperationRow } from "./a2-client";
+import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { isExplicitRejection } from "./explicit-rejection";
 import { findHighOp } from "./high-ops-registry";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -115,6 +115,17 @@ function reasonCode(error: unknown) {
   return (error as { backendMessage?: string } | null)?.backendMessage;
 }
 
+class GParamRetryLookupError extends Error {
+  constructor(cause: unknown) {
+    super(`原申请暂时没读到，原申请仍保留，可以再查询原操作。（${displayAdminReadError(cause)}）`, { cause });
+  }
+}
+
+export function gParamApprovalFeedback(error: unknown): string | undefined {
+  if (isA2OutcomeUncertainError(error)) return error.queryMessage;
+  if (error instanceof GParamRetryLookupError) return error.message;
+}
+
 /** Logic only: the existing parameter buttons and confirmation modal own presentation. */
 export function useGParamApproval(page: Page, toast: (message: string) => void, showError: (message: string) => void, refresh: (keepPendingConfirm?: boolean) => Promise<void>, onRecoveryStart?: () => void) {
   const session = useAdminAuth((s) => s.session);
@@ -171,9 +182,12 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     }
     return ticket;
   };
-  const readOriginal = async (original: PendingGParam, { reread = page === "G4", keepPendingConfirm = false } = {}) => {
+  const fetchOriginal = (original: PendingGParam) => {
     onRecoveryStart?.();
-    const ticket = await fetchA2ProposalByKey(original.commandKey, true);
+    return fetchA2ProposalByKey(original.commandKey, true);
+  };
+  const readOriginal = async (original: PendingGParam, { reread = page === "G4", keepPendingConfirm = false } = {}) => {
+    const ticket = await fetchOriginal(original);
     return ticket ? acceptTicket(original, ticket, reread, keepPendingConfirm) : undefined;
   };
   const query = async (original: PendingGParam, keepPendingConfirm = false) => {
@@ -193,11 +207,11 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
       if (!canRetry(original)) throw new Error("请先查询原操作。明确查不到原审批单且仍有发起权限，才可按原操作重试。");
       clearMissing(original);
-      const ticket = await readOriginal(original, { reread: true }).catch((error: unknown) => {
+      const ticket = await fetchOriginal(original).catch((error: unknown) => {
         if (isPermissionDenied(error)) throw error;
-        throw new Error(displayAdminReadError(error), { cause: error });
+        throw new GParamRetryLookupError(error);
       });
-      if (ticket) return ticket;
+      if (ticket) return acceptTicket(original, ticket, true);
       if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
     }
     requireActor(original.request.obj, true);

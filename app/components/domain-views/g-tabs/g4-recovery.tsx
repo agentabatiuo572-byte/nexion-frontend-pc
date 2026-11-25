@@ -10,7 +10,7 @@ import { Button, Change } from "@/app/components/rd";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { divBaseFormulaText, G_PARAM_APPROVAL_RECOVERY, G_PARAM_RECOVERY } from "@/lib/admin/operator-copy";
-import type { GParamRecovery, useGParamApproval } from "@/lib/admin/use-g-param-approval";
+import { gParamApprovalFeedback, type GParamRecovery, type useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { amountDisplay } from "@/lib/format";
 
 /** 九个参数在这页的固定叫法（和参数行、确认框标题一致）。 */
@@ -84,7 +84,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
       if (retry) await approval.retry(obj);
       else if (!await approval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
     } catch (error) {
-      toast(displayAdminError(error));
+      toast(gParamApprovalFeedback(error) ?? displayAdminError(error));
     } finally {
       setBusy(false);
     }

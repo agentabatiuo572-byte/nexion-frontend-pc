@@ -34,7 +34,7 @@ import {
 import type { ActionConfirmReq } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
-import { gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
+import { gParamApprovalFeedback, gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { canRetryG7DirectCommand, g7DirectCommandExpired, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands, type G7DirectCommand } from "@/lib/admin/g7-direct-command";
 import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { amountDisplay } from "@/lib/format";
@@ -369,7 +369,7 @@ function G7RepurchasePage() {
         if (retry) await paramApproval.retry(obj);
         else if (!await paramApproval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
       } catch (err) {
-        toast(displayAdminError(err));
+        toast(gParamApprovalFeedback(err) ?? displayAdminError(err));
       } finally {
         setRecoverBusy(false);
       }
