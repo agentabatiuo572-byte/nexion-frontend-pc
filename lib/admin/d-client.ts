@@ -880,6 +880,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     }
   }
   let response: Response;
+  const requestEpoch = adminAuthLifecycleEpoch();
   const localBankReadAuth = method === "GET" && init?.localBankReadAuth === true;
   try {
     const send = localBankReadAuth ? fetchAdminReadWithLocalAuth : guardedFetch;
@@ -911,7 +912,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
         if (commandKey && method !== "GET") throw new DOutcomeUnknownError(commandKey);
         throw new AdminAuthEpochChangedError();
       }
-      resetAdminSession();
+      if (requestEpoch === adminAuthLifecycleEpoch()) resetAdminSession();
     }
     const commandKey = headers.get("Idempotency-Key");
     // 🔴 运营看到的话术必须与命令号去留同口径(2026-08-06 第三轮验收 P1-6)。
@@ -2637,6 +2638,7 @@ export async function downloadD3Csv(
   idempotencyKey: string,
 ) {
   const exportPath = kind === "reconciliation" ? "/reconciliation/export" : "/liabilities/export";
+  const requestEpoch = adminAuthLifecycleEpoch();
   const response = await guardedFetch(`/api/admin/treasury${exportPath}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
@@ -2647,7 +2649,8 @@ export async function downloadD3Csv(
   const contentType = response.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
   if (!response.ok || contentType !== "text/csv" || outcomeUnknown) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    if (isAdminAuthFailure(result?.code === 401 ? 401 : response.status, result?.message)) resetAdminSession();
+    if (isAdminAuthFailure(result?.code === 401 ? 401 : response.status, result?.message)
+      && requestEpoch === adminAuthLifecycleEpoch()) resetAdminSession();
     if (outcomeUnknown || isIdempotencyOutcomeOpen(result?.message)
       || outcomeStaysUnknown(response.status, result?.code)) {
       throw new DOutcomeUnknownError(idempotencyKey);
