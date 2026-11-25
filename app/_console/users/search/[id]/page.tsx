@@ -991,7 +991,8 @@ export default function UserDetailPage() {
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
   // 超过 5 条只先列最近 5 条，其余收在「查看全部」后面（VS-109）；和时间线同样按时间排，再取前 5 条。
   const auditRecent = useMemo(() => [...auditEntries].sort((a, b) => parseBusinessTime(b.at) - parseBusinessTime(a.at)).slice(0, 5), [auditEntries]);
-  const paymentConditionStale = paymentLoading && paymentShownKey !== `${includeUnbound}|${paymentPage}`;
+  // 不看 paymentLoading：换条件后的第一帧读取还没开始，也不能画旧条件的行。
+  const paymentConditionStale = paymentShownKey !== `${includeUnbound}|${paymentPage}`;
   const methods = useMemo(() => paymentConditionStale ? [] : paymentMethods?.items ?? [], [paymentConditionStale, paymentMethods]);
   const unfinishedRevokes = useMemo(() => (revokeScan ?? []).filter(revokeUnfinished), [revokeScan]);
   const devices = useMemo(() => asArray(detail?.devices?.records), [detail?.devices?.records]);
@@ -1792,7 +1793,7 @@ export default function UserDetailPage() {
                   <Explain label="撤销详情" content={[method.revokeCommandNo && `命令 ${method.revokeCommandNo}`, method.revokeAttempts && `已重试 ${method.revokeAttempts} 次`, method.revokeLastError].filter(Boolean).join(" · ") || "暂无更多信息"} />
                 </Notice>
               ))}
-              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在加载支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
+              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading || paymentConditionStale ? "正在加载支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
               {!!paymentMethods && paymentMethods.total > paymentMethods.pageSize && <Pager label="支付方式" total={paymentMethods.total} page={paymentMethods.page} pageSize={paymentMethods.pageSize} sizes={[paymentMethods.pageSize]} loading={paymentLoading} onPage={(page) => { setRecord(null); setPaymentPage(page); }} onPageSize={() => undefined} />}
             </Block>}
           </Fold>
