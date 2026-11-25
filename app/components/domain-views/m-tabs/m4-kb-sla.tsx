@@ -699,10 +699,10 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     const dismiss = () => setReconfirmations(rows => rows.filter(row => row.commandKey !== record.commandKey));
     return [{
       key: record.commandKey, question: command.row.question, change: KIND_NAME[command.kind], submittedAt: record.createdAt, expired: false,
-      status: { tone: "done" as const, label: draft ? "可继续修改" : "可重新确认" },
+      status: ended ? { tone: "neutral" as const, label: "不能继续" } : { tone: "done" as const, label: draft ? "可继续修改" : "可重新确认" },
       note: reason ?? "原操作已有结论，核对最新问答后重新确认。",
       actions: <>
-        {!ended && <Button size="sm" disabled={!canEdit || writePending} disabledReason={reason} onClick={() => continueFaq(record, faqs)}>{action}</Button>}
+        {(!ended || draft) && <Button size="sm" disabled={!ended && (!canEdit || writePending)} disabledReason={ended ? undefined : reason} onClick={() => continueFaq(record, faqs)}>{ended ? "查看拟改内容" : action}</Button>}
         <Button size="sm" variant="ghost" disabledReason={occupied ? reason : editing ? "正在编辑这份草稿" : undefined}
           onClick={() => draft ? discardDraft.ask(dismiss) : dismiss()}>{draft ? "放弃这份草稿" : "不再处理"}</Button>
       </>,

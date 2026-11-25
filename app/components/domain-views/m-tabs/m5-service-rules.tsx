@@ -19,6 +19,7 @@ import { pendingReplayReason } from "../recovery-panel";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { useToast } from "../design-kit";
 import { useMOperationReason } from "./m-operation-reason";
+import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 
 export type MSupportPermission = "superadmin" | "supervisor" | "agent";
 type RuleDraft = { dormantDays: string; maintenanceDays: string; activityWindowDays: string; inheritanceMode: SupportRules["inheritanceMode"]; maxInheritanceDepth: string; unboundAssignmentMode?: SupportRules["unboundAssignmentMode"] };
@@ -87,6 +88,9 @@ const errorText = displayAdminError;
 /** OP-153：过了 24 小时，查不到原操作并读到最新规则才解除。 */
 const EXPIRED_LINE = "已超过 24 小时，不能再重试。再查询一次：查不到、并读到最新规则，这条记录就解除。";
 
+/** 核实解除后还没保存的拟改内容：切走再回来接着合并（OP-97）；只在这个标签页，只给本人。 */
+const releasedRules = new Map<number, RulePendingRecord>();
+
 export function M5ServiceRules({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5RulesSummary) => void }) {
   const reach = useReach();
   const adminId = useAdminAuth((state) => state.session?.adminId);
@@ -108,7 +112,12 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const [releasing, setReleasing] = useState(false);
   const [, toast] = useToast();
   const preserveDraft = useRef(false);
-  const releasedRecord = useRef<RulePendingRecord | null>(null);
+  const [kept, setKept] = useState(() => adminId === undefined ? undefined : releasedRules.get(adminId));
+  const releasedRecord = useRef<RulePendingRecord | null>(kept ?? null);
+  const dropKept = () => { if (adminId !== undefined) releasedRules.delete(adminId); releasedRecord.current = null; setKept(undefined); };
+  const discardDraft = useRecoveryDraftDiscard();
+  const rereading = useRef(false);
+  const [rereadBusy, setRereadBusy] = useState(false);
   const [releasedFrom, setReleasedFrom] = useState<SupportRules>();
   const formAction = useRef<HTMLButtonElement>(null);
   const releaseOpener = useRef<HTMLElement | null>(null);
@@ -128,6 +137,8 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       expiry: "after-missing",
       canRelease,
       onLocalRelease: (record, rejection) => {
+        releasedRules.set(record.actorId, record);
+        setKept(record);
         const base = latest ?? current;
         const needsLatest = rejection === "SUPPORT_RULES_VERSION_CONFLICT" && (!base || base.version <= record.payload.expectedVersion);
         if (needsLatest) {
@@ -144,6 +155,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       readAfterExpiry: async () => {
         const value = await supportClient.rules();
         return () => {
+          dropKept();
           preserveDraft.current = false; setReleasedFrom(undefined);
           setCurrent(value); setDraft(toDraft(value)); setReason(""); setLatest(null);
           setSaved(false); setConflict(false); setReadUnavailable(false); setConfirm(false); setError("");
@@ -198,6 +210,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
       setError(errorText(new SupportClientError(422, 422, "SUPPORT_RULES_INVALID"))); return;
     }
     setSaved(false);
+    dropKept();
     await command.run("submit", { ...parsed, expectedVersion: current.version, reason: reason.trim() }, current);
   }
 
@@ -210,6 +223,8 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   }
 
   async function refreshLatest() {
+    if (rereading.current) return;
+    rereading.current = true; setRereadBusy(true);
     const actor = actorStamp();
     try {
       const latestRules = await supportClient.rules();
@@ -221,6 +236,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         setLatest(null); setConflict(false); setReason(""); setError("");
       } else setLatest(latestRules);
     } catch (cause) { if (actor === actorStamp()) setError(displayAdminReadError(cause)); }
+    finally { rereading.current = false; setRereadBusy(false); }
   }
 
   const checkPending = () => command.run("query");
@@ -295,6 +311,9 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         {saved && <Notice tone="ok">已保存。</Notice>}
         {!loading && (!current || readUnavailable) && <BlockState state="error" title="服务规则加载失败" detail={`${error ? `${error} ` : ""}暂时不能查看和保存。`} onRetry={() => setReload((n) => n + 1)} />}
         {(error || command.message) && !readUnavailable && !confirm && !conflict && !retry && <Notice tone={isIndeterminateText(command.message || error) ? "warn" : "danger"}>{command.message || error}</Notice>}
+        {kept && draft && current && !retry && !conflict && <Notice tone="neutral" title="解除前填的内容已带回，还没保存" action={<Button size="sm" variant="ghost" disabled={saving}
+          onClick={() => discardDraft.ask(() => { dropKept(); setReleasedFrom(undefined); setDraft(toDraft(current)); setReason(""); })}>放弃这份草稿</Button>}>核对后重新填写理由再保存。</Notice>}
+        {discardDraft.dialog}
         {draft && current && !(readUnavailable && !retry) && <div className="m5-form">
           <Field label="新客户怎么分" help={draft.unboundAssignmentMode === "AUTO_RANDOM"
             ? "第一次发消息时，分给可接单的客服里负载最低的；没人可接就继续等。"
@@ -322,8 +341,9 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
             ))}
           </div>
           {(conflict || externalChanges.length > 0) && <Notice tone="warn" title="规则已被别人改过" actionBelow
-            action={conflict ? latest ? <Button size="sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</Button> : <Button size="sm" onClick={() => void refreshLatest()}>读取最新规则</Button> : undefined}>
+            action={conflict ? latest ? <Button size="sm" onClick={reviewLatest} disabled={!parsed}>以最新规则重审</Button> : <Button size="sm" loading={rereadBusy} loadingText="正在读取…" onClick={() => void refreshLatest()}>读取最新规则</Button> : undefined}>
             <p>{comparisonAfter && comparisonBefore ? `现在是第 ${comparisonAfter.version} 版，你改的是第 ${comparisonBefore.version} 版。` : "还没读到最新版本。"}{conflict ? "你填的内容还在。" : "你改过的项目已带到最新规则，请核对后重新确认。"}</p>
+            {conflict && !latest && error && <p>{error}</p>}
             {comparisonBefore && comparisonAfter && <ul className="m5-plain-list">{externalChanges.map((field) => <li key={field}>{LABELS[field]}：{labelValue(field, comparisonBefore[field])} → {labelValue(field, comparisonAfter[field])}</li>)}</ul>}
           </Notice>}
           {permission === "superadmin" && <div className="rd-toolbar" data-end="">

@@ -224,9 +224,10 @@ export function M4PendingWrites({ rows }: { rows: readonly M4PendingRow[] }) {
   const open = rows.filter((row) => OPEN_RESULT_LABELS.includes(row.status.label)).length;
   const submitting = rows.filter(row => row.status.label === "提交中…").length;
   const drafts = rows.filter(row => row.status.label === "可继续修改" || row.status.label === "可重新确认").length;
-  const unknown = rows.length - open - submitting - drafts;
+  const stopped = rows.filter(row => row.status.label === "不能继续").length;
+  const unknown = rows.length - open - submitting - drafts - stopped;
   const title = [unknown > 0 && `${unknown} 个操作结果未知`, open > 0 && `${open} 个操作还没结案`,
-    submitting > 0 && "提交中…", drafts > 0 && `${drafts} 个操作可继续处理`].filter(Boolean).join("，");
+    submitting > 0 && "提交中…", drafts > 0 && `${drafts} 个操作可继续处理`, stopped > 0 && `${stopped} 个操作不能继续`].filter(Boolean).join("，");
   return (
     <Notice tone="warn" title={<>{title}<Explain label="结果未知怎么处理" content={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时还没结论的，由有调查权限的超级管理员核查结案。有结论前这条问答不能再改。</p></>} /></>}>
       <div ref={box}><ul className="m4-pending" aria-label="结果未知的操作">

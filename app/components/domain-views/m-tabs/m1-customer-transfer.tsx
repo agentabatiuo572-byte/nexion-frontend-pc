@@ -41,6 +41,9 @@ export const transferRecovery = createPendingRecovery(transferCommands, {
   explicitRejectionCode,
 });
 
+/** 转绑的提交加归属核对、查询，各最多等 30 秒；到时按结果未知处理，原号保留（OP-33–35）。 */
+const TRANSFER_TIMEOUT_MS = 30_000;
+const timedOut = (signal: AbortSignal, cause: unknown) => signal.aborted ? new Error("等了 30 秒没收到结果。") : cause;
 const transferNotes = new Map<string, string>();
 const submittingTransfers = new Set<string>();
 const noteSubscribers = new Set<() => void>();
@@ -200,36 +203,30 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       || replay && transferRecovery.state(record).replayBlock) return;
     const actor = actorStamp();
     let written = false;
-    let timedOut = false;
-    let deadline: number | undefined;
     if (replay) setBusy(true);
     else {
       firstKey.current = record.commandKey;
       submittingTransfers.add(record.commandKey);
-      // One deadline covers both the original POST and its ownership readback.
-      deadline = window.setTimeout(() => {
-        timedOut = true;
-        submittingTransfers.delete(record.commandKey);
-        if (mounted.current && actor === actorStamp()) setPending(record);
-        updateTransferNote(record.commandKey);
-      }, 30_000);
     }
     setError("");
     updateTransferNote(record.commandKey);
+    // One limit covers both the POST and its ownership readback.
+    const signal = AbortSignal.timeout(TRANSFER_TIMEOUT_MS);
     try {
-      if (replay) await transferRecovery.replay(record, saved => supportClient.transfer(saved.payload, saved.commandKey));
-      else await supportClient.transfer(record.payload, record.commandKey);
+      if (replay) await transferRecovery.replay(record, saved => supportClient.transfer(saved.payload, saved.commandKey, signal));
+      else await supportClient.transfer(record.payload, record.commandKey, signal);
       written = true;
       if (actor !== actorStamp()) return;
-      await verifySupportTransfer(record.payload, "SUCCEEDED");
+      await verifySupportTransfer(record.payload, "SUCCEEDED", undefined, signal);
       if (actor !== actorStamp()) return;
       if (transferRecovery.state(record).replayBlock === "missing") return;
       transferRecovery.settleAcknowledged(record);
       updateTransferNote(record.commandKey);
       window.dispatchEvent(new Event("support-todo-changed"));
       if (mounted.current) onDone(`已转给 ${record.targetName ?? "新的专属客服"}，并核对了最新归属。`);
-    } catch (cause) {
-      if (actor !== actorStamp() || timedOut || transferRecovery.state(record).replayBlock === "missing") return;
+    } catch (error) {
+      if (actor !== actorStamp() || transferRecovery.state(record).replayBlock === "missing") return;
+      const cause = timedOut(signal, error);
       if (replay || written || !isDefiniteSupportRefusal(cause)) {
         setPending(record);
         updateTransferNote(record.commandKey, transferRecovery.state(record).replayRejection ? mRejectedReason(displayAdminError(cause)) : mUnknownText(displayAdminError(cause)));
@@ -239,7 +236,6 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
         setPending(null); setError(`转绑没有成功：${displayAdminError(cause)}`); setReload((value) => value + 1);
       }
     } finally {
-      window.clearTimeout(deadline);
       if (!replay && submittingTransfers.delete(record.commandKey)) {
         // A failure may already have supplied a reason. Only clear the in-flight flag.
         updateTransferNote(record.commandKey, transferNotes.get(record.commandKey));
@@ -262,12 +258,13 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     const actor = actorStamp();
     setBusy(true); setError("");
     updateTransferNote(pending.commandKey);
+    const signal = AbortSignal.timeout(TRANSFER_TIMEOUT_MS);
     try {
       const result = await transferRecovery.query(pending, async saved => {
         try {
-          const receipt = await supportClient.command(saved.commandKey);
+          const receipt = await supportClient.command(saved.commandKey, signal);
           if (receipt.status === "SUCCEEDED") {
-            await verifySupportTransfer(saved.payload, "SUCCEEDED");
+            await verifySupportTransfer(saved.payload, "SUCCEEDED", undefined, signal);
             return { conclusion: "succeeded" };
           }
           return { conclusion: "unknown" };
@@ -286,7 +283,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
         updateTransferNote(pending.commandKey, state.expired || state.replayRejection ? M_RECOVERY.notFoundShort : "");
       } else updateTransferNote(pending.commandKey, M_RECOVERY.unsettled);
     } catch (cause) {
-      if (actor === actorStamp()) updateTransferNote(pending.commandKey, mQueryFailedText(displayAdminReadError(cause)));
+      if (actor === actorStamp()) updateTransferNote(pending.commandKey, mQueryFailedText(displayAdminReadError(timedOut(signal, cause))));
     } finally { setBusy(false); }
   }
 
