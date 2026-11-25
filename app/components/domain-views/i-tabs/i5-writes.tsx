@@ -282,9 +282,9 @@ export function useLeaveGuard(dirty: boolean, close: () => void, switcher: RefOb
 }
 
 /** saveName 是保存按钮的完整名字（「保存并立即生效」这类不带「后继续」的，OP-29）；不传时是「{saveLabel}后继续」。 */
-export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, discardLabel = "放弃改动并返回", saveBlocked, onSave }: {
+export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继续`, saveBlocked, onSave }: {
   guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "startSave">;
-  saveLabel?: string; saveName?: string; discardLabel?: string; saveBlocked?: string; onSave: (saved: () => void) => void;
+  saveLabel?: string; saveName?: string; saveBlocked?: string; onSave: (saved: () => void) => void;
 }) {
   const stayButton = useRef<HTMLButtonElement>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
@@ -300,7 +300,7 @@ export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继�
   return (
     <Modal title="有未保存的修改" icon={ShieldCheck} onClose={guard.stay} footer={<>
       <Button ref={stayButton} onClick={guard.stay}>继续编辑</Button>
-      <Button variant="danger-outline" onClick={guard.discard}>{discardLabel}</Button>
+      <Button variant="danger-outline" onClick={guard.discard}>放弃改动并返回</Button>
       <Button ref={saveButton} variant="primary" disabledReason={saveBlocked} onClick={() => onSave(guard.startSave())}>{saveName}</Button>
     </>}><p>离开后这次的修改不会保留。</p></Modal>
   );

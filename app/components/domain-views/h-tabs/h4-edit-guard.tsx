@@ -89,7 +89,7 @@ export function useH4EditHost(confirmOpen: boolean): H4EditGuard & { provide: (c
     ...value,
     provide: (children) => <GuardContext.Provider value={value}>
       {children}
-      <LeaveDialog guard={guard} saveName={current?.saveName} discardLabel="放弃改动并返回" saveBlocked={current?.saveReason} onSave={(saved) => current?.save(saved)} />
+      <LeaveDialog guard={guard} saveName={current?.saveName} saveBlocked={current?.saveReason} onSave={(saved) => current?.save(saved)} />
     </GuardContext.Provider>,
   };
 }

@@ -190,7 +190,7 @@ export type SubmitLookup =
 
 export type ExportDownload =
   | { kind: "downloaded" }
-  | { kind: "expired" | "forbidden" | "retry" | "unconfirmed"; task?: ExportTask; permissionDenied?: boolean };
+  | { kind: "expired" | "forbidden" | "retry" | "unconfirmed"; task?: ExportTask; permissionDenied?: boolean; sessionExpired?: boolean };
 
 export interface PerfExportPorts {
   persona: ExportPersona;
