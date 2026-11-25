@@ -272,7 +272,7 @@ function optionLine(item: J4ActionOption, target: string) {
 const TARGET_HINT: Record<string, string> = { J2: "两位国家代码，例如 US", C2: "用户数字编号，例如 123", K1: "账户组编号，例如 cluster-001", I5: "地区:版本，例如 VN:v1.2" };
 const TARGET_PLACEHOLDER: Record<string, string> = { J2: "国家代码，如 US", C2: "用户编号，如 123", K1: "如 cluster-001", I5: "如 VN:v1.2" };
 
-export function PlaybookEditor({ spec, onClose }: { spec: EditorSpec; onClose: () => void }) {
+export function PlaybookEditor({ spec, onClose, blockedReason }: { spec: EditorSpec; onClose: () => void; blockedReason?: string }) {
   const [draft, setDraft] = useState<PlaybookDraft>(() => spec.draft ?? initialDraft(spec));
   const [actionSearch, setActionSearch] = useState("");
   const [targets, setTargets] = useState<Record<string, string>>({});
@@ -302,7 +302,7 @@ export function PlaybookEditor({ spec, onClose }: { spec: EditorSpec; onClose: (
       sub={<StatusTag tone="neutral" icon={FlaskConical} explain="保存只改预案定义，不动任何线上业务。保存后预案是待演练，演练通过才能正式执行；编辑已有预案也会回到待演练，已有的执行记录不变。">保存后要先演练</StatusTag>}
       footer={<>
         <Button onClick={onClose}>取消</Button>
-        <Button variant="primary" disabledReason={missing.length ? `还缺：${missing.join("；")}` : undefined} onClick={() => spec.onNext(draft)}>下一步：核对并写理由</Button>
+        <Button variant="primary" disabledReason={blockedReason ?? (missing.length ? `还缺：${missing.join("；")}` : undefined)} onClick={() => spec.onNext(draft)}>下一步：核对并写理由</Button>
       </>}>
       <div className="rd-form-grid" data-cols="2" data-dense="">
         <Field label="预案名称" required hint="2–128 字">
@@ -438,9 +438,9 @@ export function executeMissing(draft: ExecuteDraft) {
   return missing;
 }
 
-export function ExecutePrepare({ playbook, emergency, draft: initial, onNext, onClose }: {
+export function ExecutePrepare({ playbook, emergency, draft: initial, onNext, onClose, blockedReason }: {
   playbook: Playbook; emergency: boolean; draft: ExecuteDraft;
-  onNext: (draft: ExecuteDraft) => void; onClose: () => void;
+  onNext: (draft: ExecuteDraft) => void; onClose: () => void; blockedReason?: string;
 }) {
   const [draft, setDraft] = useState(initial);
   const [contextLeft, setContextLeft] = useState(false);
@@ -457,7 +457,7 @@ export function ExecutePrepare({ playbook, emergency, draft: initial, onNext, on
       </>}
       footer={<>
         <Button onClick={onClose}>取消</Button>
-        <Button variant="primary" disabledReason={missing.length ? `还缺：${missing.join("；")}` : undefined} onClick={() => onNext(draft)}>下一步：写理由并提交</Button>
+        <Button variant="primary" disabledReason={blockedReason ?? (missing.length ? `还缺：${missing.join("；")}` : undefined)} onClick={() => onNext(draft)}>下一步：写理由并提交</Button>
       </>}>
       <Facts>
         <Fact k="批准前">什么都不会发生，业务照常</Fact>

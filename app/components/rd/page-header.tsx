@@ -16,9 +16,10 @@
  *   项多时列数跟着项数走（后加的事实自然排进去）。不传 facts 的页面照旧：meta 和 readOnly 在最下一行。
  */
 import type { ReactNode } from "react";
+import type { PageGuideContent } from "@/lib/admin/page-guides";
 import { PageGuide } from "./page-guide";
 
-export function PageHeader({ title, summary, pageId, actions, meta, readOnly, back, guideExtra, status, level, facts }: {
+export function PageHeader({ title, summary, pageId, actions, meta, readOnly, back, guideExtra, guideContent, status, level, facts }: {
   title: ReactNode;
   summary?: ReactNode;
   pageId?: string;
@@ -27,6 +28,7 @@ export function PageHeader({ title, summary, pageId, actions, meta, readOnly, ba
   readOnly?: ReactNode;
   back?: ReactNode;
   guideExtra?: ReactNode;
+  guideContent?: PageGuideContent;
   /** 详情页：标题后的状态标签。 */
   status?: ReactNode;
   /** 详情页：状态后的等级，弱字。 */
@@ -44,7 +46,7 @@ export function PageHeader({ title, summary, pageId, actions, meta, readOnly, ba
             <h1 className="rd-head-title">{title}</h1>
             {status}
             {level && <span className="rd-head-level">{level}</span>}
-            {pageId && <PageGuide pageId={pageId} extra={guideExtra} />}
+            {pageId && <PageGuide pageId={pageId} extra={guideExtra} content={guideContent} />}
           </div>
           {summary && <p className="rd-head-summary">{summary}</p>}
         </div>

@@ -62,7 +62,7 @@ function diffOf(initial: string[], codes: string[]) {
   };
 }
 
-export function CountryEditor({ spec, onClose }: { spec: EditorSpec; onClose: () => void }) {
+export function CountryEditor({ spec, onClose, blockedReason }: { spec: EditorSpec; onClose: () => void; blockedReason?: string }) {
   const { kind, options, initial, names, statusOf } = spec;
   const [codes, setCodes] = useState<string[]>(() => spec.draft?.codes ?? (kind === "emergency" ? [] : [...initial]));
   const [mode, setMode] = useState<EditorMode>(spec.draft?.mode ?? spec.initialMode ?? "derived");
@@ -97,7 +97,7 @@ export function CountryEditor({ spec, onClose }: { spec: EditorSpec; onClose: ()
       dirty={changed || (kind === "emergency" && codes.length > 0)}
       footer={<>
         <Button onClick={onClose}>取消</Button>
-        <Button variant="primary" disabledReason={blocked} onClick={() => spec.onNext({ codes: effective, mode: kind === "endpoint" ? mode : undefined })}>下一步：核对改动</Button>
+        <Button variant="primary" disabledReason={blockedReason ?? blocked} onClick={() => spec.onNext({ codes: effective, mode: kind === "endpoint" ? mode : undefined })}>下一步：核对改动</Button>
       </>}>
       {spec.subject}
       {kind === "endpoint" && (

@@ -1,15 +1,17 @@
 import { h3QuestConfigWriteRefusal } from "./h3-contract";
 import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
-import { h4CommandRequest, markH4Read } from "./h4-mutations";
+import { h4CommandRequest } from "./h4-mutations";
 import { validEventCopyReadiness, type EventCopyReadiness } from "./event-rule-form";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { isAdminAuthFailure } from "@/lib/admin/auth-session";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
 import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
+import { buyProductReason, H2_BUY_LIST_PATH, isBuyListReceipt, type BuyListWrite } from "./h2-trial-purchase";
 
 interface ApiResult<T> {
   code: number;
@@ -200,7 +202,7 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
     // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
     // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
     // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
-    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, bodyUnreadable: result === null, unknownOutcome });
+    Object.assign(error, { status: response.status, reasonCode: result?.message, apiCode: result?.code, apiMessage: result?.message, details: result?.data, bodyUnreadable: result === null, unknownOutcome });
     throw error;
   }
   return result.data as T;
@@ -325,7 +327,7 @@ export async function fetchH2Trials(pageNum = 1, pageSize = 20): Promise<Record<
   return growthRequest<Record<string, any>>(`/trials?pageNum=${pageNum}&pageSize=${pageSize}`);
 }
 
-export function createH2CommandKey(prefix: "h2-param") {
+export function createH2CommandKey(prefix: "h2-param" | "h2-buy-list") {
   return nextIdempotencyKey(prefix);
 }
 
@@ -340,6 +342,35 @@ export async function updateH2TrialParam(key: string, value: string, reason: str
     `/trials/params/${encodeURIComponent(key)}`,
     { method: "PATCH", body: commandBody(key, value, reason), headers: { "Idempotency-Key": commandKey } },
   );
+}
+
+export async function updateH2TrialBuyList(input: BuyListWrite) {
+  try {
+    const receipt = await growthRequest<unknown>(H2_BUY_LIST_PATH, {
+      method: "PUT", body: JSON.stringify(input),
+    }, undefined, true);
+    if (!isBuyListReceipt(receipt, input)) return { kind: "unknown" } as const;
+    return { kind: "saved" } as const;
+  } catch (cause) {
+    const error = cause as Error & { status?: number; apiCode?: number; apiMessage?: string; details?: { productNo?: unknown; reason?: unknown }; unknownOutcome?: boolean };
+    if (error.unknownOutcome || !Number.isInteger(error.apiCode)
+      || [408, 425, 429].some((status) => status === error.status || status === error.apiCode)
+      || error.apiMessage?.startsWith("IDEMPOTENCY_") || isH2OutcomeUnknown(error)) return { kind: "unknown" } as const;
+    if (isAdminAuthFailure(error.status ?? 0, error.apiMessage) || error.apiCode === 401) return { kind: "unauthenticated" } as const;
+    if (error.apiMessage === "TRIAL_OPTIONS_ACTOR_MISMATCH") {
+      return { kind: "accountMismatch", message: displayAdminError(error) } as const;
+    }
+    if (error.status === 403 || error.apiCode === 403) return { kind: "forbidden" } as const;
+    if (error.apiMessage === "TRIAL_OPTIONS_VERSION_CONFLICT") return { kind: "conflict" } as const;
+    // The same number with other content: an operation is recorded under it, so this answer settles nothing here.
+    if (error.apiMessage === "TRIAL_OPTIONS_REQUEST_CHANGED") return { kind: "unknown" } as const;
+    if (error.apiMessage === "TRIAL_OPTIONS_PRODUCT_UNAVAILABLE") {
+      const { productNo, reason } = error.details ?? {};
+      const refused = typeof productNo === "string" && input.productNos.includes(productNo) ? productNo : undefined;
+      return { kind: "rejected", message: `没有保存：${refused ?? "有一款设备"}${buyProductReason(reason)}，不能新增。`, productNo: refused, reason } as const;
+    }
+    return { kind: "rejected", message: displayAdminError(error), productNo: undefined, reason: undefined } as const;
+  }
 }
 
 export async function cancelH2TrialSession(sessionId: string, reason: string) {
@@ -389,11 +420,9 @@ export function validateH4OverviewEvents(events: unknown) {
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
   if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
-  markH4Read("overview", false);
   const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
   validateH4OverviewEvents(result.events);
   Object.assign(result, readH4Statistics(result));
-  markH4Read("overview", true);
   return result;
 }
 
@@ -1238,7 +1267,9 @@ export const h3CommandStorage = {
   list: () => Object.entries(h3Stores).flatMap(([store, commands]) => commands.list().map(record => ({ store: store as H3CommandStore, record }))),
   remember: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].remember(record.fingerprint, record.commandKey, record),
   forget: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].forget(record.fingerprint, record.commandKey),
-  durable: (store: H3CommandStore, record: PendingMutationRecord) => h3Stores[store].isDurablyStored(record.fingerprint, record.commandKey),
+  markReplayRejected: (store: H3CommandStore, fingerprint: string, commandKey: string, code: string) =>
+    h3Stores[store].markReplayRejected(fingerprint, commandKey, code),
+  durable: (store: H3CommandStore, record: Pick<PendingMutationRecord, "fingerprint" | "commandKey">) => h3Stores[store].isDurablyStored(record.fingerprint, record.commandKey),
 };
 
 export class H3BindingOutcomeUncertainError extends Error {

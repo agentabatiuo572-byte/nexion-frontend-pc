@@ -9,17 +9,17 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
  * 新增、编辑和发起正式执行先在页面自己的框里填（PlaybookEditor、ExecutePrepare），再进共用确认框写理由提交；
  * 请求方法和业务内容沿用原合同；原请求和确认事实先存入 J 域共享存储，未知后只恢复原操作。
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { BookOpen, Clock3, FlaskConical, History, ListChecks, Megaphone, MinusCircle, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, ShieldCheck, Siren, Square, TriangleAlert, Undo2, Workflow } from "lucide-react";
-import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Conclusion, Explain, Fact, Facts, Fold, KeyValues, Notice, PageHeader, Panel, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import {
-  createJEmergencyCommandKey, getJ4PendingProposal, isEmergencyOutcomeUncertain,
+  createJEmergencyCommandKey, getJ4PendingCommand, getJ4PendingProposal, isEmergencyOutcomeUncertain,
   j4ProposalSlot, listJ4LegacyCommands, listJ4PendingCommands, listJ4PendingProposals,
-  queryJ4Command, queryJ4Proposal, releaseExpiredJ4Proposal, releaseExpiredJLegacyCommand, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
+  queryJ4Command, queryJ4Proposal, j4CanWrite, J4_TARGET_AUTHORITY as TARGET_AUTHORITY, jEmergencyRecovery, jEmergencyRetryBlocked, retryJ4Command, retryJ4Proposal, submitJ4Proposal,
   type J4CommandContext, type J4PendingCommand, type J4PendingProposal, type J4PlaybookCreateInput, type Playbook, type SopExecution,
 } from "@/lib/admin/j-client";
 import { fetchA2Overview, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -27,11 +27,14 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { fundCommandSettled, fundInvestigationAccess, type FundCommandEvidence, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { isRetryExpired, RETRY_EXPIRED_TEXT, type SlotAttemptRecord } from "@/lib/admin/pending-mutation-store";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, closureKnown, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
+import { replayRejectedStatus, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
 import { CommandClosureModal, RECOVERY_LINE } from "../e-tabs/e-command-check";
 import { processedStatus } from "./j-recovery-copy";
 import { receiptFact } from "../recovery-panel";
 import { eCommandCanRequestResumeRollback } from "@/lib/admin/e-command-investigation";
 import { useReach } from "@/lib/nav/use-reach";
+import { isConfirmedNonExecution, rebaseTerminalDraft, useTerminalDrafts, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   DOMAIN_PAGE, ExecutePrepare, PlaybookEditor, StepDots, StepTimeline, TraceDrawer, UndoTag,
@@ -53,16 +56,6 @@ const J4_PROPOSAL_END = {
   withdrawn: "原执行申请已撤回：预案没有执行。",
   expired: "原执行申请已过期：没人处理，预案没有执行；需要时重新发起。",
 } as const;
-/** 执行每一步要有对应页面的处置权限（J4-P02），后端提交时再按预案快照核一次。 */
-const TARGET_AUTHORITY: Record<string, string> = {
-  J1: "emergency_j1_gate_kill",
-  J2: "emergency_j2_emergency_block",
-  C2: "user_c2_account_freeze",
-  K1: "risk_k1_cluster_freeze",
-  I3: "content_i3_write",
-  I5: "content_i5_disclosure_publish",
-};
-
 function playbookFormBody(bv: Record<string, string> | undefined, fallbackName: string): J4PlaybookCreateInput {
   return {
     name: bv?.name?.trim() || fallbackName,
@@ -94,8 +87,22 @@ function draftValue(draft: PlaybookDraft): Record<string, string> {
   };
 }
 
+function savedPlaybookDraft(fields: Record<string, string>): PlaybookDraft {
+  return {
+    name: fields.name, scene: fields.scene, owner: fields.owner, sla: fields.sla, slaLegacyValue: fields.sla,
+    emergencyTrack: fields.emergencyTrack, lines: fields.actionSeq.split("\n"),
+    notifyCampaignNo: fields.notifyCampaignNo, notifyTemplate: fields.notifyTemplate, notifySearch: fields.notifyTemplate,
+    rollback: fields.rollback, rollbackTemplate: "", rollbackSearch: "", drillRequired: fields.drillRequired,
+  };
+}
+
 function actionSeqText(p: Playbook) {
   return p.seq.map((s) => `${s.dom}·${s.ax.replace(/\*\*/g, "")}${s.ref ? `·${s.ref}` : ""}`).join("\n");
+}
+function playbookBaseline(p: Playbook): Record<string, string> {
+  return { name: p.name, scene: p.scene, owner: p.owner, sla: p.sla, emergencyTrack: String(p.emer),
+    actionSeq: actionSeqText(p), notifyCampaignNo: p.notifyCampaignNo ?? "", notifyTemplate: p.notifyTemplate ?? "",
+    rollback: p.rollback ?? "", drillRequired: String(p.drillRequired === true) };
 }
 
 export function J4Sop({ ctx }: { ctx: JCtx }) {
@@ -112,7 +119,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [traceExecution, setTraceExecution] = useState<SopExecution | null>(null);
   const [editor, setEditor] = useState<EditorSpec | null>(null);
-  const [prepare, setPrepare] = useState<{ playbook: Playbook; emergency: boolean; draft: ExecuteDraft } | null>(null);
+  const [prepare, setPrepare] = useState<{ playbook: Playbook; emergency: boolean; draft: ExecuteDraft; resumed?: Pick<ExecuteDraft, "triggerBasis" | "triggerContext"> } | null>(null);
   const [readAt, setReadAt] = useState("");
   const sceneLocationReady = useRef(false);
   useEffect(() => {
@@ -135,14 +142,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const [pending, setPending] = useState<J4PendingCommand[]>([]);
   const [proposals, setProposals] = useState<J4PendingProposal[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>>([]);
-  const [releasingLegacy, setReleasingLegacy] = useState<ReturnType<typeof listJ4LegacyCommands>[number] | null>(null);
+  const release = useVerifiedRelease(toast);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [verifiedProposals, setVerifiedProposals] = useState<Record<string, A2OperationRow>>({});
   const [queue, setQueue] = useState<A2OperationRow[]>([]);
   const [queueFailed, setQueueFailed] = useState(false);
-  /** 按原请求查过、后端明确没有这张申请的记录（过期后可以确认解除）。 */
-  const [absent, setAbsent] = useState<Record<string, true>>({});
-  const [releasing, setReleasing] = useState<J4PendingProposal | null>(null);
+  useSyncExternalStore(jEmergencyRecovery.subscribe, jEmergencyRecovery.getRevision, jEmergencyRecovery.getRevision);
   /** 按原请求查到的结论只用来给运营看；解除与否由 queryJ4Command 按后端结论决定。 */
   const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
   const [checking, setChecking] = useState<string | null>(null);
@@ -152,7 +157,16 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const [partial, setPartial] = useState<Record<string, true>>({});
   const current = useRef({ data, contentLoading, contentError, authorities });
   current.current = { data, contentLoading, contentError, authorities };
-  const activeConfirmation = useRef<{ slot: string; restored: boolean } | null>(null);
+  const activeConfirmation = useRef<{ slot: string; commandKey?: string } | null>(null);
+  const closeOriginalConfirm = (record: SlotAttemptRecord) => {
+    const active = activeConfirmation.current;
+    if (active?.slot !== record.fingerprint || active.commandKey !== record.commandKey) return;
+    activeConfirmation.current = null;
+    openActionConfirm(null);
+  };
+  const authoringDrafts = useTerminalDrafts<TerminalDraft<Record<string, string>>>();
+  const executionDrafts = useRef(new Map<string, Pick<ExecuteDraft, "triggerBasis" | "triggerContext">>());
+  const executeDraftKey = (code: string, emergency: boolean) => `${session?.adminId}:${code}:${emergency}`;
   const formSequence = useRef(0);
   const syncPending = () => {
     setPending(listJ4PendingCommands());
@@ -165,31 +179,33 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     delete next[key];
     return next;
   });
+  const observeProposal = (record: J4PendingProposal, row: A2OperationRow) => {
+    setNotes(previous => { const next = { ...previous }; delete next[record.commandKey]; return next; });
+    setVerifiedProposals(previous => ({ ...previous, [record.commandKey]: row }));
+    setQueue(previous => previous.filter(ticket => ticket.id !== row.id));
+    if (row.status !== "pending") {
+      const { playbook, emergency, fields } = record.sopProposal.context;
+      const key = executeDraftKey(playbook.code, emergency);
+      if (row.status !== "approved") executionDrafts.current.set(key, { triggerBasis: fields.triggerBasis, triggerContext: fields.triggerContext });
+      closeOriginalConfirm(record);
+    }
+  };
   const queryProposal = async (record: J4PendingProposal) => {
     forgetObservation(record.commandKey);
-    setAbsent(({ [record.commandKey]: _found, ...rest }) => rest);
     try {
       const row = await queryJ4Proposal(record);
       if (row) {
-        setAbsent(({ [record.commandKey]: _found, ...rest }) => rest);
-        setVerifiedProposals((previous) => ({ ...previous, [record.commandKey]: row }));
+        observeProposal(record, row);
         if (row.status !== "pending") {
           toast(J4_PROPOSAL_END[row.status], row.status === "approved" ? "success" : "warn");
-          openActionConfirm(null);
-          activeConfirmation.current = null;
           await actions.reloadJEmergency();
         }
-      } else {
-        setAbsent((previous) => ({ ...previous, [record.commandKey]: true }));
-        noteError(record.commandKey, new Error("A2_PROPOSAL_NOT_FOUND"));
-      }
-      syncPending();
+      } else noteError(record.commandKey, new Error("A2_PROPOSAL_NOT_FOUND"));
       return row;
     } catch (error) {
       noteError(record.commandKey, error);
-      syncPending();
       return null;
-    }
+    } finally { syncPending(); }
   };
   useEffect(() => {
     syncPending();
@@ -213,39 +229,26 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, contentLoading, contentError, session?.authorities]);
   useEffect(() => {
-    if (!contentLoading) return;
-    setEditor(null);
-    setPrepare(null);
-    const confirmation = activeConfirmation.current;
-    if (confirmation && !confirmation.restored && !listJ4PendingCommands().some((row) => row.fingerprint === confirmation.slot)
-      && !listJ4PendingProposals().some((row) => row.fingerprint === confirmation.slot)) {
-      openActionConfirm(null);
-      activeConfirmation.current = null;
-    }
-  }, [contentLoading, openActionConfirm]);
-  useEffect(() => {
     const expiry = Math.min(...[...pending, ...proposals, ...legacy].filter((record) => !isRetryExpired(record)).map((record) => record.expiresAt));
     if (!Number.isFinite(expiry)) return;
     const timer = window.setTimeout(() => {
       const confirmation = activeConfirmation.current;
       const saved = [...listJ4PendingCommands(), ...listJ4PendingProposals(), ...listJ4LegacyCommands()].find((record) => record.fingerprint === confirmation?.slot);
-      if (saved && isRetryExpired(saved)) {
-        openActionConfirm(null);
-        activeConfirmation.current = null;
-      }
+      if (saved && isRetryExpired(saved)) closeOriginalConfirm(saved);
       syncPending();
     }, Math.max(0, expiry - Date.now()));
     return () => window.clearTimeout(timer);
   }, [pending, proposals, legacy, openActionConfirm]);
 
+  function retryReadReason(context: J4CommandContext) {
+    const { data, contentLoading, contentError } = current.current;
+    if (!data || contentLoading || contentError) return READING;
+    if (data.contractVersion !== "J4_REAL_EXECUTION_V5") return NOT_READY;
+    if ("playbook" in context && !data.playbooks.some(playbook => playbook.code === context.playbook.code)) return READING;
+    if ("execution" in context && !data.executions.some(execution => execution.executionId === context.execution.executionId && execution.code === context.execution.code)) return READING;
+  }
   function canRetry(context: J4CommandContext) {
-    const grants = current.current.authorities;
-    if (context.kind === "create" || context.kind === "update" || context.kind === "drill") return grants.includes("emergency_j4_write");
-    if (!grants.includes("emergency_j4_playbook_execute")) return false;
-    if (context.kind === "rollback") return grants.includes("emergency_j1_gate_resume");
-    if (context.kind === "execute") return (grants.includes("platform_a2_write") || grants.includes("platform_a2_proposal_create"))
-      && context.playbook.seq.every((step) => !!TARGET_AUTHORITY[step.dom] && grants.includes(TARGET_AUTHORITY[step.dom]));
-    return true;
+    return !retryReadReason(context) && j4CanWrite(context, current.current.authorities);
   }
   /** 查询、结案都按原记录的出处定位；没存出处的旧记录按原槽位和当前账号查，和 queryJ4Command 一致。 */
   const investigationRecord = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }): FundCommandRecord => {
@@ -256,12 +259,13 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   /** 查到确定结论（核查确认已执行／未执行）：关掉这条原操作的框，重读页面。 */
   const finishSettled = async (saved: SlotAttemptRecord, label: string, receipt: NonNullable<Awaited<ReturnType<typeof queryJ4Command>>>) => {
     setSettled((previous) => [...previous.filter((item) => item.key !== saved.commandKey), { key: saved.commandKey, label, status: receipt.originalStatus }]);
-    if (activeConfirmation.current?.slot === saved.fingerprint) {
-      activeConfirmation.current = null;
-      openActionConfirm(null);
+    closeOriginalConfirm(saved);
+    const command = saved as Partial<J4PendingCommand>;
+    const context = command.sop?.context;
+    if (saved.commandOwnerId !== undefined && isConfirmedNonExecution(receipt)
+      && (context?.kind === "create" || context?.kind === "update")) {
+      authoringDrafts.remember(saved.commandOwnerId, saved.fingerprint, { desired: context.fields, before: context.kind === "update" ? playbookBaseline(context.playbook) : undefined });
     }
-    setEditor(null);
-    setPrepare(null);
     syncPending();
     await actions.reloadJEmergency().catch(() => undefined);
   };
@@ -304,6 +308,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return <FundCheckButtons record={investigationRecord(record)} outcome={kind === "resume" && receipt?.originalStatus === "FAILED" && !eCommandCanRequestResumeRollback(receipt) ? undefined : outcome} expired={isRetryExpired(record)} busy={busy} checking={checking === record.commandKey}
       onCheck={() => void queryOriginal(record, label)} onClose={() => setClosing({ record, label, kind, change })} />;
   };
+  const askRelease = (record: SlotAttemptRecord, operation: string, target: ReactNode) => release.ask({ operation, target, getSnapshot: jEmergencyRecovery.releaseSnapshot(record), createdAt: record.createdAt,
+    release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(record); if (released) closeOriginalConfirm(record); syncPending(); return released; } });
   const recoveryRows: FundRecoveryRow[] = pending.map((record) => {
     const context = record.sop.context;
     const label = `${operationNames[context.kind]} · ${contextName(context)}`;
@@ -311,15 +317,17 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       ? `${context.fields.scene} · ${context.fields.owner} · ${context.fields.actionSeq.split("\n").filter(Boolean).length} 步`
       : context.kind === "drill" ? `${context.playbook.seq.length} 步` : "execution" in context ? <span data-mono="">{context.execution.executionId}</span> : "";
     const expired = isRetryExpired(record);
-    const retry = !expired && canRetry(context);
+    const retry = !expired && canRetry(context) && !jEmergencyRetryBlocked(record);
+    const rejected = !!jEmergencyRecovery.state(record).replayRejection;
     return {
       key: record.commandKey, title: <span title={label}>{label}</span>, record: investigationRecord(record), outcome: outcomes[record.commandKey],
       createdAt: record.createdAt, expired, canRetry: retry, canQuery: true,
       // 记为失败、仍未知的那句由共用面板按结案框能选的结论说（含恢复核对结不了案、可按「未执行」结案）。
-      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : undefined,
+      status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : replayRejectedStatus(rejected, outcomes[record.commandKey]),
       actions: <>
         {checkButtons(record, label, context.kind, change)}
-        {retry && <Button size="sm" disabled={busy} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {rejected && <VerifiedReleaseButton disabled={busy || !!jEmergencyRecovery.state(record).busy} onClick={() => askRelease(record, operationNames[context.kind], contextName(context))} />}
       </>,
       detail: <>
         {change && <p>{"execution" in context ? <>执行 {change}</> : change}</p>}
@@ -331,17 +339,19 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   recoveryRows.push(...proposals.filter((record) => verifiedProposals[record.commandKey]?.status !== "pending").map((record): FundRecoveryRow => {
     const label = `${operationNames.execute} · ${contextName(record.sopProposal.context)}`;
     const expired = isRetryExpired(record);
-    const missing = absent[record.commandKey] && !record.sopProposal.accepted;
-    const retry = !expired && !record.sopProposal.accepted && canRetry(record.sopProposal.context);
+    const missing = jEmergencyRecovery.state(record).conclusion === "not-found";
+    const rejected = !!jEmergencyRecovery.state(record).replayRejection;
+    const retry = !expired && !record.sopProposal.accepted && canRetry(record.sopProposal.context) && !jEmergencyRetryBlocked(record);
     return {
       key: record.commandKey, title: <span title={label}>{label}</span>, createdAt: record.createdAt, expired, canRetry: retry,
       status: record.sopProposal.accepted ? { tone: "warn", label: "进度没读到", line: RECOVERY_LINE.created }
-        : missing ? expired ? { tone: "warn", label: "没有建成", line: RECOVERY_LINE.missing } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.absent }
-          : expired ? { tone: "warn", label: "结果未知", line: RECOVERY_LINE.expired } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.unknown },
+        : rejected ? RETRY_REJECTED_STATUS
+        : expired ? { tone: "warn", label: "结果未知", line: RETRY_EXPIRED_TEXT }
+          : missing ? { tone: "warn", label: "结果未知", line: RECOVERY_LINE.absent } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.unknown },
       actions: <>
         <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原结果</Button>
-        {retry && <Button size="sm" disabled={busy} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
-        {missing && expired && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>确认解除</Button>}
+        {!expired && !record.sopProposal.accepted && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(record.sopProposal.context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
+        {rejected && !record.sopProposal.accepted && <VerifiedReleaseButton disabled={busy || !!jEmergencyRecovery.state(record).busy} onClick={() => askRelease(record, operationNames.execute, contextName(record.sopProposal.context))} />}
       </>,
       detail: <>
         <p>{`${record.sopProposal.context.emergency ? "应急通道" : "常规通道"} · ${record.sopProposal.context.fields.triggerBasis} · ${record.sopProposal.context.playbook.seq.length} 步`}</p>
@@ -361,25 +371,14 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
       status: processed ? processedStatus({ expired, canRetry: false, canClose: fundInvestigationAccess(investigationRecord(record)).canSubmit, legacy: true, receipt: outcome.receipt })
         : outcome ? undefined : expired
-          ? { tone: "neutral", label: "已过期", line: "旧记录不能重试，先查询原结果；查不出结论的，核对后可以确认解除。" }
+          ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
           : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原请求，不能重试，先查询原结果。" },
       actions: <>
         {checkButtons(record, label, kind, "改版前的旧记录，没存原请求")}
-        {expired && <Button size="sm" disabled={busy} onClick={() => setReleasingLegacy(record)}>确认解除</Button>}
       </>,
       detail: notes[record.commandKey] ? <p>{notes[record.commandKey]}</p> : undefined,
     };
   }));
-  const releaseOriginal = async (record: J4PendingProposal) => {
-    setReleasing(null);
-    try {
-      if (await releaseExpiredJ4Proposal(record)) toast("已解除这条记录；需要的话可以重新发起执行申请", "success");
-      else toast("现在查到了这张申请，记录保留，请按申请状态处理", "warn");
-    } catch (error) {
-      noteError(record.commandKey, error);
-    }
-    syncPending();
-  };
   const closingOutcome = closing ? outcomes[closing.record.commandKey] : undefined;
   const closingLast = closingOutcome && "receipt" in closingOutcome ? closingOutcome.receipt?.investigation : null;
   const closingBasis = closureKnown(closingOutcome);
@@ -406,16 +405,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         onClose={() => setClosing(null)} onSubmit={submitClosure} />
       : <CommandClosureModal label={closing.label} commandKey={closing.record.commandKey} createdAt={closing.record.createdAt} offer={eCommandClosureOffer(closingOutcome, isRetryExpired(closing.record))} facts={closureFacts}
         onClose={() => setClosing(null)} onSubmit={submitClosure} />)}
-    {releasing && <ReleaseModal label={`${operationNames.execute} · ${contextName(releasing.sopProposal.context)}`}
-      explain="原申请超过 24 小时，按原请求查不到这张申请，说明它没建成。确认时会再查一次，仍查不到才解除。"
-      onCancel={() => setReleasing(null)} onConfirm={() => void releaseOriginal(releasing)} />}
-    {releasingLegacy && <ReleaseModal label={`${operationNames[legacyKind(releasingLegacy.fingerprint)]} · 改版前的旧记录`}
-      explain={<><p>改版前的旧记录没存原请求，不能重试；核查结案是另一回事，要按证据。</p><p>先到「操作记录与审批」核对原操作有没有生效。</p></>}
-      onCancel={() => setReleasingLegacy(null)} onConfirm={() => {
-        releaseExpiredJLegacyCommand(releasingLegacy);
-        setReleasingLegacy(null);
-        syncPending();
-      }} />}
+    {release.dialog}
   </>;
   const proposalRows = new Map([...queue, ...Object.values(verifiedProposals).filter((row) => row.status === "pending")].map((row) => [row.id, row]));
   const pendingProposals = [...proposalRows.values()].map((row) => {
@@ -431,6 +421,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     if (!data || newBlockedReason("POST /sop/playbooks", { kind: "create", fields: {} })) return;
     setEditor({
       mode: "create",
+      draft: (() => { const saved = authoringDrafts.get(session?.adminId, "POST /sop/playbooks"); return saved && savedPlaybookDraft(saved.desired); })(),
       scenes: (data.scenes ?? []).filter((item) => item !== "全部"),
       nameHint: "例如：监管点名快速止血",
       notifyTemplates: emergency.notifyTemplates ?? [],
@@ -488,6 +479,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     if (!canRetry(context)) return formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED");
     if (hasUnknown(slot)) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
     const code = contextCode(context);
+    if (code && listJ4LegacyCommands().some(record => {
+      const match = /^PUT \/sop\/playbooks\/([^/]+)$/.exec(record.fingerprint);
+      if (!match) return false;
+      try { return decodeURIComponent(match[1]).toUpperCase() === code.toUpperCase(); }
+      catch { return false; }
+    })) return formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING");
     if (code && listJ4PendingCommands().some((record) => {
       const saved = record.sop.context;
       if ("playbook" in saved) return saved.playbook.code === code;
@@ -515,55 +512,74 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return undefined;
   };
   const commandOptions = (slot: string, context: J4CommandContext, retained?: J4PendingCommand | J4PendingProposal): Partial<ActionConfirmReq> => {
-    activeConfirmation.current = { slot, restored: !!retained };
+    const frame = { slot, commandKey: retained?.commandKey };
+    activeConfirmation.current = frame;
     return {
       formKey: ++formSequence.current,
       getPendingReason: () => {
-        const record = listJ4PendingCommands().find((row) => row.fingerprint === slot);
-        const proposal = listJ4PendingProposals().find((row) => row.fingerprint === slot);
+        const record = listJ4PendingCommands().find(row => row.fingerprint === slot && row.commandKey === frame.commandKey);
+        const proposal = listJ4PendingProposals().find(row => row.fingerprint === slot && row.commandKey === frame.commandKey);
         return record ? JSON.parse(record.sop.body).reason : proposal ? JSON.parse(proposal.sopProposal.body).reason : undefined;
       },
-      blockedReason: retained && (!canRetry(context) || isRetryExpired(retained)) ? isRetryExpired(retained) ? RETRY_EXPIRED_TEXT : formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined,
+      getPendingRecovery: () => {
+        const record = listJ4PendingCommands().find(row => row.fingerprint === slot && row.commandKey === frame.commandKey)
+          ?? listJ4PendingProposals().find(row => row.fingerprint === slot && row.commandKey === frame.commandKey);
+        if (!record) return;
+        const state = jEmergencyRecovery.state(record);
+        return { state, expiresAt: state.expiresAt, blockedReason: retryReadReason(context) ?? jEmergencyRetryBlocked(record),
+          subscribe: jEmergencyRecovery.subscribe, getRevision: jEmergencyRecovery.getRevision,
+          query: async () => {
+            if ("sopProposal" in record) await queryProposal(record);
+            else await queryOriginal(record, operationNames[context.kind]);
+          } };
+      },
     };
   };
-  const runBackend = async (task: () => Promise<unknown>, ok: string, slot: string, context: J4CommandContext, retained?: J4PendingCommand | J4PendingProposal) => {
+  const runBackend = async (task: () => Promise<unknown>, ok: string, slot: string, context: J4CommandContext, retained?: J4PendingCommand | J4PendingProposal, consumeExecution?: () => void) => {
     const original = listJ4PendingCommands().find((row) => row.fingerprint === slot) ?? listJ4PendingProposals().find((row) => row.fingerprint === slot);
     if (retained && (!original || original.commandKey !== retained.commandKey)) {
-      openActionConfirm(null);
+      closeOriginalConfirm(retained);
       return;
     }
+    const frame = activeConfirmation.current;
+    if (original && frame?.commandKey !== original.commandKey) throw new Error("请先查询这项原操作的结果。");
     if (original && isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
-    if (original && !canRetry(context)) throw new Error("ACCESS_DENIED");
+    if (original && !canRetry(context)) throw new Error(retryReadReason(context) ?? "ACCESS_DENIED");
     if (!original) {
       const blocked = newBlockedReason(slot, context);
       if (blocked) throw new Error(blocked);
     }
+    const owner = session?.adminId;
+    const authoring = original ? undefined : authoringDrafts.get(owner, slot);
+    let proposalResult: A2OperationRow | null | undefined;
     try {
       if (original && "sop" in original) await retryJ4Command(original);
       else if (original && "sopProposal" in original) {
-        setAbsent(({ [original.commandKey]: _found, ...rest }) => rest);
-        const row = await retryJ4Proposal(original);
-        if (row) setVerifiedProposals((previous) => ({ ...previous, [original.commandKey]: row }));
+        proposalResult = await retryJ4Proposal(original);
+        if (proposalResult) observeProposal(original, proposalResult);
         else throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
       } else {
-        const row = await task();
-        if (context.kind === "execute" && row) {
-          const saved = getJ4PendingProposal(context.playbook.code);
-          if (saved) setVerifiedProposals((previous) => ({ ...previous, [saved.commandKey]: row as A2OperationRow }));
+        const writing = task();
+        if (frame?.slot === slot) frame.commandKey = context.kind === "execute" ? getJ4PendingProposal(context.playbook.code)?.commandKey : getJ4PendingCommand(slot)?.commandKey;
+        const result = await writing;
+        if (context.kind === "execute") {
+          proposalResult = result as A2OperationRow | null;
+          if (!proposalResult) throw new Error("J4_PROPOSAL_STATUS_UNAVAILABLE");
         }
       }
     } catch (error) {
       syncPending();
-      const accepted = context.kind === "execute" && getJ4PendingProposal(context.playbook.code)?.sopProposal.accepted;
+      const proposal = context.kind === "execute" ? getJ4PendingProposal(context.playbook.code) : undefined;
+      if (!original && proposal) consumeExecution?.();
+      if (!original && listJ4PendingCommands().some(row => row.fingerprint === slot)) authoringDrafts.consume(owner, slot, authoring);
+      const accepted = proposal?.sopProposal.accepted;
       if (accepted) {
-        openActionConfirm(null);
-        activeConfirmation.current = null;
+        closeOriginalConfirm(proposal);
         toast(formatAdminApiError("J4_PROPOSAL_STATUS_UNAVAILABLE", "J4_PROPOSAL_STATUS_UNAVAILABLE"), "warn");
         return;
       }
       if (original && isExplicitRejection(error)) {
-        openActionConfirm(null);
-        activeConfirmation.current = null;
+        closeOriginalConfirm(original);
         toast(displayAdminError(error), "error");
         await actions.reloadJEmergency().catch(() => undefined);
       } else if (isEmergencyOutcomeUncertain(error) || isA2OutcomeUncertainError(error)) {
@@ -579,16 +595,17 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       }
       throw error;
     }
+    authoringDrafts.consume(owner, slot, authoring);
+    if (!original) consumeExecution?.();
     syncPending();
-    activeConfirmation.current = null;
-    setEditor(null);
-    setPrepare(null);
-    if (original || retained) openActionConfirm(null);
+    if (original) closeOriginalConfirm(original);
+    else if (activeConfirmation.current === frame) activeConfirmation.current = null;
+    const resultMessage = proposalResult && proposalResult.status !== "pending" ? J4_PROPOSAL_END[proposalResult.status] : ok;
     try {
       await actions.reloadJEmergency();
-      toast(ok, "success");
+      toast(resultMessage, proposalResult && proposalResult.status !== "pending" && proposalResult.status !== "approved" ? "warn" : "success");
     } catch {
-      toast(`${ok}，但页面刷新失败，请手动刷新`, "warn");
+      toast(`${resultMessage}，但页面刷新失败，请手动刷新`, "warn");
     }
   };
   const effDrillState = (p: Playbook): "active" | "todo" | string => contractReady && unsupportedStepCount(p) === 0 && p.executionReady === true && p.drillEvidence === true && p.state === "active" && !p.draft ? "active" : "todo";
@@ -661,8 +678,23 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     onNext: (draft) => { setEditor(null); confirmEdit(p, draft); },
   });
   const editPb = (p: Playbook) => {
-    if (!p.version || newBlockedReason(`PUT /sop/playbooks/${encodeURIComponent(p.code)}`, { kind: "update", playbook: p, fields: {} })) return;
-    setEditor(editSpec(p));
+    const slot = `PUT /sop/playbooks/${encodeURIComponent(p.code)}`;
+    if (!p.version || newBlockedReason(slot, { kind: "update", playbook: p, fields: {} })) return;
+    const saved = authoringDrafts.get(session?.adminId, slot);
+    const latest = playbookBaseline(p);
+    const merged = saved?.before ? rebaseTerminalDraft(saved.before, saved.desired, latest) : undefined;
+    if (merged?.others.length && saved?.before) {
+      const labels: Record<string, string> = { name: "名称", scene: "场景", owner: "负责角色", sla: "响应时限", emergencyTrack: "应急通道",
+        actionSeq: "步骤", notifyCampaignNo: "通知活动", notifyTemplate: "通知模板", rollback: "回滚方案", drillRequired: "演练要求" };
+      const linked = ["actionSeq", "notifyCampaignNo", "notifyTemplate", "rollback", "drillRequired", "emergencyTrack"];
+      const reconfirm = merged.others.some(key => linked.includes(key))
+        && linked.some(key => saved.before![key] !== saved.desired[key]);
+      if (reconfirm) for (const key of linked) merged.value[key] = latest[key];
+      const changed = merged.others.map(key => `${labels[key]} ${saved.before![key]} → ${latest[key]}`).join("、");
+      const mine = Object.keys(saved.desired).filter(key => saved.before![key] !== saved.desired[key]).map(key => `${labels[key]} ${saved.desired[key]}`).join("、");
+      toast(`别人改过：${changed}。原拟改：${mine || "无"}。${reconfirm ? "请重新选择联动的步骤和执行设置。" : "请核对最新预案。"}`, "warn");
+    }
+    setEditor({ ...editSpec(p), draft: merged && savedPlaybookDraft(merged.value) });
   };
   const confirmEdit = (p: Playbook, draft: PlaybookDraft, retained?: J4PendingCommand) => {
     const bv = draftValue(draft);
@@ -728,19 +760,21 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   // ---------- 发起正式执行：第一步页面框，第二步共用确认框 ----------
   // 注:执行剧本不传 amplifies —— B1 前置只挂「恢复放大流出」方向;应急执行是止血方向(熔断/封锁/暂停),
   // 覆盖率低于红线时恰恰最需要执行(SOP-02 对账缺口/SOP-03 挤兑),不可被 B1 禁放行锁死(对齐 J1「熔断方向不前置 B1」)。
-  const openExecute = (p: Playbook, isEmer: boolean, draft?: ExecuteDraft) => {
+  const openExecute = (p: Playbook, isEmer: boolean, draft?: ExecuteDraft, resumed?: Pick<ExecuteDraft, "triggerBasis" | "triggerContext">) => {
     if (!executionGate(p).canExecute) return;
+    const saved = executionDrafts.current.get(executeDraftKey(p.code, isEmer));
     setPrepare({
       playbook: p,
       emergency: isEmer,
+      resumed: draft ? resumed : saved,
       draft: draft ?? {
-        triggerBasis: p.scene === "监管点名" ? "监管点名" : (p.scene === "舆情挤兑" || p.scene === "资金异常" ? "挤兑风险" : "安全事件"),
-        triggerContext: "",
+        triggerBasis: saved?.triggerBasis ?? (p.scene === "监管点名" ? "监管点名" : (p.scene === "舆情挤兑" || p.scene === "资金异常" ? "挤兑风险" : "安全事件")),
+        triggerContext: saved?.triggerContext ?? "",
         confirmed: p.seq.map(() => false),
       },
     });
   };
-  const execPb = (p: Playbook, isEmer: boolean, draft: ExecuteDraft, retained?: J4PendingProposal) => {
+  const execPb = (p: Playbook, isEmer: boolean, draft: ExecuteDraft, retained?: J4PendingProposal, resumed?: Pick<ExecuteDraft, "triggerBasis" | "triggerContext">) => {
     const businessValue: Record<string, string> = {
       triggerBasis: draft.triggerBasis,
       triggerContext: draft.triggerContext,
@@ -766,7 +800,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           <Fact k="触发依据">{draft.triggerBasis}</Fact>
           <Fact k="触发说明">{draft.triggerContext.trim()}</Fact>
         </Facts>
-        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); openExecute(p, isEmer, draft); }}>返回修改</Button></div>
+        <div className="j4-back"><Button size="sm" variant="ghost" icon={<RotateCcw size={14} aria-hidden />} disabledReason={retained || hasUnknown(slot) ? formatAdminApiError("J4_ORIGINAL_PENDING", "J4_ORIGINAL_PENDING") : undefined} onClick={() => { if (hasUnknown(slot)) return; closeConfirm(); openExecute(p, isEmer, draft, resumed); }}>返回修改</Button></div>
       </div>,
       detail: (
         <>
@@ -821,7 +855,10 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             },
           },
           target: { domain: "J", type: "playbook", id: p.code },
-        }, createJEmergencyCommandKey(), context), `${p.code} 已提交，批准后才会依次执行`, slot, context, retained);
+        }, createJEmergencyCommandKey(), context, observeProposal), `${p.code} 已提交，批准后才会依次执行`, slot, context, retained, () => {
+          const key = executeDraftKey(p.code, isEmer);
+          if (resumed && executionDrafts.current.get(key) === resumed) executionDrafts.current.delete(key);
+        });
       },
     });
   };
@@ -917,13 +954,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     const context = record.sop.context;
     if (isRetryExpired(record) || !canRetry(context)) return;
     if (context.kind === "create" || context.kind === "update") {
-      const fields = context.fields;
-      const draft: PlaybookDraft = {
-        name: fields.name, scene: fields.scene, owner: fields.owner, sla: fields.sla, slaLegacyValue: fields.sla,
-        emergencyTrack: fields.emergencyTrack, lines: fields.actionSeq.split("\n"),
-        notifyCampaignNo: fields.notifyCampaignNo, notifyTemplate: fields.notifyTemplate, notifySearch: fields.notifyTemplate,
-        rollback: fields.rollback, rollbackTemplate: "", rollbackSearch: "", drillRequired: fields.drillRequired,
-      };
+      const draft = savedPlaybookDraft(context.fields);
       if (context.kind === "create") confirmCreate(draft, record);
       else confirmEdit(context.playbook, draft, record);
     } else if (context.kind === "drill") drillPb(context.playbook, record);
@@ -999,23 +1030,36 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     </Panel>
   );
 
+  const editorReadProblem = contentError || contentLoading || !data ? READING : !contractReady ? NOT_READY : undefined;
+  const renderPage = (body: ReactNode, trace?: ReactNode) => <div className="j4-page">
+    {body}
+    {editor && <PlaybookEditor spec={editor} onClose={() => setEditor(null)} blockedReason={editorReadProblem} />}
+    {prepare && <ExecutePrepare playbook={prepare.playbook} emergency={prepare.emergency} draft={prepare.draft} blockedReason={editorReadProblem}
+      onClose={() => setPrepare(null)}
+      onNext={(draft) => {
+        const { playbook, emergency, resumed } = prepare;
+        setPrepare(null);
+        execPb(playbook, emergency, draft, undefined, resumed);
+      }} />}
+    {trace}
+  </div>;
   if (contentError) {
-    return <div className="j4-page">
+    return renderPage(<>
       {header()}
       {recovery}
       {activePanel}
       <BlockState state="error" title="当前无法确认最新状态" detail={`${contentError} 为避免误操作，控制项已隐藏。`} onRetry={reload} retrying={contentLoading} retryLabel="刷新" />
-    </div>;
+    </>);
   }
   if (!data) {
-    return <div className="j4-page">
+    return renderPage(<>
       {header()}
       {recovery}
       {activePanel}
       {contentLoading
         ? <BlockState state="loading" title="应急预案数据加载中" detail="正在读取预案、执行记录和通知活动" />
         : <BlockState state="empty" title="暂无 应急预案数据" detail="点右上角「刷新」重新读取。" />}
-    </div>;
+    </>);
   }
 
   // ---------- 结论 ----------
@@ -1205,8 +1249,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     </Fold>
   );
 
-  return (
-    <div className="j4-page">
+  return renderPage(
+    <>
       {header(createAction)}
       {recovery}
       {conclusion}
@@ -1231,11 +1275,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       {historyPanel}
       {rulesFold}
       {notifyFold}
-      {editor && <PlaybookEditor spec={editor} onClose={() => setEditor(null)} />}
-      {prepare && <ExecutePrepare playbook={prepare.playbook} emergency={prepare.emergency} draft={prepare.draft}
-        onClose={() => setPrepare(null)}
-        onNext={(draft) => { const { playbook, emergency: isEmer } = prepare; setPrepare(null); execPb(playbook, isEmer, draft); }} />}
-      <TraceDrawer execution={traceExecution} onClose={() => setTraceExecution(null)} />
-    </div>
+    </>,
+    <TraceDrawer execution={traceExecution} onClose={() => setTraceExecution(null)} />
   );
 }

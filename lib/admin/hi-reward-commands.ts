@@ -1,7 +1,7 @@
 import { h4CommandStores } from "./h4-command-store";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, A2OutcomeUncertainError } from "./a2-client";
-import { isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
-import { isExplicitRejection } from "./explicit-rejection";
+import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
+import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { growthRequest } from "./h-client";
 import { findHighOp } from "./high-ops-registry";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
@@ -76,33 +76,39 @@ function originalI6Proposal(saved: HIRewardCommand): HIRewardCommand & { payload
 }
 
 /** A POST receipt may be a historical pending response; only this authoritative lookup sets a pending marker. */
+export const i6CourseRecovery = createPendingRecovery({ ...commands, list: pendingHIRewardCommands }, {
+  capability: () => "receipt",
+  hasApproval: record => !!record.receiptKnown || record.ticketStatus === "pending",
+  canReplay: (record: HIRewardCommand) => {
+    try { return !record.receiptKnown && !i6CourseProposalPermission(record) && !!originalI6Proposal(record); } catch { return false; }
+  },
+  explicitRejectionCode,
+});
+
 export async function queryI6CourseProposal(saved: HIRewardCommand): Promise<A2OperationRow | null> {
   const record = originalI6Proposal(saved), input = record.payload.input;
-  const ticket = await fetchA2ProposalByKey(record.commandKey, true);
-  if (!ticket) {
-    if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
-    commands.remember(record.fingerprint, record.commandKey, { ...record, ticketStatus: undefined });
-    return null;
-  }
-  // 24972948 ticketMetadata returns the persisted operationCode for all command-backed I6 tickets.
-  if (!ticket.mine || ticket.obj !== input.obj || ticket.operationCode !== input.command.op
-    || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
-    throw new Error("查到的审批单和原操作对不上，请保留原记录并查询原结果。");
-  }
-  if (ticket.status === "pending") commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true, ticketStatus: "pending" });
-  else commands.forget(record.fingerprint, record.commandKey);
-  return ticket;
+  const result = await i6CourseRecovery.query(record, async () => {
+    const ticket = await fetchA2ProposalByKey(record.commandKey, true);
+    if (!ticket) {
+      if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+      return { conclusion: "not-found", ticket } as const;
+    }
+    // 24972948 ticketMetadata returns the persisted operationCode for all command-backed I6 tickets.
+    if (!ticket.mine || ticket.obj !== input.obj || ticket.operationCode !== input.command.op
+      || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
+      throw new Error("查到的审批单和原操作对不上，请保留原记录并查询原结果。");
+    }
+    return { conclusion: ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed", ticket } as const;
+  });
+  if (!result) return null;
+  if (result.ticket?.status === "pending") commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true, ticketStatus: "pending" });
+  else if (result.ticket) i6CourseRecovery.settleFromQuery(record, result.conclusion);
+  return result.ticket;
 }
 
-async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean): Promise<A2OperationRow> {
+async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean) {
   const uncertain = (message: string) => Object.assign(new OutcomeUnknownError(message), { commandKey: saved.commandKey });
-  let record = originalI6Proposal(saved);
-  if (retry || record.receiptKnown) {
-    const ticket = await queryI6CourseProposal(record);
-    if (ticket) return ticket;
-    record = originalI6Proposal(record);
-    if (record.receiptKnown) throw uncertain("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
-  }
+  const record = originalI6Proposal(saved);
   if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
   const permission = i6CourseProposalPermission(record);
   if (permission) throw new Error(permission);
@@ -112,7 +118,7 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean): Pro
     response = await guardedFetch("/api/admin/platform/audit/operations", { method: "POST", cache: "no-store",
       headers: { "Content-Type": "application/json", "Idempotency-Key": record.commandKey }, body: record.body });
     envelope = await response.json();
-  } catch { throw uncertain("结果未知，请查询原结果或按原请求重试。"); }
+  } catch { throw uncertain("结果未知，请查询原结果。"); }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || !Number.isInteger(envelope.code)
     || envelope.message !== undefined && typeof envelope.message !== "string") throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(envelope.message);
@@ -120,31 +126,33 @@ async function sendI6CourseProposal(saved: HIRewardCommand, retry: boolean): Pro
     const status = response.ok && envelope.code >= 400 && envelope.code < 500 ? envelope.code : response.status;
     const failure = Object.assign(new Error(formatAdminApiError(envelope.message, "A2_REQUEST_FAILED")), { status, backendMessage: envelope.message });
     const rejected = retry ? isExplicitRejection(failure) : isDeterministicRejection(response.status, envelope.code) && envelope.code < 500;
-    if (rejected && !unknown) { commands.forget(record.fingerprint, record.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : record }); }
+    if (rejected && !unknown) { if (!retry) commands.forget(record.fingerprint, record.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : record }); }
     throw uncertain(failure.message);
   }
   if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw uncertain("原申请的返回内容无法核实，请保留原记录并查询原结果。");
   commands.remember(record.fingerprint, record.commandKey, { ...record, receiptKnown: true });
+}
+
+async function readSubmittedI6Course(record: HIRewardCommand, observe?: (record: HIRewardCommand, ticket: A2OperationRow) => void): Promise<A2OperationRow> {
+  const uncertain = (message: string) => Object.assign(new OutcomeUnknownError(message), { commandKey: record.commandKey });
   try {
     const ticket = await queryI6CourseProposal(record);
-    if (ticket) return ticket;
+    if (ticket) { observe?.(record, ticket); return ticket; }
   } catch (error) { throw uncertain(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`); }
   throw uncertain("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
 }
 
-export function retryI6CourseProposal(record: HIRewardCommand) { return sendI6CourseProposal(record, true); }
+export async function retryI6CourseProposal(record: HIRewardCommand) {
+  await i6CourseRecovery.replay(record, record => sendI6CourseProposal(record, true));
+  return readSubmittedI6Course(record);
+}
 
-/** Only a visual confirmation may call this; direct writes never use the proposal-not-found release rule. */
-export async function releaseExpiredI6CourseProposal(saved: HIRewardCommand): Promise<void> {
-  const record = originalI6Proposal(saved);
-  if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
-  if (!isRetryExpired(record)) throw new Error("原操作仍在重试期限内，请先查询原结果。");
-  if (await queryI6CourseProposal(record)) throw new Error("已经查到原审批单，请按当前审批单处理。");
-  commands.forget(record.fingerprint, record.commandKey);
+export function releaseRejectedI6Course(record: HIRewardCommand) {
+  if (!i6CourseRecovery.releaseRejectedReplay(record)) throw new Error("原操作记录继续保留，请查询原结果。");
 }
 
 /** The complete envelope is saved before dispatch; an unresolved scope can only replay its original envelope. */
-export async function submitHIRewardCommand(scope: string, payload: Payload, form?: Record<string, string>, editValue?: string, snapshot?: I6CommandSnapshot) {
+export async function submitHIRewardCommand(scope: string, payload: Payload, form?: Record<string, string>, editValue?: string, snapshot?: I6CommandSnapshot, observe?: (record: HIRewardCommand, ticket: A2OperationRow) => void) {
   const session = useAdminAuth.getState().session;
   if (!session) throw new Error("登录已失效，请重新登录后核对原操作。");
   const previous = pendingHIRewardCommand(scope);
@@ -160,7 +168,8 @@ export async function submitHIRewardCommand(scope: string, payload: Payload, for
       commands.forget(fingerprint, key);
       throw new Error("浏览器无法保存完整原操作，本次未发送；请允许会话存储后重试。");
     }
-    return { kind: "proposal" as const, ticket: await sendI6CourseProposal(draft, false) };
+    await sendI6CourseProposal(draft, false);
+    return { kind: "proposal" as const, ticket: await readSubmittedI6Course(draft, observe) };
   }
   const original = previous?.payload ?? payload;
   const authorities = original.kind === "retire" ? ["growth_h4_wheel_pool_write"]
