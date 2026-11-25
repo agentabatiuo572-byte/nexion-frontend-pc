@@ -12,6 +12,8 @@ export type E6Pending = PendingMutationRecord & { owner: number; epoch: number; 
 export const isE6VerifiedDraft = (record: E6Pending) => record.verifiedNotExecuted === true
   || record.terminal === "rejected" || record.terminal === "withdrawn" || record.terminal === "expired";
 
+export const isE6ActiveRecord = (record: E6Pending) => !isE6VerifiedDraft(record) && record.terminal !== "approved";
+
 /** One instance also lets E5 read the phone/user locks without a second storage mirror. */
 export const e6Commands = createPendingMutationStore<E6Pending>({ storageKey: "nexion-admin-e6-commands-v2", retainExpiredRecords: true,
   isValidRecord: r => (r.absent === undefined || typeof r.absent === "boolean")

@@ -161,6 +161,7 @@ export interface EViewCtx {
   e4Loading: boolean;
   e4Error: string | null;
   e4ReadBlock?: string;
+  e4OrderWriteBlock: (operation: string) => string | undefined;
   e4Total: number;
   e4Query: E4Query;
   e4KeywordInput: string;

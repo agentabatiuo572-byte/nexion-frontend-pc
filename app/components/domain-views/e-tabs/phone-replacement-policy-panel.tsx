@@ -15,16 +15,32 @@ import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, is
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createPendingMutationStore, createPendingRecovery, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { fetchPhoneOperation, PhoneApiError } from "@/lib/admin/phone-replacement-client";
-import { canReadPolicyReceipt, parsePhonePolicy, phoneDraftError, phonePolicyValues, phoneConflictMessage, record, type PhonePolicy, type PhoneReceipt } from "@/lib/admin/phone-replacement-contract";
+import { canReadPolicyReceipt, parsePhonePolicy, phoneFields, phonePrefix, phoneDraftError, phonePolicyValues, phoneConflictMessage, record, type PhonePolicy, type PhoneReceipt } from "@/lib/admin/phone-replacement-contract";
 import { PhoneFacts, PhoneReceiptView } from "../phone-replacement-receipt";
+import { rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
 import { PROPOSAL_END } from "./e-command-check";
 type ProposalInput = Parameters<typeof createA2OperationProposal>[0];
 interface SavedProposal extends PendingMutationRecord {
     owner: number;
     input: ProposalInput;
+    baseline?: Record<string, string>;
     ticketId?: string;
     terminal?: string;
     absent?: boolean;
+}
+const policyFieldLabels = ["允许更换绑定手机", "换机最短间隔", "换机统计窗口", "窗口内换机上限"];
+function policyBaseline(policy: PhonePolicy) {
+    return Object.fromEntries(phoneFields.map(field => {
+        const value = policy[field];
+        return [phonePrefix + field, value == null ? "" : typeof value === "boolean" ? value ? "on" : "off" : String(value)];
+    }));
+}
+function originalPolicyBaseline(original: SavedProposal) {
+    if (original.baseline) return original.baseline;
+    const before = /^策略版本 \d+；允许换机：(是|否|未配置)；间隔 (\d+|未配置) 天；(\d+|未配置) 天内最多 (\d+|未配置) 次$/.exec(original.input.beforeValue);
+    if (!before) return null;
+    return Object.fromEntries(phoneFields.map((field, i) => [phonePrefix + field, before[i + 1] === "未配置" ? ""
+        : i === 0 ? before[1] === "是" ? "on" : "off" : before[i + 1]]));
 }
 const proposals = createPendingMutationStore<SavedProposal>({ storageKey: "nexion-admin-phone-policy-proposals-v1", retainExpiredRecords: true,
     isValidRecord: r => (r.absent === undefined || typeof r.absent === "boolean") && Number.isSafeInteger(r.owner) && record(r.input) && record(r.input.command) });
@@ -60,6 +76,9 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         version: number;
         before: PhonePolicy;
     } | null>(null);
+    const [otherChanges, setOtherChanges] = useState<{ key: string; label: string; before: string; after: string }[]>([]);
+    const openEditor = useRef(false);
+    openEditor.current = editor || !!confirm;
     const [ack, setAck] = useState(false), [pending, setPending] = useState<SavedProposal | null>(null);
     const [lookup, setLookup] = useState(""), [mode, setMode] = useState("id"), [type, setType] = useState("PHONE_POLICY_PUBLISH"), [receipt, setReceipt] = useState<PhoneReceipt | null>(null);
     const [queryMessage,setQueryMessage]=useState(""),[queryError,setQueryError]=useState("");
@@ -132,7 +151,8 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             operator, operatorRole: "运营人员", type: "param", amplifies: true, sos: false, roleGate: "另一位有审批权的管理员", reason: reason.trim(), sourceDomain: "E6",
             command: def.buildCommand({ values: confirm.values, expectedPolicyVersion: confirm.version }), targets: def.buildTargets!({ values: confirm.values }) };
         const key = createA2CommandKey("phone-policy-proposal"), fingerprint = `${owner}|${key}`;
-        proposals.remember(fingerprint, key, { owner, input });
+        const baseline = policyBaseline(confirm.before);
+        proposals.remember(fingerprint, key, { owner, input, baseline });
         if (!proposals.isDurablyStored(fingerprint, key)) {
             proposals.forget(fingerprint, key);
             setError("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
@@ -145,7 +165,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             const ticket = await createA2OperationProposal(input, key, true);
             if (!live.current)
                 return;
-            proposals.remember(fingerprint, key, { owner, input, ticketId: ticket.id });
+            proposals.remember(fingerprint, key, { owner, input, baseline, ticketId: ticket.id });
             if (live.current) {
                 syncPending();
                 setConfirm(null); setEditor(false);
@@ -274,16 +294,28 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
         }
     }
     async function prepareNewChange(original: SavedProposal) {
-        const latest = await refresh();
-        const saved = proposals.list().find(row => row.commandKey === original.commandKey);
-        if (!latest || !saved?.terminal || saved.terminal !== original.terminal) return;
-        if (saved.terminal !== "approved") {
-            const draft = saved.input.command.params.values;
-            if (record(draft)) {
-                setAllow(draft["E.compute.phoneBinding.allowReplacement"] === "on");
-                setValues(["minReplacementIntervalDays", "replacementWindowDays", "maxReplacementsInWindow"]
-                    .map(field => String(draft[`E.compute.phoneBinding.${field}`] ?? "")));
-            }
+        if (openEditor.current || busy || !canWrite || !original.terminal) return;
+        const saved = proposals.list().find(row => row.commandKey === original.commandKey && row.terminal === original.terminal);
+        if (!saved) return;
+        const base = saved.terminal === "approved" ? null : originalPolicyBaseline(saved);
+        const desired = saved.input.command.params.values;
+        if (saved.terminal !== "approved" && (!base || !record(desired) || !phoneFields.every(field => typeof desired[phonePrefix + field] === "string"))) {
+            setError("原申请缺少可核对的策略基线，请到操作记录与审批核对。");
+            return;
+        }
+        const latest = await refresh(true);
+        if (!latest || openEditor.current) return;
+        if (base && record(desired)) {
+            const current = policyBaseline(latest);
+            const merged = rebaseRecoveryFields(base, desired as Record<string, string>, current);
+            const display = (value: string) => value === "on" ? "开启" : value === "off" ? "关闭" : value || "未配置";
+            setOtherChanges(phoneFields.map((field, i) => {
+                const key = phonePrefix + field;
+                return { key, label: policyFieldLabels[i], before: display(base[key]), after: display(current[key]) };
+            }).filter(row => row.before !== row.after));
+            setAllow(merged[phonePrefix + phoneFields[0]] === "on");
+            setValues(phoneFields.slice(1).map(field => merged[phonePrefix + field]));
+            setEditor(true);
         }
         proposals.forget(saved.fingerprint, saved.commandKey);
         syncPending();
@@ -293,12 +325,12 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
     const recovery=pending&&<>
       {pending&&!canRecover&&<Notice tone="warn">有一次换机规则提交还没有结论，恢复处置权限后才能查看；暂不能发起新提案。</Notice>}
       {pending&&(canQueryProposal || canWrite)&&pending.ticketId&&!pending.terminal&&<Notice tone="warn" action={<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询审批结果</Button>}><p>手机换机规则的变更已提交，等待审批 · <span data-mono>{pending.ticketId}</span></p>{error&&<p role="status">{error}</p>}{message&&!error&&<p role="status">{message}</p>}</Notice>}
-      {pending&&(canQueryProposal || canWrite)&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?`换机规则审批${PROPOSAL_END[pending.terminal]?.tag ?? "已结束"}`:retryRejectedKey===pending.commandKey?"按原请求重试被拒绝":"换机规则提交结果未知"} actionBelow action={<>{!pending.terminal&&canQueryProposal&&<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询原结果</Button>}{!pending.ticketId&&!recoveryState?.expired&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy || !!recoveryState?.replayBlock} onClick={()=>void retryOriginal()}>按原请求重试</Button>}{(retryRejectedKey===pending.commandKey&&!pending.ticketId)&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除原操作记录</Button>}{pending.terminal&&<Button size="sm" disabled={busy} onClick={()=>void prepareNewChange(pending)}>准备新变更</Button>}</>}>
+      {pending&&(canQueryProposal || canWrite)&&(!pending.ticketId||pending.terminal)&&<Notice tone={pending.terminal?"done":"warn"} title={pending.terminal?`换机规则审批${PROPOSAL_END[pending.terminal]?.tag ?? "已结束"}`:retryRejectedKey===pending.commandKey?"按原请求重试被拒绝":"换机规则提交结果未知"} actionBelow action={<>{!pending.terminal&&canQueryProposal&&<Button size="sm" disabled={busy} onClick={()=>void checkProposal()}>查询原结果</Button>}{!pending.ticketId&&!recoveryState?.expired&&canWrite&&retryRejectedKey!==pending.commandKey&&<Button size="sm" disabled={busy || !!recoveryState?.replayBlock} onClick={()=>void retryOriginal()}>按原请求重试</Button>}{(retryRejectedKey===pending.commandKey&&!pending.ticketId)&&<Button variant="primary" size="sm" onClick={()=>setReleaseKey(pending.commandKey)}>解除原操作记录</Button>}{pending.terminal&&<Button size="sm" disabled={busy || editor || !!confirm || !canWrite} onClick={()=>void prepareNewChange(pending)}>准备新变更</Button>}</>}>
       {retryRejectedKey===pending.commandKey&&!pending.terminal?<><p>拒绝原因：{error||recoveryState?.replayRejection}</p><p>核对后可以解除这条记录。</p></>:<><p>{pending.terminal?"刷新当前策略核对后，再准备新变更。":recoveryState?.expired?RETRY_EXPIRED_TEXT:"原内容和理由都已保存。不知道审批单建没建成，可以查询原结果，或按原请求重试，不会重复建单。"}</p>{error&&<p role="status">{error}</p>}</>}{message&&<p>{message}</p>}<p>提交：{formatBusinessTimeCompact(new Date(pending.createdAt).toISOString(),"—")}（{businessZone().label}）{pending.ticketId&&<> · 审批单：<span data-mono>{pending.ticketId}</span></>}</p><p>原值：{pending.input.beforeValue}</p><p>目标：{pending.input.afterValue}</p>
       <Fold title="原策略与目标策略技术记录" summary="原请求编号与原文" inset><div className="e6-fold-content"><p>理由：{pending.input.reason}</p><p>原请求编号：<code>{pending.commandKey}</code></p><pre className="e6-json">{JSON.stringify(pending.input,null,2)}</pre></div></Fold>
       </Notice>}
     </>;
-    return <Panel title="手机绑定与换机策略" icon={ArrowRightLeft} tone="role-3" sub={policy?`当前策略版本 ${policy.policyVersion??"未取得"} · 整组审批`:undefined} data-proof="e6-phone-binding" explain="四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行手机不受追溯影响。" actions={<>{policy&&<Button size="sm" disabled={loading||busy||!!confirm} onClick={()=>policy&&!unchanged?setDiscard(true):void refresh(true)}>刷新</Button>}{canWrite&&<Button size="sm" disabledReason={pending?"上一次提交还没有结论":!policy?.policyVersion?"未取得有效策略版本":undefined} onClick={()=>setEditor(true)}>修改换机规则</Button>}</>}>
+    return <Panel title="手机绑定与换机策略" icon={ArrowRightLeft} tone="role-3" sub={policy?`当前策略版本 ${policy.policyVersion??"未取得"} · 整组审批`:undefined} data-proof="e6-phone-binding" explain="四项规则一起审批、同时生效。只约束后续换机；首次绑定、同绑定恢复及已运行手机不受追溯影响。" actions={<>{policy&&<Button size="sm" disabled={loading||busy||!!confirm} onClick={()=>policy&&!unchanged?setDiscard(true):void refresh(true)}>刷新</Button>}{canWrite&&<Button size="sm" disabledReason={pending?"上一次提交还没有结论":!policy?.policyVersion?"未取得有效策略版本":undefined} onClick={()=>{setOtherChanges([]);setEditor(true);}}>修改换机规则</Button>}</>}>
       {error&&policy&&!pending&&!inDrawer&&<Notice tone="warn">{error}</Notice>}{message&&!denied&&!pending&&<Notice tone="neutral">{message}</Notice>}
       {denied?<BlockState state="denied" title="当前没有查看原结果的权限，内容已隐藏"/>:<>
         {loading?<BlockState state="loading" title="正在读取手机策略…"/>:!policy?configReadFailed?<BlockState state="empty" title="等设备配置读取成功后可用"/>:<BlockState state="error" title="策略读取失败，暂不可提交" detail={error} onRetry={()=>void refresh(true)}/>:<>
@@ -309,6 +341,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
           {recovery}{pending&&<p className="e6-help">{pending.terminal?"点「准备新变更」后才能再改。":retryRejectedKey===pending.commandKey?"解除这条记录后才能再改这组规则，所以输入框是灰的。":"这次提交有结论前不能改这组规则，所以输入框是灰的。"}</p>}
           {error&&!pending&&!confirm&&<Notice tone="warn">{error}</Notice>}
           {unchanged&&<p className="e6-help">没有修改，请先调整需要变更的规则。</p>}
+          {otherChanges.length > 0 && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={otherChanges}/></Fold>}
           <Notice tone="neutral">四项一起提交审批；按策略版本 {policy.policyVersion??"未取得"} 核对，只影响后续换机资格。</Notice>
           <Check label="允许更换绑定手机" checked={allow} disabled={blocked} onChange={e=>setAllow(e.target.checked)}/><div className="e6-form-grid">{["换机最短间隔","换机统计窗口","窗口内换机上限"].map((label,i)=><Field key={label} label={label.split("（")[0]} help={i===0?"非负整数天，0 表示不限间隔":i===1?"1–365 整数天":"1–100 整数次"} error={draftError&&(!/^\d+$/.test(values[i])||i===0&&draftError.startsWith("换机间隔")||i===1&&draftError.startsWith("滚动窗口")||i===2&&draftError.startsWith("窗口内上限"))?draftError:undefined}><NumberInput min={i===0?0:1} max={i===1?365:i===2?100:undefined} step={1} value={values[i]} disabled={blocked} unit={i===2?"次":"天"} onChange={e=>setValues(current=>current.map((v,j)=>j===i?e.target.value:v))}/></Field>)}</div>
         </Drawer>}

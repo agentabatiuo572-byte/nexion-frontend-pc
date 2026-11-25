@@ -436,6 +436,8 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   const e4ReadBlock = e4Reading || e4DetailReading ? "正在读取最新订单状态，读完才能操作"
     : e4Error ? "订单列表读取失败，重试成功后才能操作"
       : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : undefined;
+  const e4OrderWriteBlock = (operation: string) => e4ReadBlock
+    ?? (!(operation === "e4_order_refund" ? canRefundE4 : canWriteE4) ? "当前账号没有这项订单操作权限" : undefined);
   /** 汇总和流程表的数量。接口没有按组计数，11 个状态各取总数，跟着搜索词走，读不到写「—」，不挡列表和操作。
    *  换条件时先清掉旧数，新数读齐前不能当当前范围显示；切回页面的后台重读范围没变，读齐再换。 */
   const readE4Counts = useCallback(async (silent = false) => {
@@ -615,6 +617,8 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   useEffect(() => { if (tab === "E4") syncE4Pending(); }, [tab, syncE4Pending]);
   /** 先存完整原请求再发；未知时保留原框并冻结输入。旧指纹记录只查询，不另建一笔。 */
   const sendE4Proposal = async (spec: ProposeSpec, retained?: E4PendingCommand) => {
+    const block = e4OrderWriteBlock(spec.command.op);
+    if (block) throw new Error(block);
     const scope = `order|${spec.obj}`;
     if (commandAttempts.list().some(record => E4_APPROVAL_OPS.some(op => record.fingerprint === `${op}|${spec.obj}`))) {
       throw new Error("旧操作缺少完整原请求与理由，只能核对原操作，不能重新发送。");
@@ -708,8 +712,9 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       return;
     }
     if (record.expiresAt <= Date.now()) { syncE4Pending(); return; }
-    if (!(record.spec.command.op === "e4_order_refund" ? canRefundE4 : canWriteE4)) {
-      noteE4Pending(record, "这个账号已没有这项权限，请有权限的同事处理");
+    const block = e4OrderWriteBlock(record.spec.command.op);
+    if (block) {
+      noteE4Pending(record, block);
       return;
     }
     // 先核实持久副本；读取失败只停发，不能把本地故障当成原命令结案。
@@ -872,7 +877,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     e6SkuCandidates: canReadE6SkuCandidates ? e6SkuCandidateRead : { status: "forbidden" }, refreshE6SkuCandidates,
     canWriteE3, e3Proposals, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4ReadBlock, e4Total, e4Query, e4KeywordInput, e4Counts, e4CountsFailed, e4ReadAt, updateE4Query, setE4KeywordInput, clearE4Filters, refreshE4,
-    orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4InvestigationResults, e4InvestigationAccess: fundInvestigationAccess, checkE4Investigation, e4RecoveryState: e4Recovery.state, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
+    orderState, e4Pending, e4ReceiptAttempts, checkE4Receipt, e4PendingNotes, e4InvestigationResults, e4InvestigationAccess: fundInvestigationAccess, checkE4Investigation, e4RecoveryState: e4Recovery.state, e4OrderWriteBlock, e4Retrying, retryE4Pending, checkE4Pending, canQueryE4, releaseE4Pending, selOrder, e4Detail, e4DetailLoading, e4DetailError, openOrder, closeOrder,
     canReadE5, canWriteE5, canForceActivateE5, canUnbindE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Loading, e5DeviceError, e5OverviewError, e5Page, e5PageSize, e5Total,
@@ -1013,7 +1018,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         facts={mc.facts}
         statedBrief={mc.statedBrief}
         reasonPlaceholder={mc.reasonPlaceholder}
-        blockedReason={e3Confirm ? (e3Original() ? isRetryExpired(e3Original()!) ? RETRY_EXPIRED_TEXT : !e3Proposals.allowed(e3Confirm === "param-multi") ? "这个账号已没有这项权限，请有权限的同事处理" : undefined : e3Loading || e3Error || !e3Ready ? "规则和统计没有读到" : undefined) : mc.orderId ? e4ReadBlock : undefined}
+        blockedReason={e3Confirm ? (e3Original() ? isRetryExpired(e3Original()!) ? RETRY_EXPIRED_TEXT : !e3Proposals.allowed(e3Confirm === "param-multi") ? "这个账号已没有这项权限，请有权限的同事处理" : undefined : e3Loading || e3Error || !e3Ready ? "规则和统计没有读到" : undefined) : mc.orderId ? e4OrderWriteBlock(`e4_${mc.op.replaceAll("-", "_")}`) : undefined}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;

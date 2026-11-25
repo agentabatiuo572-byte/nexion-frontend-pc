@@ -30,3 +30,17 @@ export function withLegacyReplayRejection<T extends { replayRejection?: string; 
     ? { ...record, replayRejection: record.retryRejection }
     : record;
 }
+
+/** Apply only the original operator's edits to the latest authoritative values (OP-97). */
+export function rebaseRecoveryFields<T extends object>(before: T, desired: Partial<T>, latest: T): T {
+  const merged = { ...latest };
+  for (const key of Object.keys(desired) as (keyof T)[]) {
+    if (JSON.stringify(before[key]) !== JSON.stringify(desired[key])) Object.assign(merged, { [key]: desired[key] });
+  }
+  return merged;
+}
+
+export function rebaseRecoverySet<T>(before: readonly T[], desired: readonly T[], latest: readonly T[]): T[] {
+  const original = new Set(before), proposed = new Set(desired);
+  return [...new Set([...latest.filter(item => !original.has(item) || proposed.has(item)), ...desired.filter(item => !original.has(item))])];
+}

@@ -192,10 +192,11 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         const recovery = ctx.e4RecoveryState(record);
         const expired = recovery.expired;
         // 能查原提案就先查，明确查不到才重试；重试要当前还有这项写权（OP-93）。
-        const canRetry = record.spec.command.op === "e4_order_refund" ? ctx.canRefundE4 : ctx.canWriteE4;
+        const writeBlock = ctx.e4OrderWriteBlock(record.spec.command.op);
+        const canRetry = !writeBlock;
         const created = !!record.receivedTicketId || record.creationConfirmed === true;
         const needQuery = !!recovery.replayBlock;
-        const retryBlock = expired ? undefined : !canRetry ? "这个账号已没有这项权限，请有权限的同事处理" : needQuery ? "先查询原结果，明确查不到才能重试" : undefined;
+        const retryBlock = expired ? undefined : writeBlock ?? (needQuery ? "先查询原结果，明确查不到才能重试" : undefined);
         const waiting = record.proposalStatus === "pending";
         const outcome = ctx.e4InvestigationResults[record.commandKey];
         const access = ctx.e4InvestigationAccess(record);
@@ -216,7 +217,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           detail: <>
             <p>{waiting ? "批准前这单不能再操作。" : created ? "点「查询原结果」再读一次审批进度。"
               : expired ? RETRY_EXPIRED_TEXT
-              : `可能已经提交，有结果前这单不能再操作。${!expired && !canRetry ? "这个账号已没有这项权限，不能重试。" : ""}`}</p>
+              : `可能已经提交，有结果前这单不能再操作。${!expired && writeBlock ? writeBlock : ""}`}</p>
             {ctx.e4PendingNotes[record.fingerprint] && <p><KeepText text={ctx.e4PendingNotes[record.fingerprint]} phrases={["本次没有发送", "结果仍未知", "记录继续保留"]} /></p>}
           </>,
           tech: `${created ? `原请求编号 ${record.commandKey} ｜ ` : ""}${record.receivedTicketId ? `审批单 ${record.receivedTicketId} ｜ ` : ""}订单 ${record.orderNo} ｜ 理由 ${record.spec.reason}` };

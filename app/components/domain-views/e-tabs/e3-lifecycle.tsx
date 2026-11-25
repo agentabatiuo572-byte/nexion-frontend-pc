@@ -183,8 +183,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         : p.state === "unknown" ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.unknown }
           : p.state === "submitted" ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created }
             : p.state === "expired" ? { tag: "结果未知", tone: "warn" as const, line: RETRY_EXPIRED_TEXT }
-              : { tag: "已驳回", tone: "neutral" as const, line: "规则没有变化，要改请重新提交。" };
+              : { tag: PROPOSAL_END[p.terminalStatus ?? "rejected"].tag, tone: "neutral" as const, line: "规则没有变化，要改请重新提交。" };
       return { key: p.state === "pending" ? `waiting:${p.id}` : p.id, object: what(p), createdAt: p.createdAt, tag: <StatusTag tone={state.tone}>{state.tag}</StatusTag>, line: state.line,
+        note: e3Proposals.queryErrorsByKey[p.original.commandKey], noteKey: e3Proposals.queryErrorsByKey[p.original.commandKey],
         actions: p.state === "rejected" ? undefined : <>
           {query(p, p.state === "pending" ? "查询审批结果" : "查询原结果")}
           {p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy || !!recoveryState.replayBlock} onClick={() => void E3_RECOVERY.retry(p)}>按原请求重试</Button>}

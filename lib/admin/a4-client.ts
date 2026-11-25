@@ -5,7 +5,7 @@ import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, is
 import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import { explicitRejectionCode } from "./explicit-rejection";
-import { currentRecoveryActor, canCreateRecoveryProposal } from "./abe-recovery-access";
+import { currentRecoveryActor } from "./abe-recovery-access";
 import { OutcomeUnknownError } from "./outcome-classification";
 
 interface ApiResult<T> {
@@ -419,13 +419,18 @@ export const a4RegistryRecovery = createPendingRecovery(registryAttempts, {
   explicitRejectionCode,
   canReplay: attempt => {
     const rights = currentRecoveryActor(attempt.fingerprint)?.authorities ?? [];
-    return !attempt.received && !attempt.verifiedNotExecuted && rights.includes("platform_a4_read") && rights.includes("platform_a4_write")
-      && canCreateRecoveryProposal(rights);
+    return !attempt.received && !attempt.verifiedNotExecuted && rights.includes("platform_a4_read") && rights.includes("platform_a4_write");
   },
 });
 
 export function pendingA4RegistryProposal(adminId: number) {
   return registryAttempts.list().find(row => row.fingerprint === String(adminId) && !row.verifiedNotExecuted && !row.ticket);
+}
+
+export function pendingA4RegistryObject(adminId: number, eventName: string) {
+  const target = eventName.trim().toLowerCase();
+  return registryAttempts.list().find(row => row.fingerprint === String(adminId) && !row.verifiedNotExecuted
+    && row.input.obj.trim().toLowerCase() === target);
 }
 
 export function a4RegistryHistory(adminId: number) {
@@ -507,7 +512,9 @@ export async function recoverA4RegistryProposal(adminId: number, retryOriginal =
 
 async function submitRegistryProposal(actor: A4RegistryActor, action: string, op: string, type: string,
   params: Record<string, unknown> & { eventName: string }, reason: string) {
-  const previous = pendingA4RegistryProposal(actor.adminId);
+  const rights = currentRecoveryActor(actor.adminId)?.authorities ?? [];
+  if (!rights.includes("platform_a4_read") || !rights.includes("platform_a4_write")) throw new Error("FORBIDDEN");
+  const previous = pendingA4RegistryObject(actor.adminId, params.eventName) ?? pendingA4RegistryProposal(actor.adminId);
   if (previous) throw new OutcomeUnknownError("A4_REGISTRY_RESULT_UNKNOWN");
   const input: A4RegistryProposal = {
     action, obj: params.eventName, beforeValue: "—", afterValue: "—",

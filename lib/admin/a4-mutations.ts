@@ -18,7 +18,7 @@ export type A4Original =
   | { kind: "lifecycle"; schema: A4SchemaRegistration; target: Exclude<A4SchemaRegistration["lifecycleState"], "new"> }
   | { kind: "retention"; months: string; cutoff: string | null; expectedRetentionMonths?: number }
   | { kind: "redrive"; snapshot: A4H3DeadOutboxRedrivePreview };
-export type A4Command = PendingMutationRecord & { original: A4Original; reason: string; name: string; change: string; commandOrigin?: FundCommandOrigin };
+export type A4Command = PendingMutationRecord & { verifiedNotExecuted?: true; original: A4Original; reason: string; name: string; change: string; commandOrigin?: FundCommandOrigin };
 function directCommandRoute(original: A4Original) {
   if (original.kind === "retention") return null;
   return { originalMethod: original.kind === "param" ? "PATCH" as const : "POST" as const,
@@ -67,10 +67,18 @@ export const a4DirectRecovery = createPendingRecovery(commands, {
   },
   canReplay: record => {
     const rights = currentRecoveryActor(record.commandOwnerId)?.authorities ?? [];
-    return rights.includes("platform_a4_read") && rights.includes("platform_a4_write")
+    return !record.verifiedNotExecuted && rights.includes("platform_a4_read") && rights.includes("platform_a4_write")
       && (!["retention", "redrive"].includes(record.original.kind) || rights.includes("platform_a2_write"));
   },
 });
+
+function settleA4Query(saved: A4Command, conclusion: Parameters<typeof a4DirectRecovery.settleFromQuery>[1]) {
+  if (conclusion === "rejected" || conclusion === "not-executed") {
+    commands.remember(saved.fingerprint, saved.commandKey, { ...saved, verifiedNotExecuted: true });
+    return true;
+  }
+  return a4DirectRecovery.settleFromQuery(saved, conclusion);
+}
 
 async function originalA4Status(record: A4Command) {
   const original = record.original;
@@ -102,7 +110,7 @@ export async function queryA4RetentionCommand(record: A4Command, evidence?: ECom
     }
   });
   if (!result) return null;
-  a4DirectRecovery.settleFromQuery(saved, result.conclusion);
+  settleA4Query(saved, result.conclusion);
   return result.receipt;
 }
 
@@ -119,12 +127,14 @@ export async function queryA4DirectCommand(record: A4Command, evidence?: FundCom
     return { receipt, conclusion: receipt && fundCommandSettled(receipt) ? recoveryQueryConclusion(receipt.originalStatus) : "unknown" } as const;
   });
   if (!result) return { receipt: null, settled: false };
-  return { receipt: result.receipt, settled: a4DirectRecovery.settleFromQuery(saved, result.conclusion) };
+  return { receipt: result.receipt, settled: settleA4Query(saved, result.conclusion) };
 }
 
 export function useA4Commands() {
-  const [pending, setPending] = useState<A4Command[]>([]);
-  const sync = useCallback(() => setPending(commands.list()), []);
+  const [records, setRecords] = useState<A4Command[]>([]);
+  const pending = records.filter(record => !record.verifiedNotExecuted);
+  const drafts = records.filter(record => record.verifiedNotExecuted);
+  const sync = useCallback(() => setRecords(commands.list()), []);
   useEffect(sync, [sync]);
   useEffect(() => {
     const next = pending.filter(record => !isRetryExpired(record)).reduce((at, record) => Math.min(at, record.expiresAt), Infinity);
@@ -132,7 +142,7 @@ export function useA4Commands() {
     const timer = window.setTimeout(sync, Math.max(1, next - Date.now()));
     return () => window.clearTimeout(timer);
   }, [pending, sync]);
-  const find = (slot: string) => commands.list().find(record => record.fingerprint === slot);
+  const find = (slot: string) => commands.list().find(record => record.fingerprint === slot && !record.verifiedNotExecuted);
   const capture = (input: Omit<A4Command, keyof PendingMutationRecord>) => {
     const slot = a4Slot(input.original);
     if (find(slot)) throw new Error("A4_ORIGINAL_UNRESOLVED");
@@ -190,5 +200,9 @@ export function useA4Commands() {
   const send = (record: A4Command, retry = false) => retry
     ? a4DirectRecovery.replay(record, original => sendOriginal(original, true)).finally(sync)
     : sendOriginal(record, false);
-  return { pending, find, capture, send, sync };
+  const discardDraft = (draft: A4Command) => {
+    if (draft.verifiedNotExecuted) commands.forget(draft.fingerprint, draft.commandKey);
+    sync();
+  };
+  return { pending, drafts, find, capture, send, sync, discardDraft };
 }

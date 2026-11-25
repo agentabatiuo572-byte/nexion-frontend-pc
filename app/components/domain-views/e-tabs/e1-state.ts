@@ -77,7 +77,7 @@ export function e1Object(spec: ProposeSpec): string {
   return target ? `${target.type}|${target.id}` : `${spec.command.op}|${spec.obj}`;
 }
 
-export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; verifiedNotExecuted?: true; ticket?: { id: string; status: "pending" }; skuForm?: SkuForm; operator?: string; operatorRole?: string; receivedTicketId?: string; absent?: boolean; retryRejection?: string };
+export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; verifiedNotExecuted?: true; ticket?: { id: string; status: "pending" }; skuForm?: SkuForm; skuBaseline?: OpsSku; operator?: string; operatorRole?: string; receivedTicketId?: string; absent?: boolean; retryRejection?: string };
 const validProposal = (row: E1Pending) => typeof row.actorId === "string" && !!row.actorId
   && typeof row.spec?.reason === "string" && row.spec.sourceDomain === "E1"
   && typeof row.spec?.obj === "string" && typeof row.spec?.command?.op === "string"
@@ -102,9 +102,12 @@ export const e1Pending = (actorId: string) => [...e1Commands.list(), ...e1Monthl
 export const forgetE1 = (row: E1Pending) => (row.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands).forget(row.fingerprint, row.commandKey);
 
 export type E1MediaPending = PendingMutationRecord & {
-  actorId: string; skuId: string; fileName: string; size: number; mime: string; digest: string;
+  actorId: string; skuId: string; draftId?: string; draftForm?: SkuForm; fileName: string; size: number; mime: string; digest: string;
   kind: "image" | "video"; params: { domain: string; usage: string; entityType: string; entityId: string; operator: string };
 };
+export function e1MediaHasOwner(record: E1MediaPending) {
+  return record.skuId ? record.params.entityId === record.skuId : !!record.draftId && !!record.draftForm;
+}
 export const e1MediaCommands = createPendingMutationStore<E1MediaPending>({
   storageKey: "nexion-admin-e1-media-commands-v1", retainExpiredRecords: true,
   isValidRecord: row => typeof row.actorId === "string" && !!row.actorId && typeof row.fileName === "string"

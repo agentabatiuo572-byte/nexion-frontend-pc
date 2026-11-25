@@ -24,13 +24,19 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
   const record = m.pending.find(r => r.scope === scope);
   const originalKey = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (record) {
-      originalKey.current = record.commandKey;
-    } else if (m.records.some(item => item.commandKey === originalKey.current && isE6VerifiedDraft(item))) {
+    const key = originalKey.current;
+    const settlement = key && m.settledByKey[key];
+    if (settlement) {
+      originalKey.current = undefined;
+      if (settlement.outcome === "succeeded" && onRecovered) void onRecovered(settlement.result);
+      else props.onClose();
+    } else if (key && m.records.some(item => item.commandKey === key && isE6VerifiedDraft(item))) {
       originalKey.current = undefined;
       props.onClose();
+    } else if (record && !key) {
+      originalKey.current = record.commandKey;
     }
-  }, [record, m.records, props.onClose]);
+  }, [record, m.records, m.settledByKey, props.onClose, onRecovered]);
   const rejected = !!record && m.rejected.includes(record.commandKey);
   const refusalMessage = refusal?.message ?? refused;
   const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。"
@@ -62,6 +68,7 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
     getPendingReason={props.getPendingReason ?? (() => m.pendingReason(scope))}
     blockedReason={blockedReason} confirmLabel={unknown ? "按原请求重试" : props.confirmLabel}
     onConfirm={async (...args) => {
+      if (originalKey.current && m.settledByKey[originalKey.current]) return;
       setUnknown(false);
       try {
         if (unknown && record && onRecovered) {

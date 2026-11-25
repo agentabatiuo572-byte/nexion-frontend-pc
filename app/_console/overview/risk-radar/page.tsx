@@ -1,5 +1,5 @@
 "use client";
-import { nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
+import { nextRecoveryDeadline, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
 
 /**
  * B5 风险提醒。先答「现在哪一项在报警、有多严重、去哪页处理」：一句结论，有事的项展开成卡片排在前面，
@@ -34,7 +34,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, b5Recovery, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
-import { bThresholdRecovery, pendingThresholdConfigApproval, submitB5ThresholdApproval } from "@/lib/admin/withdrawal-config-approval";
+import { bThresholdRecovery, discardThresholdRecoveryDraft, pendingThresholdConfigApproval, submitB5ThresholdApproval, thresholdRecoveryDrafts } from "@/lib/admin/withdrawal-config-approval";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
@@ -98,6 +98,8 @@ interface B5PendingCommand {
   onRetry?: () => void;
   onRelease?: () => void;
   onQuery?: () => void;
+  onRestore?: () => void;
+  verified?: true;
 }
 
 function PendingCommands({ items, auditReachable }: { items: readonly B5PendingCommand[]; auditReachable: boolean }) {
@@ -108,12 +110,13 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b5-row-actions">
             {item.onQuery && <Button size="sm" onClick={item.onQuery}>查询原结果</Button>}
+            {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
             {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原请求重试</Button>}
             {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
             {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
           </span>}>
           <p>{item.body}</p>
-          <p>{item.expired ? RETRY_EXPIRED_TEXT : "24 小时内只能按原请求重试，不能改值。"}</p>
+          {!item.verified && <p>{item.expired ? RETRY_EXPIRED_TEXT : "24 小时内只能按原请求重试，不能改值。"}</p>}
         </Notice>
       ))}
     </>
@@ -140,6 +143,7 @@ export default function RiskRadarPage() {
   const [preview, setPreview] = useState<{ light: string; key: string } | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [thresholdError, setThresholdError] = useState("");
+  const [otherThresholdChanges, setOtherThresholdChanges] = useState<string[]>([]);
   const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(null);
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [subscription, setSubscription] = useState({ inApp: true, email: false, webhook: false, webhookUrl: "" });
@@ -180,7 +184,6 @@ export default function RiskRadarPage() {
   const [subscriptionNeedsRead, setSubscriptionNeedsRead] = useState(false);
   const [inboxNeedsRead, setInboxNeedsRead] = useState(false);
   const [approvalVerifiedKey, setApprovalVerifiedKey] = useState<string | null>(null);
-  const [verifiedDraft, setVerifiedDraft] = useState<{ yellowPct: number; redPct: number }>();
   const [releasingApproval, setReleasingApproval] = useState(false);
   const [releasingWrite, setReleasingWrite] = useState<B5PendingWrite | null>(null);
   useSyncExternalStore(bThresholdRecovery.subscribe, bThresholdRecovery.getRevision, () => 0);
@@ -267,8 +270,8 @@ export default function RiskRadarPage() {
         // 待审批条和读取失败块都在页面上，自动核对不再弹提示。
         if (alive && result?.activeReadFailed) setNeedsFreshRadar(true);
         if (alive && result && result.ticket.status !== "pending") {
-          if (!result.activeReadFailed && ["rejected", "withdrawn", "expired"].includes(result.ticket.status)) setVerifiedDraft(pendingApproval.values);
-          setThreshold(null); setApprovalRecovery(null); setNeedsFreshRadar(true); void radar.reload();
+          if (approvalRecovery) { setThreshold(null); setApprovalRecovery(null); }
+          setNeedsFreshRadar(true); void radar.reload();
         }
       })
       .catch((cause) => { if (alive) setThresholdError(displayAdminError(cause)); })
@@ -423,7 +426,9 @@ export default function RiskRadarPage() {
       setTriaging(null);
     }
   };
-  const openThreshold = () => {
+  const openThreshold = (draft?: ReturnType<typeof thresholdRecoveryDrafts<"B5">>[number]) => {
+    if (draft && (threshold || pendingApproval || !draft.b5Facts || !session || !canThreshold || newWriteBlocked || !data)) return;
+    setOtherThresholdChanges([]);
     if (pendingApproval) {
       setYellowInput(String(pendingApproval.values.yellowPct));
       setRedInput(String(pendingApproval.values.redPct));
@@ -435,9 +440,20 @@ export default function RiskRadarPage() {
       const saved = pendingWrites.find(record => record.fingerprint === THRESHOLD_SLOT);
       if (saved) { recoverWrite(saved); return; }
       if (!canThreshold || newWriteBlocked || !data) return;
-      setYellowInput(String(verifiedDraft?.yellowPct ?? data.bankrun.yellowPct));
-      setRedInput(String(verifiedDraft?.redPct ?? data.bankrun.redPct));
-      setVerifiedDraft(undefined);
+      const latest = data.bankrun;
+      const merged = draft?.b5Facts ? rebaseRecoveryFields(draft.b5Facts,
+        { yellowPct: draft.values.yellowPct, redPct: draft.values.redPct }, latest) : latest;
+      setYellowInput(String(merged.yellowPct));
+      setRedInput(String(merged.redPct));
+      if (draft?.b5Facts && session) {
+        const before = draft.b5Facts;
+        setOtherThresholdChanges([
+          before.yellowPct !== latest.yellowPct && `黄线 ${fmtConfigPct(before.yellowPct)} → ${fmtConfigPct(latest.yellowPct)}`,
+          before.redPct !== latest.redPct && `红线 ${fmtConfigPct(before.redPct)} → ${fmtConfigPct(latest.redPct)}`,
+        ].filter((value): value is string => !!value));
+        discardThresholdRecoveryDraft("B5", session.adminId, draft.commandKey);
+        syncPending(value => value + 1);
+      }
       setReason("");
       setApprovalRecovery(null);
       setThresholdOriginal(null);
@@ -453,8 +469,8 @@ export default function RiskRadarPage() {
       setApprovalVerifiedKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
       setToast(result?.acknowledgement ?? "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
       if (result) {
-        if (!result.activeReadFailed && ["rejected", "withdrawn", "expired"].includes(result.ticket.status)) setVerifiedDraft(pendingApproval.values);
-        setThreshold(null); setNeedsFreshRadar(true); await radar.reload();
+        if (approvalRecovery) { setThreshold(null); setApprovalRecovery(null); }
+        setNeedsFreshRadar(true); await radar.reload();
       }
       else setApprovalRecovery("retry");
     } catch (cause) { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
@@ -584,6 +600,12 @@ export default function RiskRadarPage() {
       expired: isRetryExpired(record), onRetry: recovery.replayBlock ? undefined : () => recoverWrite(record), onQuery: () => void queryWrite(record) };
   });
 
+  if (session) for (const draft of thresholdRecoveryDrafts("B5", session.adminId)) pendingItems.push({
+    commandKey: draft.commandKey, title: "提高红线的审批 · 未执行",
+    body: `黄线 ${fmtConfigPct(draft.values.yellowPct)} · 红线 ${fmtConfigPct(draft.values.redPct)}`,
+    expired: false, verified: true, onRestore: draft.b5Facts && canThreshold ? () => openThreshold(draft) : undefined,
+  });
+
   // ---------- 五项 ----------
   const { issues, quiet } = data ? buildDimensions(data) : { issues: [], quiet: [] };
   const triageButton = (key: DimensionKey, variant: "primary" | "secondary" | "ghost", size: "md" | "sm") => canTriageDimension(key)
@@ -592,7 +614,7 @@ export default function RiskRadarPage() {
       onClick={() => void triage(key)}>{TRIAGE_LABEL[key]}</Button>
     : null;
   const thresholdButton = (size: "md" | "sm") => canThreshold
-    ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} onClick={openThreshold}>调整黄线 / 红线</Button>
+    ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} onClick={() => openThreshold()}>调整黄线 / 红线</Button>
     : null;
   const approvalPending = pendingApproval?.commandKey === approvalVerifiedKey && pendingApproval?.b5Ticket?.status === "pending" ? { redPct: pendingApproval.values.redPct, ticketId: pendingApproval.b5Ticket.id } : null;
   const approvalReleasable = !!approvalRecoveryState?.replayRejection && !pendingApproval?.received && !pendingApproval?.b5Ticket;
@@ -664,7 +686,7 @@ export default function RiskRadarPage() {
         {pendingApproval && (
           <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
             action={<span className="b5-row-actions">
-              <Button size="sm" onClick={openThreshold}>查询原结果</Button>
+              <Button size="sm" onClick={() => openThreshold()}>查询原结果</Button>
               {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>解除原操作记录</Button>}
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
@@ -767,6 +789,7 @@ export default function RiskRadarPage() {
                 ? approvalReleasable ? "按原请求重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原结果」；查不到时 24 小时内可以按原请求重试，不会建第二张单。"
                 : thresholdUnknown ? "可能已经生效。可以按原请求重试，不会重复执行；也可以关掉后点「查询原结果」。" : thresholdError}</Notice>}
               {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "按原请求重试被拒绝，核对结果后可以解除原操作记录。" : "先点「查询原结果」查原审批单；查到了就不用再提交。"}</Notice>}
+              {otherThresholdChanges.length > 0 && <Notice tone="neutral" title="别人改了什么">{otherThresholdChanges.join(" · ")}</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
                 {(control) => <NumberInput {...control} aria-label="黄线（5%–50%）" unit="%" min={5} max={50} value={yellowInput} disabled={thresholdLocked} onChange={(event) => setYellowInput(event.target.value)} />}

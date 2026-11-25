@@ -25,7 +25,9 @@ export function E6ComputeConfig({ctx}:{ctx:EViewCtx}) {
     const [phone, candidatesReady] = await Promise.all([ctx.refreshE2(), ctx.refreshE6SkuCandidates()]);
     return candidatesReady && phone?.tiers.length === 5 ? phone.comparisons : undefined;
   };
-  return <E6MutationProvider key={`${session.adminId}:${epoch}`} refreshYieldBinding={refreshYieldBinding}><E6Content ctx={ctx}/></E6MutationProvider>;
+  const refreshSection = (section: E6Section) => section === "phones" ? ctx.refreshE5()
+    : section === "calibration" ? ctx.refreshE6() : ctx.refreshE2();
+  return <E6MutationProvider refreshSection={refreshSection} key={`${session.adminId}:${epoch}`} refreshYieldBinding={refreshYieldBinding}><E6Content ctx={ctx}/></E6MutationProvider>;
 }
 function E6Content({ctx}:{ctx:EViewCtx}) {
   const m=useE6Mutations(),ids=useTabIds();

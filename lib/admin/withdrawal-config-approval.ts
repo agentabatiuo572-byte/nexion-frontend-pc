@@ -11,7 +11,7 @@ import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord } from "./pending-mutation-store";
-import { canCreateRecoveryProposal, currentRecoveryActor } from "./abe-recovery-access";
+import { currentRecoveryActor } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import type { F4AmbassadorPolicyUpdate } from "./f1-client";
@@ -39,6 +39,7 @@ export const configApprovalAttempts = createPendingMutationStore<PendingMutation
   b5Facts?: B5ThresholdFacts;
   b5Ticket?: A2OperationRow;
   b5NotFound?: true;
+  bVerifiedNotExecuted?: true;
 }>({
   storageKey: "nexion-admin-withdrawal-config-proposals",
   retainExpiredRecords: true,
@@ -113,9 +114,24 @@ type ThresholdApprovalValues = {
   B5: { expectedVersion: number; yellowPct: number; redPct: number };
 };
 
+type ConfigAttempt = ReturnType<typeof attempts.list>[number];
 export function pendingThresholdConfigApproval<T extends keyof ThresholdApprovalValues>(source: T, adminId: string | number) {
-  const record = pendingConfigApproval(source, adminId);
-  if (!record) return undefined;
+  const slot = approvalSlot(source, adminId);
+  const record = attempts.list().find(row => row.fingerprint === slot && !row.bVerifiedNotExecuted);
+  return record && readThresholdAttempt(source, record);
+}
+
+export function thresholdRecoveryDrafts<T extends keyof ThresholdApprovalValues>(source: T, adminId: number) {
+  const slot = approvalSlot(source, adminId);
+  return attempts.list().filter(row => row.fingerprint === slot && row.bVerifiedNotExecuted).map(row => readThresholdAttempt(source, row));
+}
+
+export function discardThresholdRecoveryDraft(source: "B1" | "B5", adminId: number, commandKey: string) {
+  const draft = thresholdRecoveryDrafts(source, adminId).find(row => row.commandKey === commandKey);
+  if (draft) attempts.forget(draft.fingerprint, draft.commandKey);
+}
+
+function readThresholdAttempt<T extends keyof ThresholdApprovalValues>(source: T, record: ConfigAttempt) {
   const input: unknown = JSON.parse(record.input);
   const fields = source === "B1" ? ["expectedVersion", "redlinePct", "healthyPct"] : ["expectedVersion", "yellowPct", "redPct"];
   if (!Array.isArray(input) || typeof input[1] !== "string" || !input[0] || typeof input[0] !== "object"
@@ -158,6 +174,7 @@ export function pendingThresholdConfigApproval<T extends keyof ThresholdApproval
   return { ...record, values: input[0] as ThresholdApprovalValues[T], reason: input[1] };
 }
 
+const thresholdReadAuthority = { B1: "overview_b1_read", B5: "overview_b5_read" } as const;
 const thresholdWriteAuthority = { B1: "overview_b1_redline_write", B5: "overview_b5_threshold_write" } as const;
 
 export const bThresholdRecovery = createPendingRecovery(attempts, {
@@ -170,8 +187,8 @@ export const bThresholdRecovery = createPendingRecovery(attempts, {
     const original = pendingThresholdConfigApproval(source, id);
     const request = source === "B1" ? original?.b1Request : original?.b5Request;
     return !!request && original?.commandKey === record.commandKey && !original.received
-      && !original.b1Ticket && !original.b5Ticket && rights.includes(source === "B1" ? "overview_b1_read" : "overview_b5_read")
-      && rights.includes(thresholdWriteAuthority[source]) && canCreateRecoveryProposal(rights);
+      && !original.b1Ticket && !original.b5Ticket && rights.includes(thresholdReadAuthority[source])
+      && rights.includes(thresholdWriteAuthority[source]);
   },
 });
 
@@ -202,10 +219,10 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
     return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown"
       : ticket.status === "approved" ? "succeeded" : "rejected" } as const;
   });
-  let original = previous as ReturnType<typeof pendingConfigApproval>;
+  let original = previous;
   if (!original) {
     const rights = currentRecoveryActor(session.adminId)?.authorities ?? [];
-    if (!rights.includes(thresholdWriteAuthority[source]) || !canCreateRecoveryProposal(rights)) throw new Error("FORBIDDEN");
+    if (!rights.includes(thresholdReadAuthority[source]) || !rights.includes(thresholdWriteAuthority[source])) throw new Error("FORBIDDEN");
     const request = {
       action: spec.action, obj: "current", beforeValue: "—", afterValue: "—",
       operator: session.operator || session.username, operatorRole: roleLabel(session.role),
@@ -216,14 +233,14 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
     attempts.remember(slot, key, source === "B1"
       ? { input: JSON.stringify([values, reason]), b1Request: request, b1Facts: facts as B1CommandFacts | undefined }
       : { input: JSON.stringify([values, reason]), b5Request: request, b5Facts: facts as B5ThresholdFacts | undefined });
-    original = pendingConfigApproval(source, session.adminId);
-    if (!original || !attempts.isDurablyStored(slot, key)) {
+    original = pendingThresholdConfigApproval(source, session.adminId);
+    if (original?.commandKey !== key || !attempts.isDurablyStored(slot, key)) {
       attempts.forget(slot, key);
       throw new Error("浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     }
   }
   if (mode !== "query") {
-    const post = (saved: NonNullable<typeof original>) => {
+    const post = (saved: ConfigAttempt) => {
       const request = source === "B1" ? saved.b1Request : saved.b5Request;
       if (!request) throw new Error("原审批内容不完整，请到操作记录核对。");
       return createA2OperationProposal(request, saved.commandKey, true);
@@ -243,12 +260,13 @@ async function submitThresholdApproval<T, S extends "B1" | "B5">(
   const result = await read(original);
   if (!result?.ticket) return null;
   const { ticket } = result;
-  attempts.remember(slot, key, { ...original, received: true, ...(source === "B1" ? { b1Ticket: ticket } : { b5Ticket: ticket }) });
+  attempts.remember(slot, key, { ...original, received: true, ...(source === "B1" ? { b1Ticket: ticket } : { b5Ticket: ticket }),
+    bVerifiedNotExecuted: result.conclusion === "rejected" ? true : undefined });
   let active: T | null = null;
   let activeReadFailed = false;
   try { active = await readActive(); }
   catch { activeReadFailed = true; }
-  if (!activeReadFailed) bThresholdRecovery.settleFromQuery(original, result.conclusion);
+  if (!activeReadFailed && result.conclusion === "succeeded") bThresholdRecovery.settleFromQuery(original, "succeeded");
   return { active, activeReadFailed, ticket, acknowledgement: ticket.status === "pending"
     ? `已提交审批 · 审批单 ${ticket.id}${activeReadFailed ? "；数据没读到，暂不能再改" : " · 等待另一位超级管理员批准"}`
     : `审批单 ${ticket.id} 已登记，请在操作记录查看处理结果${activeReadFailed ? "；数据没读到，暂不能再改" : ""}` };

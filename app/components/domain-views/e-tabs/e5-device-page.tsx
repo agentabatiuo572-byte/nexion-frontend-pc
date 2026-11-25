@@ -134,11 +134,12 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
     setSelectedId(null); setTotalSelected(false); setQueryError(""); setQuery(next);
   }, [query]);
   useEffect(() => { if (!ready || keyword === query.keyword) return; const timer = setTimeout(() => change({ keyword }), 300); return () => clearTimeout(timer); }, [keyword, ready, query.keyword, change]);
-  const readList = useCallback(async (successMessage?: string) => {
+  const readList = useCallback(async (successMessage?: string, preserveScreen = false) => {
     if (!ready || !ctx.canReadE5 || queryError) { setRows([]); setTotal(0); setLoading(false); return; }
-    const id = ++request.current; setLoading(true); setError(""); setRows([]);
+    const id = ++request.current;
+    if (!preserveScreen) { setLoading(true); setError(""); setRows([]); }
     try { const result = await fetchE5Devices(query); if (request.current !== id) return; setRows(result.records); setTotal(result.total); setReadAt(Date.now()); setSelectedId(current => result.records.some(row => row.deviceId === current) ? current : null); return result.records; }
-    catch (cause) { if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied(); if (request.current === id) { setRows([]); setTotal(0); setError(`${successMessage ? `${successMessage}，最新设备状态暂时读不到。` : ""}${displayAdminReadError(cause)}`); setSelectedId(null); } }
+    catch (cause) { if (cause instanceof Error && "status" in cause && (cause.status === 401 || cause.status === 403)) announcePermissionDenied(); if (request.current === id && !preserveScreen) { setRows([]); setTotal(0); setError(`${successMessage ? `${successMessage}，最新设备状态暂时读不到。` : ""}${displayAdminReadError(cause)}`); setSelectedId(null); } }
     finally { if (request.current === id) setLoading(false); }
   }, [ready, ctx.canReadE5, query, queryError]);
   const readOverview = useCallback(async () => {
@@ -177,7 +178,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   }, [activityOpen, activityVersion, actor, epoch, ctx.canReadE5]);
   const refresh = async (successMessage?: string) => { await Promise.all([readList(successMessage), readOverview()]); if (activityOpen) setActivityVersion(value => value + 1); };
   const readBack = async (record: import("@/lib/admin/e5-command").E5Command) => {
-    const [fresh] = await Promise.all([readList(), readOverview()]);
+    const [fresh] = await Promise.all([readList(undefined, true), readOverview()]);
     if (!fresh) return "最新设备列表未读到，请重试读取；原记录继续保留。";
     const matches = fresh.filter(row => record.intent === "pause" || record.intent === "resume" ? row.userId === record.device.userId : row.deviceId === record.device.deviceId);
     return matches.length ? `已读到：${matches.map(row => `${row.serial} · ${e5StateNote(row).label ?? E5_STATES[row.simState!].label}`).join("；")}。当前列表状态不能单独确认原操作结果，请结合操作记录与审批核对。` : "已读取当前列表，原对象不在当前页或筛选结果中。请清除筛选核对；原记录继续保留。";
@@ -201,7 +202,7 @@ export function E5DevicePage({ ctx }: { ctx: EViewCtx }) {
   const layout = pageLayout ?? tableLayout;
   if (pageLayout && (pageLayout.noRange !== tableLayout?.noRange || pageLayout.noTask !== tableLayout?.noTask)) setTableLayout(pageLayout);
   return <RdPage><PageHeader pageId="E5" title="设备管理" summary={roleReadOnly || simOff ? "查看用户设备的运行状态和本月到账。" : "看用户设备运行、到账，处理激活和停用。"} meta={readAt ? <>{businessClock(readAt)} 读取 · {businessZoneText()}<Explain label="数据时间说明" content="打开、筛选和点「刷新」时读取，不自动刷新。" /></> : undefined} readOnly={simOff ? "任务已关闭，本页只读" : roleReadOnly ? "当前账号只能查看设备" : undefined} actions={<Button icon={<RefreshCw size={14} />} disabled={loading || overviewLoading} onClick={() => void refresh()}>刷新</Button>} />
-    {!ctx.canReadE5 ? <BlockState state="denied" title="没有查看设备的权限" /> : <E5CommandScope refresh={refresh} readBack={readBack} toast={ctx.toast}>
+    {!ctx.canReadE5 ? <BlockState state="denied" title="没有查看设备的权限" /> : <E5CommandScope ctx={ctx} refresh={refresh} readBack={readBack} toast={ctx.toast}>
       <Panel plain className="e5-summary" aria-label="用户设备概览与状态分布">
       {overview?.total !== 0 && <Conclusion state={overviewError || attentionTotal ? "warn" : overview ? "neutral" : "unknown"} icon={Boxes} explain={<><p>这里是用户通过购买、置换、试用转正、赠送得到的设备，不含手机。</p><p>手机在{reach("/devices/compute-config", "device_e5_read") ? <Link href="/devices/compute-config">手机算力配置</Link> : "手机算力配置"}的用户手机里。统计不随筛选变。</p><p>等待启动含待激活、等待初始化、旧任务未结清，后两者点「激活」解决不了。</p><p>其他含等待配置、已暂停、停用中、已解绑、出错重试中、任务已关闭。</p></>}>
         {overviewLoading ? "正在读取用户设备概览…" : overview ? simOff ? `任务已关闭，${overview.total} 台用户设备仅可查看` : overview.total ? `${overview.total} 台用户设备，${overview.running} 台运行中${overview.waitingActivation ? `，${overview.waitingActivation} 台等待启动` : ""}${attentionTotal ? `，${attentionTotal} 台需要处理` : ""}` : "还没有用户设备" : "暂时无法判断设备运行情况"}

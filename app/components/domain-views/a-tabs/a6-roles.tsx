@@ -18,6 +18,7 @@ import { OperationConfirmModal, useToast, type InlineOperationApproval, type Ope
 import { buildRoleMetadataPayload, PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { a6Recovery, a6GrantsProblem, rbacAuthority, rbacProposal, useRbacCommands, type A6Original, type RbacCommand } from "@/lib/admin/a6a7-mutations";
+import { rebaseRecoveryFields, rebaseRecoverySet } from "@/lib/admin/abe-recovery-access";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { canInvestigateECommand, eCommandClosureRequests, eCommandSettled, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { rbacClosureConclusions, rbacOutcomeView, rbacSettledText, type RbacOutcome } from "./rbac-recovery";
@@ -47,6 +48,7 @@ type ConfirmReq = {
   content?: ReactNode;
   run: (reason: string) => Promise<unknown>;
   getRecord: () => RbacCommand | undefined;
+  matchesCommand: (commandKey: string) => boolean;
 };
 
 /** 原请求的持久化审批观察；只有按原号查询才更新当前状态。 */
@@ -157,6 +159,10 @@ export default function A6Roles() {
   const [releasing, setReleasing] = useState<RbacCommand | null>(null);
   /** 查询原结果后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
   const [outcomes, setOutcomes] = useState<Record<string, RbacOutcome>>({});
+  const editingRef = useRef(false);
+  editingRef.current = !!(formMode || grantsOpen || confirmReq);
+  const selectedRoleRef = useRef(selectedId);
+  selectedRoleRef.current = selectedId;
   const freshOverview = useRef<A6RoleOverview | null>(null);
   const freshDetail = useRef<A6RoleDetail | null>(null);
   const busy = useRef(false);
@@ -308,6 +314,30 @@ export default function A6Roles() {
       freshDetail.current = latest; setDetail(latest); setDetailError(null);
     } catch (error) { setDetailError(displayAdminReadError(error)); throw error; }
   };
+  const closeOriginalView = (record: RbacCommand) => {
+    setConfirmReq(current => current?.matchesCommand(record.commandKey) ? null : current);
+    setReleasing(current => current?.commandKey === record.commandKey ? null : current);
+  };
+  const readAfterOriginal = async (record: RbacCommand) => {
+    const next = await refreshOverview();
+    if (!next) throw new Error("RBAC_FRESH_READ_REQUIRED");
+    if (!("role" in record.original)) return;
+    const id = record.original.role.id;
+    if (id !== selectedRoleRef.current || editingRef.current) return;
+    if (!next.roles.some(role => role.id === id)) { setSelectedId(null); return; }
+    const role = await fetchA6RoleDetail(id);
+    requireActor();
+    if (selectedRoleRef.current === id && !editingRef.current) {
+      freshDetail.current = role;
+      setDetail(role);
+      setDetailError(null);
+    }
+  };
+  const settleOriginal = (record: RbacCommand, notExecuted: boolean, ticket?: RbacCommand["ticket"]) => {
+    if (notExecuted) commands.preserveDraft(record, ticket);
+    else if (!ticket) commands.forget(record);
+    closeOriginalView(record);
+  };
   const queryOriginal = async (record: RbacCommand, announce = true) => {
     requireActor();
     queried.current.add(record.commandKey);
@@ -333,13 +363,8 @@ export default function A6Roles() {
     const keep = (outcome: RbacOutcome) => setOutcomes(all => ({ ...all, [record.commandKey]: outcome }));
     if (!ticket) {
       if (receipt && eCommandSettled(receipt)) {
-        setConfirmReq(null); setReleasing(null);
-        commands.forget(record);
-        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-        requireActor();
-        if (receipt.originalStatus !== "SUCCEEDED" && receipt.originalStatus !== "CONFIRMED_SUCCEEDED") {
-          setRecheckOriginal(record.original as A6Original);
-        }
+        settleOriginal(record, receipt.originalStatus !== "SUCCEEDED" && receipt.originalStatus !== "CONFIRMED_SUCCEEDED");
+        await readAfterOriginal(record);
         if (announce) setToast(rbacSettledText(receipt));
         return false;
       }
@@ -347,16 +372,12 @@ export default function A6Roles() {
       // Keep the original; the minimal status supplies neither its reason nor a governed conclusion.
       if (state === "REJECTED") {
         keep({ state, receipt });
-        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId, true);
         return false;
       }
       if ((!proposal || record.original.kind === "a6-status" && !record.ticket && !record.receipt)
         && (state === "SUCCEEDED" || state === "NOT_EXECUTED")) {
-        setConfirmReq(null); setReleasing(null);
-        commands.forget(record);
-        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-        requireActor();
-        if (state === "NOT_EXECUTED") setRecheckOriginal(record.original as A6Original);
+        settleOriginal(record, state === "NOT_EXECUTED");
+        await readAfterOriginal(record);
         // The historical receipt says nothing about grants made since; the reread role is the current state.
         if (announce) setToast(state !== "SUCCEEDED" ? "查到原结果：没有执行，记录已解除。"
           : record.original.kind === "a6-create" ? "查到原结果：角色已创建。"
@@ -365,27 +386,24 @@ export default function A6Roles() {
       }
       if (!proposal) {
         keep({ state: state ?? "ERROR", receipt });
-        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId, true);
         return false;
       }
       if (record.original.kind === "a6-status" && (state === "PROCESSING" || receipt)) {
         keep({ state: state ?? "ERROR", receipt });
-        await reloadCurrent(record.original.role.id, true);
         return false;
       }
-      if (record.original.kind === "a6-status") await reloadCurrent(record.original.role.id, true);
       // Start/stop without earlier ticket evidence also asked for the original result above.
       setToast(record.original.kind === "a6-status" && !record.ticket && !record.receipt
         ? "没查到审批单，也没查到原结果，原记录仍保留；请稍后再查，或在 24 小时内按原请求重试。"
         : displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false;
     }
-    setConfirmReq(null);
+    closeOriginalView(record);
     // A terminal ticket is authoritative about the decision; the current grants still require a real GET.
     let readbackFailed = false;
     if (ticket.status !== "pending") {
       try {
-        await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
-        if (["rejected", "withdrawn", "expired"].includes(ticket.status)) setRecheckOriginal(record.original as A6Original);
+        settleOriginal(record, ticket.status !== "approved", ticket);
+        await readAfterOriginal(record);
       }
       catch { readbackFailed = true; setToast(displayAdminReadError(new Error("A6_ROLE_READBACK_FAILED"))); }
     }
@@ -400,16 +418,15 @@ export default function A6Roles() {
     requireActor(original, true);
     if (busy.current) throw new Error("RBAC_OPERATION_BUSY");
     busy.current = true;
-    if (retry) { freshOverview.current = null; freshDetail.current = null; setFormMode(null); setGrantsOpen(false); }
     try {
       let result;
       try { result = await commands.send(record, retry); }
       catch (error) {
         if (!commands.saved(record.commandKey)) {
-          if (retry) setConfirmReq(null);
+          if (retry) closeOriginalView(record);
           else { needsRecheck.current = true; setRecheckOriginal(original); }
           const reads = await Promise.allSettled([
-            reloadCurrent("role" in original ? original.role.id : selectedId, !retry),
+            retry ? readAfterOriginal(record) : reloadCurrent("role" in original ? original.role.id : selectedId, true),
             ...(original.kind === "a6-grants" ? [refreshCatalogs()] : []),
           ]);
           for (const read of reads) if (read.status === "rejected") setToast(displayAdminReadError(read.reason));
@@ -431,20 +448,21 @@ export default function A6Roles() {
           } else setToast(displayAdminReadError(new Error(`A6_PROPOSAL_${ticket.status.toUpperCase()}`)));
         } catch (error) { throw new Error("A6_PROPOSAL_STATUS_UNKNOWN", { cause: error }); }
       } else {
-        try { await reloadCurrent(result.roleId); }
+        closeOriginalView(record);
+        try { await readAfterOriginal(record); }
         catch (error) { setToast(new PlatformMutationReadbackError(error).message); return; }
         setToast(original.kind === "a6-create" ? "角色已创建，还没有任何权限" : "已保存");
       }
     } finally { busy.current = false; }
   };
-  const openOperation = (original: A6Original, view: Omit<ConfirmReq, "run" | "getRecord">, recovery?: RbacCommand) => {
+  const openOperation = (original: A6Original, view: Omit<ConfirmReq, "run" | "getRecord" | "matchesCommand">, recovery?: RbacCommand) => {
     if (!recovery) {
       try { requireNew(original); }
       catch (error) { setToast(displayAdminError(error)); return; }
     }
     let saved = recovery;
     const getRecord = () => saved ? commands.saved(saved.commandKey) : undefined;
-    setConfirmReq({ ...view, getRecord, run: async (reason) => {
+    setConfirmReq({ ...view, getRecord, matchesCommand: key => saved?.commandKey === key, run: async (reason) => {
       try {
         if (saved && !getRecord()) throw new Error("RBAC_ORIGINAL_REOPEN_REQUIRED");
         const retry = !!saved;
@@ -509,13 +527,15 @@ export default function A6Roles() {
     }, recovery);
   };
 
-  const openGrants = (original: Extract<A6Original, { kind: "a6-grants" }>, recovery?: RbacCommand) => {
+  const openGrants = (original: Extract<A6Original, { kind: "a6-grants" }>, recovery?: RbacCommand, previousRole?: A6RoleDetail) => {
     const d = original.role, payload = original.input, bound = original.bound;
     const permBefore = d.permissionCodes.length, menuBefore = d.menuIds.length;
     const permByCode = new Map(original.permissions.map(perm => [perm.permissionCode, perm]));
     const menuById = new Map(flattenMenus(original.menus).map(menu => [menu.id, menu]));
     const permDiff = setDiff(d.permissionCodes, payload.permissionCodes);
     const menuDiff = setDiff(d.menuIds, payload.menuIds);
+    const othersPerm = previousRole && setDiff(previousRole.permissionCodes, d.permissionCodes);
+    const othersMenu = previousRole && setDiff(previousRole.menuIds, d.menuIds);
     const addedSensitive = permDiff.added.filter((code) => permByCode.get(code)?.permType === "HIGH").length;
     const addedAmplifies = permDiff.added.filter((code) => permByCode.get(code)?.amplifies === 1).length;
     const nothing = permDiff.added.length + permDiff.removed.length + menuDiff.added.length + menuDiff.removed.length === 0;
@@ -547,6 +567,13 @@ export default function A6Roles() {
             <Notice tone="danger" title="超级管理员角色的授权不能修改，提交会被拒绝" />
           )}
           {nothing && <Notice tone="neutral" title="权限和菜单都没有改动"><p>照样会建一张审批单，批准后内容不变。</p></Notice>}
+          {othersPerm && othersMenu && (othersPerm.added.length + othersPerm.removed.length + othersMenu.added.length + othersMenu.removed.length > 0) &&
+            <Fold inset title="别人改了什么" summary="核对权限和菜单变化">
+              <PermChangeList codes={othersPerm.added} permByCode={permByCode} kind="add" />
+              <PermChangeList codes={othersPerm.removed} permByCode={permByCode} kind="remove" />
+              <MenuChangeList ids={othersMenu.added} menuById={menuById} kind="add" />
+              <MenuChangeList ids={othersMenu.removed} menuById={menuById} kind="remove" />
+            </Fold>}
           <MismatchNotice mismatch={mismatch} menuById={menuById} title="提交后权限和菜单有对不上的地方" />
           {(permDiff.added.length > 0 || permDiff.removed.length > 0) && (
             <section className="a6-diff-block" aria-label="权限改动">
@@ -575,41 +602,69 @@ export default function A6Roles() {
       const d = original.kind === "a6-update" ? original.role : null;
       const [, action, detailNode, view] = roleFormConfirmation(original.kind === "a6-create", d,
         original.kind === "a6-create" ? original.input.roleCode : original.role.roleCode,
-        original.input.roleName ?? d!.roleName, original.input.remark ?? "");
+        original.input.roleName ?? d!.roleName, original.input.remark ?? d?.remark ?? "");
       openOperation(original, { briefKind: "config", action, detail: detailNode, ...view }, record);
     }
   };
   const restoreOriginal = (record: RbacCommand) => {
     if (record.original.kind.startsWith("a6-")) showOriginal(record.original as A6Original, record);
   };
+  const openRecoveredDraft = async (record: RbacCommand) => {
+    if (!record.verifiedNotExecuted || editingRef.current || busy.current) return;
+    const original = record.original as A6Original;
+    try {
+      requireActor(original, true);
+      const latest = await refreshOverview();
+      if (!latest || editingRef.current || commands.blocked(original)) return;
+      if (original.kind === "a6-create") {
+        requireNew(original);
+        showOriginal(original);
+      } else {
+        const summary = latest.roles.find(role => role.id === original.role.id);
+        if (!summary) throw new Error("RBAC_FRESH_READ_REQUIRED");
+        const role = await fetchA6RoleDetail(original.role.id);
+        if (editingRef.current) return;
+        let next: A6Original;
+        if (original.kind === "a6-grants") {
+          if (!catalogsReady) throw new Error("A6_CATALOG_REQUIRED");
+          const beforePermissions = original.input.expectedPermissionCodes ?? original.role.permissionCodes;
+          const beforeMenus = original.input.expectedMenuIds ?? original.role.menuIds;
+          next = { ...original, role, bound: summary.adminCount, menus: menuTree, permissions: allPerms,
+            input: { ...original.input, expectedPermissionCodes: role.permissionCodes, expectedMenuIds: role.menuIds,
+              permissionCodes: rebaseRecoverySet(beforePermissions, original.input.permissionCodes, role.permissionCodes),
+              menuIds: rebaseRecoverySet(beforeMenus, original.input.menuIds, role.menuIds) } };
+        } else if (original.kind === "a6-update") {
+          next = { ...original, role, input: rebaseRecoveryFields(
+            { roleName: original.role.roleName, remark: original.role.remark ?? "" }, original.input,
+            { roleName: role.roleName, remark: role.remark ?? "" }) };
+        } else next = { ...original, role, bound: summary.adminCount };
+        freshDetail.current = role; setSelectedId(role.id); setDetail(role);
+        requireNew(next);
+        if (next.kind === "a6-grants") openGrants(next, undefined, original.role);
+        else showOriginal(next);
+      }
+      commands.forget(record);
+    } catch (error) { setToast(displayAdminError(error)); }
+  };
   useEffect(() => {
     if (!recheckOriginal || loading || !freshOverview.current || recheckOriginal.kind === "a6-grants" && !catalogsReady) return;
-    if (recheckOriginal.kind === "a6-create") {
-      needsRecheck.current = false;
-      setRecheckOriginal(null); showOriginal(recheckOriginal); return;
-    }
     const role = freshDetail.current;
-    if (!role || role.id !== recheckOriginal.role.id) return;
+    if (recheckOriginal.kind !== "a6-create" && (!role || role.id !== recheckOriginal.role.id)) return;
     setRecheckOriginal(null);
     needsRecheck.current = false;
-    const bound = freshOverview.current.roles.find(row => row.id === role.id)?.adminCount;
-    if (recheckOriginal.kind === "a6-update") showOriginal({ ...recheckOriginal, role });
-    else if (recheckOriginal.kind === "a6-grants") showOriginal({ ...recheckOriginal, role, bound, menus: menuTree, permissions: allPerms,
-      input: { ...recheckOriginal.input, expectedPermissionCodes: [...role.permissionCodes], expectedMenuIds: [...role.menuIds] } });
-    else showOriginal({ ...recheckOriginal, role, bound });
-    // Keep the existing modal mounted so the operator's reason and requested changes survive.
+    // A definitive first-submit rejection stays with the existing editor.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recheckOriginal, loading, loadedDetail, catalogsReady, menuTree, allPerms]);
+  }, [recheckOriginal, loading, loadedDetail, catalogsReady]);
   useEffect(() => {
     for (const record of commands.records) {
-      if ((record.ticket || record.receipt) && !queried.current.has(record.commandKey)) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)));
+      if (!record.verifiedNotExecuted && (record.ticket || record.receipt) && !queried.current.has(record.commandKey)) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)));
     }
     // Query persisted observations once on this mount; explicit reads can query them again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commands.records]);
 
   const readReason = loading || !overview || loadError ? displayAdminError(new Error("RBAC_FRESH_READ_REQUIRED")) : undefined;
-  const roleRecords = commands.records.filter(record => "role" in record.original && record.original.role.id === selectedId);
+  const roleRecords = commands.records.filter(record => !record.verifiedNotExecuted && "role" in record.original && record.original.role.id === selectedId);
   const writeReason = readReason ?? (roleRecords.some(record => !record.ticket) ? displayAdminError(new Error("RBAC_ORIGINAL_UNRESOLVED")) : undefined);
   const approvalReason = writeReason ?? (roleRecords.some(record => record.ticket?.status === "pending") ? displayAdminError(new Error("OBJECT_ALREADY_PENDING")) : undefined);
   useSyncExternalStore(a6Recovery.subscribe, a6Recovery.getRevision, () => 0);
@@ -618,7 +673,7 @@ export default function A6Roles() {
     return state.expired ? RETRY_EXPIRED_TEXT
       : state.replayBlock ? "先查询原结果，查不到才能重试" : undefined;
   };
-  const unknownRows: UnknownRow[] = commands.records.filter(record => !record.ticket && !record.receipt).map(record => {
+  const unknownRows: UnknownRow[] = commands.records.filter(record => !record.verifiedNotExecuted && !record.ticket && !record.receipt).map(record => {
     const expired = isRetryExpired(record);
     const original = record.original;
     const outcome = outcomes[record.commandKey];
@@ -638,10 +693,15 @@ export default function A6Roles() {
       </>,
     };
   });
+  for (const draft of commands.records.filter(record => record.verifiedNotExecuted)) unknownRows.push({
+    key: draft.commandKey, name: draft.name, change: draft.change, submittedAt: draft.createdAt,
+    tag: <StatusTag tone="neutral">未执行</StatusTag>,
+    actions: <Button variant="ghost" disabled={!!(formMode || grantsOpen || confirmReq) || loading} onClick={() => void openRecoveredDraft(draft)}>重新确认</Button>,
+  });
   const submitted: Submitted[] = commands.records.flatMap(record => {
     const original = record.original;
     const evidence = record.ticket ?? record.receipt;
-    if (!evidence || !("role" in original)) return [];
+    if (!evidence || record.verifiedNotExecuted || !("role" in original)) return [];
     return [{ ticket: evidence.id, status: record.ticket?.status, roleId: original.role.id, roleCode: original.role.roleCode, roleName: original.role.roleName,
       label: original.kind === "a6-status" ? `${original.status === 1 ? "启用" : "停用"}角色` : original.kind === "a6-delete" ? "删除角色" : "改权限和菜单",
       change: record.change, at: record.createdAt, desired: original.kind === "a6-grants" ? original.input : undefined }];
@@ -818,10 +878,9 @@ export default function A6Roles() {
             setOutcomes(all => ({ ...all, [record.commandKey]: { state: next?.businessState === "PROCESSING" ? "PROCESSING" : next?.businessState === "REJECTED" ? "REJECTED" : "UNKNOWN", receipt: next } }));
             return;
           }
-          setConfirmReq(null); setReleasing(null);
-          commands.forget(record);
+          settleOriginal(record, next.originalStatus !== "SUCCEEDED" && next.originalStatus !== "CONFIRMED_SUCCEEDED");
           setToast(rbacSettledText(next));
-          await reloadCurrent("role" in record.original ? record.original.role.id : selectedId);
+          await readAfterOriginal(record);
         }} />}
 
       {confirmReq && (

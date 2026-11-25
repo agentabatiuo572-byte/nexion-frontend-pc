@@ -34,6 +34,7 @@ export type RbacCommand = PendingMutationRecord & {
   /** A POST receipt proves creation; only ticket is the last authoritative current-state lookup. */
   receipt?: RbacTicket; ticket?: RbacTicket; proposalNotFound?: boolean;
   directRejection?: true;
+  verifiedNotExecuted?: true;
 };
 
 export const rbacProposal = (original: Original) => ["a6-status", "a6-delete", "a6-grants"].includes(original.kind);
@@ -135,7 +136,7 @@ export const a6Recovery = createPendingRecovery(a6Commands, {
   },
   canReplay: record => {
     const rights = currentRecoveryActor(record.actorId)?.authorities ?? [];
-    return !record.ticket && !record.receipt && !record.directRejection && rights.includes("platform_a6_read")
+    return !record.verifiedNotExecuted && !record.ticket && !record.receipt && !record.directRejection && rights.includes("platform_a6_read")
       && rights.includes(rbacAuthority(record.original))
       && (record.original.kind !== "a6-grants" || Array.isArray(record.original.input.expectedPermissionCodes)
         && Array.isArray(record.original.input.expectedMenuIds));
@@ -165,7 +166,7 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     return () => window.clearTimeout(timer);
   }, [records, sync]);
   const saved = (key: string) => list().find(record => record.commandKey === key);
-  const blocked = (original: Original) => list().find(record => rbacObject(record.original) === rbacObject(original)
+  const blocked = (original: Original) => list().find(record => !record.verifiedNotExecuted && rbacObject(record.original) === rbacObject(original)
     && (!record.ticket || record.ticket.status === "pending" && rbacProposal(original)));
   const capture = (original: Original, reason: string, operator: string, name: string, change: string) => {
     if (!actorId || !original.kind.startsWith(`${domain}-`)) throw new Error("RBAC_SESSION_CHANGED");
@@ -183,6 +184,12 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
     return saved(key)!;
   };
   const forget = (record: RbacCommand) => { commands.forget(record.fingerprint, record.commandKey); sync(); };
+  const preserveDraft = (record: RbacCommand, ticket?: RbacTicket) => {
+    const current = saved(record.commandKey);
+    if (!current) return;
+    commands.remember(record.fingerprint, record.commandKey, { ...current, ticket: ticket ?? current.ticket, verifiedNotExecuted: true });
+    sync();
+  };
   const requireOriginalActor = (record: RbacCommand, writing = false) => {
     const auth = useAdminAuth.getState(), session = auth.session;
     if (!auth.isAuthenticated || auth.logoutPending || auth.logoutUnknown || !session || session.passwordChangeRequired || session.adminId !== record.actorId) throw new Error("RBAC_SESSION_CHANGED");
@@ -298,5 +305,5 @@ export function useRbacCommands(domain: "a6" | "a7", actorId: number | undefined
   const send = (record: RbacCommand, retry: boolean) => retry && domain === "a6"
     ? a6Recovery.replay(record, original => sendOriginal(original, true)).finally(sync)
     : sendOriginal(record, retry);
-  return { records, sync, saved, blocked, capture, send, queryProposal, queryReceipt, queryInvestigation, forget, observe };
+  return { records, sync, saved, blocked, capture, send, queryProposal, queryReceipt, queryInvestigation, forget, observe, preserveDraft };
 }

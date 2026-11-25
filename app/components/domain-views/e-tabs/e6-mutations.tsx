@@ -12,13 +12,13 @@ import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit
 import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/outcome-classification";
 import { eDomainLegacyCommands as legacyCommands, e5LegacyCommands as legacyPhones } from "@/lib/admin/e-domain-commands";
 import { e5Commands, type E5Command } from "@/lib/admin/e5-command";
-import { e6Commands as commands, isE6VerifiedDraft, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
+import { e6Commands as commands, isE6ActiveRecord, isE6VerifiedDraft, type E6DeviceInput as DeviceInput, type E6Payload as Payload, type E6Pending, type E6Proposal, type E6Section } from "@/lib/admin/e6-command";
 import { withLegacyReplayRejection, nextRecoveryDeadline, canCreateRecoveryProposal, currentRecoveryActor, recoveryQueryConclusion } from "@/lib/admin/abe-recovery-access";
 import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { E2YieldComparison } from "@/lib/admin/e2-client";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused, fetchE5Devices } from "@/lib/admin/e5-client";
+import { activateE5Device, deactivateE5Device, setE5UserDevicesPaused } from "@/lib/admin/e5-client";
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { Button, Explain, Notice, Fold, ReleaseModal, StatusTag, Fact } from "@/app/components/rd";
@@ -32,6 +32,7 @@ export type E6WriteReceipt = {
   pendingDeactivate?: boolean;
   readbackFailed?: boolean;
   originalRiskResponse?: PhoneRiskOverview;
+  currentRiskResponse?: PhoneRiskOverview;
   proposal?: { ticketId: string; status: A2OperationRow["status"] };
 };
 /** 换绑引导对比商品时写进审批单的审批人说明。 */
@@ -70,11 +71,13 @@ type DraftEditor = { isOpen: boolean; open: (record: E6Pending) => boolean };
 const draftAction = (payload: Payload) => payload.kind === "proposal" ? payload.input.command.op
   : payload.kind === "device" ? payload.input.action : "risk";
 type RefreshYieldBinding = () => Promise<E2YieldComparison[] | undefined>;
-function useMutations(refreshYieldBinding: RefreshYieldBinding) {
+type RefreshSection = (section: E6Section) => Promise<unknown>;
+function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: RefreshSection) {
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
   const owner = session!.adminId, rights = session!.authorities;
   const [records, setRecords] = useState<E6Pending[]>([]);
-  const pending = records.filter(record => !isE6VerifiedDraft(record));
+  const pending = records.filter(isE6ActiveRecord);
+  const [settledByKey, setSettledByKey] = useState<Record<string, { outcome: "succeeded" | "not-executed"; result?: E6WriteReceipt }>>({});
   const editors = useRef(new Map<string, DraftEditor>());
   const restoredDraftKey = useRef<string | undefined>(undefined);
   const registerDraftEditor = useCallback((key: string, editor: DraftEditor) => {
@@ -113,7 +116,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
   const sync = () => {
     const saved = commands.list().filter(r => r.owner === owner);
     setRecords(saved);
-    setDevicePending(e5Commands.list().filter(r => r.actorId === String(owner)));
+    setDevicePending(e5Commands.list().filter(r => r.actorId === String(owner) && !r.verifiedNotExecuted));
     return saved;
   };
   const canPropose = rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
@@ -161,12 +164,10 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
       if (record.payload.kind === "proposal") {
         const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
         if (!ticket.mine || ticket.obj !== record.payload.input.obj) throw new Error("原提案归属无法核实，请到操作记录核对。");
-        const terminal = ticket.status === "pending" ? undefined : ticket.status;
-        commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal });
+        commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
         if (active.current) {
           sync();
-          if (!terminal) setNotes(n => ({ ...n, [record.commandKey]: "已提交，等待审批后执行。" }));
-          if (terminal && isYieldSkuProposal(record.payload)) await refreshYieldBinding();
+          setNotes(n => ({ ...n, [record.commandKey]: retry || ticket.status !== "pending" ? TICKET_UNREAD : "已提交，等待审批后执行。" }));
         }
         return { proposal: { ticketId: ticket.id, status: ticket.status } };
       }
@@ -185,8 +186,8 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
       // The write receipt settles this command before any independent readback.
       if (active.current) sync();
       try {
-        if (record.payload.kind === "device") await fetchE5Devices({ pageNum: 1, pageSize: 10, keyword: record.payload.input.serial }, true);
-        else await fetchPhoneRisk();
+        if (record.payload.kind === "device") await refreshSection("phones");
+        else writeResult = { ...writeResult, currentRiskResponse: await fetchPhoneRisk() };
       } catch {
         writeResult = { ...writeResult, readbackFailed: true };
       }
@@ -209,9 +210,17 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
       throw failure;
     } finally { sending.current = false; end(record.commandKey); }
   }
-  const send = (original: E6Pending, retry: boolean) => retry
-    ? e6Recovery.replay(original, record => sendOriginal(record, true)).finally(sync)
-    : sendOriginal(original, false);
+  async function send(original: E6Pending, retry: boolean) {
+    const result = retry
+      ? await e6Recovery.replay(original, record => sendOriginal(record, true)).finally(sync)
+      : await sendOriginal(original, false);
+    if (result?.proposal && (retry || result.proposal.status !== "pending")) {
+      const current = await check(original.commandKey, "after-submit");
+      if (!current) throw new A2OutcomeUncertainError(TICKET_UNREAD, original.commandKey);
+      return { ...result, proposal: { ticketId: current.id, status: current.status } };
+    }
+    return result;
+  }
   async function start(scope: string, section: E6Section, label: string, payload: Payload) {
     if (sending.current) throw new Error("正在提交原操作，请等结果。");
     if (isYieldSkuProposal(payload) && (!visible(section) || !canBindYieldSku)) throw new Error("当前没有这项操作的提交权限。");
@@ -237,7 +246,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
     return start(scope, section, input.action, { kind: "proposal", evidence, input: { ...input, operator: session!.operator || session!.username,
       operatorRole: roleLabel(session!.role), sos: false, roleGate: input.command.op === "e6_onboarding_yield_sku" ? E6_SKU_BINDING_ROLE_GATE : section === "tasks" ? "另一位有批准权限和任务池修改权限的管理员" : section === "tiers" ? "另一位有批准权限和对应手机收益权限的管理员" : section === "phones" ? "另一位有批准权限和对应设备处置权限的管理员" : "另一位有批准权限和手机配置读取权限的管理员" } });
   }
-  async function check(key: string, mode: "manual" | "restore" = "manual") {
+  async function check(key: string, mode: "manual" | "restore" | "after-submit" = "manual") {
     const record = currentRecord(key);
     if (!record || isE6VerifiedDraft(record) || record.payload.kind !== "proposal" || !visible(record.section) || inFlight.current.has(key)) return false;
     if (mode === "restore" && (record.terminal || !isYieldSkuProposal(record.payload))) return false;
@@ -270,10 +279,18 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
         return false;
       }
       const terminal = ticket.status === "pending" ? undefined : ticket.status;
-      commands.remember(current.fingerprint, key, { ...current, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies }, terminal }); sync();
+      const ticketFacts = { ...current, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } };
+      commands.remember(current.fingerprint, key, ticketFacts);
+      if (terminal) {
+        if (isYieldSkuProposal(record.payload)) await refreshYieldBinding();
+        else await refreshSection(record.section);
+        if (!currentRecord(key)) return false;
+      }
+      commands.remember(current.fingerprint, key, { ...ticketFacts, terminal });
+      if (terminal) setSettledByKey(values => ({ ...values, [key]: { outcome: terminal === "approved" ? "succeeded" : "not-executed" } }));
+      sync();
       setNotes(n => ({ ...n, [key]: `审批单 ${ticket.id} ${({ pending: "还在等批准", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as Record<string,string>)[ticket.status] ?? "状态待核实"}` }));
-      if (ticket.status === "approved" && isYieldSkuProposal(record.payload)) await refreshYieldBinding();
-      return false;
+      return ticket;
     } catch (failure) {
       if (unchangedRecord()) setNotes(n => ({ ...n, [key]: record.ticketId ? TICKET_UNREAD : `这次没查到：${eReadError(failure)}` }));
       return false;
@@ -284,13 +301,21 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
     sync();
     return released;
   };
-  function settleDirect(record: E6Pending, conclusion: Parameters<typeof e6Recovery.settleFromQuery>[1]) {
+  async function settleDirect(record: E6Pending, conclusion: Parameters<typeof e6Recovery.settleFromQuery>[1], originalRiskResponse?: PhoneRiskOverview) {
     const current = currentRecord(record.commandKey);
     if (!current) return;
     if (conclusion === "not-executed" || conclusion === "rejected") {
       commands.remember(current.fingerprint, current.commandKey, { ...current, verifiedNotExecuted: true });
-    } else {
+      setSettledByKey(values => ({ ...values, [record.commandKey]: { outcome: "not-executed" } }));
+    } else if (conclusion === "succeeded") {
+      const result: E6WriteReceipt = { originalRiskResponse };
+      try {
+        if (current.payload.kind === "risk") result.currentRiskResponse = await fetchPhoneRisk();
+        else await refreshSection(current.section);
+      } catch { result.readbackFailed = true; }
+      if (!currentRecord(record.commandKey)) return;
       e6Recovery.settleFromQuery(current, conclusion);
+      setSettledByKey(values => ({ ...values, [record.commandKey]: { outcome: "succeeded", result } }));
     }
     sync();
   }
@@ -327,26 +352,27 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding) {
         return { receipt, conclusion: receipt && eCommandSettled(receipt) ? recoveryQueryConclusion(receipt.originalStatus) : "unknown" } as const;
       });
       if (!result) return null;
-      settleDirect(record, result.conclusion);
+      const originalRiskResponse = result.receipt && "originalResponse" in result.receipt ? result.receipt.originalResponse ?? undefined : undefined;
+      await settleDirect(record, result.conclusion, originalRiskResponse);
       return result.receipt;
     } catch (failure) {
       if (active.current) setNotes(n => ({ ...n, [record.commandKey]: eReadError(failure) }));
       throw failure;
     } finally { if (active.current) sync(); end(record.commandKey); }
   }
-  return { records, pending, registerDraftEditor, prepareDraft, settleDirect, devicePending, legacy, busy: busyKeys.size > 0, isBusy: (key: string) => busyKeys.has(key), sending: sending.current,
+  return { records, pending, settledByKey, registerDraftEditor, prepareDraft, settleDirect, devicePending, legacy, busy: busyKeys.size > 0, isBusy: (key: string) => busyKeys.has(key), sending: sending.current,
     notes, technicalErrors, rejected: pending.filter(r => !!e6Recovery.state(r).replayRejection).map(r => r.commandKey), recovery: e6Recovery, release, setRelease, sync, locked, visible, allowed, canRetry, canPropose, canAudit, showYieldSkuActions, canBindYieldSku, proposal, start, check, releaseRejected, checkDirect, send, refreshYieldBinding,
     canInvestigate: canInvestigateECommand("device_e5_read"),
     canInvestigateRisk: canInvestigateECommand("device_e6_read"),
     device: (scope: string, label: string, input: Omit<DeviceInput, "operator">) => start(scope, "phones", label, { kind: "device", input: { ...input, operator: session!.operator || session!.username } }),
     risk: (revision: number, input: PhoneRiskUpdate) => start("risk", "calibration", "保存机型风控设置", { kind: "risk", revision, input: { ...input, reason: input.reason.trim() }, receiptVersion: 1 }),
     legacyPhoneLocked: (serial: string, deviceId: number, userId: string) => legacy.some(r => r.fingerprint.startsWith(`e5-device:${deviceId}:`) || r.fingerprint.startsWith(`e5-user:${userId}:`) || r.fingerprint.startsWith("e5_device_") && r.fingerprint.endsWith(`|${serial}`)),
-    pendingReason: (scope: string) => commands.list().find(r => r.owner === owner && r.scope === scope && !isE6VerifiedDraft(r))?.payload.input.reason,
+    pendingReason: (scope: string) => commands.list().find(r => r.owner === owner && r.scope === scope && isE6ActiveRecord(r))?.payload.input.reason,
     forget: (record: E6Pending) => { commands.forget(record.fingerprint, record.commandKey); sync(); },
   };
 }
-export function E6MutationProvider({ children, refreshYieldBinding }: { children: ReactNode; refreshYieldBinding: RefreshYieldBinding }) {
-  const mutations = useMutations(refreshYieldBinding);
+export function E6MutationProvider({ children, refreshYieldBinding, refreshSection }: { children: ReactNode; refreshYieldBinding: RefreshYieldBinding; refreshSection: RefreshSection }) {
+  const mutations = useMutations(refreshYieldBinding, refreshSection);
   return <Context.Provider value={mutations}>{children}</Context.Provider>;
 }
 export function useE6Mutations() { return useContext(Context)!; }
@@ -435,14 +461,14 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         actions: verified ? <Button size="sm" onClick={() => {
           if (!m.prepareDraft(r)) toast("暂时不能打开原草稿，请核对当前编辑和对象状态。", "warn");
         }}>准备新变更</Button> : <>
-          {r.payload.kind === "proposal" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={m.isBusy(r.commandKey)} onClick={() => void m.check(r.commandKey)}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
+          {r.payload.kind === "proposal" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={m.isBusy(r.commandKey)} onClick={() => { void m.check(r.commandKey).then(ticket => { if (ticket && ticket.status !== "pending" && section === "calibration") onRead?.(); }); }}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
           {r.payload.kind === "device" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
           {r.payload.kind === "risk" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(async receipt => {
             showRisk(r, receipt as PhoneRiskReceipt | null);
             if (r.payload.kind !== "risk" || r.payload.receiptVersion !== 1 || !receipt || ["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes((receipt as PhoneRiskReceipt).status)) return;
             try {
               const original = await discoverECommand({ commandKey: r.commandKey, originalMethod: "PUT", originalPath: "/api/admin/config/phone-calibration/risk", originalAdminId: String(r.owner) });
-              if (eCommandSettled(original)) m.settleDirect(r, recoveryQueryConclusion(original!.originalStatus));
+              if (eCommandSettled(original)) await m.settleDirect(r, recoveryQueryConclusion(original!.originalStatus));
               showDevice(r, original);
             } catch (failure) { setOutcomes(values => ({ ...values, [r.commandKey]: { error: eReadError(failure) } })); }
           }, () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}

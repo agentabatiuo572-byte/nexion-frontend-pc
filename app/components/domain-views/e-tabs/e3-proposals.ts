@@ -24,6 +24,7 @@ export type E3Proposal = PendingMutationRecord & {
   input: Input;
   state: "unknown" | "submitted" | "pending" | "rejected";
   ticketId?: string;
+  terminalStatus?: "rejected" | "withdrawn" | "expired";
 };
 
 /** One durable envelope for an entire proposal, including unchanged members of a batch. */
@@ -74,7 +75,7 @@ export function useE3Proposals() {
   const [records, setRecords] = useState<E3Proposal[]>([]);
   const [legacy, setLegacy] = useState<ReturnType<typeof eDomainLegacyCommands.list>>([]);
   const [busy, setBusy] = useState("");
-  const [queryErrors, setQueryErrors] = useState<string[]>([]);
+  const [queryErrorsByKey, setQueryErrorsByKey] = useState<Record<string, string>>({});
   useSyncExternalStore(recovery.subscribe, recovery.getRevision, () => 0);
   const sending = useRef(false);
   const canQuery = rights.some(r => ["platform_a2_read", "platform_a2_proposal_create"].includes(r));
@@ -89,7 +90,7 @@ export function useE3Proposals() {
   const locked = (keys: readonly string[]) => commands.list().some(r => r.owner === owner && r.state !== "rejected" && r.keys.some(k => keys.includes(k)))
     || eDomainLegacyCommands.list().some(r => /^e3_config(?:_batch)?\|/.test(r.fingerprint) && r.fingerprint.split("|")[1].split(",").some(k => keys.includes(k)));
 
-  async function lookup(record: E3Proposal) {
+  async function readOriginal(record: E3Proposal) {
     if (!canQuery) throw new Error("A2_PROPOSAL_READ_FORBIDDEN");
     const result = await recovery.query(record, async original => {
       const ticket = await fetchA2ProposalByKey(original.commandKey, true);
@@ -108,19 +109,34 @@ export function useE3Proposals() {
     const { ticket } = result;
     if (ticket.status === "pending" || result.conclusion === "rejected") {
       commands.remember(record.fingerprint, record.commandKey, { ...record,
-        state: ticket.status === "pending" ? "pending" : "rejected", ticketId: ticket.id });
+        state: ticket.status === "pending" ? "pending" : "rejected", ticketId: ticket.id,
+        terminalStatus: ticket.status === "withdrawn" || ticket.status === "expired" || ticket.status === "rejected" ? ticket.status : undefined });
     } else {
       recovery.settleFromQuery(record, result.conclusion);
     }
     sync();
     return ticket;
   }
+  async function lookup(record: E3Proposal) {
+    try {
+      const result = await readOriginal(record);
+      setQueryErrorsByKey(errors => {
+        const next = { ...errors };
+        delete next[record.commandKey];
+        return next;
+      });
+      return result;
+    } catch (error) {
+      setQueryErrorsByKey(errors => ({ ...errors, [record.commandKey]: displayAdminReadError(error) }));
+      throw error;
+    }
+  }
   async function reconcile() {
     sync();
     if (!canQuery) return [];
     const results = await Promise.allSettled(commands.list().filter(r => r.owner === owner && r.state !== "rejected").map(lookup));
     const errors = results.flatMap(result => result.status === "rejected" ? [displayAdminReadError(result.reason)] : []);
-    setQueryErrors(errors); sync();
+    sync();
     return errors;
   }
   async function send(record: E3Proposal, retry = true) {
@@ -139,7 +155,7 @@ export function useE3Proposals() {
         // 763729e6 changes direct single-key replay, not this A2 proposal path.
         // Keep old-backend/retired-command recovery tied to the original ticket.
         try { if (await lookup(record)) return; }
-        catch (queryError) { setQueryErrors([displayAdminReadError(queryError)]); }
+        catch { /* lookup records the failure on this original command. */ }
       }
       // A2 performs object-lock checks inside command deduplication. A lock refusal is a verdict on this command.
       if (!retry && !isA2OutcomeUncertainError(error) && response.httpStatus !== undefined
@@ -180,7 +196,7 @@ export function useE3Proposals() {
   }
   const draft = (keys: readonly string[]) => records.find(original => original.state === "rejected"
     && keys.length > 0 && original.keys.length === keys.length && keys.every(key => original.keys.includes(key)))?.after;
-  return { records, legacy, busy, draft, canQuery, queryErrors, recoveryState: recovery.state,
+  return { records, legacy, busy, draft, canQuery, queryErrorsByKey, recoveryState: recovery.state,
     confirmRecovery: (record: E3Proposal) => {
       const state = recovery.state(record);
       return { state, expiresAt: state.expiresAt, subscribe: recovery.subscribe, getRevision: recovery.getRevision,

@@ -26,7 +26,7 @@ import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1Pha
 import { E1Catalog, E1_MISSING_SERIES_REASON, type E1CatalogContext } from "./e1-catalog";
 import { E1Editor, type E1EditRequest, type E1SkuReview } from "./e1-editor";
 import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
-import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1MediaHasOwner, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 import { withLegacyReplayRejection, nextRecoveryDeadline, currentRecoveryActor, canCreateRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 
@@ -116,6 +116,10 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const hasSkuVersionConflict = (review: Confirmation) => review.op === "sku-save" && !!review.beforeSku
     && (!!draftConflict || currentSku?.updatedAt !== review.beforeSku.updatedAt);
   const [attemptKey, setAttemptKey] = useState("");
+  const sendingRecord = busy && edit ? e1Pending(actor).find(row => row.commandKey === busy) : undefined;
+  const editorBusy = !!sendingRecord && (edit?.sku
+    ? e1Object(sendingRecord.spec) === `device_sku|${edit.sku.id}`
+    : confirmation?.op === "sku-save" && attemptKey === busy);
   const syncPending = useCallback(() => {
     const records = e1Pending(actor);
     setPending(records.filter(row => !row.verifiedNotExecuted && !row.ticket));
@@ -236,17 +240,21 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
 
   const skuDraftOps = ["e1_sku_create", "e1_sku_update"];
   const newestDraft = (matches: (row: E1Pending) => boolean) => verifiedDrafts.filter(matches).at(-1);
-  const openSku = (skuId?: string, unlock?: string, exactDraft?: E1Pending) => {
+  const openSku = (skuId?: string, unlock?: string, exactDraft?: E1Pending, mediaRecord?: E1MediaPending) => {
     if (!skuWritesReady || unlock && unlock !== currentPhase.phaseId || skuId && locked("device_sku", skuId)) return;
     if (edit || confirmation) { toast("请先完成或关闭正在编辑的商品草稿"); return; }
     const sku = skuId ? skus.find(s => s.id === skuId) : undefined;
     if (skuId && !sku) return;
-    const saved = exactDraft ?? newestDraft(row => row.spec.command.op === (skuId ? "e1_sku_update" : "e1_sku_create") && (!skuId || row.spec.obj === skuId));
+    if (mediaRecord && (!e1MediaHasOwner(mediaRecord) || mediaRecord.skuId !== (skuId ?? ""))) return;
+    const saved = exactDraft;
+    if (sku && saved && !saved.skuBaseline) return;
     const params = saved?.spec.command.params;
     const target = params ? { ...params, id: saved!.spec.obj, dailyEarnNEX: params.dailyEarnNex,
       phoneDailyEarnNEX: params.phoneDailyEarnNex, unlock: params.unlockPhase } as unknown as OpsSku : undefined;
     draftKey.current = saved?.commandKey;
-    setEdit({ sku, unlock, nonce: Date.now(), recovered: target ? { form: saved?.skuForm ?? skuToForm(target), mediaSku: target } : undefined });
+    setEdit({ sku, unlock, nonce: Date.now(), draftId: sku ? undefined : mediaRecord?.draftId ?? crypto.randomUUID(),
+      mediaCommandKey: mediaRecord?.commandKey, mediaDraftForm: mediaRecord?.draftForm,
+      recovered: target ? { form: saved?.skuForm ?? skuToForm(target), mediaSku: target, baseline: saved?.skuBaseline } : undefined });
   };
   const draftFor = (input: McSpec) => {
     const operations: Partial<Record<McSpec["op"], string>> = {
@@ -290,6 +298,12 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const send = async (record: E1Pending, retry: boolean) => {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
     const recovery = recoveryFor(record);
+    const ownConfirmation = !retry ? confirmation : null;
+    const ownEditor = ownConfirmation?.op === "sku-save" ? edit : null;
+    const closeOwnEditor = () => {
+      if (ownConfirmation) setConfirmation(current => current === ownConfirmation ? null : current);
+      if (ownEditor) setEdit(current => current?.nonce === ownEditor.nonce ? null : current);
+    };
     if (isRetryExpired(record)) throw new Error(RETRY_EXPIRED_TEXT);
     const store = record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
     if (!store.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器无法保存原操作，本次没有发送；原记录和对象锁仍保留。");
@@ -308,7 +322,6 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       record = { ...record, receivedTicketId: result.id };
       store.remember(record.fingerprint, record.commandKey, record);
       if (retry) {
-        setConfirmation(null); setEdit(null);
         await check(record, true);
         return;
       }
@@ -316,7 +329,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       if (result.status !== "pending") await check(record, true);
       toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
       setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
-      setConfirmation(null); if (record.spec.command.op === "e1_sku_create" || record.spec.command.op === "e1_sku_update") setEdit(null);
+      closeOwnEditor();
       const latest = await refresh();
       if (!latest) toast("申请已提交，部分目录或关联设置未读取完整");
     } catch (failure) {
@@ -326,13 +339,13 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       if (firstRejection) forgetE1(record);
       const shown = record.receivedTicketId ? TICKET_UNREAD : e1Error(failure);
       setNotes(n => ({ ...n, [record.commandKey]: shown }));
-      if (!firstRejection && !isExplicitRejection(failure)) { setConfirmation(null); setEdit(null); }
+      if (!firstRejection && !isExplicitRejection(failure)) closeOwnEditor();
       const skuReview = !retry && confirmation?.op === "sku-save" ? confirmation : null;
       const code = response.backendMessage;
       if (firstRejection && skuReview && code?.startsWith("SKU_SERIES_") && ADMIN_ERROR_MESSAGES[code]) {
         skuReview.setSeriesError?.(ADMIN_ERROR_MESSAGES[code].replace(/。$/, ""));
       }
-      if ((code ?? response.message)?.includes("VERSION_CONFLICT")) {
+      if (!retry && (code ?? response.message)?.includes("VERSION_CONFLICT")) {
         if (skuReview?.beforeSku && edit) setSkuConflict({ nonce: edit.nonce });
         else setConflict(true);
       }
@@ -346,7 +359,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (e1Pending(actor).some(r => !r.verifiedNotExecuted && e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有待审批或待核对的操作，请先核对原操作");
     const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
     const savedSpec = JSON.parse(JSON.stringify(spec)) as ProposeSpec;
-    e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec, operator: session!.operator || session!.username, operatorRole: roleLabel(session!.role), skuForm: confirmation?.form });
+    e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec, operator: session!.operator || session!.username, operatorRole: roleLabel(session!.role), skuForm: confirmation?.form, skuBaseline: confirmation?.beforeSku });
     if (!e1Commands.isDurablyStored(fingerprint, commandKey)) { e1Commands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原操作，本次没有提交。请检查浏览器设置后重试。"); }
     syncPending();
     setAttemptKey(commandKey);
@@ -546,7 +559,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     ...verifiedDrafts.map(record => ({
       key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
       tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可从原编辑入口重新确认。",
-      actions: skuDraftOps.includes(record.spec.command.op) ? <Button size="sm" disabled={!!edit || !!confirmation || !skuWritesReady}
+      actions: skuDraftOps.includes(record.spec.command.op) && (record.spec.command.op === "e1_sku_create" || record.skuBaseline) ? <Button size="sm" disabled={!!edit || !!confirmation || !skuWritesReady}
         onClick={() => openSku(record.spec.command.op === "e1_sku_update" ? record.spec.obj : undefined, undefined, record)}>重新确认</Button> : undefined,
     })),
     ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留",
@@ -555,7 +568,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
     ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
-      actions: <Button size="sm" onClick={() => openSku(record.skuId || undefined)}>核对媒体上传</Button>,
+      actions: e1MediaHasOwner(record) ? <Button size="sm" onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
+        : canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined,
       detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),
   ];
   return <RdPage className="e1-page">
@@ -566,7 +580,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         explain="有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
       <E1Catalog ctx={ctx} />
     </>}
-    <E1Editor request={edit} gates={gates} currentPhaseId={currentPhase.phaseId} writable={skuWritesReady} writeBlockedReason={skuReadBlock} currentSku={currentSku} onClose={() => { setEdit(null); setSkuConflict(null); }} busy={!!busy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onRevisionAccepted={() => { setSkuConflict(null); setAttemptKey(""); }} onReview={review => { setAttemptKey(""); setConfirmation({ ...review, briefKind: "config", name: `${review.beforeSku ? "编辑" : "新增"}商品 · ${review.sku.name}`, op: "sku-save", gates, isNew: !review.beforeSku }); }} />
+    <E1Editor request={edit} gates={gates} currentPhaseId={currentPhase.phaseId} writable={skuWritesReady} writeBlockedReason={skuReadBlock} currentSku={currentSku} onClose={() => { setEdit(null); setSkuConflict(null); }} busy={editorBusy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onRevisionAccepted={() => { setSkuConflict(null); setAttemptKey(""); }} onReview={review => { setAttemptKey(""); setConfirmation({ ...review, briefKind: "config", name: `${review.beforeSku ? "编辑" : "新增"}商品 · ${review.sku.name}`, op: "sku-save", gates, isNew: !review.beforeSku }); }} />
     {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); setRefused(null); return value; } } : mc.businessForm}
       amplifies={!!mc.amplify} reasonMin={8} reasonMax={200} completionCopy={APPROVAL} confirmLabel="提交审批" confirmTone={["sku-delete", "phase-archive", "generation-gate-archive"].includes(mc.op) ? "danger" : "primary"}
       effect={<StatusTag tone="progress" filled explain={APPROVAL}>批准后生效</StatusTag>}

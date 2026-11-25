@@ -43,12 +43,12 @@ export const b1Commands = createPendingMutationStore<B1PendingWrite>({
 });
 
 export const b1Recovery = createPendingRecovery(b1Commands, {
-  capability: () => "replay",
+  capability: record => record.kind === "injection" ? "readback" : "replay",
   explicitRejectionCode,
   canReplay: record => {
     const rights = currentRecoveryActor(record.adminId)?.authorities ?? [];
-    const write = record.kind === "threshold" ? "overview_b1_redline_write"
-      : record.kind === "injection" ? "finance_d3_injection_create" : "overview_b1_write";
+    if (record.kind === "injection") return false;
+    const write = record.kind === "threshold" ? "overview_b1_redline_write" : "overview_b1_write";
     return rights.includes("overview_b1_read") && rights.includes(write);
   },
 });
@@ -60,7 +60,7 @@ async function sendOriginal(record: B1PendingWrite, retry: boolean) {
     throw new Error("浏览器无法保存这次操作的记录，没有提交。请允许浏览器存储后重试。");
   }
   const path = record.kind === "threshold" ? "/dual-ledger/thresholds"
-    : record.kind === "injection" ? "/reserve-injection" : "/b-domain/alerts/coverage-redline/ack";
+    : "/b-domain/alerts/coverage-redline/ack";
   try {
     const response = await guardedFetch(`/api/admin/treasury${path}`, {
       method: record.kind === "threshold" ? "PATCH" : "POST",
@@ -87,10 +87,7 @@ async function sendOriginal(record: B1PendingWrite, retry: boolean) {
       ? !data?.snapshot || !finite(data.snapshot.redlinePct) || !finite(data.snapshot.healthyPct)
         || !Number.isSafeInteger(data.snapshot.thresholdVersion) || data.snapshot.thresholdVersion < 0 || !data.thresholdUpdate
         || ["redlinePct", "healthyPct"].some(key => input[key] !== undefined && data.thresholdUpdate[key] !== data.snapshot[key])
-      : record.kind === "injection"
-        ? data?.injection?.voucherNo !== input.voucherNo || data.injection.amount !== Number(input.amount)
-          || !finite(data.injection.oldReserveUsd) || !finite(data.injection.newReserveUsd)
-        : data?.alertAck?.alertId !== "coverage-redline" || data.alertAck.acknowledged !== true) {
+      : data?.alertAck?.alertId !== "coverage-redline" || data.alertAck.acknowledged !== true) {
       throw new DOutcomeUnknownError(record.commandKey);
     }
     b1Recovery.settleAcknowledged(record);
@@ -101,5 +98,6 @@ async function sendOriginal(record: B1PendingWrite, retry: boolean) {
 }
 
 export function executeB1Command(record: B1PendingWrite, retry = true) {
+  if (record.kind === "injection") throw new Error("储备注入请到资金储备与应付款核对。");
   return retry ? b1Recovery.replay(record, original => sendOriginal(original, true)) : sendOriginal(record, false);
 }

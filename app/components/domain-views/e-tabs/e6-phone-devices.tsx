@@ -81,7 +81,8 @@ export function E6PhoneDevices({ctx}:{ctx:EViewCtx}) {
       effect={confirm.action==="force"||confirm.action==="unbind"?<><StatusTag tone="progress" filled explain="另一位有审批权限和这项操作权限的管理员批准后执行，发起人不能自批；批准前手机状态不变。">批准后生效</StatusTag>{confirm.action==="unbind"&&<IrreversibleTag/>}</>:<StatusTag tone="progress" filled>立即生效</StatusTag>}
       completionCopy={confirm.action==="force"||confirm.action==="unbind"?"另一位管理员批准后执行，批准前手机状态不变。":"执行后读取手机列表核对真实状态。"}
       facts={<Facts><Fact k={confirm.action==="pause"||confirm.action==="resume"?"操作范围":"手机"}>{confirm.action==="pause"?"该用户全部设备，包含手机":confirm.action==="resume"?"该用户被运营暂停的设备，包含手机":confirm.device.deviceName}</Fact><Fact k="实例号"><span data-mono className="e6-serial">{confirm.device.serial}</span></Fact><Fact k="用户">{`${confirm.device.nickname} · ${confirm.device.userNo}`}</Fact><Fact k="原状态">{stateLabel(confirm.device)}</Fact>{confirm.action==="deactivate"&&<Fact k="什么时候停">有任务时这一单结算后停，没有任务立即停</Fact>}{(confirm.action==="activate"||confirm.action==="force")&&<Fact k="已占名额"><span className="e6-device-slots"><span>{confirm.device.activeDevicesForUser}/6 台</span><RatioBar label="设备名额" value={confirm.device.activeDevicesForUser} total={6} valueText={`${confirm.device.activeDevicesForUser}/6 台，含手机`} steps compact/></span></Fact>}</Facts>}
-      getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setConfirm(null)} onConfirm={async reason=>{
+      getPendingReason={()=>m.pendingReason(scope)} onClose={()=>setConfirm(null)}
+      onRecovered={result=>{setConfirm(null);ctx.toast(result?.readbackFailed?"已提交成功，但重新读取失败，请刷新核对。":"原操作已执行，已重新读取手机列表。",result?.readbackFailed?"warn":undefined);}} onConfirm={async reason=>{
         let result: E6WriteReceipt | undefined;
         const d=confirm.device,action=confirm.action,original=m.pending.find(r=>r.scope===scope);
         if(original)result=await m.send(original,true);

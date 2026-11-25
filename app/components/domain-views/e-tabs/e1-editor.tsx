@@ -18,11 +18,12 @@ import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
 import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateGateForm, type SkuForm } from "./data";
-import { currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
-import { e1MediaCommands, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
+import { currentRecoveryActor, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
+import { e1MediaCommands, e1MediaHasOwner, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
-export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number; recovered?: { form: SkuForm; mediaSku: OpsSku } };
+export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number; draftId?: string; mediaCommandKey?: string; mediaDraftForm?: SkuForm;
+  recovered?: { form: SkuForm; mediaSku: OpsSku; baseline?: OpsSku } };
 export type E1SkuReview = {
   sku: OpsSku;
   beforeSku?: OpsSku;
@@ -85,6 +86,25 @@ function skuMedia(sku?: OpsSku): Media {
   return sku?.imageAssetId && sku.imageObjectKey ? { kind: /\.(mp4|webm|mov)$/i.test(sku.imageObjectKey) ? "video" : "image", src: "", name: sku.imageObjectKey.split("/").pop() ?? "商品媒体", assetId: sku.imageAssetId, objectKey: sku.imageObjectKey } : null;
 }
 
+function mergeSkuRevision(previousSku: OpsSku, nextSku: OpsSku, form: SkuForm, media: Media) {
+  const previous = skuToForm(previousSku), latest = skuToForm(nextSku);
+  const merged = rebaseRecoveryFields(previous, { ...form, badge: previous.badge, badgeKind: previous.badgeKind, badgeKindChanged: false }, latest);
+  if (form.badgeKindChanged || form.badgeKind === "custom" && form.badge !== previous.badge) {
+    merged.badgeKind = form.badgeKind;
+    merged.badge = form.badge;
+    merged.badgeKindChanged = true;
+  }
+  const latestMedia = skuMedia(nextSku);
+  const mergedMedia = imageIdentity(media) === imageIdentity(skuMedia(previousSku))
+    && imageIdentity(media) !== imageIdentity(latestMedia) ? latestMedia : media;
+  return { merged, latest, latestMedia, mergedMedia };
+}
+
+function ownsMedia(record: E1MediaPending, request?: E1EditRequest | null) {
+  return !!request && e1MediaHasOwner(record)
+    && (record.skuId ? record.skuId === request.sku?.id : record.draftId === request.draftId && !request.sku);
+}
+
 function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media): OpsSku {
   const draft: OpsSku = { ...original, ...formToSku(form, original), imageAssetId: media?.assetId, imageObjectKey: media?.objectKey, imagePreviewUrl: undefined };
   if (original) {
@@ -113,7 +133,7 @@ const mediaRecovery = createPendingRecovery(e1MediaCommands, {
   explicitRejectionCode,
   canReplay: record => {
     const rights = currentRecoveryActor(record.actorId)?.authorities ?? [];
-    return rights.includes("device_e1_read") && rights.includes("device_e1_write");
+    return e1MediaHasOwner(record) && rights.includes("device_e1_read") && rights.includes("device_e1_write");
   },
 });
 
@@ -136,6 +156,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [mediaRelease, setMediaRelease] = useState(false);
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<File | null>(null);
+  const requestRef = useRef(request);
+  requestRef.current = request;
   const uploadBusy = useRef(false);
   const [pools, setPools] = useState<TaskPool[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
@@ -164,10 +186,13 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     const sku = request.sku, next = sku ? skuToForm(sku) : { ...EMPTY_SKU_FORM, allowedPoolCodes: [], unlock: gates?.phaseOrder[0] ?? "" };
     if (request.unlock !== undefined) next.unlock = request.unlock;
     const originalMedia = skuMedia(sku);
-    const m = request.recovered ? skuMedia(request.recovered.mediaSku) : originalMedia;
-    setOriginal(sku); setForm(request.recovered?.form ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
+    const restored = request.recovered;
+    const merge = restored?.baseline && sku ? mergeSkuRevision(restored.baseline, sku, restored.form, skuMedia(restored.mediaSku)) : null;
+    const m = merge ? merge.mergedMedia : restored ? skuMedia(restored.mediaSku) : originalMedia;
+    setOriginal(sku); setForm(merge?.merged ?? restored?.form ?? request.mediaDraftForm ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
     setMedia(m); setInitialMedia(imageIdentity(originalMedia)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
-    setMediaPending(e1MediaCommands.list().find(r => r.actorId === actor) ?? null);
+    fileRef.current = null;
+    setMediaPending(e1MediaCommands.list().find(r => r.commandKey === request.mediaCommandKey && r.actorId === actor && ownsMedia(r, request)) ?? null);
     if (m?.assetId) void refreshPreview(m.assetId);
     void Promise.allSettled([canReadE2 ? fetchTaskPools() : Promise.resolve([]), fetchSkuDatacenterLabels()]).then(([p, l]) => {
       setPools(p.status === "fulfilled" ? p.value : []);
@@ -189,7 +214,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   }, [media?.src]);
 
   const upload = async (record: E1MediaPending, file: File, retry: boolean) => {
-    if (!writable || uploadBusy.current || record.actorId !== actor || isRetryExpired(record)) throw new Error(isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "没有上传权限、原文件正在上传或账号不符");
+    const editor = requestRef.current;
+    if (!ownsMedia(record, editor) || retry && record.commandKey !== mediaPending?.commandKey || !writable || uploadBusy.current || record.actorId !== actor || isRetryExpired(record)) throw new Error(isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "没有上传权限、原文件正在上传或账号不符");
     e1MediaCommands.remember(record.fingerprint, record.commandKey, record);
     if (!e1MediaCommands.isDurablyStored(record.fingerprint, record.commandKey)) { setMediaError("浏览器无法保存原上传，本次没有发送；请保留原文件核对。"); return; }
     uploadBusy.current = true; setMediaBusy(true); onMediaChange(record.commandKey); setMediaError("");
@@ -209,9 +235,11 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
         return { assetId: data.assetId, objectKey: data.objectKey, size: data.sizeBytes == null ? record.size : data.sizeBytes as number };
       };
       const { assetId, objectKey, size } = await (retry ? mediaRecovery.replay(record, send) : send(record));
+      if (requestRef.current?.nonce !== editor?.nonce || !ownsMedia(record, requestRef.current)) return;
       setMedia(m => ({ kind: record.kind, src: `/api/admin/media/uploads/${encodeURIComponent(assetId)}/content`, name: record.fileName, size, w: m?.w, h: m?.h, duration: m?.duration, assetId, objectKey }));
       mediaRecovery.settleAcknowledged(record); setMediaPending(null); fileRef.current = null; onMediaChange(); toast("已上传；商品关联仍需提交审批");
     } catch (error) {
+      if (requestRef.current?.nonce !== editor?.nonce) return;
       const response = error as { status?: number; apiCode?: number; unknownOutcome?: boolean };
       if (!retry && !response.unknownOutcome && response.status !== undefined && isDeterministicRejection(response.status, response.apiCode)) { e1MediaCommands.forget(record.fingerprint, record.commandKey); setMediaPending(null); fileRef.current = null; }
       else setMediaPending(record);
@@ -219,7 +247,11 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     } finally { uploadBusy.current = false; setMediaBusy(false); onMediaChange(); }
   };
   const pickMedia = async (file?: File) => {
-    if (!file || uploadBusy.current || !writable) return;
+    if (!file || !request || uploadBusy.current || !writable) return;
+    if (!mediaPending && e1MediaCommands.list().some(row => row.actorId === actor && ownsMedia(row, request))) {
+      setMediaError("请从原上传记录打开核对。");
+      return;
+    }
     const ext = file.name.split(".").pop()?.toLowerCase(), mime = file.type.toLowerCase();
     const kinds: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime" };
     if (!ext || !kinds[ext] || mime && mime !== kinds[ext]) { setMediaError("请上传匹配扩展名与类型的 JPG / PNG / WebP / GIF / MP4 / WebM / MOV"); return; }
@@ -229,12 +261,14 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     let record = mediaPending;
     try {
       const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())), b => b.toString(16).padStart(2, "0")).join("");
+      if (requestRef.current?.nonce !== request.nonce) return;
       if (record) {
+        if (!ownsMedia(record, request)) return;
         if (record.fileName !== file.name || record.size !== file.size || record.mime !== file.type || record.digest !== digest) { setMediaError("与原文件名称、类型、大小或摘要不一致；只能重新选择原文件核对"); return; }
       } else {
         const key = createA2CommandKey("e1-media"), fingerprint = `media|${actor}`;
-        const params = { domain: "E", usage: kind === "video" ? "sku-video" : "sku-image", entityType: "SKU", entityId: form.id.trim() || form.name.trim() || editId || "draft-sku", operator };
-        e1MediaCommands.remember(fingerprint, key, { actorId: actor, skuId: editId ?? "", fileName: file.name, mime: file.type, size: file.size, digest, params, kind });
+        const params = { domain: "E", usage: kind === "video" ? "sku-video" : "sku-image", entityType: "SKU", entityId: editId || form.id.trim() || form.name.trim() || "draft-sku", operator };
+        e1MediaCommands.remember(fingerprint, key, { actorId: actor, skuId: editId ?? "", draftId: request.draftId, draftForm: editId ? undefined : form, fileName: file.name, mime: file.type, size: file.size, digest, params, kind });
         if (!e1MediaCommands.isDurablyStored(fingerprint, key)) { e1MediaCommands.forget(fingerprint, key); throw new Error("浏览器无法保存原操作，本次没有上传"); }
         record = e1MediaCommands.list().find(r => r.commandKey === key)!;
       }
@@ -268,21 +302,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   };
 
   const adoptRevision = (latest: OpsSku, form: SkuForm, original: OpsSku, media: Media) => {
-    const previous = skuToForm(original);
-    const latestForm = skuToForm(latest);
-    const merged = { ...latestForm };
-    for (const key of Object.keys(previous) as (keyof SkuForm)[]) {
-      if (key === "badge" || key === "badgeKind" || key === "badgeKindChanged") continue;
-      if (JSON.stringify(form[key]) !== JSON.stringify(previous[key])) Object.assign(merged, { [key]: form[key] });
-    }
-    if (form.badgeKindChanged || form.badgeKind === "custom" && form.badge !== previous.badge) {
-      merged.badgeKind = form.badgeKind;
-      merged.badge = form.badge;
-      merged.badgeKindChanged = true;
-    }
-    const latestMedia = skuMedia(latest);
-    const mergedMedia = imageIdentity(media) === imageIdentity(skuMedia(original))
-      && imageIdentity(media) !== imageIdentity(latestMedia) ? latestMedia : media;
+    const { merged, latest: latestForm, latestMedia, mergedMedia } = mergeSkuRevision(original, latest, form, media);
     setOriginal(latest);
     setInitialForm(JSON.stringify(latestForm));
     setForm(merged);
@@ -384,12 +404,17 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     const state = invalid ? "有错误" : index === 0 ? form.name && form.tier && form.seriesCode && form.lifecycle ? "已填" : "待填" : index === 1 ? form.price && (!form.allowedPoolCodes.length || form.monthlyTargetUsdt) ? "已填" : "待填" : index === 2 ? form.inventoryMode === "UNLIMITED" || form.stock !== "" ? "已填" : "待填" : "选填";
     return { ...s, label: invalid ? s.label : `${s.label} · ${state}`, alert: invalid };
   });
+  const recoveryBaseline = request?.recovered?.baseline;
+  const comparisonBefore = latestChanged ? original : recoveryBaseline;
+  const comparisonAfter = latestChanged ? currentSku : original;
+  const othersChanges = comparisonBefore && comparisonAfter && comparisonBefore.updatedAt !== comparisonAfter.updatedAt
+    ? e1ShownDiff(e1SkuDiff(comparisonBefore, comparisonAfter), comparisonBefore, comparisonAfter) : [];
   const hasTarget = form.monthlyTargetUsdt.trim() !== "";
   const canClear = original?.monthlyTargetUsdt != null && original.status !== "on" && !form.allowedPoolCodes.length;
   return <>
     <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onBlockedClick={() => setTouched(new Set([...touched, ...Object.keys(appTextErrors)]))} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
-      {latestChanged && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(currentSku?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{currentSku && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={e1ShownDiff(e1SkuDiff(original, currentSku), original, currentSku)} /></Fold>}</Notice>}
+      {(latestChanged || othersChanges.length > 0) && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={latestChanged && currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(comparisonAfter?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{comparisonAfter && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={othersChanges} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
           <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "只做唯一标识，留空按型号名称生成" })}

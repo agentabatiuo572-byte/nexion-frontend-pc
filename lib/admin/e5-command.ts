@@ -23,6 +23,7 @@ export interface E5Command extends PendingMutationRecord {
   body: string;
   proof?: LegacyUnknownCandidate;
   retryRejection?: string;
+  verifiedNotExecuted?: true;
   receivedTicketId?: string;
   proposalAbsent?: boolean;
   proposalStatus?: A2OperationRow["status"];
@@ -56,7 +57,7 @@ export function canSendE5Command(record: E5Command) {
 export const e5Recovery = createPendingRecovery({ ...e5Commands, list: () => e5Commands.list().map(withLegacyReplayRejection) }, {
   capability: () => "receipt",
   explicitRejectionCode,
-  canReplay: record => !record.receivedTicketId && !record.retryRejection && canSendE5Command(record),
+  canReplay: record => !record.verifiedNotExecuted && !record.receivedTicketId && !record.retryRejection && canSendE5Command(record),
 });
 
 /** Read the two old tables without pruning evidence or touching E1/E4 records. */
@@ -88,6 +89,12 @@ export class E5CommandError extends Error {
   constructor(message: string, readonly status?: number, readonly backendMessage = "", readonly unknownOutcome = false, readonly httpStatus?: number, readonly apiCode?: number) { super(message); }
 }
 
+function settleE5Query(record: E5Command, conclusion: Parameters<typeof e5Recovery.settleFromQuery>[1], ticket?: { id: string; status: E5Command["proposalStatus"] }) {
+  if (conclusion === "not-executed" || conclusion === "rejected") {
+    e5Commands.remember(record.fingerprint, record.commandKey, { ...record, verifiedNotExecuted: true,
+      ...(ticket ? { receivedTicketId: ticket.id, proposalStatus: ticket.status } : {}) });
+  } else e5Recovery.settleFromQuery(record, conclusion);
+}
 export async function checkE5Command(record: E5Command, evidence?: ECommandEvidence) {
   if (!["activate", "deactivate", "pause", "resume"].includes(record.intent)) return null;
   const result = await e5Recovery.query(record, async original => {
@@ -101,7 +108,7 @@ export async function checkE5Command(record: E5Command, evidence?: ECommandEvide
     return { receipt, conclusion: receipt && eCommandSettled(receipt) ? recoveryQueryConclusion(receipt.originalStatus) : "unknown" } as const;
   });
   if (!result) return null;
-  e5Recovery.settleFromQuery(record, result.conclusion);
+  settleE5Query(record, result.conclusion);
   return result.receipt;
 }
 
@@ -118,7 +125,7 @@ export async function queryE5Proposal(record: E5Command) {
   if (!result?.ticket) return null;
   const { ticket } = result;
   if (ticket.status === "pending") e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: ticket.id, proposalStatus: ticket.status, proposalAbsent: false });
-  else e5Recovery.settleFromQuery(record, result.conclusion);
+  else settleE5Query(record, result.conclusion, ticket);
   return ticket;
 }
 
@@ -162,8 +169,9 @@ async function sendOriginal(record: E5Command, retry: boolean) {
         && isDeterministicRejection(cause.httpStatus, cause.apiCode)) e5Commands.forget(record.fingerprint, record.commandKey);
     throw cause;
   }
-  if (retry && isProposal(record)) {
-    e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: String(data.id) });
+  if (isProposal(record)) {
+    e5Commands.remember(record.fingerprint, record.commandKey, { ...record, receivedTicketId: String(data.id),
+      proposalStatus: !retry && data.status === "pending" ? "pending" : undefined });
   } else {
     e5Recovery.settleAcknowledged(record);
   }
