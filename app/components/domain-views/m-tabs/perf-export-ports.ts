@@ -85,12 +85,16 @@ const id = (value: unknown) => {
   const key = typeof value === "number" ? String(integer(value)) : text(value);
   return /^[1-9]\d*$/.test(key) ? key : invalid("export.id");
 };
-const read = <T>(path: string, parse: (value: unknown) => T, signal?: AbortSignal) => supportRequest(`${PATH}${path}`, parse, { signal });
+/** 导出的读取有时限：一处一直不回，按读取失败处理，不挡住别处已经读到的内容。 */
+const READ_LIMIT_MS = 30_000;
+const read = <T>(path: string, parse: (value: unknown) => T, signal?: AbortSignal) => supportRequest(`${PATH}${path}`, parse, {
+  signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(READ_LIMIT_MS)]) : AbortSignal.timeout(READ_LIMIT_MS),
+});
 const post = <T>(path: string, body: object | undefined, parse: (value: unknown) => T, key?: string) => supportRequest(`${PATH}${path}`, parse, {
   method: "POST", body: body === undefined ? undefined : JSON.stringify(body), preserveUnknownOutcome: key !== undefined,
   headers: key === undefined ? undefined : { "Idempotency-Key": key },
 });
-const receipt = (path: string, key: string) => supportRequest(`${PATH}${path}`, object, { headers: { "Idempotency-Key": key } });
+const receipt = (path: string, key: string) => supportRequest(`${PATH}${path}`, object, { headers: { "Idempotency-Key": key }, signal: AbortSignal.timeout(READ_LIMIT_MS) });
 
 function columns(value: unknown, type: ExportType): ExportColumns {
   const labels = value == null ? [] : array(value, text);
@@ -388,7 +392,8 @@ export function usePerformanceExportPorts(scopeRevision = 0, recordsRefresh = 0)
     if (!authorized || !session || !canRequest && !canReview) return;
     const signal = controller.signal;
     void Promise.allSettled([
-      canRequest ? read("/options", parseOptions, signal) : Promise.resolve(null),
+      // 选项只决定能不能发起导出：等久了就按没读到处理，不挡住已经读到的「我的申请」「待我审批」。
+      canRequest ? read("/options", parseOptions, AbortSignal.any([signal, AbortSignal.timeout(10_000)])) : Promise.resolve(null),
       canRequest ? readExportView("MINE", signal) : Promise.resolve(null),
       canReview ? readExportView("APPROVALS", signal) : Promise.resolve(null),
     ] as const).then(([options, mine, approvals]) => {
@@ -648,7 +653,8 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
       const previous = lastVisible?.operationId === original.commandKey ? lastVisible : undefined;
       const verifyOriginal = async () => {
         try {
-          const data = originalDialog(await read("/options", parseOptions), original, operator);
+          // 回执已经到手，核对原范围只等一小会儿：没等到就按没核实处理（原填写内容继续遮着），结果和下载照常给。
+          const data = originalDialog(await read("/options", parseOptions, AbortSignal.timeout(8_000)), original, operator);
           return data.originalHidden ? undefined : data;
         } catch (error) {
           if (isSupportSessionExpired(error)) throw error;

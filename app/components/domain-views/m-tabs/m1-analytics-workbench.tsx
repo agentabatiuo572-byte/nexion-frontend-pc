@@ -444,7 +444,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [scope, setScope] = useState<SupportAnalyticsResponse | null>(null), [scopeError, setScopeError] = useState(""), [scopeDenied, setScopeDenied] = useState(false);
   const noStatisticsMode = authSession?.supportReadModes?.length === 0;
   const statisticsUnavailable = noStatisticsMode || scopeDenied;
-  const exportsPorts = usePerformanceExportPorts(exportScopeRevision, statisticsUnavailable ? exportRecordsRefresh : 0);
+  // 页头「刷新」的序号一直传下去：没读成的那个导出视图跟着重探（没有负责组的主管也一样）。
+  const exportsPorts = usePerformanceExportPorts(exportScopeRevision, exportRecordsRefresh);
   const teamChanged = useRef(false);
   const targetedRefresh = useRef(false);
   const [scopeRetry, setScopeRetry] = useState(0), [queryState, setQueryState] = useState(initialAnalyticsQuery("PERSONAL"));
