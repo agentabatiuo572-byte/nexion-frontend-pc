@@ -674,7 +674,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h2-buy-checks .rd-check-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .h2-buy-check .rd-form-help { display: flex; flex-direction: column; gap: 2px; }
 .h2-buy-check[data-disabled] label { color: var(--rd-text-3); cursor: not-allowed; }
-.h2-buy-check label .rd-tag, .h2-buy-check label .rd-explain { margin-left: 6px; vertical-align: 1px; }
+.h2-buy-check label { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; min-height: 22px; }
 .h2-buy-check .h2-buy-reason { font-size: var(--rd-text-aux); color: var(--rd-text-2); }
 .h2-product-meta [data-mono], .rd-pop-rows [data-mono] { font-family: var(--rd-font-mono); }
 .h2-nowrap { white-space: nowrap; }

@@ -106,9 +106,14 @@ export function BuyListPendingNotice({ record, canWrite, onRetry, onRelease, ret
         { k: "改后清单", v: record.nextNames.length > 0 ? record.nextNames.join("、") : "空" },
         { k: "理由", v: record.reason },
       ]} />
-      {rejection && <div><KeepText text={`重试没有成功：${rejection} 原操作结果仍未知，记录继续保留。`} /></div>}
+      {rejection && <div><KeepText text={`重试被拒：${rejection}`} /></div>}
     </Notice>
   );
+}
+
+/** 抽屉里的内容或按钮被换掉、焦点落空时，放回抽屉容器（OP-46、CP-66）。 */
+function refocusDrawer() {
+  if (document.activeElement === document.body) document.querySelector<HTMLElement>("[data-h2-buy-drawer]")?.focus();
 }
 
 /** 版本冲突读到最新后，别人改了什么写在同一个框里（OP-97）。 */
@@ -211,6 +216,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       document.removeEventListener("click", intercept, true);
     };
   }, [dirty, leaveGuard, router]);
+  // 换成离开提示时，原来聚焦的勾选框没了。
+  useEffect(refocusDrawer, [leaving]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));
 
   const showConfirm = (base: BuyList, selection: string[], initialReason: string, initialRejected?: string, othersNote?: string) => {
@@ -222,9 +229,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     const removed = items.filter((item) => !selected.has(item.productNo));
     const kept = items.filter((item) => selected.has(item.productNo));
     if (added.some((item) => !item.selectable) || (!added.length && !removed.length)) return false;
-    const named = [...added, ...removed, ...kept];
-    // 同名商品带上编号才分得清。
-    const label = (item: BuyDevice) => named.filter((other) => productName(other) === productName(item)).length > 1
+    // 候选里有同名商品时带上编号才分得清。
+    const label = (item: BuyDevice) => candidates.filter((other) => productName(other) === productName(item)).length > 1
       ? `${productName(item)}（${item.productNo}）` : productName(item);
     const rows: DiffRow[] = [
       ...added.map((item) => ({ key: item.productNo, label: label(item), before: "不在清单", after: "新增" })),
@@ -253,6 +259,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         await readReview();
         setRejected(undefined);
         ctx.openActionConfirm(null);
+        // 「下一步」变灰会换节点，确认框关掉后焦点没有去处：等它关完放回抽屉。
+        window.setTimeout(refocusDrawer, 100);
         return false;
       },
       renderNotice: (back) => <Notice tone="danger" action={<Button size="sm" onClick={back}>返回调整</Button>}>{message}</Notice>,
@@ -308,6 +316,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     ctx.openActionConfirm({
       formKey: ++formSequence.current,
       briefKind: "config",
+      icon: "sliders",
       action: "调整其他可购买设备",
       title: <>调整其他可购买设备<Explain label="其他可购买设备的说明" rows={[{ k: "这是什么", v: ROW_HELP.what }, { k: "显示位置", v: ROW_HELP.where }, { k: "生效时间", v: ROW_HELP.when }, { k: "改了会怎样", v: ROW_HELP.effect }]} /></>,
       detail: "",
@@ -340,7 +349,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
-  const note = [`改后共 ${picked.length} 款`, added.length > 0 && `新增 ${added.length} 款`, removed.length > 0 && `移除 ${removed.length} 款`].filter(Boolean).join(" · ");
+  const note = invalidPicked ? "请先取消不能新增的设备" : [`改后共 ${picked.length} 款`, added.length > 0 && `新增 ${added.length} 款`, removed.length > 0 && `移除 ${removed.length} 款`].filter(Boolean).join(" · ");
 
   return (
     <>
@@ -369,7 +378,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                 <tbody>
                   {items.map((item) => (
                     <tr key={item.productNo}>
-                      <Td><Cell main={item.name || "—"} sub={<span data-mono="">{item.productNo}</span>} /></Td>
+                      <Td><Cell main={item.name || "—"} sub={<span data-mono="">{item.productNo}</span>} title={`${item.name || "—"} ${item.productNo}`} /></Td>
                       <Td><AppState device={item} /></Td>
                       <Td><Cell main={typeText(item)} /></Td>
                       <Td align="right"><Cell num main={price(item)} /></Td>
@@ -384,7 +393,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         )}
       </Panel>
 
-      <Drawer open={!!draftBase} onClose={leaveDrawer}
+      <Drawer open={!!draftBase} onClose={leaveDrawer} data-h2-buy-drawer=""
         onInteractOutside={(event) => {
           const target = event.detail.originalEvent.target;
           // 这几处自己会先问，不再走「点抽屉外」，免得两次提示互相抵消（触屏上点外部在 click 之后才到）。
@@ -398,7 +407,13 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
           : <Decision note={note}
             others={<Button size="md" onClick={leaveDrawer}>取消</Button>}
             primary={<Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button>} />}>
-        {leaving ? <p>放弃后，这次的勾选不保存，清单保持原样。</p> : <div className="h2-buy-form">
+        {leaving ? <div className="rd-stack">
+          <p>放弃后，这次的勾选不保存，清单保持原样。</p>
+          <Facts>
+            {added.length > 0 && <Fact k="新增">{candidates.filter((item) => added.includes(item.productNo)).map(productName).join("、")}</Fact>}
+            {removed.length > 0 && <Fact k="移除">{removed.map(productName).join("、")}</Fact>}
+          </Facts>
+        </div> : <div className="h2-buy-form">
           <div className="h2-buy-checks">
             <CheckGroup legend="其他可购买设备" summary={`候选 ${candidates.length} 款`}
               explain={<><p>能勾的：在售 · 通过上架条件 · 售价大于 0 · 实体设备或云份额</p><p>开没开「允许试用」都不影响。</p></>}>
@@ -410,6 +425,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                 const mark = on && !listed ? "新增" : !on && listed ? "移除" : "";
                 const reason = listed && candidate.appState === "hidden"
                   ? retainedHint(candidate)
+                  : unavailable && on ? `${hiddenText(candidate)}，不能新增，请取消勾选`
                   : unavailable ? <>不能选：{hiddenText(candidate)}{hiddenText(candidate) === LISTING_BLOCKED && "，商城里也不显示"}{reach(pricingHref(candidate.productNo)) && <> <Link className="rd-link" href={pricingHref(candidate.productNo)} prefetch={false}>到商品管理与上架条件查看</Link></>}</> : undefined;
                 return (
                   <div className="h2-buy-check" data-disabled={disabled ? "" : undefined} key={candidate.productNo}>

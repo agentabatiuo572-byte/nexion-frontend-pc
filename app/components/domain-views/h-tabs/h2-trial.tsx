@@ -662,12 +662,13 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     }
     try {
       const outcome = await updateH2TrialBuyList(buyListWrite(record));
+      if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
+      // 首发就被账号核对拒绝：后端没有执行，不留待确认。
       if (outcome.kind === "accountMismatch") {
-        recordBuyRejection(record, ownerId, outcome.message);
+        toast(outcome.message, "warn");
         announcePermissionDenied();
         return { kind: "stopped" };
       }
-      if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
       if (outcome.kind === "forbidden" || outcome.kind === "unauthenticated") {
         handleBuySessionStop(outcome.kind, ownerId);
         return { kind: "stopped" };
@@ -919,7 +920,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <Fact k="原试用记录">{retiredCharge.source === "legacy" ? retiredCharge.record.obj : `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`}</Fact>
         <Fact k="原操作理由"><span className="rd-pre">{retiredCharge.record.reason}</span></Fact>
       </Facts>
-      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`原请求编号 ${retiredCharge.record.commandKey}`} /></p>
+      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`操作编号 ${retiredCharge.record.commandKey}`} /></p>
       {chargeLookup.error && <p role="alert" className="rd-form-error">{chargeLookup.error}</p>}
       {chargeLookup.missing && <p role="status">没找到原申请，旧扣款入口已停用，不能重新提交。可以结束这条核对，后台记录不会删除。</p>}
       {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已停用，不会执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。处理结果到操作记录看。</p>}
@@ -939,8 +940,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原结果</Button>}
         {record.expiresAt > Date.now() && <Button size="sm" disabled={!!recovering}
           disabledReason={!canCancel ? NO_WRITE : !queryMissing.includes(record.commandKey) ? "先查询原结果，查不到才能重试" : undefined}
-          onClick={() => void recoverLegacy(record, "retry")}>按原请求重试</Button>}
-      </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原请求，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}</Notice>),
+          onClick={() => void recoverLegacy(record, "retry")}>按原操作重试</Button>}
+      </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原操作，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}</Notice>),
     ...pending.map((record) => {
     if (record.kind === "charge") return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`}
@@ -958,15 +959,15 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`} action={<>
         {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+        {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原操作重试</Button>}
         {!expired && retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>}>
         {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         <KeepText text={proposal ? "审批可能已经提交，批准前不会执行；有结果前这条记录不能再操作。" : "可能已经生效，有结果前这项不能再改。"} />
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
-        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原请求重试。" : " 按原请求重试不会重复执行。"} />
+        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`原请求编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
+        <Explain label="技术信息" content={`操作编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
         {!expired && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
       </Notice>
     );
