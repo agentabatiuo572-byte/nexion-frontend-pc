@@ -1,3 +1,4 @@
+import { settleFReconfirmation } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, A2OutcomeUncertainError, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { createH8CommandKey, growthRequest, h8RewardParamAmplifies, h8RewardParamValid, parseH8ReferralRewardOverview, type H8ReferralRewardOverview, type H8RewardParamKey } from "./h-client";
@@ -161,6 +162,10 @@ export const h8Recovery = createPendingRecovery<H8RewardCommand>({
 });
 export const canRetryH8RewardCommand = (record: H8RewardCommand) => !h8Recovery.state(record).replayBlock;
 
+export function hasPendingH8Policy(records: readonly H8RewardCommand[]) {
+  return records.some(record => record.kind === "param-approval" && record.ticket?.status === "pending");
+}
+
 export function unresolvedH8Policy(adminId: number) {
   return pendingH8RewardCommands(adminId).find(record => record.kind !== "settlement" && !record.ticket);
 }
@@ -193,17 +198,22 @@ export async function queryH8RewardCommand(record: H8RewardCommand) {
   });
   if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
   if (result.ticket?.status === "pending") remember({ ...result.original, ticket: result.ticket, acknowledged: true }, "H8_REQUEST_RESULT_STORAGE_UNAVAILABLE");
-  else if (result.ticket) h8Recovery.settleFromQuery(result.original, result.conclusion);
+  else if (result.ticket) settleFReconfirmation(h8Recovery, result.original, result.conclusion, "H8");
   return result.ticket;
 }
 
 /** Save the full bytes before dispatch. A retained operation can never be replaced by another value or target. */
-export async function sendH8RewardCommand(record: H8RewardCommand, recovering = false) {
+export async function sendH8RewardCommand(record: H8RewardCommand, recovering = false, knownPending = false) {
   requireH8Actor(record.adminId);
   const pending = pendingH8RewardCommands(record.adminId);
   if (recovering && !pending.some(r => r.commandKey === record.commandKey)) throw new Error("H8_ORIGINAL_RESOLVED");
   if (!recovering && (record.kind === "settlement" ? pending.some(r => r.kind === "settlement")
-    : !!unresolvedH8Policy(record.adminId) || pending.some(r => r.paramKey === record.paramKey))) throw new Error("H8_ORIGINAL_UNRESOLVED");
+    : !!unresolvedH8Policy(record.adminId))) throw new Error("H8_ORIGINAL_UNRESOLVED");
+  if (!recovering && record.original?.kind !== "settlement" && (knownPending || hasPendingH8Policy(pending))
+    && (record.kind === "param-approval" || record.original?.kind === "direct"
+      && h8RewardParamAmplifies(record.original.paramKey, String(record.original.overview.params[record.original.paramKey]), record.original.value))) {
+    throw new Error("OBJECT_ALREADY_PENDING");
+  }
   if (!record.original || Date.now() >= record.expiresAt) throw new Error(RETRY_EXPIRED_TEXT);
   requireH8Actor(record.adminId, record.kind === "settlement" ? "settlement" : "param");
   if (!recovering) {

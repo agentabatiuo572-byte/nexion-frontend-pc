@@ -1,3 +1,4 @@
+import type { DirectReferralPolicy } from "./direct-referral-policy";
 import { fConfigAuthority, fConfigBatchPermissionIssue, fConfigObjectMatches } from "./f-config-batch";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
 import { f2ActivationAttempts, type F2ActivationAttempt } from "./f2-activation-attempt";
@@ -30,6 +31,7 @@ export interface FDomainAttempt extends SlotAttemptRecord {
   ticket?: A2OperationRow;
   received?: boolean;
   absent?: boolean;
+  f2DirectBaseline?: Pick<DirectReferralPolicy, "purchaseSplit" | "deviceEarning">;
   f3Snapshot?: F3ConfirmationSnapshot;
   f4Snapshot?: F4ConfirmationSnapshot;
   f5Snapshot?: F5ConfirmationSnapshot;
@@ -129,7 +131,7 @@ async function checkTicket(original: F2Proposal, ticket: A2OperationRow) {
 
 export async function queryF2Proposal(adminId: number, original: F2Recovery) {
   actor(adminId);
-  return f2Recovery.queryTicket(original, async record => {
+  return f2Recovery.queryTicket("F2", original, async record => {
     const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
     if (!activeRecoveryActor(adminId, "network_f2_read")) throw new Error("ADMIN_PERMISSION_DENIED");
     if (!ticket && (record.received || record.ticket)) throw new Error("F2_PROPOSAL_STATUS_UNAVAILABLE");
@@ -139,7 +141,7 @@ export async function queryF2Proposal(adminId: number, original: F2Recovery) {
 }
 
 /** Persist the exact request before POST. Replay never rebuilds current inputs. */
-export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec, ranked = false) {
+export async function sendF2Proposal(adminId: number, slot: string, spec?: ProposeSpec, ranked = false, f2DirectBaseline?: FDomainAttempt["f2DirectBaseline"]) {
   let original = f2ProposalRecord(adminId, slot);
   const current = requireWriter(adminId, slot, spec ?? original?.spec);
   const recovering = !spec;
@@ -155,7 +157,7 @@ export async function sendF2Proposal(adminId: number, slot: string, spec?: Propo
     };
     const commandKey = createA2CommandKey(slot.split(":")[0]);
     if (slot === F2_ACTIVATION_SLOT) f2ActivationAttempts.remember(slot, commandKey, { adminId, spec, request });
-    else fCommands.remember(slot, commandKey, { adminId, spec, request, inputFingerprint: JSON.stringify(request) });
+    else fCommands.remember(slot, commandKey, { adminId, spec, request, inputFingerprint: JSON.stringify(request), f2DirectBaseline });
     original = f2ProposalRecord(adminId, slot)!;
     if (!storeFor(slot).isDurablyStored(slot, commandKey)) {
       forgetF2Proposal(original);

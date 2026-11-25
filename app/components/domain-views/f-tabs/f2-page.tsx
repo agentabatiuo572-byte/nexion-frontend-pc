@@ -10,19 +10,28 @@ import { useEffect, useState } from "react";
 import { Archive, CircleHelp, Coins, PauseCircle, Power, PowerOff, Users } from "lucide-react";
 import { Button, Conclusion, Fold, PageHeader, SectionNav, Stat, StatBand, useSectionNav, type SectionNavItem } from "@/app/components/rd";
 import { parseF2DepthGateLayer, parseF2DepthGateRank } from "@/lib/admin/f2-depth-gate";
+import { f2ProposalAuthority, F2_ACTIVATION_SLOT, F2_BOOTSTRAP_SLOT, F2_POLICY_SLOT, type FDomainAttempt } from "@/lib/admin/f2-approval";
+import { rebaseFValues, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import type { DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
+import { emptyF2BootstrapDraft, type F2BootstrapDraft } from "./f2-bootstrap";
 import { F2DirectPolicy } from "./f2-direct-policy";
-import { F2Layers, F2Legacy, F2Limits, F2Partner, F2Who } from "./f2-rates";
-import { F2RecoveryNotice, F2SevenLayerActivation } from "./f2-seven-layer-activation";
-import { F2ConfirmModal, LAYERS, configuredValue, f2Ranked, layerPauseState, num, type F2Confirm } from "./f2-shared";
+import { f2ConfigDraftEditor, f2PartnerDraftValues, F2Layers, F2Legacy, F2Limits, F2Partner, F2Who } from "./f2-rates";
+import { f2ActivationDraftEditor, F2RecoveryNotice, F2SevenLayerActivation } from "./f2-seven-layer-activation";
+import { F2ConfirmModal, LAYERS, configuredValue, f2Ranked, layerPauseState, num, type F2Confirm, type Layer } from "./f2-shared";
 import type { FViewCtx } from "./types";
 import { amountDisplay } from "@/lib/format";
 
 
 export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverageRatio: number; redlinePct: number } }) {
   const [confirm, setConfirm] = useState<F2Confirm | null>(null);
+  const drafts = useFReconfirmations("F2");
+  const [bootDraft, setBootDraft] = useState<F2BootstrapDraft | null>(null);
+  const [directDraft, setDirectDraft] = useState<{ original: FDomainAttempt; value: DirectReferralUpdate }>();
   useEffect(() => {
     setConfirm(current => current && ctx.f2ProposalRecord(current.slot) && !ctx.f2ProposalRecord(current.slot)?.ticket ? current : null);
   }, [ctx.f2ReadEpoch]);
+
   const [legacyOpen, setLegacyOpen] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const policy = ctx.f2DirectPolicy;
@@ -88,6 +97,76 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
     </>;
   };
 
+  const draftRows = drafts.map(({ original }) => {
+    const slot = original.fingerprint;
+    const spec = original.spec;
+    const params = original.request?.command.params;
+    if (!spec || !params || ctx.f2WriteBlocked(slot) || !ctx.can(f2ProposalAuthority(slot))
+      || !ctx.can("platform_a2_proposal_create") && !ctx.can("platform_a2_write")) return { original };
+    if (slot === F2_ACTIVATION_SLOT) {
+      const editor = f2ActivationDraftEditor(ctx, params.action);
+      return { original, edit: editor && (() => setConfirm({ ...editor, draft: original })) };
+    }
+    if (slot === F2_BOOTSTRAP_SLOT) {
+      if (rates.length || !Array.isArray(params.layers) || params.layers.length !== LAYERS.length) return { original };
+      const next = emptyF2BootstrapDraft();
+      for (const layer of params.layers) {
+        if (!layer || !LAYERS.includes(layer.layer as Layer) || layer.usdtPct == null || layer.nexPerUsd == null) return { original };
+        next.cells[layer.layer as Layer] = { usdt: String(layer.usdtPct), nex: String(layer.nexPerUsd) };
+      }
+      return { original, edit: () => { setBootDraft({ ...next, original }); nav.select("layers"); } };
+    }
+    if (slot === F2_POLICY_SLOT) {
+      const baseline = "f2DirectBaseline" in original ? original.f2DirectBaseline : undefined;
+      if (!("inputFingerprint" in original) || !baseline || !policy?.sevenLayerEnabled || !params.purchaseSplit || !params.deviceEarning) return { original };
+      const desired = params as unknown as DirectReferralUpdate;
+      const rebaseRule = <T extends object>(before: T, wanted: T, latest: T) => {
+        const next = { ...latest };
+        for (const key of Object.keys(latest) as (keyof T)[]) {
+          const value = wanted[key], old = before[key];
+          if (value !== undefined && !Object.is(value, old)
+            && !(typeof value === "string" && typeof old === "string" && compareDecimal(value, old) === 0)) next[key] = value;
+        }
+        return next;
+      };
+      return { original, edit: () => {
+        setDirectDraft({ original, value: {
+          schemaVersion: 2, expectedVersion: policy.policyVersion, expectedSevenLayerRevision: policy.sevenLayerRevision,
+          purchaseSplit: rebaseRule(baseline.purchaseSplit, desired.purchaseSplit, policy.purchaseSplit),
+          deviceEarning: rebaseRule(baseline.deviceEarning, desired.deviceEarning, policy.deviceEarning),
+        } });
+        nav.select("friend");
+      } };
+    }
+    const editor = f2ConfigDraftEditor(ctx, slot);
+    if (!editor) return { original };
+    const equal = (a: string, b: string) => a === b || compareDecimal(a, b) === 0;
+    if (editor.edit && typeof params.value === "string") {
+      const wanted = params.value.replace(/%$/, "");
+      const before = configuredValue(spec.before).replace(/%$/, "");
+      const initialValue = equal(before, wanted) ? editor.edit.current : wanted;
+      return { original, edit: () => setConfirm({ ...editor, draft: original, edit: { ...editor.edit!, initialValue } }) };
+    }
+    if (editor.businessForm?.kind === "multi-field") {
+      const latest = Object.fromEntries(editor.businessForm.fields.map(field => [field.key, field.current ?? ""]));
+      const pause = (key: string) => /^F\.unilevel\.(L[1-7])\.paused$/.exec(key)?.[1];
+      const pairs = spec.before.split(" / ").flatMap(part => {
+        const [key, value] = part.split("=");
+        const level = pause(key);
+        const state = layerPauseState(value);
+        return level ? [[level, state === "on" || state === "off" ? state : ""]] : [];
+      });
+      const before = slot === "f-config-batch:F2" ? Object.fromEntries(pairs) : f2PartnerDraftValues(spec.before);
+      const intended = slot === "f-config-batch:F2" && Array.isArray(params.changes) ? Object.fromEntries(params.changes.flatMap(item => {
+        const level = typeof item?.key === "string" && pause(item.key);
+        return level && (item.value === "on" || item.value === "off") ? [[level, item.value]] : [];
+      })) : typeof params.value === "string" ? f2PartnerDraftValues(params.value) : {};
+      if (!Object.keys(intended).length) return { original };
+      const initial = rebaseFValues(before, intended, latest, equal);
+      return { original, edit: () => setConfirm({ ...editor, draft: original, initial }) };
+    }
+    return { original };
+  });
   return (
     <div className="f2-page">
       <PageHeader pageId="F2" title="团队奖励设置" summary="好友和好友的好友买设备时，奖励怎么一层层分上去。"
@@ -95,7 +174,7 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
         readOnly={canWrite ? undefined : "只能查看：这个账号没有修改团队奖励的权限"} />
       <Conclusion state={conclusion.state} icon={conclusion.icon} hint={conclusion.hint}
         explain={ranked ? "第 1、2 层按受益人等级取比例，发放中的层合计看下面「每层分多少」。" : "整体结算的状态读自好友奖励设置；七层合计只算发放中的层，按比例算，不含影响分、活动倍率、等级门槛和总额上限。"}>{conclusion.text}</Conclusion>
-      <F2RecoveryNotice ctx={ctx} recovering={recovering} setRecovering={setRecovering} />
+      <F2RecoveryNotice ctx={ctx} recovering={recovering} setRecovering={setRecovering} drafts={draftRows} />
       <F2SevenLayerActivation ctx={ctx} openConfirm={setConfirm} recovering={recovering} />
       {ratesReady && <StatBand label="近 7 天" fit>
         <Stat label="近 7 天记入的 USDT 奖励" icon={Coins} tone="role-1" value={amount(usdt?.value)} unit={usdt ? "USDT" : undefined} sub={statSub(usdt?.sub, "USDT")}
@@ -108,10 +187,10 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
       <div className="rd-config-layout"><div className="rd-config-grid">
         <div className="rd-config-rail"><SectionNav label="本页分组" items={sections} nav={nav} /></div>
         <div className="rd-config-groups">
-          <div id={nav.anchor("layers")}><F2Layers ctx={ctx} openConfirm={setConfirm} /></div>
+          <div id={nav.anchor("layers")}><F2Layers ctx={ctx} openConfirm={setConfirm} bootDraft={bootDraft} setBootDraft={setBootDraft} /></div>
           <div id={nav.anchor("who")}><F2Who ctx={ctx} openConfirm={setConfirm} /></div>
           <div id={nav.anchor("limits")}><F2Limits ctx={ctx} openConfirm={setConfirm} /></div>
-          <div id={nav.anchor("friend")}><F2DirectPolicy key="direct-policy" ctx={ctx} openConfirm={setConfirm} /></div>
+          <div id={nav.anchor("friend")}><F2DirectPolicy key={directDraft?.original.commandKey ?? "direct-policy"} continuation={directDraft} ctx={ctx} openConfirm={setConfirm} /></div>
           <div id={nav.anchor("partner")}><F2Partner ctx={ctx} openConfirm={setConfirm} /></div>
           <div id={nav.anchor("legacy")}>
             <Fold title="旧档位和旧参数" icon={Archive} open={legacyOpen} onOpenChange={setLegacyOpen}
@@ -123,7 +202,7 @@ export function F2Page({ ctx, coverage }: { ctx: FViewCtx; coverage?: { coverage
           </div>
         </div>
       </div></div>
-      {confirm && <F2ConfirmModal spec={confirm} ctx={ctx} coverage={coverage} toast={ctx.toast} onClose={() => setConfirm(null)} />}
+      {confirm && <F2ConfirmModal key={confirm.draft?.commandKey ?? confirm.slot} spec={confirm} ctx={ctx} coverage={coverage} toast={ctx.toast} onClose={() => setConfirm(null)} />}
     </div>
   );
 }

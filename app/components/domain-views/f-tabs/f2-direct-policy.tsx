@@ -4,10 +4,12 @@
  * F2 好友奖励政策：好友购买奖励的币种拆分和好友设备收益奖励是一组，一起提交审批、一起生效。
  * 草稿只在内存；放弃修改并刷新成功才重填。提交前重读政策核对两个版本，逻辑照旧。
  */
+import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Clock3, HandCoins, ShoppingCart, Smartphone } from "lucide-react";
 import { BlockState, Button, DiffList, Explain, Field, Notice, NumberInput, Panel, RatioBar, Segments, StatusTag, type DiffRow } from "@/app/components/rd";
+import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { directReferralAmplifies, directReferralSplitIssue, directReferralSummary, validateDirectReferralUpdate, type DirectReferralPolicy, type DirectReferralUpdate } from "@/lib/admin/direct-referral-policy";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { f4Decimal } from "@/lib/admin/f4-money";
@@ -43,9 +45,9 @@ function impactOf(before: DirectReferralPolicy, after: DirectReferralUpdate, spl
   return parts.join("；");
 }
 
-export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void }) {
+export function F2DirectPolicy({ ctx, openConfirm, continuation }: { ctx: FViewCtx; openConfirm: (spec: F2Confirm) => void; continuation?: { original: FDomainAttempt; value: DirectReferralUpdate } }) {
   const policy = ctx.f2DirectPolicy;
-  const [draft, setDraft] = useState<DirectReferralUpdate | null>(() => policy ? draftOf(policy) : null);
+  const [draft, setDraft] = useState<DirectReferralUpdate | null>(() => continuation?.value ?? (policy ? draftOf(policy) : null));
   const level2Now = policy?.deviceEarning.level2RatePct;
   const hasLevel2 = level2Now !== undefined;
   const level2 = draft?.deviceEarning.level2RatePct;
@@ -84,12 +86,13 @@ export function F2DirectPolicy({ ctx, openConfirm }: { ctx: FViewCtx; openConfir
     const splitChanged = JSON.stringify(value.purchaseSplit) !== JSON.stringify(policy.purchaseSplit);
     const amplify = directReferralAmplifies(policy, value);
     openConfirm({
+      draft: continuation?.original,
       slot: "f-direct-referral-policy",
       action: "好友奖励设置整组调整", title: "提交好友奖励政策", briefKind: "config", amplify, icon: "sliders", dialogClassName: "f2-confirm",
       effect: <StatusTag tone="progress" filled icon={Clock3} explain="另一位超级管理员在「操作记录与审批」批准后生效；好友购买奖励和设备收益奖励一起提交、一起生效，批准前按原政策执行。">批准后生效</StatusTag>,
       facts: <Facts>
         <Fact k="谁来批">另一位超级管理员</Fact>
-        <Fact k="需有权限">审批批准权限和团队奖励比例权限</Fact>
+        <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f2_royalty_rate)}</Fact>
         <Fact k="购买冷却">{reference.coolingDays === null ? "未配置" : `${reference.coolingDays} 天`}</Fact>
         <Fact k="第 1 层另发 UVT">{reference.legacyNexPerUsd === null ? "未配置" : `${num(reference.legacyNexPerUsd)} UVT / 1 USDT`}</Fact>
         {ranked ? <Fact k="好友购买奖励比例">{range ? `一级 ${rangeText(range.l1.min, range.l1.max)}、二级 ${rangeText(range.l2.min, range.l2.max)}，按受益人等级` : "按受益人等级"}</Fact>

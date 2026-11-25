@@ -123,6 +123,7 @@ export type H8RecoveryRow = {
   /** 本机记下这次提交的时间（毫秒）。 */
   submittedAt?: number;
   tag: ReactNode;
+  settled?: boolean;
   actions?: ReactNode;
 };
 
@@ -147,7 +148,7 @@ export function H8RecoveryNotice({ rows }: { rows: H8RecoveryRow[] }) {
   if (rows.length === 0) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
   return (
-    <Notice tone="warn" title={<>还没有结论的原操作 · {rows.length} 项<Explain label="原操作怎么处理" content={<>
+    <Notice tone="warn" title={<>{rows.every(row => row.settled) ? "原操作未执行的草稿" : rows.some(row => row.settled) ? "原操作与草稿" : `还没有结论的原操作 · ${rows.length} 项`}<Explain label="原操作怎么处理" content={<>
       <p>这里列你在这个浏览器标签页里提交过、还没收到确定结果的修改和结算申请。</p>
       <p>原操作有结论之前，这一项不能改成别的值。有参数审批在等批时，别的项也只能收紧、不能放大。别人提交的审批单不在这里，到「操作记录与审批」看。</p>
     </>} /></>}>

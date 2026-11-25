@@ -54,6 +54,7 @@ import type {
  * businessForm + run:复杂业务表单(如 V-Rank 奖励编辑)走 businessForm 渲染 + run 回调真写(对齐 H 域 voucher-config 范式)。
  */
 export interface McSpec {
+  blockedReason?: string;
   briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind);
   name: string;
   commandKey?: string;
@@ -72,7 +73,9 @@ export interface McSpec {
   expectedMaterialRevision?: number;
   teamApproval?: Pick<InlineOperationApproval, "resolve" | "renderForm"> & { source: keyof TeamFundApprovalValues };
   f3Snapshot?: F3ConfirmationSnapshot;
+  f3RecoveryKey?: string;
   f4Snapshot?: F4ConfirmationSnapshot;
+  draft?: import("@/lib/admin/pending-mutation-store").PendingMutationRecord;
   f4Recovery?: { kind: "proposal"; original: FDomainAttempt } | { kind: "policy"; original: FDirectAttempt };
   /** 以下只管确认框怎么显示，原样交给 OperationConfirmModal 的同名参数；不传时和原来一样。 */
   title?: ReactNode;
@@ -84,7 +87,7 @@ export interface McSpec {
   coverageLead?: ReactNode;
   coverageCheck?: string;
 }
-export type Mc = (McSpec & { teamApprovalOwner?: AdminSession["adminId"]; f4Owner?: AdminSession["adminId"] }) | null;
+export type Mc = (McSpec & { commandKey: string; teamApprovalOwner?: AdminSession["adminId"]; f4Owner?: AdminSession["adminId"] }) | null;
 
 /** 子视图上下文:打开 操作确认 / 跨域跳转 / toast。全部由 shell 注入,子视图无自有 store。 */
 export interface FViewCtx {
@@ -100,7 +103,6 @@ export interface FViewCtx {
   leadership: F1Leadership | null;
   f1Loading: boolean;
   f1Error: string | null;
-  f1ReadEpoch: number;
   f1ProposalEpoch: number;
   f1ApprovalRanks: string[];
   f1Proposals: FDomainAttempt[];
@@ -181,10 +183,10 @@ export interface FViewCtx {
   f2PendingFor: (key: string) => string | null;
   f2WriteBlocked: (slot: string) => string | undefined;
   f2ProposalRecord: (slot: string) => F2Recovery | undefined;
-  retryF2Proposal: (slot: string) => Promise<void>;
+  retryF2Proposal: (slot: string) => Promise<A2OperationRow>;
   queryF2Proposal: (slot: string) => Promise<A2OperationRow | null>;
   releaseF2Proposal: (slot: string) => Promise<void>;
-  recoverF2SevenLayerActivation: () => Promise<void>;
+  recoverF2SevenLayerActivation: () => Promise<A2OperationRow>;
   changeF2SevenLayerActivation: (action: "ACTIVATE" | "PAUSE" | "RESUME", expectedSevenLayerRevision: number, expectedPolicyVersion: number, reason: string) => Promise<void>;
   bootstrapF2Unilevel: (layers: F2UnilevelBootstrapLayer[], reason: string) => Promise<void>;
   f2Unilevel: F2UnilevelRate[];
@@ -202,7 +204,6 @@ export interface FViewCtx {
   // -- 双轨结算引擎(F3)· 读 + 配置写入 --
   f3Proposals: FDomainAttempt[];
   f3ApprovalRows: A2OperationRow[];
-  f3ReadEpoch: number;
   recoverF3: (original: FDomainAttempt, mode?: "query" | "retry" | "release") => Promise<A2OperationRow | null>;
   f3Metrics: F3Metric[];
   f3Amounts?: F3RawAmounts;
@@ -277,9 +278,11 @@ export interface FViewCtx {
   getF5Operation: (snapshot: F5ConfirmationSnapshot) => F5Recovery | undefined;
   recoverF5: (record: F5Recovery, mode: "query" | "retry" | "release") => Promise<boolean | "restore">;
   refreshF5: (query?: F5CommissionQuery) => Promise<void>;
+  f5ExportBlocked: (filters: F5CommissionQuery) => string | undefined;
   exportF5Commissions: (
     query: F5CommissionQuery,
     reason: string,
+    originalKey?: string, onRemember?: (key: string | undefined) => void,
   ) => Promise<{ rowCount: number; filename: string; sha256: string }>;
   updateF5Config: (key: string, value: string, reason: string, expectedVersion: number) => Promise<void>;
   reverseF5Commission: (commissionId: string, refundRef: string, reason: string) => Promise<void>;

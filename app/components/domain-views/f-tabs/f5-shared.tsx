@@ -4,12 +4,11 @@
  * F5 奖励记录核对的共用小件：状态和类型的名字、金额和时间的写法、确认框外壳、原操作提醒。
  * 只管怎么显示；提交调用 ctx 上和旧页面相同的函数、相同的参数。
  */
-import { useRef } from "react";
+import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { fConfirmRecovery } from "./f-recovery-state";
-import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
 import type { ReactNode } from "react";
 import { CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Snowflake, TriangleAlert, Undo2, Wallet, type LucideIcon } from "lucide-react";
-import { Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
+import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type OperatorBriefKind } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -20,7 +19,7 @@ import { f5AnomalyRecovery } from "@/lib/admin/f5-anomaly-write";
 import { f5ExportRecovery, pendingF5Export } from "@/lib/admin/f5-export-operation";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { F5CommissionEvent } from "@/lib/admin/f1-client";
+import type { F5CommissionEvent, F5CommissionQuery } from "@/lib/admin/f1-client";
 import type { F5Recovery, FViewCtx } from "./types";
 import { amountDisplay } from "@/lib/format";
 
@@ -167,7 +166,11 @@ export function knownRejection(row: F5CommissionEvent, action: "release" | "reve
 export type F5Confirm = {
   snapshot?: F5ConfirmationSnapshot;
   recovery?: F5Recovery;
-  exportOperation?: true;
+  exportFilters?: F5CommissionQuery;
+  exportKey?: () => string | undefined;
+  reloadExport?: () => void;
+  initial?: BusinessFormValue;
+  draft?: import("@/lib/admin/pending-mutation-store").PendingMutationRecord;
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   title: ReactNode;
@@ -193,9 +196,14 @@ export type F5Confirm = {
 export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; ctx: FViewCtx; onClose: () => void }) {
   const getOriginal = () => confirm.snapshot ? ctx.getF5Operation(confirm.snapshot) : undefined;
   const original = getOriginal();
+  const exportOriginal = () => {
+    const record = pendingF5Export();
+    return record?.commandKey === confirm.exportKey?.() ? record : undefined;
+  };
+  const exportBlock = confirm.exportFilters && ctx.f5ExportBlocked(confirm.exportFilters);
   const savedValue = (): BusinessFormValue | undefined => {
     const saved = getOriginal();
-    if (!saved) return undefined;
+    if (!saved) return confirm.initial;
     if (saved.kind === "anomaly") return saved.original.f5Request ? {
       sigma: String(saved.original.f5Request.commissionAnomalySigma), ratio: String(saved.original.f5Request.layerRatioAnomalyPct),
     } : undefined;
@@ -204,15 +212,10 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
     return typeof params.refundRef === "string" ? { refundRef: params.refundRef }
       : Array.isArray(params.kinds) ? { kinds: params.kinds.join(",") } : undefined;
   };
-  const restoreDraft = useRef(false);
   const recover = async (mode: "query" | "retry") => {
     const saved = getOriginal();
     if (!saved) { onClose(); return; }
     const result = await ctx.recoverF5(saved, mode);
-    if (result === "restore") {
-      restoreDraft.current = true;
-      throw new PendingConfirmRejected("原操作没有执行，请核对后重新确认。");
-    }
     if (result) onClose();
   };
   const canReadCoverage = useAdminAuth(({ session }) => session?.authorities.some(authority => ["overview_b1_read", "finance_d3_read", "bi_l3_read"].includes(authority)) ?? false);
@@ -227,7 +230,8 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       detail={confirm.detail}
       effect={confirm.effect}
       facts={confirm.facts}
-      content={confirm.content}
+      content={exportBlock && confirm.exportFilters ? <Notice tone="warn" title={exportBlock}
+        action={<Button size="sm" disabled={ctx.f5Loading} onClick={confirm.reloadExport}>重新读取原筛选</Button>} /> : confirm.content}
       statedBrief={confirm.statedBrief}
       completionCopy={confirm.completionCopy}
       amplifies={!!confirm.amplify}
@@ -238,18 +242,18 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       coverageCheck={confirm.coverageCheck}
       confirmTone={confirm.confirmTone}
       confirmLabel={confirm.confirmLabel ?? "提交审批"}
-      blockedReason={original ? undefined : confirm.blockedReason}
+      blockedReason={exportBlock ?? (original ? undefined : confirm.blockedReason)}
       reasonPlaceholder={confirm.reasonPlaceholder ?? "例如：工单号、核对依据"}
       businessForm={confirm.businessForm}
       getPendingReason={() => {
-        if (confirm.exportOperation) return pendingF5Export()?.f5ExportRequest?.reason;
+        if (confirm.exportFilters) return exportOriginal()?.f5ExportRequest?.reason;
         const saved = getOriginal();
         return saved?.kind === "proposal" ? saved.original.request?.reason : saved?.original.f5Request?.reason;
       }}
       getPendingBusinessValue={savedValue}
       getPendingRecovery={() => {
-        if (confirm.exportOperation) {
-          const saved = pendingF5Export();
+        if (confirm.exportFilters) {
+          const saved = exportOriginal();
           return saved && fConfirmRecovery(f5ExportRecovery, saved);
         }
         const saved = getOriginal();
@@ -261,9 +265,10 @@ export function F5ConfirmHost({ confirm, ctx, onClose }: { confirm: F5Confirm; c
       onConfirm={async (reason, _newValue, businessValue) => {
         try {
           if (getOriginal()) { await recover("retry"); return; }
-          if (confirm.recovery && !restoreDraft.current) throw new Error("PENDING_REPLAY_BLOCKED");
+          if (confirm.recovery) throw new Error("PENDING_REPLAY_BLOCKED");
           ctx.prepareF5Confirmation(confirm.snapshot ? { ...confirm.snapshot, name: confirm.action } : undefined);
           await confirm.submit(reason, businessValue);
+          if (confirm.draft) consumeFReconfirmation(confirm.draft);
           onClose();
         } catch (error) {
           // 错误交回确认框，由框里显示（没权限时框关掉、外壳提示），不再另弹轻提示，免得同一句同屏两次。
@@ -282,7 +287,7 @@ export type F5RecoveryRow = {
   change: ReactNode;
   /** 本机保存原请求的时间（毫秒）。 */
   submittedAt?: number;
-  state: "unknown" | "pending" | "expired";
+  state: "unknown" | "pending" | "expired" | "settled";
   /** 直接保存（异常预警标准）：没有审批单，提示不能说审批单。 */
   direct?: boolean;
   exportOperation?: boolean;
@@ -299,11 +304,12 @@ export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
       : direct
       ? "提交时没收到结果。先核对原操作回执；明确查无后，才可以在 24 小时内按原请求重试。"
       : "提交时没收到结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，系统认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>
+    : state === "settled" ? <StatusTag tone="neutral">原操作未执行</StatusTag>
     : state === "pending"
       ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>
       : <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return (
-    <Notice tone="warn" title={<>{rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
+    <Notice tone="warn" title={<>{rows.every((row) => row.state === "settled") ? "原操作未执行的草稿" : rows.some((row) => row.state === "settled") ? "奖励处置与草稿" : rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
       <ul className="f5-recovery" aria-label="还没有结论的处置">
         {rows.map((row) => (
           <li key={row.key} data-recovery-state={row.state}>

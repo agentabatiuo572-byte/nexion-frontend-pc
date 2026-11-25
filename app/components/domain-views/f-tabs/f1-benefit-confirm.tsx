@@ -6,7 +6,7 @@
  * 放大方向才出覆盖率提示，「现在 → 改后」，理由。
  */
 import { fConfirmRecovery } from "./f-recovery-state";
-import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
+import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { useState } from "react";
 import { CircleHelp, Clock3, Lock, LockOpen, Zap } from "lucide-react";
 import { Change, DiffField, Fact, Facts, NumberInput, StatusTag } from "@/app/components/rd";
@@ -18,7 +18,7 @@ import { SUPER_APPROVER } from "./f1-shared";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
 import { fetchF1VRankOverview } from "@/lib/admin/f1-client";
 import { compareDecimal, ratePct, F1_BENEFIT_NAMES as NAME, f1BenefitInputError as inputError, type F1BenefitField } from "@/lib/admin/f1-rank-benefit";
-import { canRetryF1PolicyProposal, f1PolicyRecovery, pendingF1Policy, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
+import { canRetryF1PolicyProposal, f1PolicyRecovery, pendingF1Policy, type F1PolicyDraft, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { F1_PROPOSAL_LOOKUP_FIRST } from "@/lib/admin/f1-approval";
@@ -33,8 +33,8 @@ const isRate = (field: F1BenefitField) => field !== "monthlySalaryUsdt";
 const unitOf = (field: F1BenefitField) => isRate(field) ? "%" : "USDT";
 const shown = (field: F1BenefitField, value: string) => isRate(field) ? `${value}%` : `${amountDisplay(value)} USDT`;
 
-export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChange, onClose }: {
-  editor: F1PolicyEditor; field: F1BenefitField; ctx: FViewCtx; onPendingChange: () => void; onClose: () => void;
+export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChange, onClose, draft }: {
+  editor: F1PolicyEditor; field: F1BenefitField; ctx: FViewCtx; draft?: F1PolicyDraft; onPendingChange: () => void; onClose: () => void;
 }) {
   const session = useAdminAuth((state) => state.session);
   const [owner] = useState(session?.adminId);
@@ -147,12 +147,12 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
     if (!result.resolved) throw new A2OutcomeUncertainError(result.acknowledgement, sent!.commandKey);
     if (result.active) ctx.acceptF1PolicyOverview(result.active);
     else ctx.invalidateF1(`${result.acknowledgement}；当前配置暂时读不到，重新读取后再发起新修改。`);
-    if ("restoreDraft" in result && result.restoreDraft && sent) {
-      const latest = result.active?.rows.find(item => item.v === row.v);
-      if (latest) setBaseline({ ...requested, row: latest, recoveryCommandKey: undefined });
-      setOriginal(undefined);
-      throw new PendingConfirmRejected("原操作没有执行，请核对后重新确认。");
+    if ("restoreDraft" in result && result.restoreDraft) {
+      ctx.toast(result.acknowledgement);
+      onClose();
+      return true;
     }
+    if (mode === "submit" && result.resolved && draft) consumeFReconfirmation(draft.record);
     if (mode === "submit") {
       const active = result.active?.rows.find(item => item.v === row.v);
       const saved = active && benefitValue(active, field);
@@ -176,7 +176,7 @@ export function F1BenefitConfirm({ editor: requested, field, ctx, onPendingChang
     detail={`当前${name}为 ${shown(field, current)}。`}
     coverage={ctx.f1BenefitCoverage}
     getPendingReason={() => pending()?.original.reason}
-    getPendingBusinessValue={() => pending()?.original.form}
+    getPendingBusinessValue={() => pending()?.original.form ?? draft?.form}
     getPendingRecovery={() => { const record = pending(); return record && fConfirmRecovery(f1PolicyRecovery, record, () => submit("lookup")); }}
     businessFormRevision={revision}
     coverageLead={isRate(field) ? "调高会让平台多付好友购买奖励" : "调高会让平台多付月薪"}

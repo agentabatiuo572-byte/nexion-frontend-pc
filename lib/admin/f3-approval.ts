@@ -101,7 +101,7 @@ export const canRetryF3Proposal = (original: FDomainAttempt) => !f3ProposalRecov
 
 export async function queryF3Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId);
-  return f3ProposalRecovery.queryTicket(original, async record => {
+  return f3ProposalRecovery.queryTicket("F3", original, async record => {
     if (record.adminId !== undefined && record.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
     const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
     if (!activeRecoveryActor(adminId, "network_f3_read")) throw new Error("ADMIN_PERMISSION_DENIED");

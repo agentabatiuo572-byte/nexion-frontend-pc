@@ -11,7 +11,7 @@ import { operatorCopyText } from "@/lib/admin/operator-copy";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, decimalText, minPointsText, periodRange, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import type { FViewCtx } from "./types";
-import { f4PeriodPrizes } from "@/lib/admin/f4-money";
+import { F4_PAYOUT_POOL_UNCONFIGURED, f4PeriodPrize, f4PeriodPrizes } from "@/lib/admin/f4-money";
 import { f4Confirmation } from "./f4-confirmations";
 
 type Period = "today" | "week" | "month" | "all";
@@ -59,7 +59,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const ppToday = currentPeriodPrize("today");
   const ppWeek = currentPeriodPrize("week");
   const ppMonth = currentPeriodPrize("month");
-  const ppAllTime = currentPeriodPrize("all");
+  const ppAllTime = f4PeriodPrize(periodPrizeRaw, "allTime") ?? "";
   const prizeShown = (value: string) => value === "" ? "—" : moneyText(value);
   const limit = PERIODS.find((item) => item.value === period)!.limit;
 
@@ -67,7 +67,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
   const openPause = () => ctx.openActionConfirm(f4Confirmation(ctx, pauseSnapshot));
 
   const payoutSnapshot = { action: "payout", overview: data, policy: ctx.f4AmbassadorPolicy, period };
-  const openPayout = () => ctx.openActionConfirm(f4Confirmation(ctx, payoutSnapshot));
+  const openPayout = () => { if (ppAllTime !== "") ctx.openActionConfirm(f4Confirmation(ctx, payoutSnapshot)); };
 
   const disqualifySnapshot = (row: { memberUserId: number }) => ({ action: `F.leaderboard.week.user.${row.memberUserId}.status`, overview: data, policy: ctx.f4AmbassadorPolicy, period });
   const openDisqualify = (row: { memberUserId: number }) => ctx.openActionConfirm(f4Confirmation(ctx, disqualifySnapshot(row)));
@@ -88,7 +88,7 @@ export function F4Leaderboard({ ctx, data }: { ctx: FViewCtx; data: F4Leadership
         </>}
         actions={<>
           {canControl && <Button variant={board.paused ? "secondary" : "danger-outline"} icon={board.paused ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />} disabledReason={ctx.f4ExpiredReason(pauseSnapshot)} onClick={openPause}>{board.paused ? "恢复榜单" : "暂停榜单"}</Button>}
-          {canFund && <Button variant="primary" disabledReason={board.paused ? "排行榜已暂停，总榜奖励暂停发放" : ctx.f4ExpiredReason(payoutSnapshot)} onClick={openPayout}>发放总榜奖励</Button>}
+          {canFund && <Button variant="primary" disabledReason={board.paused ? "排行榜已暂停，总榜奖励暂停发放" : ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : ctx.f4ExpiredReason(payoutSnapshot)} onClick={openPayout}>发放总榜奖励</Button>}
         </>}>
         <div className="f4-board-bar">
           <Segments label="排行榜周期" value={period} onChange={setPeriod} items={PERIODS.map(({ value, label }) => ({ value, label }))} />

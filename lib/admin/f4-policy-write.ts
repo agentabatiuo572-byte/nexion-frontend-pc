@@ -1,5 +1,6 @@
+import { settleFReconfirmation } from "./f-reconfirmation";
 import { createA2CommandKey } from "./a2-client";
-import { fetchF4AmbassadorPolicy, updateF4AmbassadorPolicy, type F4AmbassadorPolicyUpdate } from "./f1-client";
+import { updateF4AmbassadorPolicy, type F4AmbassadorPolicyUpdate } from "./f1-client";
 import { fDirectCommands, F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
 import { hasPersistedPendingCommandOwner } from "./pending-mutation-store";
 import { createFDirectRecovery, fDirectReceiptConclusion } from "./f-direct-recovery";
@@ -75,9 +76,9 @@ export async function queryF4Policy(adminId: number, original: FDirectAttempt, e
     const conclusion = state === "SUCCEEDED" ? "succeeded" : state === "REJECTED" ? "rejected"
       : state === "NOT_EXECUTED" ? "not-executed" : evidence || receipt
         ? "unknown" : await fDirectReceiptConclusion(SCOPE, record.commandKey, adminId);
-    return { conclusion, receipt, current: await fetchF4AmbassadorPolicy() };
+    return { conclusion, receipt };
   });
   if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
-  const settled = f4PolicyRecovery.settleFromQuery(original, result.conclusion);
+  const settled = settleFReconfirmation(f4PolicyRecovery, original, result.conclusion, "f4-policy");
   return { ...result, settled };
 }

@@ -7,6 +7,9 @@
  * 「等级与奖励」是九级阶梯（选择器，柱高按所选口径）+ 选中一级的详情（五项门槛、奖励模板、只读参数）+ 九级共用的设置。
  * 请求、校验、权限全部沿用旧页面：门槛和奖励走 F1PolicyConfirm（lib/admin/f1-policy-change），其余走 ctx 上现成的提交函数。
  */
+import { rebaseFValues, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import type { FDomainAttempt } from "@/lib/admin/f2-approval";
+import { emptyVRankBootstrap, buildVRankBootstrap, type VRankBootstrapDraft, type VRankBootstrapRow } from "@/lib/admin/vrank-bootstrap";
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
@@ -19,7 +22,7 @@ import {
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { f1ConditionLabels, listF1PolicyOperations, pendingF1Policy, type F1ConditionField, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
+import { f1ConditionLabels, listF1PolicyOperations, pendingF1Policy, type F1ConditionField, type F1PolicyDraft, type F1PolicyEditor } from "@/lib/admin/f1-policy-change";
 import { fetchUserProfilesPage } from "@/lib/admin/user360-client";
 import { isF1BenefitField } from "@/lib/admin/f1-rank-benefit";
 import { pendingF1RankHow } from "@/lib/admin/f1-rank-how-save";
@@ -30,7 +33,7 @@ import type { FViewCtx } from "./types";
 import { F1PolicyConfirm } from "./f1-policy-confirm";
 import { F1RecoveryNotice } from "./f1-recovery";
 import { F1VrankBootstrap } from "./f1-vrank-bootstrap";
-import { F1PromotionHistory, F1PayoutHistory } from "./f1-history";
+import { f1PayoutConfirmation, F1PromotionHistory, F1PayoutHistory } from "./f1-history";
 import { F1BenefitConfirm, benefitValue } from "./f1-benefit-confirm";
 import { F1V8Review } from "./f1-v8-review";
 import { F1SalaryClaims } from "./f1-salary";
@@ -81,6 +84,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const [lens, setLens] = useState<Lens>("pop");
   const [picked, setPicked] = useState<string | null>(null);
   const [policyEditor, setPolicyEditor] = useState<F1PolicyEditor | null>(null);
+  const [policyDraft, setPolicyDraft] = useState<F1PolicyDraft>();
+  const [bootstrapDraft, setBootstrapDraft] = useState<{ original: FDomainAttempt; drafts: VRankBootstrapDraft[] }>();
+  const settledPolicies = useFReconfirmations("f1-policy");
   const [confirm, setConfirm] = useState<F1Confirm | null>(null);
   const v8Review = ctx.v8Review;
   const canApproveV8 = useAdminAuth(({ session }) => !!session
@@ -115,7 +121,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const [, setRecoveryEpoch] = useState(0);
 
   const overrideRead = useRef(0);
-  useEffect(() => { setConfirm(null); setPolicyEditor(null); }, [ctx.f1ReadEpoch]);
+  useEffect(() => {
+    setPolicyEditor(current => current?.recoveryCommandKey && settledPolicies.some(row => row.commandKey === current.recoveryCommandKey) ? null : current);
+  }, [settledPolicies.length]);
   const policyOperations = owner === undefined ? [] : listF1PolicyOperations(owner);
   const pendingApprovalRanks: ReadonlySet<string> = new Set([
     ...ctx.f1ApprovalRanks,
@@ -134,16 +142,81 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   );
   const dialogs = <Fragment key="f1-dialogs">
     {policyEditor && (isF1BenefitField(policyEditor.field)
-      ? <F1BenefitConfirm key={`${policyEditor.row.v}:${policyEditor.field}:${policyEditor.recoveryCommandKey ?? "edit"}`}
-        editor={policyEditor} field={policyEditor.field} ctx={ctx} onClose={() => setPolicyEditor(null)}
-        onPendingChange={() => setRecoveryEpoch(value => value + 1)} />
+      ? <F1BenefitConfirm key={`${policyEditor.row.v}:${policyEditor.field}:${policyEditor.recoveryCommandKey ?? policyDraft?.record.commandKey ?? "edit"}`}
+        editor={policyEditor} field={policyEditor.field} ctx={ctx} onClose={() => { setPolicyDraft(undefined); setPolicyEditor(null); }}
+        draft={policyDraft} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />
       : <F1PolicyConfirm
-        key={`${policyEditor.row.v}:${policyEditor.action}:${policyEditor.field ?? policyEditor.reward?.id ?? "new"}:${policyEditor.recoveryCommandKey ?? "edit"}`}
-        editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => setPolicyEditor(null)}
-        onPendingChange={() => setRecoveryEpoch(value => value + 1)} />)}
-    {confirm && <F1ConfirmHost confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
+        key={`${policyEditor.row.v}:${policyEditor.action}:${policyEditor.field ?? policyEditor.reward?.id ?? "new"}:${policyEditor.recoveryCommandKey ?? policyDraft?.record.commandKey ?? "edit"}`}
+        editor={policyEditor} ctx={ctx} pendingApproval={pendingApprovalRanks.has(policyEditor.row.v)} onClose={() => { setPolicyDraft(undefined); setPolicyEditor(null); }}
+        draft={policyDraft} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />)}
+    {confirm && <F1ConfirmHost key={confirm.draft?.commandKey ?? "confirm"} confirm={confirm} ctx={ctx} onClose={() => setConfirm(null)} />}
   </Fragment>;
-  const recovery = <F1RecoveryNotice ctx={ctx} onOpenPolicy={setPolicyEditor} onRankHowChecked={() => setHowEpoch((value) => value + 1)} />;
+  function continueOrdinary(original: FDomainAttempt) {
+    const params = original.request?.command.params;
+    if (!params) return;
+    const key = original.fingerprint;
+    if (key === "f-vrank-bootstrap:current" && Array.isArray(params.ranks)) {
+      const source = params.ranks as VRankBootstrapRow[];
+      const drafts = emptyVRankBootstrap();
+      for (const row of drafts) {
+        const saved = source.find(item => item?.rankCode === row.rankCode);
+        if (!saved) { ctx.toast("原等级配置不完整，请核对。"); return; }
+        row.titleCn = saved.titleCn; row.titleEn = saved.titleEn;
+        row.unilevelDepth = saved.unilevelDepth;
+        row.requiredDownlineRank = saved.requiredDownlineRank ?? "";
+        for (const field of ["selfComputePoints", "teamComputePoints", "directRefs", "requiredDownlineCount", "leadershipVotes"] as const) {
+          row[field] = String(saved[field]);
+        }
+        row.peerBonusPercent = ratePct(String(saved.peerBonusRate)) ?? "";
+      }
+      try { buildVRankBootstrap(drafts); }
+      catch { ctx.toast("原等级配置不完整，请核对。"); return; }
+      setBootstrapDraft({ original, drafts });
+      return;
+    }
+    if (key.startsWith("f-payout-action:")) {
+      const record = ctx.payoutRecords.find(row => key === `f-payout-action:${row.payoutId}`);
+      const action = params.action;
+      if (!record || ctx.f1PayoutLoading || ctx.f1PayoutError) {
+        setView("payouts");
+        ctx.toast("请先读取原奖励发放记录。");
+        return;
+      }
+      if (!(action === "reissue" && record.status === "REVERSED"
+        || action === "reverse" && ["GRANTED", "REISSUED", "PENDING_GRANT"].includes(record.status))) {
+        ctx.toast("这笔奖励现在不能执行原处置，请核对。"); return;
+      }
+      const confirmedAction = action as "reissue" | "reverse";
+      setConfirm({ ...f1PayoutConfirmation(ctx, record, confirmedAction), draft: original,
+        initial: typeof params.usedVoucherClawback === "boolean" ? { usedVoucherClawback: String(params.usedVoucherClawback) } : undefined });
+      return;
+    }
+    if (key.startsWith("f-vrank-override:") && typeof params.targetV === "string" && typeof params.direction === "string") {
+      openOverride(original, { userId: key.slice("f-vrank-override:".length), targetV: params.targetV, direction: params.direction });
+      return;
+    }
+    if (typeof params.value !== "string") return;
+    if (key === "f-config:F.vrank.permanent" && (params.value === "on" || params.value === "off")) {
+      if (params.value === permanent) { ctx.toast("现在已是这个状态。"); return; }
+      openProtection(params.value, original);
+    } else if (key === "f-config:F.prize.name") openPrize(original, params.value);
+    else if (key === "f-config:F.vrank.titles") {
+      if (original.spec?.before === "—") { ctx.toast("原操作未保存修改前的头衔，请先核对当前头衔。"); return; }
+      const readTitles = (value: string) => {
+        try {
+          const titles = JSON.parse(value);
+          return Object.fromEntries(rows.map(row => [row.v, typeof titles?.[row.v] === "string" ? titles[row.v] : ""]));
+        } catch { return Object.fromEntries(rows.map(row => [row.v, ""])); }
+      };
+      const before = readTitles(original.spec?.before ?? "");
+      const intended = readTitles(params.value);
+      const latest = readTitles(ctx.f1ConfigValues["F.vrank.titles"] ?? "");
+      openTitles(original, rebaseFValues(before, intended, latest, (a, b) => a.trim() === b.trim()));
+    }
+  }
+  const recovery = <F1RecoveryNotice ctx={ctx} continueOrdinary={continueOrdinary}
+    onOpenPolicy={(editor, draft) => { setPolicyDraft(draft); setPolicyEditor(editor); }}
+    onRankHowChecked={() => setHowEpoch((value) => value + 1)} />;
 
   const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
   // V8 审核：审核通过走现有人工改级（A2 审批），用户、目标 V8、方向升级预先填好（画板 B5）。升 V8 不查兑付覆盖率，所以不按放大算、不出覆盖率块。
@@ -219,7 +292,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           {recovery}
           <Panel title="九级阶梯"><BlockState state="error" title="会员等级读取失败" detail={ctx.f1Error} onRetry={() => void ctx.refreshF1Membership()} /></Panel></>
         : canWrite
-          ? <>{recovery}<F1VrankBootstrap ctx={ctx} openConfirm={setConfirm} /></>
+          ? <>{recovery}<F1VrankBootstrap key={bootstrapDraft?.original.commandKey ?? "bootstrap"} ctx={ctx} continuation={bootstrapDraft} openConfirm={setConfirm} /></>
           : <><Conclusion state="neutral" icon={Layers3}>还没有建立会员等级</Conclusion>
             {recovery}
             <Panel title="九级阶梯"><BlockState state="empty" title="还没有建立会员等级" detail="有修改权限的同事可以发起首次配置，另一位超级管理员批准后这里才会出现九级。" /></Panel></>;
@@ -378,11 +451,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     ? <StatusTag tone="ok" icon={ShieldCheck}>已开启</StatusTag>
     : permanent === "off" ? <StatusTag tone="neutral" icon={ShieldOff}>未开启</StatusTag>
       : <StatusTag tone="warn" icon={TriangleAlert} explain="没有这项设置，按关闭执行。">未设置，按关闭执行</StatusTag>;
-  const openProtection = (next: "on" | "off") => {
+  const openProtection = (next: "on" | "off", draft?: FDomainAttempt) => {
     const action = next === "off" ? "关闭不降级保护" : "开启不降级保护";
     const now = permanent === "on" ? "已开启" : permanent === "off" ? "未开启" : "未设置（按关闭执行）";
     setConfirm({
-      proposalSlot: "f-config:F.vrank.permanent",
+      draft, proposalSlot: "f-config:F.vrank.permanent",
       action, briefKind: "record", title: next === "off" ? "关闭不降级保护" : "开启不降级保护",
       confirmTone: next === "off" ? "danger" : "primary", confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后才生效；批准前仍按现在的设置评估。`}>批准后生效</StatusTag>,
@@ -395,13 +468,13 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       done: "已提交，等待审批后执行",
     });
   };
-  const openPrize = () => {
+  const openPrize = (draft?: FDomainAttempt, initialValue?: string) => {
     const action = prizeName ? "修改全局奖品名" : "配置全局奖品名";
     setConfirm({
-      proposalSlot: "f-config:F.prize.name",
+      draft, proposalSlot: "f-config:F.prize.name",
       action, briefKind: "config", title: prizeName ? "修改奖品名称" : "配置奖品名称", confirmLabel: "提交审批",
       effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后才生效；批准前仍显示原来的名字。`}>批准后生效</StatusTag>,
-      edit: { kind: "text", current: prizeName, unit: "奖品名称" },
+      edit: { kind: "text", current: prizeName, initialValue, unit: "奖品名称" },
       statedBrief: { impact: "只改显示的名字，不影响晋升和奖励发放。", check: "核对名字写法；1–160 字。" },
       detail: "会员等级的奖品名称，只用于显示，不影响奖励和晋升。",
       submit: async (reason, _value, newValue) => {
@@ -411,7 +484,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       done: "已提交，等待审批后执行",
     });
   };
-  const openTitles = () => setConfirm({
+  const openTitles = (draft?: FDomainAttempt, initial?: BusinessFormValue) => setConfirm({
+    draft, initial,
     proposalSlot: "f-config:F.vrank.titles",
     action: "设置各级头衔", briefKind: "config", title: "设置各级头衔", confirmLabel: "提交审批",
     effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后才生效；批准前仍按原来的头衔显示。`}>批准后生效</StatusTag>,
@@ -449,12 +523,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           what="会员等级奖品的显示名字，不影响奖励和晋升。"
           where="这页显示；这个名字也会发给 App，App 现在没有地方显示它。没配置时发默认名。"
           when="提交审批，另一位超级管理员批准后生效。"
-          action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={openPrize}>{prizeName ? "修改" : "配置"}</Button> : undefined} />
+          action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={() => openPrize()}>{prizeName ? "修改" : "配置"}</Button> : undefined} />
         <ConfigRow name="各级头衔" value={<span className="f1-strong">已设置 {titleCount}/{rows.length} 级</span>}
           what="每一级的称呼，只用于显示，不影响奖励和晋升。"
           where="这页的等级卡和发给 App 的等级名；App 现在只显示 V0–V8，不显示头衔。"
           when="提交审批，另一位超级管理员批准后生效；每一级都要填。"
-          action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={openTitles}>设置头衔</Button> : undefined} />
+          action={canWrite ? <Button size="sm" disabled={ctx.f1Loading || !!ctx.f1Error} onClick={() => openTitles()}>设置头衔</Button> : undefined} />
         <ConfigRow name="团队激励池" value={leadership
           ? <span className="f1-strong">{leadership.unlockRank > 0 ? `从 V${leadership.unlockRank} 起有票数` : "没有等级有票数"}</span>
           : <span className="f1-weak">—</span>}
@@ -467,7 +541,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   );
 
   const skipsOverrideCoverage = (values: BusinessFormValue) => values.targetV === "V8" && values.direction === "promote";
-  const openOverride = () => {
+  const openOverride = (draft?: FDomainAttempt, initial?: BusinessFormValue) => {
     overrideRead.current += 1;
     const proposalSlot = (values?: BusinessFormValue) => `f-vrank-override:${values?.userId?.trim() ?? ""}`;
     const readUserRank = async (values: BusinessFormValue) => {
@@ -488,7 +562,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       } : current);
     };
     setConfirm({
-      proposalSlot,
+      draft, initial, proposalSlot,
       action: "手动调整会员等级",
       title: "人工调整等级",
       briefKind: (value) => !skipsOverrideCoverage(value) && value.direction !== "rollback" && (ctx.rewards[value.targetV] ?? []).some((reward) => reward.type === "usdt" || reward.type === "uvt") ? "funds" : "config",
@@ -534,6 +608,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         await ctx.proposeVRankOverride(userId, targetV, direction, reason);
       },
     });
+    if (initial) void readUserRank(initial);
   };
 
   return (
@@ -550,7 +625,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         </>}
         {view === "v8" && v8Review && <F1V8Review ctx={ctx} state={v8Review} v8={rows.find((row) => row.v === "V8")} canApprove={canApproveV8} onApprove={openV8Approve} />}
         {view === "salary" && <F1SalaryClaims ctx={ctx} rows={rows} />}
-        {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={openOverride} />}
+        {view === "promotions" && <F1PromotionHistory ctx={ctx} rows={rows} canPromote={canPromote} onOverride={() => openOverride()} />}
         {view === "payouts" && <F1PayoutHistory ctx={ctx} rows={rows} canReissue={canReissue} canReverse={canReverse} openConfirm={setConfirm} />}
         {view === "howto" && <F1RankHow key={howEpoch} ladder={rows} toast={ctx.toast} onPendingChange={() => setRecoveryEpoch(value => value + 1)} />}
       </div>

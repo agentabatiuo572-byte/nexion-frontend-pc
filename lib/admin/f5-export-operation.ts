@@ -14,22 +14,42 @@ export const f5ExportRecovery = createPendingRecovery(fDirectCommands, {
   explicitRejectionCode,
 });
 
-export async function submitF5Export(adminId: number | undefined, query: F5CommissionQuery, reason: string) {
-  if (!canExport(adminId)) throw new Error("ADMIN_PERMISSION_DENIED");
-  const original = pendingF5Export();
-  if (original) {
-    const result = await f5ExportRecovery.replay(original, record =>
-      downloadF5RedactedCsv(record.f5ExportRequest!.filters, record.f5ExportRequest!.reason, record.commandKey));
-    f5ExportRecovery.settleAcknowledged(original);
-    return result;
-  }
-  const filters = {
+export function f5ExportFilters(query: F5CommissionQuery): F5CommissionQuery {
+  return {
     kind: query.kind?.trim() || undefined,
     currency: query.currency?.trim() || undefined,
     userId: query.userId?.trim() || undefined,
     cohort: query.cohort?.trim() || undefined,
     status: query.status?.trim() || undefined,
   };
+}
+
+export function f5ExportReadBlock(filters: F5CommissionQuery, read: { query?: F5CommissionQuery; total?: number; loading?: boolean }) {
+  if (read.loading) return "奖励记录正在更新，暂不能导出";
+  if (!read.query || read.total === undefined) return "奖励记录未成功读取，重试后才能导出";
+  if (JSON.stringify(f5ExportFilters(filters)) !== JSON.stringify(f5ExportFilters(read.query))) return "请先重新读取原筛选条件的奖励记录";
+  return read.total === 0 ? "当前结果没有可导出的奖励记录" : undefined;
+}
+
+export async function submitF5Export(adminId: number | undefined, query: F5CommissionQuery, reason: string,
+  blocked: (filters: F5CommissionQuery) => string | undefined, originalKey?: string, onRemember?: (key: string | undefined) => void) {
+  if (!canExport(adminId)) throw new Error("ADMIN_PERMISSION_DENIED");
+  const original = pendingF5Export();
+  if (original) {
+    if (originalKey !== original.commandKey) throw new Error("PENDING_REPLAY_BLOCKED");
+    const result = await f5ExportRecovery.replay(original, record => {
+      const request = record.f5ExportRequest!;
+      const issue = blocked(request.filters);
+      if (issue) throw new Error(issue);
+      return downloadF5RedactedCsv(request.filters, request.reason, record.commandKey);
+    });
+    f5ExportRecovery.settleAcknowledged(original);
+    return result;
+  }
+  if (originalKey) throw new Error("PENDING_REPLAY_BLOCKED");
+  const filters = f5ExportFilters(query);
+  const issue = blocked(filters);
+  if (issue) throw new Error(issue);
   const key = createA2CommandKey(slot);
   fDirectCommands.remember(slot, key, { inputFingerprint: JSON.stringify([filters]), f5ExportRequest: { filters, reason } });
   const saved = pendingF5Export();
@@ -37,12 +57,16 @@ export async function submitF5Export(adminId: number | undefined, query: F5Commi
     fDirectCommands.forget(slot, key);
     throw new Error("F5_OPERATION_STORAGE_UNAVAILABLE");
   }
+  onRemember?.(key);
   try {
     const result = await downloadF5RedactedCsv(filters, reason, key);
     f5ExportRecovery.settleAcknowledged(saved);
     return result;
   } catch (error) {
-    if (explicitRejectionCode(error)) fDirectCommands.forget(slot, key);
+    if (explicitRejectionCode(error)) {
+      fDirectCommands.forget(slot, key);
+      onRemember?.(undefined);
+    }
     throw error;
   }
 }

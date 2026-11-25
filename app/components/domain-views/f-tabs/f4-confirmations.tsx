@@ -7,7 +7,8 @@ import { ambassadorBucketLabel } from "@/lib/admin/f4-ambassador-display";
 import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
-import { f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
 import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
@@ -38,12 +39,12 @@ const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8"];
 /** A2 普通提案：批准前不变；「谁来批」按后端批准时实际检查的权限写（AuditReplayBusinessPermissionGuard），权限名照后台返回、和「权限清单」显示的一致。 */
 export const approvalCopy = "批准前保持现在的设置。";
 const POOL_FUND = "奖池资金类调整";
-const F4_WRITE = "奖励池、名额与排行榜 · 池配额大使榜 - 常规写";
+const F4_WRITE = F_APPROVAL_PERMISSION_NAMES.network_f4_write;
 const LEADERBOARD_CONTROL = "排行榜控制(暂停/取消资格)";
 function approvalRows(permission: string) {
   return [
     { key: "approver", label: "谁来批", value: "另一位超级管理员" },
-    { key: "approvalPermissions", label: "需有权限", value: <>审批批准权限和「{permission}<span className="rd-keep">」权限</span></> },
+    { key: "approvalPermissions", label: "需有权限", value: fApprovalPermissionText(permission) },
   ];
 }
 function approvalFacts(permission: string) {
@@ -103,7 +104,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
   const ppToday = currentPeriodPrize("today");
   const ppWeek = currentPeriodPrize("week");
   const ppMonth = currentPeriodPrize("month");
-  const ppAllTime = currentPeriodPrize("all");
+  const ppAllTime = f4PeriodPrize(periodPrizeRaw, "allTime") ?? "";
   const prizeShown = (value: string) => value === "" ? "—" : moneyText(value);
   const lbPool = current ? `${usdt(current.poolUsdText ?? current.poolUsd)} USDT` : "—";
 
@@ -161,7 +162,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     }
     case action === "F.pool.ratio": {
       spec = { briefKind: "config", name: "调整团队激励池比例", amplify: true, op: "param", paramKey: "F.pool.ratio",
-              edit: { kind: "text", current: data.poolRatio, unit: "%", amplifiesWhen: value => f4PoolRatioIncreases(data.configValues["F.pool.ratio"], value) },
+              edit: { kind: "text", current: data.poolRatio, unit: "%", validate: value => f4PoolRatio(value) === null ? F4_POOL_RATIO_INVALID : undefined, amplifiesWhen: value => f4PoolRatioIncreases(data.configValues["F.pool.ratio"], value) },
               title: "调整团队激励池比例", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，还没结算的这周估算和之后每次结算按新比例放钱；已经发的不重算。", check: "只接受 0–30 的百分数：5 表示 5%，0.05 表示 0.05%。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
@@ -272,7 +273,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
       spec = { briefKind: "funds",
     name: "发放总榜奖励",
     amplify: true,
-    title: "发放总榜奖励", effect: approvalTag(), confirmLabel: "提交审批",
+    title: "发放总榜奖励", blockedReason: ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给团队订单算力点最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
       check: "总榜派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。批准时先查兑付覆盖率，不够不发。",
@@ -281,7 +282,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     coverageLead: "这次派奖按算出的金额真实发钱",
     coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
     facts: <div className="rd-stack">
-      <F4PayoutPreviewFacts pool={prizeShown(ppAllTime)} />
+      <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
@@ -378,7 +379,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.pool.top1MaxPct": {
       spec = { briefKind: "config", name: "调整第 1 名占比告警阈值", op: "param", paramKey: "F.pool.top1MaxPct",
               edit: { kind: "number", current: top1MaxPct, unit: "%" },
-              title: "调整第 1 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
+              title: "调整第 1 名占比告警阈值", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时第 1 名超过这个比例时记录告警，奖金额按名次权重计算。", check: "只能填 0–100。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
               detail: `第 1 名占比的告警阈值 · 当前 ${top1MaxPct}%。` };
@@ -387,7 +388,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     case action === "F.pool.top5MaxPct": {
       spec = { briefKind: "config", name: "调整前 5 名占比告警阈值", op: "param", paramKey: "F.pool.top5MaxPct",
               edit: { kind: "number", current: top5MaxPct, unit: "%" },
-              title: "调整前 5 名最高占比", effect: approvalTag(), confirmLabel: "提交审批",
+              title: "调整前 5 名合计占比告警阈值", effect: approvalTag(), confirmLabel: "提交审批",
               statedBrief: { impact: "批准后，之后排行榜派奖时前 5 名合计超过这个比例时记录告警，奖金额按名次权重计算。", check: "只能填 0–100。" },
               completionCopy: approvalCopy, facts: <Facts>{approvalFacts(POOL_FUND)}</Facts>,
               detail: `前 5 名合计占比的告警阈值 · 当前 ${top5MaxPct}%。` };
@@ -412,7 +413,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
         <Fact k="类别">{ambassadorBucketLabel(packet!.bucket)}</Fact>
         <Fact k="材料">第 {packet!.materialRevision} 版 · 业务核验和财务核验都已通过</Fact>
         <Fact k="谁来批">另一位超级管理员</Fact>
-        <Fact k="需有权限">审批批准权限和「区域大使审批」权限。不能核验过这一版材料。</Fact>
+        <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f4_ambassador_approve)}。不能核验过这一版材料。</Fact>
       </Facts>,
       detail: `${ambassadorBucketLabel(packet!.bucket)} · 申请金额 ${money(packet!.budgetUsdt)} · 认可金额 ${money(packet!.financeReview.recognizedBudgetUsdt)} · 材料 V${packet!.materialRevision}。业务核验与财务核验均已通过。本次仅开通所选类别的申请额度。`,
     };
@@ -429,7 +430,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot):
     completionCopy: "批准前这份申请不变。",
     facts: <Facts>
       <Fact k="谁来批">另一位超级管理员</Fact>
-      <Fact k="需有权限">审批批准权限和「区域大使审批」权限</Fact>
+      <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f4_ambassador_approve)}</Fact>
     </Facts>,
     detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
   };

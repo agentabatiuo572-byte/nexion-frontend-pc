@@ -5,8 +5,8 @@
  * 只管怎么写给运营看：奖励怎么写、发放状态叫什么、审批人怎么称呼；不发请求、不判断权限。
  */
 import { fConfirmRecovery } from "./f-recovery-state";
-import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
-import { useRef, useState, type ReactNode } from "react";
+import { consumeFReconfirmation, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BadgeDollarSign, CircleCheck, Clock3, Coins, Gift, Package, RotateCcw, Ticket, TriangleAlert, Undo2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
@@ -113,6 +113,8 @@ export type F1Confirm = {
   proposalSlot?: string | ((value?: BusinessFormValue) => string);
   v8Review?: boolean;
   recoverOriginal?: boolean;
+  draft?: import("@/lib/admin/f2-approval").FDomainAttempt;
+  initial?: BusinessFormValue;
   title: ReactNode;
   briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind);
   detail: ReactNode;
@@ -139,10 +141,13 @@ export type F1Confirm = {
 export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; ctx: FViewCtx; onClose: () => void }) {
   const [owner] = useState(() => useAdminAuth.getState().session?.adminId);
   const slot = useRef(typeof confirm.proposalSlot === "string" ? confirm.proposalSlot : "");
-  const submitted = useRef(!!confirm.recoverOriginal);
   const originalValues = useRef<BusinessFormValue | undefined>(undefined);
-  const original = () => owner === undefined ? undefined : listF1Proposals(owner).find(row => row.fingerprint === slot.current);
-  const existing = original();
+  const slotRecord = () => owner === undefined ? undefined : listF1Proposals(owner).find(row => row.fingerprint === slot.current);
+  const command = useRef(confirm.recoverOriginal ? slotRecord()?.commandKey : undefined);
+  const original = () => { const row = slotRecord(); return row?.commandKey === command.current ? row : undefined; };
+  const existing = slotRecord();
+  const settled = useFReconfirmations("F1").some(row => row.commandKey === command.current);
+  useEffect(() => { if (settled) onClose(); }, [settled, onClose]);
   return (
     <OperationConfirmModal
       briefKind={confirm.briefKind}
@@ -162,34 +167,32 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       reasonPlaceholder={confirm.reasonPlaceholder}
       edit={confirm.edit}
       businessForm={confirm.businessForm}
-      getPendingReason={() => submitted.current ? original()?.request?.reason : undefined}
-      getPendingBusinessValue={() => submitted.current && original() ? originalValues.current : undefined}
-      blockedReason={!submitted.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
+      getPendingReason={() => original()?.request?.reason}
+      getPendingBusinessValue={() => original() ? originalValues.current ?? confirm.initial : confirm.initial}
+      blockedReason={!command.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
       getPendingRecovery={() => {
-        const record = submitted.current ? original() : undefined;
+        const record = original();
         return record && fConfirmRecovery(f1ProposalRecovery, record, async () => {
           const resolved = await ctx.recoverF1(slot.current, "query");
           if (!resolved) return;
-          if (resolved === "restore") {
-            submitted.current = false;
-            throw new PendingConfirmRejected("原操作没有执行，请核对后重新确认。");
-          }
           onClose();
         });
       }}
       className={confirm.dialogClassName}
       onClose={onClose}
       onConfirm={async (reason, newValue, businessValue) => {
-        const recovering = submitted.current && !!original();
+        const recovering = !!command.current;
         try {
           if (recovering) {
+            if (!original()) throw new Error("PENDING_REPLAY_BLOCKED");
             await ctx.recoverF1(slot.current, "retry");
           } else {
             slot.current = typeof confirm.proposalSlot === "function" ? confirm.proposalSlot(businessValue) : confirm.proposalSlot ?? "";
-            if (original()) throw new Error("这项操作有保存的原申请，请先查询原结果。");
+            if (slotRecord()) throw new Error("这项操作有保存的原申请，请先查询原结果。");
             originalValues.current = businessValue;
-            submitted.current = true;
-            await confirm.submit(reason, businessValue, newValue);
+            try { await confirm.submit(reason, businessValue, newValue); }
+            finally { command.current = slotRecord()?.commandKey; }
+            if (confirm.draft) consumeFReconfirmation(confirm.draft);
           }
           if (!recovering && confirm.done) ctx.toast(confirm.done);
           onClose();

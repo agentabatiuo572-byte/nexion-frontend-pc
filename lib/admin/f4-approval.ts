@@ -118,7 +118,7 @@ export const canRetryF4Proposal = (original: FDomainAttempt) => !f4ProposalRecov
 
 export async function queryF4Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId);
-  return f4ProposalRecovery.queryTicket(original, async record => {
+  return f4ProposalRecovery.queryTicket("F4", original, async record => {
     if (record.adminId !== undefined && record.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
     const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
     if (!activeRecoveryActor(adminId, "network_f4_read")) throw new Error("ADMIN_PERMISSION_DENIED");

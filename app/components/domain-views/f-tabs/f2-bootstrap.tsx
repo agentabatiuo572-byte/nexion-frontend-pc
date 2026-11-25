@@ -6,6 +6,7 @@
  * 逐格的范围和格式照后端 OpsTeamService.unilevelBootstrapLayerRates：USDT 0–100、最多 4 位小数，
  * UVT 不小于 0、最多 6 位小数、整数最多 12 位；第 1 层固定 10%。不替运营填默认值，也不补 0。
  */
+import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
 import Link from "next/link";
 import { Clock3, Lock } from "lucide-react";
 import { Button, Cell, Explain, Fact, Facts, Figure, Notice, NumberInput, ScaleBar, StatusTag, Table, Td, Th } from "@/app/components/rd";
@@ -17,7 +18,7 @@ import { SUPER_APPROVER } from "./f1-shared";
 import type { FViewCtx } from "./types";
 
 /** 填到一半的七层。 */
-export type F2BootstrapDraft = { cells: Record<Layer, { usdt: string; nex: string }> };
+export type F2BootstrapDraft = { original?: import("@/lib/admin/pending-mutation-store").PendingMutationRecord; cells: Record<Layer, { usdt: string; nex: string }> };
 export const emptyF2BootstrapDraft = (): F2BootstrapDraft => ({
   cells: { L1: { usdt: "10", nex: "" }, L2: { usdt: "", nex: "" }, L3: { usdt: "", nex: "" }, L4: { usdt: "", nex: "" }, L5: { usdt: "", nex: "" }, L6: { usdt: "", nex: "" }, L7: { usdt: "", nex: "" } },
 });
@@ -136,6 +137,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
     const layers = LAYERS.map((level, index) => ({ layerNo: index + 1, usdtPct: byRank(level) ? "0" : level === "L1" ? "10" : draft.cells[level].usdt.trim(), nexPerUsd: draft.cells[level].nex.trim() }));
     const rows = LAYERS.map((level, index) => ({ layer: level, usdtPct: plain(layers[index].usdtPct)!, nexPerUsd: plain(layers[index].nexPerUsd)! }));
     openConfirm({
+      draft: draft.original,
       slot: F2_BOOTSTRAP_SLOT,
       action: "首次配置 L1–L7 团队购买奖励", title: "首次配置团队购买奖励", briefKind: "config", amplify: true, dialogClassName: "f2-confirm",
       effect: <StatusTag tone="progress" filled explain={`${SUPER_APPROVER}在「操作记录与审批」批准后，七层规则一次建好；结算要另外申请启用。`}>批准后生效</StatusTag>,
@@ -145,7 +147,7 @@ function BootstrapForm({ ctx, openConfirm, draft, setDraft, cap }: {
           : `${num(sum)}%，示例 ${num(SAMPLE_ORDER)} USDT 订单分出 ${num(f2SampleUsdt(sum))} USDT`}</Fact>
         <Fact k="整体结算">不会自动启用，要另外申请</Fact>
         <Fact k="谁来批">另一位超级管理员</Fact>
-        <Fact k="需有权限">审批批准权限和团队奖励比例权限</Fact>
+        <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f2_royalty_rate)}</Fact>
       </Facts>,
       content: <div className="rd-stack">
         {over && <Notice tone="warn" title={overTitle}>{F2_APP_LIMIT_COPY}</Notice>}

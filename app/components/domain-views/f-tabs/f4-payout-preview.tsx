@@ -5,32 +5,33 @@
  * 只显示，不改提交内容；读不到写「读不到」，不写 0，也不挡提交。
  */
 import { useEffect, useState } from "react";
-import { Cell, Explain, Fact, Facts, Fold, Notice, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Cell, Explain, Fact, Facts, Fold, Notice, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { fetchF4LeaderboardDisqualificationReadiness, fetchF4LeaderboardPayoutPreview, fetchF4LeadershipPoolOverview, type F4LeaderboardDisqualificationReadiness, type F4LeaderboardPayoutPreview } from "@/lib/admin/f1-client";
 import { count, decimalText, usdt, moneyText } from "./f4-shared";
 
-type Read<T> = { state: "loading" } | { state: "failed" } | { state: "ok"; data: T; at: number };
+type Read<T> = { state: "loading" } | { state: "failed"; error: string } | { state: "ok"; data: T; at: number };
 
-function useRead<T>(read: () => Promise<T | null>): Read<T> {
+function useRead<T>(read: () => Promise<T | null>) {
   const [result, setResult] = useState<Read<T>>({ state: "loading" });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
     read().then(
-      (data) => { if (alive) setResult(data === null ? { state: "failed" } : { state: "ok", data, at: Date.now() }); },
-      () => { if (alive) setResult({ state: "failed" }); },
+      data => { if (alive) setResult(data === null ? { state: "failed", error: "这次没有读到预览结果。" } : { state: "ok", data, at: Date.now() }); },
+      error => { if (alive) setResult({ state: "failed", error: displayAdminReadError(error) }); },
     );
     return () => { alive = false; };
-    // 打开确认框时读一次。
+    // Each mounted preview reads independently.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return result;
+  }, [attempt]);
+  return { ...result, retry: () => { setResult({ state: "loading" }); setAttempt(previous => previous + 1); } };
 }
 
 const WARNING_LABEL = { top1MaxPct: "第 1 名占比", top5MaxPct: "前 5 名合计占比" } as const;
 
 const NOT_PAYING: Record<string, string> = {
-  F4_LEADERBOARD_POOL_NOT_CONFIGURED: "总榜奖池是 0，这次不会发钱。",
   F4_LEADERBOARD_PAUSED: "排行榜在暂停中，这次不会发钱。",
   F4_LEADERBOARD_ALREADY_SETTLED: "总榜已经派过，这次批准不会再发。",
   F4_LEADERBOARD_NO_CANDIDATES: "现在没有人上榜，这次不会发钱。",
@@ -47,9 +48,12 @@ const percentText = (value: string) => value.includes(".") ? value.replace(/0+$/
 export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }: { pool?: string; approving?: boolean; rules?: boolean }) {
   const read = useRead<F4LeaderboardPayoutPreview>(() => fetchF4LeaderboardPayoutPreview("allTime"));
   const preview = read.state === "ok" ? read.data : undefined;
-  const poolShown = pool ?? (preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : "读不到");
+  const unconfigured = preview?.reason === "F4_LEADERBOARD_POOL_NOT_CONFIGURED";
+  const poolShown = pool ?? (unconfigured ? "没有可发放的奖池" : preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : "读不到");
   const pending = read.state === "loading" ? "正在加载…" : read.state === "failed" ? "读不到" : undefined;
-  const notPaying = preview && !preview.available ? NOT_PAYING[preview.reason] ?? "这次不会发钱。" : undefined;
+  const notPaying = unconfigured
+    ? pool === "0" ? "总榜奖池为 0，这次不会发钱。" : "系统确认这次没有可发放的奖池。"
+    : preview && !preview.available ? NOT_PAYING[preview.reason] ?? "这次不会发钱。" : undefined;
   return (
     <div className="f4-payout">
       <Facts>
@@ -63,7 +67,9 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
       </Facts>
       {!!preview?.concentrationWarnings.length && <Notice tone="warn">{preview.concentrationWarnings.map(key => `${WARNING_LABEL[key]}超过 ${percentText(preview[key])}%`).join("；")}。奖金按名次权重计算。</Notice>}
       {notPaying && <Notice tone="warn">{notPaying}</Notice>}
-      {read.state === "failed" && <p className="f4-payout-note">{approving ? "这次的名单和金额读不到，不影响批准；批准时按那一刻的总榜计算。" : "这次的名单和金额读不到，不影响提交；批准时按那时的总榜计算。"}</p>}
+      {read.state === "failed" && <BlockState state="error" title="派奖预览加载失败"
+        detail={<>{read.error}{approving ? " 批准时按那一刻的总榜重新计算。" : " 批准时按当时的总榜重新计算。"}</>}
+        onRetry={read.retry} retryLabel="重试派奖预览" />}
       {preview && preview.rows.length > 0 && (
         <div className="f4-payout-list" data-long={preview.rows.length > 6 ? "" : undefined}>
           <Table label="这次派奖名单" className="f4-payout-table">

@@ -1,3 +1,4 @@
+import { settleFReconfirmation } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { createFDirectRecovery } from "./f-direct-recovery";
 import { useAdminAuth } from "../store/admin-auth";
@@ -75,6 +76,6 @@ export async function queryF3ConfigWrite(adminId: number, key: F3PayoutControlKe
       : result === "REJECTED" ? "rejected" as const : result === "NOT_EXECUTED" ? "not-executed" as const : "unknown" as const };
   });
   if (!observation) throw new Error("PENDING_QUERY_UNAVAILABLE");
-  f3DirectRecovery.settleFromQuery(original, observation.conclusion);
+  settleFReconfirmation(f3DirectRecovery, original, observation.conclusion, "f3-write");
   return observation;
 }

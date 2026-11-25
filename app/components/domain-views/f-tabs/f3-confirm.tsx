@@ -5,12 +5,12 @@
  * 只多了标题、生效标签、事实块和执行摘要这些样子；提交调用 ctx 上和旧页面相同的函数、相同的参数，
  * 成功、失败、结果未知的提示照 F 域外壳的写法。人工结算仍走外壳的确认框（它带原申请的查询和重试）。
  */
-import { useRef, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue, type EditSpec, type OperatorBriefKind } from "../design-kit";
 import type { FViewCtx } from "./types";
 import { f3ProposalRecovery, listF3Proposals } from "@/lib/admin/f3-approval";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
-import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
+import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { fConfirmRecovery } from "./f-recovery-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -22,6 +22,8 @@ export const SETTLE_APPROVER = "另一位超级管理员";
 export type F3Confirm = {
   slot?: string;
   original?: FDomainAttempt;
+  draft?: FDomainAttempt;
+  initial?: BusinessFormValue;
   /** 记进操作记录的名字，和旧页面一样。 */
   action: string;
   title: ReactNode;
@@ -43,12 +45,11 @@ export type F3Confirm = {
 
 export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; ctx: FViewCtx; onClose: () => void }) {
   const owner = useAdminAuth(state => state.session?.adminId);
-  const saved = () => owner === undefined ? undefined : listF3Proposals(owner).find(row => row.fingerprint === confirm.slot);
-  const restored = useRef(false);
-  const original = saved() ?? (restored.current ? undefined : confirm.original);
+  const saved = () => owner === undefined ? undefined : listF3Proposals(owner).find(row => confirm.original ? row.commandKey === confirm.original.commandKey : row.fingerprint === confirm.slot);
+  const original = saved() ?? confirm.original;
   const fields = original?.spec?.command.params.changes as Array<{ key: string; value: string }> | undefined;
-  const businessValue = fields ? { period: fields.find(row => row.key === "F.binary.settlePeriod")!.value,
-    residual: fields.find(row => row.key === "F.binary.residualPolicy")!.value } : undefined;
+  const businessValue = fields ? { period: fields.find(row => row.key === "F.binary.settlePeriod")?.value ?? "",
+    residual: fields.find(row => row.key === "F.binary.residualPolicy")?.value ?? "" } : confirm.initial;
   const edit = confirm.edit && original?.spec ? { ...confirm.edit, initialValue: String(original.spec.command.params.value ?? "") } : confirm.edit;
   return (
     <OperationConfirmModal
@@ -76,10 +77,6 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
         return record && fConfirmRecovery(f3ProposalRecovery, record, async () => {
           const ticket = await ctx.recoverF3(record);
           if (!ticket) return;
-          if (["rejected", "withdrawn", "expired"].includes(ticket.status)) {
-            restored.current = true;
-            throw new PendingConfirmRejected("原申请没有执行，请核对后重新确认。");
-          }
           onClose();
         });
       }}
@@ -87,9 +84,14 @@ export function F3ConfirmHost({ confirm, ctx, onClose }: { confirm: F3Confirm; c
       onConfirm={async (reason, newValue, businessValue) => {
         try {
           const record = saved();
-          if (record) await ctx.recoverF3(record, "retry");
-          else if (confirm.original && !restored.current) { onClose(); return; }
-          else await confirm.submit(reason, businessValue, newValue);
+          if (record) {
+            await ctx.recoverF3(record, "retry");
+            onClose();
+            return;
+          }
+          if (confirm.original) { onClose(); return; }
+          await confirm.submit(reason, businessValue, newValue);
+          if (confirm.draft) consumeFReconfirmation(confirm.draft);
           if (confirm.done) ctx.toast(confirm.done);
           onClose();
         } catch (error) {

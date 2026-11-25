@@ -6,7 +6,7 @@
  * 标题写动作和对象，标签写哪个方向要批准，事实写现在的值和相邻等级，填写项用 rd 的控件。
  */
 import { fConfirmRecovery, pendingConfirmError } from "./f-recovery-state";
-import { PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
+import { consumeFReconfirmation } from "@/lib/admin/f-reconfirmation";
 import { useState } from "react";
 import { CircleHelp, Clock3, LockOpen, Zap, Lock } from "lucide-react";
 import { Change, DiffField, Fact, Facts, Field, Input, KeepText, Notice, Select, StatusTag } from "@/app/components/rd";
@@ -19,7 +19,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
   canRetryF1PolicyProposal, f1PolicyRecovery, f1ConditionLabels, f1PolicyInitialForm, f1PolicyInputError, f1PolicyNeedsApproval,
-  formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyEditor, type F1ConditionField,
+  formatF1ExactAmount, isF1FundReward, pendingF1Policy, submitF1Policy, type F1PolicyDraft, type F1PolicyEditor, type F1ConditionField,
 } from "@/lib/admin/f1-policy-change";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type { FViewCtx } from "./types";
@@ -48,7 +48,7 @@ export function f1RewardPolicyLabel(item: OpsVRankRewardItem, ctx: Pick<FViewCtx
   return safeCustomLabel(item.custom);
 }
 
-export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChange, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; onPendingChange: () => void; pendingApproval?: boolean }) {
+export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChange, draft, pendingApproval = false }: { editor: F1PolicyEditor; ctx: FViewCtx; onClose: () => void; onPendingChange: () => void; draft?: F1PolicyDraft; pendingApproval?: boolean }) {
   const session = useAdminAuth((state) => state.session);
   const [owner] = useState(session?.adminId);
   const [opening, setOpening] = useState(() => {
@@ -64,7 +64,7 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
   const canWrite = session?.adminId === owner && !!session?.authorities.includes("network_f1_write");
   const proposalQueryOnly = !!opening.pending?.original.approval && (!canWrite || !canRetryF1PolicyProposal(opening.pending));
   const editor = opening.pending?.original.editor ?? baseline;
-  const form = opening.pending?.original.form ?? f1PolicyInitialForm(editor);
+  const form = opening.pending?.original.form ?? draft?.form ?? f1PolicyInitialForm(editor);
   const isCondition = editor.action === "threshold", remove = editor.action === "reward_remove";
   const condition = editor.field as F1ConditionField;
   const fieldLabel = isCondition ? f1ConditionLabels[condition] : "奖励";
@@ -142,14 +142,12 @@ export function F1PolicyConfirm({ editor: requested, ctx, onClose, onPendingChan
     requireSession(false);
     if (result.active) ctx.acceptF1PolicyOverview(result.active);
     else ctx.invalidateF1(`${result.acknowledgement}；当前配置暂时读不到，重新读取后再发起新修改。`);
-    if ("restoreDraft" in result && result.restoreDraft && previous) {
-      const row = result.active?.rows.find(item => item.v === editor.row.v);
-      const reward = editor.reward && result.active?.rewards[editor.row.v]?.find(item => item.id === editor.reward!.id);
-      setBaselineReady(!!row && (!editor.reward || !!reward));
-      if (result.active && row) setBaseline({ ...editor, row, reward, recoveryCommandKey: undefined, valuation: result.active.rewardValuationUsdtPerUvt, approvalRequired: false });
-      setOpening({ pending: undefined, error: undefined });
-      throw new PendingConfirmRejected("原操作没有执行，请核对后重新确认。");
+    if ("restoreDraft" in result && result.restoreDraft) {
+      ctx.toast(result.acknowledgement);
+      onClose();
+      return true;
     }
+    if (mode === "submit" && result.resolved && draft) consumeFReconfirmation(draft.record);
     ctx.toast(result.acknowledgement);
     if (!result.resolved) throw new A2OutcomeUncertainError(result.acknowledgement, previous!.commandKey);
     onClose();

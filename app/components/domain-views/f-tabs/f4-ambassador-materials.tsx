@@ -14,6 +14,7 @@ import { activeRecoveryActor } from "@/lib/admin/f-proposal-recovery";
 import { FReleaseButton } from "./f-release";
 import { fConfirmRecovery } from "./f-recovery-state";
 import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
+import { consumeFReconfirmation, settleFReconfirmation, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
 import { f4MaterialCommandOrigin, queryF4MaterialCommand } from "@/lib/admin/f4-material-command";
 import { isOriginalCommandOrigin } from "@/lib/admin/original-command-query";
 import type { FundCommandOrigin } from "@/lib/admin/fund-command-investigation";
@@ -118,6 +119,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(() => reviewAttempts.list().find((item) => item.fingerprint === fingerprint));
   const pendingRef = useRef(pending);
+  const drafts = useFReconfirmations("f4-material").filter(({ original }) => original.actorId === actorId && original.applicationId === application.id);
+  const [draftKey, setDraftKey] = useState<string>();
+  const draft = drafts.find(item => item.commandKey === draftKey)?.original;
   const [confirmation, setConfirmation] = useState<Omit<F4AmbassadorReviewInput, "reason"> | null>(null);
   const refresh = useCallback(async () => {
     setLoading(true); setError(null); setPacket(null);
@@ -142,7 +146,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
     });
     if (!observation) throw new Error("PENDING_QUERY_UNAVAILABLE");
     const outcome = observation.conclusion;
-    if (materialRecovery.settleFromQuery(original, outcome)) {
+    if (settleFReconfirmation(materialRecovery, original, outcome, "f4-material")) {
       pendingRef.current = undefined; setPending(undefined);
       setPacket(null); setConfirmation(null);
       if (outcome === "succeeded") ctx.toast("材料核验已记录");
@@ -176,6 +180,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
 
   const reviewWritable = (stageKey: "BUSINESS" | "FINANCE", index: number) => !!packet && operable
     && (stageKey === "BUSINESS" ? packet.canReviewBusiness : packet.canReviewFinance) === true && ctx.can(F4_MATERIAL_PERMISSIONS[index].code);
+
+  const draftWritable = (input: F4AmbassadorReviewInput) => !final && packet?.materialRevision === input.expectedMaterialRevision
+    && reviewWritable(input.stage, input.stage === "BUSINESS" ? 0 : 1);
 
   return <>
     <Drawer open onClose={onClose} icon={FileCheck2} tone="role-3"
@@ -245,7 +252,18 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
                 <ReviewCard title="业务核验" stage="BUSINESS" venue={packet.bucket === "venue"} review={packet.businessReview} />
                 <ReviewCard title="财务核验" stage="FINANCE" venue={packet.bucket === "venue"} review={packet.financeReview} />
               </div>
-              {!final && (["BUSINESS", "FINANCE"] as const).map((stageKey, index) => <ReviewForm key={`${packet.materialRevision}:${stageKey}`} packet={packet} stage={stageKey}
+              {drafts.map(({ original }) => <Notice key={original.commandKey} tone="neutral"
+                title={`第 ${original.input.expectedMaterialRevision} 版材料的${original.input.stage === "BUSINESS" ? "业务" : "财务"}核验未执行`}
+                action={draftWritable(original.input) && original.commandKey !== draftKey
+                  ? <Button size="sm" onClick={() => setDraftKey(original.commandKey)}>继续修改</Button> : undefined}>
+                <p>{original.input.decision === "PASSED" ? "通过" : "需补材料"}
+                  {original.input.verifiedAttendees != null && ` · 有效去重人数 ${original.input.verifiedAttendees}`}
+                  {original.input.recognizedBudgetUsdt != null && ` · 认可金额 ${original.input.recognizedBudgetUsdt} USDT`}
+                  {!!original.input.missingKinds?.length && ` · 缺件：${original.input.missingKinds.map(kind => packet.requirements.find(item => item.kind === kind)?.label ?? kind).join("、")}`}</p>
+                {!draftWritable(original.input) && <p>请核对当前材料版本、申请状态和核验权限。</p>}
+              </Notice>)}
+              {!final && (["BUSINESS", "FINANCE"] as const).map((stageKey, index) => <ReviewForm key={`${packet.materialRevision}:${stageKey}:${draft?.input.stage === stageKey ? draft.commandKey : ""}`} packet={packet} stage={stageKey}
+                initial={draft?.input.stage === stageKey && draftWritable(draft.input) ? draft.input : undefined}
                 writable={reviewWritable(stageKey, index)} onReview={setConfirmation} />)}
               {!final && !reviewWritable("BUSINESS", 0) && !reviewWritable("FINANCE", 1) && <p className="f4-muted">当前只能查看核验结果。记录核验要有对应的核验权限，并且材料已提交、申请还在待处理。</p>}
               {!final && proposalBlockers.length > 0 && <Notice tone="neutral" title="暂不能发起批准"><ul className="f4-list">{proposalBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></Notice>}
@@ -311,6 +329,9 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
           if (original) await materialRecovery.replay(original, send);
           else await send(attempt);
           materialRecovery.settleAcknowledged(attempt);
+          if (draft?.input.stage === confirmation.stage && draft.input.expectedMaterialRevision === confirmation.expectedMaterialRevision) {
+            consumeFReconfirmation(draft); setDraftKey(undefined);
+          }
           pendingRef.current = undefined; setPending(undefined);
           setPacket(null); setConfirmation(null); ctx.toast("材料核验已记录"); await refresh(); await ctx.refreshF4();
         } catch (cause) {
@@ -331,14 +352,15 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
   </>;
 }
 
-function ReviewForm({ packet, stage, writable, onReview }: {
+function ReviewForm({ packet, stage, writable, initial, onReview }: {
   packet: F4AmbassadorMaterialPacket; stage: "BUSINESS" | "FINANCE"; writable: boolean;
+  initial?: F4AmbassadorReviewInput;
   onReview: (input: Omit<F4AmbassadorReviewInput, "reason">) => void;
 }) {
-  const [decision, setDecision] = useState<"PASSED" | "NEEDS_MORE" | "">("");
-  const [attendees, setAttendees] = useState("");
-  const [recognized, setRecognized] = useState("");
-  const [missing, setMissing] = useState<string[]>([]);
+  const [decision, setDecision] = useState<"PASSED" | "NEEDS_MORE" | "">(initial?.decision ?? "");
+  const [attendees, setAttendees] = useState(initial?.verifiedAttendees == null ? "" : String(initial.verifiedAttendees));
+  const [recognized, setRecognized] = useState(initial?.recognizedBudgetUsdt ?? "");
+  const [missing, setMissing] = useState<string[]>(() => initial?.missingKinds?.filter(kind => packet.requirements.some(item => item.kind === kind)) ?? []);
   const [attempted, setAttempted] = useState(false);
   const business = stage === "BUSINESS";
   const venue = business && packet.bucket === "venue";

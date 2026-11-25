@@ -13,16 +13,17 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { canRetryF1Proposal, f1ProposalRecovery, F1_PROPOSAL_LOOKUP_FIRST, isF1PayoutSlot } from "@/lib/admin/f1-approval";
-import { canRetryF1PolicyProposal, f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
-import { F1_BENEFIT_NAMES, isF1BenefitField, ratePct } from "@/lib/admin/f1-rank-benefit";
+import { rebaseFValues, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { canSendF1Proposal, canRetryF1Proposal, f1ProposalRecovery, F1_PROPOSAL_LOOKUP_FIRST, isF1PayoutSlot } from "@/lib/admin/f1-approval";
+import { canRetryF1PolicyProposal, f1ConditionLabels, formatF1ExactAmount, isF1PolicyInFlight, f1PolicyInitialForm, originalF1Policy, listF1PolicyOperations, queryF1PolicyOperation, releaseF1PolicyProposal, type F1PolicyEditor, type F1PolicyDraft, type F1PolicyReward } from "@/lib/admin/f1-policy-change";
+import { compareDecimal, F1_BENEFIT_NAMES, isF1BenefitField, ratePct } from "@/lib/admin/f1-rank-benefit";
 import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/admin/f1-rank-how-save";
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { f1RewardPolicyLabel } from "./f1-policy-confirm";
 import { FReleaseButton } from "./f-release";
 import type { FViewCtx } from "./types";
 
-type State = "unknown" | "received" | "pending" | "expired";
+type State = "unknown" | "received" | "pending" | "expired" | "settled";
 type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; canRetryProposal?: boolean; actions: ReactNode };
 
 /** 等级说明所在页签的名字，和 f1-vrank 的页签一致。 */
@@ -32,6 +33,7 @@ const UNIT: Record<string, string> = { purchaseL1Rate: "%", purchaseL2Rate: "%",
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
 function stateTag(state: State, direct: boolean, canRetryProposal: boolean) {
+  if (state === "settled") return <StatusTag tone="neutral">原操作未执行</StatusTag>;
   if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
@@ -77,7 +79,9 @@ function rewardLabel(reward: F1PolicyReward | undefined, ctx: FViewCtx) {
   return f1RewardPolicyLabel({ id: "", type: reward.type, amountText: reward.amount, voucherId: reward.voucherId, skuId: reward.skuId, custom: reward.custom }, ctx);
 }
 
-export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx: FViewCtx; onOpenPolicy: (editor: F1PolicyEditor) => void; onRankHowChecked: () => void }) {
+export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continueOrdinary }: { ctx: FViewCtx; onOpenPolicy: (editor: F1PolicyEditor, draft?: F1PolicyDraft) => void; onRankHowChecked: () => void; continueOrdinary: (record: FDomainAttempt) => void }) {
+  const proposalDrafts = useFReconfirmations("F1");
+  const policyDrafts = useFReconfirmations("f1-policy");
   const session = useAdminAuth((state) => state.session);
   const [retrying, setRetrying] = useState<{ original: FDomainAttempt; name: string; change: ReactNode } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -90,6 +94,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
   const rows: Row[] = [];
 
   for (const original of ctx.f1Proposals) {
+    if (proposalDrafts.some(row => row.commandKey === original.commandKey)) continue;
     const { name, change } = ordinaryLabel(original);
     const expired = isRetryExpired(original);
     const state: State = original.ticket?.status === "pending" ? "pending" : original.received ? "received" : expired ? "expired" : "unknown";
@@ -135,6 +140,45 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked }: { ctx:
       });
     }
   } catch { policyBroken = true; }
+
+  const ready = !ctx.f1Error && !ctx.f1Loading;
+  for (const { original } of proposalDrafts) {
+    const { name, change } = ordinaryLabel(original);
+    const writable = ready && original.request && original.spec && canSendF1Proposal(original.spec, session.authorities)
+      && !ctx.f1Proposals.some(row => row.fingerprint === original.fingerprint && row.commandKey !== original.commandKey)
+      && (original.fingerprint === "f-vrank-bootstrap:current" ? ctx.vrankRows.length === 0 : ctx.vrankRows.length > 0);
+    rows.push({ key: original.commandKey, name, change, submittedAt: original.createdAt, state: "settled",
+      actions: writable ? <Button size="sm" onClick={() => continueOrdinary(original)}>继续修改</Button> : "请核对当前对象和操作权限",
+    });
+  }
+  for (const { original: record } of policyDrafts) {
+    try {
+      const { original } = originalF1Policy(owner, record);
+      const { editor } = original;
+      const row = ctx.vrankRows.find(item => item.v === editor.row.v);
+      const reward = editor.reward && ctx.rewards[editor.row.v]?.find(item => item.id === editor.reward!.id);
+      const latest = row && (!editor.reward || reward) ? {
+        ...editor, row, reward, valuation: ctx.f1RewardValuation, recoveryCommandKey: undefined, approvalRequired: false,
+      } : undefined;
+      const initial = (source: F1PolicyEditor) => {
+        const form = f1PolicyInitialForm(source);
+        if (source.field === "purchaseL1Rate" || source.field === "purchaseL2Rate") form.value = ratePct(source.row[source.field]) ?? "";
+        return form;
+      };
+      const writable = ready && !!latest && session.authorities.includes("network_f1_write")
+        && !ctx.f1ApprovalRanks.includes(editor.row.v)
+        && !listF1PolicyOperations(owner).some(item => item.fingerprint === record.fingerprint);
+      const field = editor.field;
+      const name = `${editor.row.v} · ${field ? isF1BenefitField(field) ? F1_BENEFIT_NAMES[field] : CONDITION_NAME[field] : "晋级奖励"}`;
+      const change = field ? thresholdText(field, original.form.value) : rewardLabel(original.values.reward, ctx);
+      rows.push({ key: record.commandKey, name, change, submittedAt: record.createdAt, state: "settled", direct: !original.approval,
+        actions: writable && latest ? <Button size="sm" onClick={() => onOpenPolicy(latest, {
+          record, form: rebaseFValues(initial(editor), original.form, initial(latest), (a, b, key) =>
+            a.trim() === b.trim() || (key === "value" || key === "amount") && compareDecimal(a, b) === 0),
+        })}>继续修改</Button> : "请核对当前等级、奖励和操作权限",
+      });
+    } catch { policyBroken = true; }
+  }
 
   const howSave = pendingF1RankHow(owner);
   if (howSave && !isF1RankHowInFlight(owner)) rows.push({

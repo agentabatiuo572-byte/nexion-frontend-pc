@@ -1,5 +1,6 @@
+import { settleFReconfirmation } from "./f-reconfirmation";
 import { createA2CommandKey } from "./a2-client";
-import { fetchF5CommissionAuditOverview, updateF5AnomalyConfig } from "./f1-client";
+import { updateF5AnomalyConfig } from "./f1-client";
 import { fDirectCommands, F1OutcomeUncertainError, isF1OutcomeUncertainError, type FDirectAttempt } from "./f1-stable-write";
 import { hasPersistedPendingCommandOwner } from "./pending-mutation-store";
 import { createFDirectRecovery, fDirectReceiptConclusion } from "./f-direct-recovery";
@@ -71,9 +72,9 @@ export async function queryF5Anomaly(adminId: number, original: FDirectAttempt, 
     const conclusion = state === "SUCCEEDED" ? "succeeded" : state === "REJECTED" ? "rejected"
       : state === "NOT_EXECUTED" ? "not-executed" : evidence || receipt
         ? "unknown" : await fDirectReceiptConclusion(SCOPE, record.commandKey, adminId);
-    return { conclusion, receipt, current: await fetchF5CommissionAuditOverview() };
+    return { conclusion, receipt };
   });
   if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
-  const settled = f5AnomalyRecovery.settleFromQuery(original, result.conclusion);
+  const settled = settleFReconfirmation(f5AnomalyRecovery, original, result.conclusion, "f5-anomaly");
   return { ...result, settled };
 }

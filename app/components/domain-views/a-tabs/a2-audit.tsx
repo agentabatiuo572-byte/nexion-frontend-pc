@@ -11,6 +11,7 @@ import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT, operatorCo
 import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
+import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
 import { F2BootstrapReview, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
@@ -176,10 +177,13 @@ function approvalCoverageCopy(w: A2OperationRow) {
 
 function f2F4ApprovalPermissions(w: A2OperationRow): string | undefined {
   const op = w.operationCode;
-  if (w.ambassadorMaterialProposal) return "审批批准权限和「区域大使审批」权限";
-  if (["f_unilevel_bootstrap", "f_direct_referral_policy"].includes(op ?? "")) return "审批批准权限和团队奖励比例权限";
-  if (op === "f_seven_layer_activation") return "审批批准权限和团队奖励放大策略权限";
-  if (["f4_pool_settle", "f4_leaderboard_period_payout"].includes(op ?? "")) return "审批批准权限和「奖池资金类调整」权限";
+  const named = (code: string) => fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES[code]);
+  if (w.ambassadorMaterialProposal) return named("network_f4_ambassador_approve");
+  if (["f_unilevel_bootstrap", "f_direct_referral_policy"].includes(op ?? "")) return named("network_f2_royalty_rate");
+  if (op === "f_seven_layer_activation") return named("network_f2_policy_amplify");
+  if (op === "f4_quota_tier_create") return named("network_f4_write");
+  if (op === "f4_ambassador_policy_change") return fApprovalPermissionText();
+  if (["f4_pool_settle", "f4_leaderboard_period_payout"].includes(op ?? "")) return named("network_f4_pool_fund");
   if (!["f_config", "f_ui_config", "f_unilevel_rule", "f_config_batch"].includes(op ?? "")) return undefined;
   const keys = fBatchTicket(w)?.items?.map(item => item.key) ?? w.obj.split(",").map(key => key.trim());
   const isF2F4 = keys.some(key => /^(?:F\.(?:unilevel|promo|peer|influence|royalty|partner|sunset|pool|quota|ambassador|leaderboard)\.|F\.cooldown$)/.test(key)
@@ -187,21 +191,13 @@ function f2F4ApprovalPermissions(w: A2OperationRow): string | undefined {
   if (!isF2F4) return undefined;
   const permissions = new Set(keys.map(key => key.startsWith("F.pool.votes.") ? "network_f4_pool_fund"
     : key === "F.binary.autoSettle" ? "network_f3_engine_pause" : fConfigAuthority(key)));
-  const labels: Record<string, string> = {
-    network_f2_royalty_rate: "团队奖励比例",
-    network_f2_policy_amplify: "团队奖励放大策略",
-    network_f2_write: "团队奖励设置修改",
-    network_f4_pool_fund: "奖池资金类调整",
-    network_f4_write: "奖励池、名额与排行榜 · 常规写",
-    network_f4_leaderboard_control: "排行榜控制",
-    network_f4_ambassador_approve: "区域大使审批",
-  };
-  const named = [...permissions].map(code => code && labels[code]);
-  return named.every(Boolean)
-    ? `审批批准权限和「${named.join("」「")}」权限`
-    : "审批批准权限和这张单各项对应的业务权限";
+  const names = [...permissions].flatMap(code => code && F_APPROVAL_PERMISSION_NAMES[code] ? [F_APPROVAL_PERMISSION_NAMES[code]] : []);
+  return names.length === permissions.size
+    ? fApprovalPermissionText(...names)
+    : `${fApprovalPermissionText()}和这张单各项对应的业务权限`;
 }
 
+const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
 
 function approvalExecutorLabel(w: A2OperationRow) {
@@ -217,7 +213,6 @@ function approvalExecutorLabel(w: A2OperationRow) {
   // 后端 ROLE_GATE_E1_SKU 原文带权限码 device_e1_write，这里写成同一含义的权限名。
   if (["e1_hosting_centers_update", "e1_sku_create", "e1_sku_update"].includes(w.operationCode ?? "")) return "另一位超级管理员（需有商品修改权限）";
   if (w.operationCode === "h5_earn_milestone_create") return "另一位有审批批准权限的超级管理员";
-  if (w.operationCode === "f4_quota_tier_create") return "另一位有审批批准权限和购机名额修改权限的超级管理员";
   // H5GrowthApproval：三类成长审批都要超级管理员且有审批批准权限。
   if (w.operationCode === "h5_streak_milestone" || w.operationCode === "h5_power_up_config" || w.operationCode === "h5_earn_milestone") return "另一位有审批批准权限的超级管理员";
   if (/^(?:兑换|回购)参数调整 · /.test(w.action)) return "另一位有审批批准权限的超级管理员";
@@ -1571,6 +1566,27 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
 
 export function A2Audit({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
+  const oldPayoutTickets = useRef(new Set<string>());
+  const [, redrawPayoutBlocks] = useState(0);
+  useEffect(() => {
+    try {
+      const ids: unknown = JSON.parse(sessionStorage.getItem(F4_OLD_PAYOUT_TICKETS) ?? "[]");
+      if (Array.isArray(ids)) {
+        ids.filter((id): id is string => typeof id === "string").forEach(id => oldPayoutTickets.current.add(id));
+        redrawPayoutBlocks(value => value + 1);
+      }
+    } catch { /* The current tab can still retain new refusals in memory. */ }
+  }, []);
+  const rememberOldPayout = (ticketId: string) => {
+    oldPayoutTickets.current.add(ticketId);
+    try { sessionStorage.setItem(F4_OLD_PAYOUT_TICKETS, JSON.stringify([...oldPayoutTickets.current])); } catch { /* In-memory block remains. */ }
+    redrawPayoutBlocks(value => value + 1);
+  };
+  const legacyPayoutRefusal = (kind: A2DecisionKind, id: string, op: string | undefined, code: string | undefined) => {
+    if (kind !== "approve" || op !== "f4_leaderboard_period_payout" || code !== "F4_LEADERBOARD_PAYOUT_REVIEW_REQUIRED") return false;
+    rememberOldPayout(id);
+    return true;
+  };
   const reach = useReach();
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const session = useAdminAuth((s) => s.session);
@@ -1935,14 +1951,22 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   };
 
   type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo" | "refundAmountUsdtText"> & { rule?: DecisionRule | null };
-  const runDecision = (kind: A2DecisionKind, w: DecisionTicket, reason: string, by = operator) => sendCommand(
+  const runDecision = async (kind: A2DecisionKind, w: DecisionTicket, reason: string, by = operator) => {
+    if (kind === "approve" && oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
+    return sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
       operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdtText: w.refundAmountUsdtText ?? undefined, action: w.action, ruleTaskAction: w.ruleTaskAction },
     `a2-${kind}-${w.id}`,
-    (key) => kind === "approve" ? approveA2Operation(w.id, reason, key, w.operationCode)
-      : kind === "reject" ? rejectA2Operation(w.id, reason, key)
-        : withdrawA2Operation(w.id, reason, by, key),
+    async (key) => {
+      if (kind === "reject") return rejectA2Operation(w.id, reason, key);
+      if (kind === "withdraw") return withdrawA2Operation(w.id, reason, by, key);
+      try { return await approveA2Operation(w.id, reason, key, w.operationCode); }
+      catch (cause) {
+        legacyPayoutRefusal(kind, w.id, w.operationCode, backendCode(cause));
+        throw cause;
+      }
+    },
     async (receipt) => {
       if (receipt.id !== w.id || receipt.status !== DECISION_STATUS[kind]) return false;
       const next = await loadMain();
@@ -1950,7 +1974,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       return next.operationQueue.some((item) => item.id === w.id && item.status === DECISION_STATUS[kind])
         || next.operationHistory.some((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
     },
-  );
+    );
+  };
 
   const runParam = (key: "ttl" | "retention" | "schema", value: string, reason: string, by = operator) => sendCommand(
     `param|${key}`,
@@ -2036,6 +2061,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       if (receipt.state === "REJECTED") {
         // 记录随即解除，拒绝原因只在这条提示里：不自动消失，运营点「知道了」或切页签才收起（协调人定，不另外常留）。
         const code = receipt.businessMessage;
+        legacyPayoutRefusal(kind, record.target, record.operationCode ?? recordTicket(record)?.operationCode, code);
         const approvalReason = code && kind === "approve" ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined;
         const why = code ? decisionRefusedReason(code, code, approvalReason) : undefined;
         // 专项原因本身已写明「这次批准没有执行」和单子现状，不再套「…没有执行：」。
@@ -2054,6 +2080,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const canRetry = (record: A2PendingCommand) => {
     if (!isPendingCommandOwnedBy(record)) return false;
     if (record.kind === "withdraw") return canWithdraw;
+    if (record.kind === "approve" && oldPayoutTickets.current.has(record.target)) return false;
     if (record.kind === "param" || record.kind === "retention") return canWrite;
     if (record.kind === "export") return canExport;
     const queued = recordTicket(record);
@@ -2207,6 +2234,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     if (mainLoading) return RELOADING;
     if (kind === "withdraw") return canWithdraw ? undefined : NO_WITHDRAW;
     if (isMine(w)) return OWN_TICKET_REASON;
+    if (kind === "approve" && oldPayoutTickets.current.has(w.id)) return F4_PAYOUT_REVIEW_REQUIRED;
     if (kind === "approve" && w.retiredOperation) return RETIRED_OPERATION_COPY;
     if (kind === "approve" && (w.phoneCalibrationError || w.ambassadorMaterialError)) return w.phoneCalibrationError ?? w.ambassadorMaterialError;
     if (!canDecide(w, kind)) return (kind === "approve" ? w.approveDeniedMessage : w.rejectDeniedMessage) ?? NO_DECIDE;
@@ -2535,13 +2563,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
         : amplifies && !coverage ? <span className="a2-coverage-unknown">{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
       coverageCheck: fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
-      blockedReason: amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
+      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
       reasonMin,
       reasonMax: 200,
       confirmLabel: "确认批准",
       // 直接动钱的确认用红（决定 50）。
       confirmTone: w.amplifies || isRefund ? "danger" : "primary",
       run: async (reason) => {
+        if (oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
         const block = w.operationCode === D5_APPROVAL_OP ? d5Trc20ApprovalBlock(w.before, w.after) : undefined;
         if (block) throw new Error(d5Trc20Reason(block, false));
         try {
@@ -2549,7 +2578,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (outcome === "ok") { decisionToast("approve", w.id); setTicketId(null); }
         } catch (cause) {
           if (w.operationCode === "f4_leaderboard_period_payout" && backendCode(cause) === "F4_LEADERBOARD_PAYOUT_REVIEW_REQUIRED") {
-            openActionConfirm({ ...approveRequest(w), blockedReason: F4_PAYOUT_REVIEW_REQUIRED });
+            openActionConfirm(approveRequest(w));
             throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
           }
           const stale = staleReason(w, "approve", cause);

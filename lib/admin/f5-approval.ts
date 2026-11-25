@@ -65,7 +65,7 @@ export const canRetryF5Proposal = (original: FDomainAttempt) => !f5ProposalRecov
 
 export async function queryF5Proposal(adminId: number, original: FDomainAttempt) {
   actor(adminId);
-  return f5ProposalRecovery.queryTicket(original, async record => {
+  return f5ProposalRecovery.queryTicket("F5", original, async record => {
     if (record.adminId !== undefined && record.adminId !== adminId) throw new Error("ADMIN_PERMISSION_DENIED");
     const ticket = await fetchA2ProposalByKey(record.commandKey, true, "f");
     if (!activeRecoveryActor(adminId, "network_f5_read")) throw new Error("ADMIN_PERMISSION_DENIED");

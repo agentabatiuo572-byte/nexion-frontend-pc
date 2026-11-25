@@ -1,3 +1,4 @@
+import { settleFReconfirmation } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { fDirectReceiptConclusion } from "./f-direct-recovery";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
@@ -34,6 +35,8 @@ type OriginalCommand = {
   approval: boolean; proposal?: Parameters<typeof createA2OperationProposal>[0];
   directExpectedRevision?: string;
 };
+
+export type F1PolicyDraft = { record: F1PolicyRecord; form: F1PolicyForm };
 
 export type F1PolicyRecord = PendingMutationRecord & { input: string; ticket?: A2OperationRow; received?: boolean; absent?: boolean; commandOrigin?: FundCommandOrigin };
 
@@ -160,7 +163,7 @@ function f1PolicyRoute(values: F1PolicyValues): OriginalCommandRoute {
     originalPath: values.action === "threshold" ? `${base}/thresholds/${encodeURIComponent(values.field!)}` : `${base}/rewards${values.action === "reward_add" ? "" : `/${encodeURIComponent(values.rewardId!)}`}`,
     readAuthority: "network_f1_read" };
 }
-function originalF1Policy(owner: number, record: F1PolicyRecord) {
+export function originalF1Policy(owner: number, record: F1PolicyRecord) {
   const original = JSON.parse(record.input) as OriginalCommand;
   if (!original.editor || slot(owner, original.editor) !== record.fingerprint || typeof original.reason !== "string"
     || !original.form || !original.values || typeof original.approval !== "boolean" || typeof original.operator !== "string"
@@ -281,7 +284,7 @@ export async function submitF1Policy(
       if (!query.ticket) return null;
       const { ticket } = query;
       if (ticket.status === "pending") attempts.remember(fingerprint, key, { ...record(), ticket, received: true, absent: false });
-      else f1PolicyRecovery.settleFromQuery(record(), query.conclusion);
+      else settleFReconfirmation(f1PolicyRecovery, record(), query.conclusion, "f1-policy");
       const restoreDraft = query.conclusion === "rejected" || query.conclusion === "not-executed";
       const status = { pending: " · 等另一位超级管理员批准，当前配置未变", approved: " · 已批准", rejected: " · 已驳回", withdrawn: " · 已撤回", expired: " · 已过期" };
       acknowledgement = `审批单 ${ticket.id}${status[ticket.status]}`;
@@ -355,7 +358,7 @@ export async function queryF1PolicyCommand(owner: number, record: F1PolicyRecord
     return { receipt, conclusion };
   });
   if (!result) throw new Error("PENDING_QUERY_UNAVAILABLE");
-  return { ...result, settled: f1PolicyRecovery.settleFromQuery(record, result.conclusion) };
+  return { ...result, settled: settleFReconfirmation(f1PolicyRecovery, record, result.conclusion, "f1-policy") };
 }
 
 /** Refresh saved pending approvals without treating a failed read as a pending verdict. */
