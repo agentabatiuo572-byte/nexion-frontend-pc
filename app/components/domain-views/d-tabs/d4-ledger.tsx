@@ -583,7 +583,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const showGlobalConclusion = !error && !notFound;
   const failedTotal = counts.state === "ok" ? counts.failed + counts.rejected : 0;
   const globalConclusion = counts.state === "loading"
-    ? <Conclusion state="unknown">正在读取…</Conclusion>
+    ? <Conclusion state="unknown">正在加载…</Conclusion>
     : counts.state === "failed"
       ? <Conclusion state="unknown" action={<InlineRetry onRetry={() => setCountsReload((value) => value + 1)} />}>暂时读不到处理中和失败的数量</Conclusion>
       : (
@@ -765,7 +765,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
         </div>
       )
         : !userData || !running ? <>
-          <Conclusion state="unknown">正在读取…</Conclusion>
+          <Conclusion state="unknown">正在加载…</Conclusion>
           <Panel flush icon={Scale} tone="role-1" title="余额核对">
             <Table label="余额核对" aria-busy><tbody><TableLoading columns={5} rows={5} /></tbody></Table>
           </Panel>
