@@ -238,7 +238,7 @@ export function PerfExportRecords({ ports, refreshKey = 0, onRefreshingChange, r
   const querySubmit = (original: PendingSubmit) => {
     const key = original.operationId;
     setQuerying(key);
-    setReceiptVisibility({ key, refreshKey, visible: false });
+    setReceiptVisibility({ key, refreshKey, retry: visibilityRetry, visible: false });
     setAnswers(map => {
       const next = { ...map };
       delete next[key];
