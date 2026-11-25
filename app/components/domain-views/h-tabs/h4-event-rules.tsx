@@ -254,13 +254,13 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
           <Fact k="开放状态">{base.enabled === next.enabled ? (next.enabled ? "开着" : "关着") : <>{base.enabled ? "开着" : "关着"} → {next.enabled ? "开启" : "关闭"}</>}</Fact>
           <Fact k="时间（北京时间）">{formatTime(next.startsAt, "Asia/Shanghai")} → {formatTime(next.endsAt, "Asia/Shanghai")}</Fact>
           {next.enabled ? <Fact k="开了以后">{PLAY_SENTENCE[playKey({ kind: base.kind, rules: next.rules })] ?? "符合条件的用户可以参与"}</Fact>
-            : <Fact k="关了以后">不再发新奖励；已冻结的邀请和新手资格仍会兑现。开过一次的玩法关闭后不能再开</Fact>}
+            : !draftOnly && <Fact k="关了以后">不再发新奖励；已冻结的邀请和新手资格仍会兑现。开过一次的玩法关闭后不能再开</Fact>}
           {next.enabled && keyParams({ kind: base.kind, rules: next.rules }).filter(([k]) => k === "平台最多付").map(([k, v]) => <Fact key={k} k={k} tone="role-1">{v}</Fact>)}
           {firstOpen && <Fact k="开启后固定">玩法和时间不能再改，只能关闭；关了不能再开</Fact>}
           {firstOpen && <ApprovalFact amplify="第一次开启" object="玩法" />}
         </Facts>
       </>,
-      confirmLabel: firstOpen ? "提交审批" : draftOnly ? "保存草稿" : "保存配置",
+      confirmLabel: firstOpen ? "提交审批" : draftOnly ? "保存草稿" : base.enabled && !next.enabled ? "确认关闭" : "保存配置",
       reasonPlaceholder: firstOpen ? "例如：活动素材和预算已确认，申请开启" : "例如：按活动方案调整参与条件",
       amplifies: firstOpen,
       blockedReason: changed ? undefined : "没有改动",
@@ -411,6 +411,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     const saved = savedUnread;
     const lockedForm = !canWrite || saving || saved || h4Blocked(`H/h4_event_rule/${selected.eventCode}`) || !!review;
     const showSaved = saved && (!error || readFailed);
+    const unknown = !!h4PendingFor(scope) && !h4PendingFor(scope)?.acknowledged;
     const readiness = eventRuleReadiness(selected, eventContent, requiredLanguages);
     const enableBlocked = !readiness.ready ? `还没就绪，${readinessGapParts(readiness).join("；")}` : selected.rulesLocked && !selected.enabled ? "开过又关了的玩法不能再开" : undefined;
     return <div className="h4-dialog-body">
@@ -471,7 +472,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
       {selected.kind === "boost" && draft.rules.action === "CHECKIN_MULTIPLIER" && <Notice tone="neutral">加成预算耗尽后恢复原有签到奖励，不影响用户继续签到。</Notice>}
       {selected.kind === "wheel" && <Notice tone="neutral">抽奖奖项、概率和奖池限制在「转盘奖池」里维护。</Notice>}
       {selected.kind === "regional" && <Notice tone="neutral">排名按加入活动后的有效支付订单金额统计；获胜地区内按个人有效支付金额比例分配奖池，并列第一的地区共同分享总奖池。</Notice>}
-      {(error && error !== regionNameError || saved) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={showSaved ? "已保存，但没读到最新配置" : stale ? "没有保存：最新配置也没读到" : "没有保存"}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
+      {(error && error !== regionNameError || saved) && !review && <Notice tone={showSaved || unknown ? "warn" : "danger"} title={showSaved ? "已保存，但没读到最新配置" : unknown ? "操作结果未知" : stale ? "没有保存：最新配置也没读到" : "没有保存"}>{showSaved ? "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
     </fieldset></div>;
   })();
 

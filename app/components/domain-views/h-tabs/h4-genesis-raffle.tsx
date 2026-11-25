@@ -208,7 +208,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
           {opening && <ApprovalFact amplify="开放报名" object="这一期" />}
         </Facts>
       </>,
-      confirmLabel: opening ? "提交审批" : draftOnly ? "保存草稿" : "保存配置",
+      confirmLabel: opening ? "提交审批" : draftOnly ? "保存草稿" : closing ? "确认关闭" : "保存配置",
       blockedReason: unchanged ? "没有改动" : undefined,
       reasonPlaceholder: opening ? "例如：奖项和时间已确认，申请开放报名" : "例如：按活动方案配置这一期",
       run: async reason => {
@@ -475,7 +475,7 @@ export default function H4GenesisRaffle({ ctx, readback, onApprovalCompleted, re
             <Button size="sm" icon={<Plus size={13} aria-hidden />} disabled={formLocked || locked || draft.prizes.length >= 20} onClick={() => setDraft({ ...draft, prizes: [...draft.prizes, { id: `prize-${Date.now().toString(36)}-${draft.prizes.length}`, nameZh: "", nameEn: "", nameVi: "", rewardType: "UVT", amount: "", quantity: 1 }] })}>添加奖项</Button>
           </div>
         </fieldset>
-        {(error || savedUnread) && !review && <Notice tone={showSaved ? "warn" : "danger"} title={saveNoticeTitle}>{showSaved ? needsVerification ? "关掉后点「刷新」，读到这一期才能确认是否保存。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
+        {(error || savedUnread) && !review && <Notice tone={showSaved || pendingSave && !pendingSave.acknowledged ? "warn" : "danger"} title={saveNoticeTitle}>{showSaved ? needsVerification ? "关掉后点「刷新」，读到这一期才能确认是否保存。" : "不用重新提交；关掉后点「刷新」，读到后再改。" : error}</Notice>}
       </fieldset></div>}
     </Drawer>
   </Panel>;

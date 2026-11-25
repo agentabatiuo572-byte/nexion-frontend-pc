@@ -41,7 +41,7 @@ export function useH4Editor(editor: H4Editor | null) {
   useLayoutEffect(() => () => report(id, null), [report, id]);
 }
 
-export function useH4EditHost(): H4EditGuard & { provide: (children: ReactNode) => ReactNode } {
+export function useH4EditHost(confirmOpen: boolean): H4EditGuard & { provide: (children: ReactNode) => ReactNode } {
   const editors = useRef(new Map<string, H4Editor>());
   const [, changed] = useState(0);
   const current = [...editors.current.values()].find((editor) => editor.dirty);
@@ -49,6 +49,17 @@ export function useH4EditHost(): H4EditGuard & { provide: (children: ReactNode) 
   const guard = useLeaveGuard(!!current, () => editors.current.forEach((editor) => editor.close()), switcher);
   const latest = useRef(guard);
   latest.current = guard;
+  // 确认框从离开框打开，或抽屉主按钮变灰重画，原按钮已不在：确认框关掉后抽屉还开着，焦点回抽屉，不落到页面底（CP-66）。
+  const confirmed = useRef(false);
+  useEffect(() => {
+    const closed = confirmed.current && !confirmOpen;
+    confirmed.current = confirmOpen;
+    if (!closed) return;
+    const timer = window.setTimeout(() => {
+      if (document.activeElement === document.body) document.querySelector<HTMLElement>(".rd-drawer[data-state='open']")?.focus();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [confirmOpen]);
   // 点到外面的控件时，这一下的动作由控件自己处理（页签、链接先问再去）；点空白处才当作关抽屉。
   const onControl = useRef(false);
   useEffect(() => {

@@ -77,7 +77,7 @@ export default function H4Promotions({ ctx, legacy }: {
         screen !== 'list' && activityError ? { target: '当前活动版本', error: activityError, retry: retryActivity } : null].filter((item): item is NonNullable<typeof item> => item !== null);
     const can = useCallback((capability: string) => ctx.can(capability) && (screen === 'list' || !activity?.deleted || capability.endsWith('_read') || capability.startsWith('growth_promotion_reward_') || capability === 'growth_promotion_metrics_export') && (capability.endsWith('_read') || (!catalog.loading && !catalog.error && (screen === 'list' ? !list.loading && !list.error : !activityBusy && !activityError))), [ctx.can, activity?.deleted, catalog.loading, catalog.error, activityBusy, activityError, screen, list.loading, list.error]);
     // 页面一级的离开守卫：换页签、换页面都先处理正在改的抽屉（OP-29）。
-    const edit = useH4EditHost();
+    const edit = useH4EditHost(!!ctx.confirmOpen);
     const navigate = (next: Screen, target = id) => edit.attempt(() => { setScreen(next); setId(target); const url = new URL(location.href); if (next === 'list') {
         url.searchParams.delete('promotion');
         url.searchParams.delete('activity');

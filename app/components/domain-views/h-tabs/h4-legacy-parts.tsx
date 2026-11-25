@@ -196,7 +196,7 @@ export function ApprovalFact({ amplify, object }: { amplify: string; object: str
 }
 export const effectDirect = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 /** 只存草稿：用户侧不变，灰底（VS-106）。 */
-export const effectDraft = <StatusTag tone="neutral" filled>保存草稿，用户看不到变化</StatusTag>;
+export const effectDraft = <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>;
 /** 原操作结果未知时保存按钮的原因：抽屉主按钮和离开框用同一句。 */
 export const H4_UNKNOWN_SAVE = "原操作结果未知，先在本页顶部查询原结果";
 export const effectByDirection = (amplify = "让平台多付钱的修改") => <><StatusTag tone="progress" filled>调低立即生效</StatusTag><StatusTag tone="neutral" explain={`${amplify}要另一位超级管理员（需有审批批准权限）批准，批准前什么都不变；其余确认后立即生效。提交时由系统判断方向。`}>调高要批准</StatusTag></>;
