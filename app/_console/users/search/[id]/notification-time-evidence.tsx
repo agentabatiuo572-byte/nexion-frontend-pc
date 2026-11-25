@@ -187,7 +187,7 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
       </Facts>}
       effect={<StatusTag tone="progress" filled>立即生效</StatusTag>} confirmLabel="确认校正，立即生效"
       statedBrief={{ impact: "只改这条通知显示的时间，不重新发送，已读状态不变。", check: "核对当前记录时间和投递事实时间，理由写明依据。" }}
-      blockedReason={writeBlockedReason} reasonMax={500} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
+      blockedReason={writeBlockedReason} reasonMax={200} onClose={() => { if (!busy.current) setConfirmation(null); }} onConfirm={submit} />}
     {releasing && pending && <ReleaseModal label={`校正通知 ${notificationId} 的时间`} onCancel={() => setReleasing(false)} onConfirm={release}
       explain="重试被明确拒绝也说明不了原校正的结果，先到操作记录核实。解除只移除本页这条原操作记录，原操作的结果和锁定不变。" />}
   </Drawer>;

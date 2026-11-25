@@ -5,7 +5,7 @@
  * 没事时收成一行，有异常、读取失败、有待确认的解除时展开并上色（DP-05、DP-04）。
  * 「有没有异常」交给页面，首屏的结论句和折叠组的摘要都要用（DP-03、PG-53）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { RefreshCcw } from "lucide-react";
 import { BlockState, Button, Fact, Facts, Fold, Notice, StatusTag } from "@/app/components/rd";
 import { PaymentSecurityDetail, paymentSecurityStateText } from "./payment-security-card";
@@ -14,7 +14,8 @@ import { PaymentPasswordApiError, pendingPaymentRelease, type PaymentSecurityPor
 import type { PaymentSecurityRecord, PaymentSecuritySummary } from "@/lib/admin/payment-password-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
-export type PaymentSecurityState = "loading" | "failed" | "denied" | "clear" | "exception";
+/** reloading：读失败后正在重读，结果回来前不算失败也不算没事，页面结论和分区导航写在途（ST-30、ST-31，BUG-746）。 */
+export type PaymentSecurityState = "loading" | "reloading" | "failed" | "denied" | "clear" | "exception";
 
 const message = (failure: unknown) => failure instanceof Error ? failure.message : "支付安全信息未确认，请重新加载。";
 const actionText = (record: PaymentSecurityRecord) => record.type === "PAYMENT_PASSWORD_EXCEPTION" ? "解除异常标记" : "解除锁定";
@@ -38,7 +39,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   writeBlockedReason?: string;
   onWriteBusy?: (busy: boolean) => void;
   onState?: (state: PaymentSecurityState, pending: boolean) => void;
-  /** 点了失败卡的「重试」：页面可以让这一块所在的折叠组读到后也保持展开。 */
+  /** 点了失败卡的「重试」或块里的「刷新」：页面可以让这一块所在的折叠组读到后也保持展开（焦点不被收起藏掉）。 */
   onRetry?: () => void;
 }) {
   const session = useAdminAuth((state) => state.session), epoch = useAdminAuth((state) => state.authEpoch);
@@ -50,15 +51,28 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
   const [selected, setSelected] = useState<{ id: string; release: boolean } | null>(null);
   const generation = useRef(0);
   const owner = session?.adminId ?? 0;
+  /** 上次读到的摘要是哪个用户、哪个会话的：同一个时重读（「刷新」、页头刷新、更新事件）保留它，换了才清。 */
+  const shownFor = useRef("");
+  const box = useRef<HTMLDivElement>(null);
+  const refreshButton = useRef<HTMLButtonElement>(null);
+  /** 在「刷新」上按下后这次重读失败或变成无权限：「刷新」跟着摘掉，焦点交给这一块的失败卡（ST-56）。 */
+  const handBack = useRef(false);
   const load = useCallback(async () => {
     const id = ++generation.current;
+    const identity = `${port.key}:${owner}:${epoch}`;
+    // 同条件重读：上次的事实和这一组的开合都留着，写「正在重新加载」，解除先不能点；读到新结果再换（ST-32，BUG-746 F09）。
     // 失败卡在重读期间留着写「重试中…」，结果回来再换：先清掉错误会卸下失败卡，焦点掉到页面上（BUG-710）。
-    setSummary(null); setLoading(true); setPending(!!pendingPaymentRelease(owner, port.userId));
+    if (shownFor.current !== identity) setSummary(null);
+    setLoading(true); setPending(!!pendingPaymentRelease(owner, port.userId));
     try {
       const next = await port.summary();
-      if (id === generation.current) { setSummary(next); setError(""); setDenied(false); }
+      if (id === generation.current) { setSummary(next); setError(""); setDenied(false); shownFor.current = identity; }
     } catch (failure) {
       if (id === generation.current) {
+        // 重读失败不留旧事实，只留失败卡（ST-34、ST-36）。
+        handBack.current = document.activeElement === refreshButton.current;
+        setSummary(null);
+        shownFor.current = "";
         if (failure instanceof PaymentPasswordApiError && failure.status === 403) {
           setSelected(null);
           setError("");
@@ -76,20 +90,31 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
     return () => { generation.current++; window.removeEventListener("nexion-payment-security-updated", refresh); };
   }, [load, owner, reloadKey]);
   const record = summary?.record;
-  // 状态未确认的记录不算没事。
-  const state: PaymentSecurityState = error ? "failed" : denied ? "denied" : loading ? "loading" : record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
+  /** 同条件重读在途：上次的摘要还在。 */
+  const refreshing = loading && !!summary;
+  // 状态未确认的记录不算没事。同条件重读时按上次读到的事实报，结论、导航和组的开合都不变（ST-32）。
+  const state: PaymentSecurityState = error ? loading ? "reloading" : "failed" : denied ? "denied" : loading && !summary ? "loading" : record?.state === "UNKNOWN" ? "failed" : record?.state === "ACTIVE" ? "exception" : "clear";
+  useLayoutEffect(() => {
+    if (!handBack.current || loading || !(error || denied)) return;
+    handBack.current = false;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const card = box.current?.querySelector<HTMLElement>(".rd-block-state");
+    (card?.querySelector<HTMLElement>("button") ?? card)?.focus({ preventScroll: true });
+  }, [loading, error, denied]);
   const showPending = pending && !denied;
   useEffect(() => { onState?.(state, showPending); }, [onState, state, showPending]);
   if (!session) return null;
   // 重试在途只有「重试中…」一种状态，摘要先不写「加载失败」（ST-30、ST-31）。
-  const line = error ? loading ? "" : "加载失败" : denied ? "· 无权限" : loading ? "正在加载…" : record ? stateText(record) : "支付密码无异常";
+  const line = error ? loading ? "" : "加载失败" : denied ? "· 无权限" : loading && !summary ? "正在加载…" : record ? stateText(record) : "支付密码无异常";
   return (
     <>
       <Fold inset title="支付安全" alert={state === "exception" || state === "failed" || showPending} alertTone={error ? "danger" : "warn"} summary={line}
         explain={<><p>支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>{record && <p>解除只处理本条支付密码异常，登录状态不受影响。</p>}</>}
-        actions={!denied && !error && <Button size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
-        <div className="rd-detail-block">
-          {error ? <BlockState retryKey="payment-security-block-87" state="error" compact title={loading ? "正在重新加载支付安全…" : "支付安全加载失败"} detail={loading ? undefined : error} onRetry={() => { onRetry?.(); void load(); }} retrying={loading} /> : denied && <BlockState state="denied" compact title="无权限" />}
+        actions={!denied && !error && <Button ref={refreshButton} size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => { onRetry?.(); void load(); }}>刷新</Button>}>
+        <div ref={box} className="rd-detail-block">
+          {/* 重读在途按加载中画（不是红字失败），同一块不卸下，焦点留在「重试中…」（ST-30、ST-31，BUG-746）。 */}
+          {error ? <BlockState retryKey="payment-security-block-87" state={loading ? "loading" : "error"} compact title={loading ? "正在重新加载支付安全…" : "支付安全加载失败"} detail={loading ? undefined : error} onRetry={() => { onRetry?.(); void load(); }} retrying={loading} /> : denied && <BlockState state="denied" compact title="无权限" />}
           {record && <>
             <Facts>
               <Fact k="当前状态">{stateTag(record)}</Fact>
@@ -99,14 +124,14 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
             <div className="rd-toolbar">
               <Button size="sm" onClick={() => setSelected({ id: record.id, release: false })}>查看详情</Button>
               {record.state === "ACTIVE" && canRelease && <Button size="sm" variant="primary"
-                disabledReason={pending ? "有一笔解除结果未知，先查询原操作" : record.capabilities.releaseAllowed ? writeBlockedReason : record.capabilities.disabledReason || "现在不能解除"}
+                disabledReason={pending ? "有一笔解除结果未知，先查询原操作" : refreshing ? "正在重新加载支付安全，读到后再解除" : record.capabilities.releaseAllowed ? writeBlockedReason : record.capabilities.disabledReason || "现在不能解除"}
                 onClick={() => setSelected({ id: record.id, release: true })}>{actionText(record)}</Button>}
             </div>
             {/* 不能解除的原因常显在按钮下（OP-126）：后端不让解除优先，其次是资料正在重读；结果未知由下面的提示条说。 */}
             {record.state === "ACTIVE" && canRelease && !pending && (!record.capabilities.releaseAllowed || writeBlockedReason) && <p className="rd-toolbar-note">{!record.capabilities.releaseAllowed ? record.capabilities.disabledReason || "现在不能解除" : writeBlockedReason}</p>}
           </>}
           {summary && !record && <p className="rd-detail-empty">历史处置记录仍保留。</p>}
-          {summary && <p className="rd-toolbar-note">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}</p>}
+          {summary && <p className="rd-toolbar-note" role="status">查询时间 {formatBusinessTimeCompact(summary.observedAt, "暂无记录")}{refreshing && " · 正在重新加载…"}</p>}
           {showPending && <Notice tone="warn" title="有一笔解除结果未知。"
             action={<Button size="sm" onClick={() => { const row = pendingPaymentRelease(owner, port.userId); if (row) setSelected({ id: row.recordId, release: false }); }}>查询原操作</Button>} />}
         </div>
