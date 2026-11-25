@@ -201,13 +201,13 @@ function ticketValues(text: string | undefined) {
 function proposalFacts(row: { before?: string; after?: string }, settled = false) {
   const before = ticketValues(row.before);
   const after = ticketValues(row.after);
-  if (!before || !after) return <Facts><Fact k="拟改值">没读到</Fact></Facts>;
-  return <Facts>
+  if (!before || !after) return <div className="d-proposal"><Facts><Fact k="拟改值">没读到</Fact></Facts></div>;
+  return <div className="d-proposal"><Facts>
     {KEYS.filter((key) => before.values[key] !== after.values[key]).map((key) => (
       <Fact key={key} k={PAYOUT_VND_FIELDS[key].label}><Change from={valueText(key, before.values[key])} to={valueText(key, after.values[key])} settled={settled} /></Fact>
     ))}
     {after.forced && <Fact k="倒挂价" tone="warn">强制保存</Fact>}
-  </Facts>;
+  </Facts></div>;
 }
 
 /** 待批行上的一句：改了哪几项，前后值点开这一行看。 */

@@ -242,3 +242,6 @@
 
 /* 共用离开框：「放弃改动并返回」靠左，和右边的「继续编辑」、保存主按钮隔开（DP-40、VS-25）。 */
 .rd-modal-foot > .rd-leave-discard { margin-right: auto; }
+
+/* 提现参数放宽单的拟改值：放在 13px 的结论第二行、待批行展开里时，值仍用正文字号，标签比值弱（DP-23、VS-100）。 */
+.d-proposal .rd-facts { margin-top: 4px; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }

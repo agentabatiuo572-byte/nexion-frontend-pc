@@ -560,7 +560,7 @@ function ticketChanges(text: string | undefined) {
  */
 function ProposalFacts({ rows, settled }: { rows: readonly { id: string; before?: string; after?: string }[]; settled?: boolean }) {
   if (!rows.length) return null;
-  return <Facts>{rows.flatMap((row) => {
+  return <div className="d-proposal"><Facts>{rows.flatMap((row) => {
     const before = ticketChanges(row.before);
     const after = ticketChanges(row.after);
     const head = rows.length > 1 ? [<Fact key={`${row.id}:id`} k="审批单">{row.id}</Fact>] : [];
@@ -571,7 +571,7 @@ function ProposalFacts({ rows, settled }: { rows: readonly { id: string; before?
     return [...head, ...(changed.length ? changed : changeParts(after)).map(([label, value]) => (
       <Fact key={`${row.id}:${label}`} k={label}><Change from={from.get(label) ?? "—"} to={value} settled={settled} /></Fact>
     ))];
-  })}</Facts>;
+  })}</Facts></div>;
 }
 
 /** 收紧（直接生效）的原操作。结果未知时原样保存，重试只能发这一份（OP-92、OP-94）。版本可能已变，确认前整页不能再改。 */
