@@ -122,9 +122,6 @@
 .rd-modal .ui-support-workflow summary { color: var(--rd-text-2); font-weight: var(--rd-weight-medium); }
 .rd-modal .ui-support-workflow :is(.rd-facts, .rd-notice, .rd-form-field) { margin-block: var(--rd-space-3); }
 .rd-modal .ui-support-workflow .rd-notice { padding: 10px 16px; border-radius: var(--rd-radius-control); }
-.rd-modal .ui-support-workflow .ui-workflow-steps li { font-size: var(--rd-text-aux); }
-.rd-modal .ui-support-workflow .ui-workflow-steps li.current { background: var(--rd-panel-inner); color: var(--rd-text); font-weight: var(--rd-weight-medium); }
-.rd-modal .ui-support-workflow .ui-workflow-steps li.complete { color: var(--rd-text-2); }
 .rd-modal .m-bulk-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-block: var(--rd-space-3); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .rd-modal .m-bulk-counts b { color: var(--rd-text); font-size: var(--rd-text-body); font-weight: var(--rd-weight-medium); font-variant-numeric: tabular-nums; }
 .rd-modal-foot .m-admin-toolbar { display: flex; flex: 1; justify-content: flex-end; gap: var(--rd-space-2); margin: 0; }

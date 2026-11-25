@@ -4,7 +4,8 @@
  * 顶栏 — 面包屑 + UTC 时钟 + 主题开关 + 当前登录账号菜单。
  */
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound } from "lucide-react";
+import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound, UserRoundPen } from "lucide-react";
+import dynamic from "next/dynamic";
 import { roleLabel, type AdminRole, type NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
@@ -25,11 +26,17 @@ import { ThemeToggle } from "@/app/components/rd/theme-switch";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
 import "./topbar.css";
 
+// 只在点了「更换本人头像」时才加载抽屉和确认框。
+const ShellSelfAvatar = dynamic(() => import("./self-avatar-host"), { ssr: false });
+
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
   const supportReadModes = useAdminAuth((s) => s.session?.supportReadModes);
   const supportLabel = supportIdentityLabel(role, supportReadModes);
   const identityLabel = (supportLabel && role !== "support" ? `${roleLabel(role)} · ${supportLabel}` : supportLabel) ?? roleLabel(role);
   const [open, setOpen] = useState(false);
+  // 后端只给有专属客服或客服主管资格的账号换本人头像（客服或超管角色，PERSONAL、MANAGED 两种读法就是这两种资格）；只有 ALL 的超管不显示入口（OP-124）。
+  const canChangeAvatar = supportReadModes?.some((mode) => mode === "PERSONAL" || mode === "MANAGED") ?? false;
+  const [avatarOpen, setAvatarOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const logoutAttemptRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -70,6 +77,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
   }
 
   return (
+    <>
     <div
       className="relative"
       onKeyDown={(e) => {
@@ -109,6 +117,12 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
               <div className="whitespace-normal break-words">{operator}</div>
               <span className="rd-role">{identityLabel}</span>
             </div>
+            {canChangeAvatar && (
+              <button type="button" onClick={() => { setOpen(false); setAvatarOpen(true); }} className="rd-account-action">
+                <UserRoundPen size={14} aria-hidden />
+                更换本人头像
+              </button>
+            )}
             <button type="button" onClick={handleSignOut} disabled={loggingOut} className="rd-account-action">
               <LogOut size={14} aria-hidden />
               {loggingOut ? "正在退出登录…" : "退出登录"}
@@ -122,6 +136,8 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
         </>
       )}
     </div>
+    {avatarOpen && <ShellSelfAvatar name={operator} onClose={() => { setAvatarOpen(false); triggerRef.current?.focus(); }} />}
+    </>
   );
 }
 

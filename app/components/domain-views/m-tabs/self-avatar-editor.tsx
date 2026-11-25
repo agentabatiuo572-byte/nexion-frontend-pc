@@ -7,10 +7,14 @@ import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-av
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { AccountAvatarPicker } from "../a-tabs/account-avatar-picker";
-import { Button, Drawer, Field, Notice, Select } from "@/app/components/rd";
+import { Button, Drawer, Field, Notice, Select, StatusTag } from "@/app/components/rd";
 import type { MCtx } from "./types";
 
-export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: string; ctx: MCtx; onChanged: (snapshot: SelfAvatarSnapshot) => void; onSnapshot?: (snapshot: SelfAvatarSnapshot) => void }) {
+/**
+ * launch：账号菜单里打开时不画自己的按钮，挂上就打开抽屉，关掉后叫 onClosed（顶栏把焦点还给账号按钮）。
+ * ctx 只用确认框、提示和刷新三样，客服工作台和顶栏各自给。
+ */
+export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = false, onClosed }: { name: string; ctx: Pick<MCtx, "openActionConfirm" | "toast" | "refreshContent">; onChanged: (snapshot: SelfAvatarSnapshot) => void; onSnapshot?: (snapshot: SelfAvatarSnapshot) => void; launch?: boolean; onClosed?: () => void }) {
   const actorId = useAdminAuth(s => s.session?.adminId), epoch = useAdminAuth(s => s.authEpoch);
   const [open, setOpen] = useState(false), [snapshot, setSnapshot] = useState<SelfAvatarSnapshot | null>(null), [allowed, setAllowed] = useState(false);
   const [gender, setGender] = useState<AvatarGender>("UNSPECIFIED"), [assetId, setAssetId] = useState<string | undefined>(), [blocking, setBlocking] = useState(false);
@@ -24,6 +28,10 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
     return () => { generation.current++; controller.current?.abort(); };
   }, [actorId, epoch]);
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
+  // 放在上面那个重置之后：挂上先清空，再打开。
+  useEffect(() => { if (launch) { setOpen(true); void read(); } }, []);
+  const opened = useRef(false);
+  useEffect(() => { if (open) opened.current = true; else if (launch && opened.current) onClosed?.(); }, [open]);
   const complete = (record: SelfAvatarPending, current: SelfAvatarSnapshot) => {
     selfAvatarCommands.forget(record.fingerprint, record.commandKey);
     avatarDrafts.forget(avatarDraftFingerprint(record.actorId, "self", "self"));
@@ -72,7 +80,7 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
   function confirm() {
     if (!snapshot || !assetId || busy || blocking || !allowed || !actorId || pending) return;
     const selected = assetId, expectedVersion = snapshot.accountVersion, confirmationGeneration = generation.current;
-    ctx.openActionConfirm({ action: "更换本人头像", briefKind: "self-avatar", detail: <span className="self-avatar-confirm-detail">仅替换当前登录账号的头像；姓名、角色和接待资格保持原值。失败或冲突不会清除原头像。</span>, reasonMin: 8, reasonMax: 500,
+    ctx.openActionConfirm({ action: "更换本人头像", briefKind: "self-avatar", effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, detail: <span className="self-avatar-confirm-detail">仅替换当前登录账号的头像；姓名、角色和接待资格保持原值。失败或冲突不会清除原头像。</span>, reasonMin: 8, reasonMax: 500,
       run: async reason => {
         if (!active(confirmationGeneration)) return false;
         const existing = selfAvatarCommands.list().find(row => row.actorId === actorId);
@@ -86,8 +94,8 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot }: { name: s
       },
     });
   }
-  return <><Button size="sm" className="avatar-control-button" disabled={!actorId || busy} onClick={() => { setOpen(true); void read(); }}>更换本人头像</Button>
-    {open && <Drawer open title="更换本人头像" sub={name} busy={busy} explain="仅具备有效客服或主管资格的本人可更换，不需要账号管理权限。" onClose={() => { if (!busy) setOpen(false); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={busy} onClick={() => setOpen(false)}>返回工作台</Button><Button type="button" variant="primary" disabledReason={busy ? "正在处理，稍候" : pending ? "原头像保存结果未知，请先查询原操作" : !allowed ? "本人头像资料还没加载到，加载后才能保存" : blocking ? "图片还在准备，准备好才能保存" : !assetId ? "先选一张头像" : undefined} onClick={confirm}>确认保存本人头像</Button></div>}>
+  return <>{!launch && <Button size="sm" className="avatar-control-button" disabled={!actorId || busy} onClick={() => { setOpen(true); void read(); }}>更换本人头像</Button>}
+    {open && <Drawer open title="更换本人头像" sub={name} busy={busy} explain="仅具备有效客服或主管资格的本人可更换，不需要账号管理权限。" onClose={() => { if (!busy) setOpen(false); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={busy} onClick={() => setOpen(false)}>{launch ? "关闭" : "返回工作台"}</Button><Button type="button" variant="primary" disabledReason={busy ? "正在处理，稍候" : pending ? "原头像保存结果未知，请先查询原操作" : !allowed ? "本人头像资料还没加载到，加载后才能保存" : blocking ? "图片还在准备，准备好才能保存" : !assetId ? "先选一张头像" : undefined} onClick={confirm}>确认保存本人头像</Button></div>}>
       <div className="account-avatar-controls m1-avatar-editor">
       {busy && <p className="rd-note" role="status">正在核对头像资料…</p>}{error && <Notice tone="danger">{error}</Notice>}
       {!allowed && !busy && <div><Button type="button" onClick={() => void read()}>重新核对本人资格与头像</Button></div>}

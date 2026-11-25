@@ -11,7 +11,7 @@ import { usePendingReplayDeadline } from "@/app/components/domain-views/design-k
  */
 import "./dual-ledger.css";
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type ReactNode } from "react";
 import { ArrowDownUp, Download, Gauge, Landmark, ReceiptText, Scale, SearchCheck, ShieldAlert, ShieldCheck, ShieldQuestion, SlidersHorizontal, TrendingUp, Wallet } from "lucide-react";
 import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import {
@@ -137,6 +137,29 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
 
 function GapTag({ net }: { net: number }) {
   return net > 0 ? <StatusTag tone="ok">有富余</StatusTag> : net === 0 ? <StatusTag tone="warn">刚好够</StatusTag> : <StatusTag tone="danger">不够付</StatusTag>;
+}
+
+/**
+ * 覆盖率走势。健康线的字写在线上方、红线的字写在线下方；覆盖率很高时两条线都贴着图底，红线的字会压到底部刻度（VS-49）。
+ * 这时量一下位置：两条线之间放得下一行字，红线的字改到它自己的线上方；放不下，两行字都写到健康线上方，上下叠开，不盖线也不盖刻度。
+ */
+function CoverageTrend(props: ComponentProps<typeof TrendLines>) {
+  const box = useRef<HTMLDivElement>(null);
+  const [lift, setLift] = useState<{ red: number; healthy: number } | null>(null);
+  useLayoutEffect(() => {
+    const plot = box.current?.querySelector<HTMLElement>(".rd-chart-plot");
+    const healthy = box.current?.querySelector<HTMLElement>('.rd-chart-ref[data-tone="ok"]');
+    const red = box.current?.querySelector<HTMLElement>('.rd-chart-ref[data-tone="danger"]');
+    const label = red?.querySelector("span")?.offsetHeight ?? 0;
+    const next = !plot || !healthy || !red || red.offsetTop + label + 1 <= plot.clientHeight ? null
+      : red.offsetTop - healthy.offsetTop >= label + 4 ? { red: 3, healthy: 3 }
+      : { red: red.offsetTop - healthy.offsetTop + 3, healthy: label + 5 };
+    setLift(current => current?.red === next?.red && current?.healthy === next?.healthy ? current : next);
+  });
+  return <div ref={box} className="b1-trend-chart" data-refs-low={lift ? "" : undefined}
+    style={lift ? { "--b1-red-lift": `${lift.red}px`, "--b1-healthy-lift": `${lift.healthy}px` } as CSSProperties : undefined}>
+    <TrendLines {...props} />
+  </div>;
 }
 
 export default function DualLedgerPage() {
@@ -693,7 +716,7 @@ export default function DualLedgerPage() {
           </div>
           <p className="b1-caliber">{backcastText ?? "历史点 = 当时的储备 ÷ 现在的应付款，只反映储备变化"}</p>
           {windowsToRedline != null && <p className="b1-caliber">只按储备减少的速度估算，没算应付款的变化</p>}
-          <TrendLines label="近几个时段的覆盖率" ticks={seriesTicks} format={pctText} axisFormat={(v) => `${Number(v.toFixed(1))}%`} height={120}
+          <CoverageTrend label="近几个时段的覆盖率" ticks={seriesTicks} format={pctText} axisFormat={(v) => `${Number(v.toFixed(1))}%`} height={120}
             series={[{ key: "coverage", label: "覆盖率", slot: 2, values: coverageSeries }]}
             // 图上第一条线的字写在线上方、第二条写在线下方：健康线在上、红线在下，两行字不叠。
             marks={[

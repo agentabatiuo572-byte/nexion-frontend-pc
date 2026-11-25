@@ -11,7 +11,7 @@ import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type Pe
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { Modal } from "../design-kit";
-import { Button, Check, Explain, Fact, Facts, Field, Fold, Input, Notice, Pager, RecordList, Select, StatusTag, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
+import { Button, Check, Explain, Fact, Facts, Field, Fold, Input, Notice, Pager, RecordList, Select, StatusTag, Steps, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -55,7 +55,10 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const canWrite=session?.role==="super"||session?.role==="superadmin"||Boolean(session?.authorities.includes("service_m3_write"));
   const scopeKey=`${epoch}:${actorId}:${session?.role}:${session?.authorities.join(",")}`, [scopeOwner,setScopeOwner]=useState(scopeKey);
   const [historyOpen,setHistoryOpen]=useState(Boolean(createBlocked)),[previewList,setPreviewList]=useState("included");
+  // 提交被明确拒绝（不是结果未知）时第 3 步画成没走成；换步或再次提交就清掉（CP-47 只用现有失败状态）。
+  const [submitFailed,setSubmitFailed]=useState(false);
   const [step,setStep]=useState(1),[filters,setFilters]=useState<BulkFilters>({}),[storedQuery,setQuery]=useState<(BulkCandidatePage & {requestKey:string})|null>(null),[selection,setSelection]=useState<BulkPreview|null>(null);
+  useEffect(()=>setSubmitFailed(false),[step]);
   const [selected,setSelected]=useState<Set<string>>(new Set()),[page,setPage]=useState(1),[profiles,setProfiles]=useState<Record<string,SupportProfile>>({});
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[retry,setRetry]=useState(0),[filterDraft,setFilterDraft]=useState<BulkFilters>({});
   const [previewUnknown,setPreviewUnknown]=useState(false),[notReceived,setNotReceived]=useState(false);
@@ -245,14 +248,14 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       }
     }
     const record=original??pending??(input?{fingerprint:`${actorId}:create`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload:input,recipientIds:selection?.customers.map(c=>c.id),recipientAssignments:selection && Object.fromEntries(selection.customers.map(c=>[c.id,c.expectedAssignmentId])) || undefined}:null);if(!record)return;
-    commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,recipientIds:record.recipientIds,recipientAssignments:record.recipientAssignments,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError(recover ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");const saved=stamp.current;
+    commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,recipientIds:record.recipientIds,recipientAssignments:record.recipientAssignments,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError(recover ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");setSubmitFailed(false);const saved=stamp.current;
     let submitted=false;
     try{
       const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&e.status===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;
       if(saved!==stamp.current)return;
       if(recovered&&recovered.status!=="SUCCEEDED"&&recovered.status!=="FAILED"){setError("发送结果仍未知，请稍后再查询原操作。");return;}
       if(record.readOnlyRecovery&&recovered?.status!=="SUCCEEDED"&&recovered?.status!=="FAILED"){setError("原操作结果未知；客户归属变了，只能查询原操作，不能重新创建或发送。");return;}
-      if(recovered?.status==="FAILED"){commands.forget(record.fingerprint);setPending(null);setError("原操作确认失败，输入已保留，请重新核对。");return;}
+      if(recovered?.status==="FAILED"){commands.forget(record.fingerprint);setPending(null);setSubmitFailed(true);setError("原操作确认失败，输入已保留，请重新核对。");return;}
       if(recover&&!recovered&&!replay){setNotReceived(!isRetryExpired(record));setError(isRetryExpired(record)?RETRY_EXPIRED_TEXT:"还没查到原结果，原名单和内容仍保留；24 小时内可以按原操作重试。");return;}
       if(!recovered&&isRetryExpired(record)){setError(RETRY_EXPIRED_TEXT);return;}
       if(!recovered&&(!canWrite||createBlocked)){setError("原操作结果未知；这个账号没有群发资格，只能查询原操作，不能重新发送。");return;}
@@ -266,7 +269,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       if(!recovered)submitted=true;
       const next=recovered?parseBulkJob(recovered.result):record.action&&record.batchId&&record.mutation?await supportEnhancements.bulkMutate(record.batchId,record.action,record.mutation,record.commandKey):await supportEnhancements.bulkCreate(record.payload,record.commandKey);
       if(saved!==stamp.current)return;commands.forget(record.fingerprint);setPending(null);setJob(next);setStep(4);setHistoryOpen(false);setRecipientPage(1);setMutationAction(null);setMutationReason("");setResultRetry(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));
-    }catch(e){if(saved===stamp.current){setError(displayAdminError(e));if(submitted&&!recover&&isExplicitRejection(e)){commands.forget(record.fingerprint);setPending(null);}}}finally{if(saved===stamp.current)setBusy(false);}
+    }catch(e){if(saved===stamp.current){setError(displayAdminError(e));if(submitted&&!recover&&isExplicitRejection(e)){commands.forget(record.fingerprint);setPending(null);setSubmitFailed(true);}}}finally{if(saved===stamp.current)setBusy(false);}
   }
   async function mutate(){if(!job||!mutationAction||!reasonRule.ok(mutationReason)||busy||pending)return;const payload=input??{selectionId:"result",intent:"SERVICE" as const,kind:"TEXT" as const,content:"",reason:mutationReason.trim()};const record:Stored={fingerprint:`${actorId}:${job.batchId}:${mutationAction}`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload,batchId:job.batchId,action:mutationAction,mutation:{expectedVersion:job.version,reason:mutationReason.trim()}};commands.remember(record.fingerprint,record.commandKey,{actorId,payload,batchId:record.batchId,action:record.action,mutation:record.mutation});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError("浏览器存不下这次操作，没有提交；请允许浏览器保存网站数据后查询原操作。");return;}await submit(false,false,record);}
 
@@ -285,7 +288,7 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const cancelBlocked=job&&(job.actorId!==actorId?"只有发起人能操作这个批次":!canWrite?"当前账号只能查看":!job.counts.pending?"没有未提交的客户":pending?"先查询原操作":undefined);
   const retryBlocked=job&&(job.actorId!==actorId?"只有发起人能操作这个批次":!canWrite?"当前账号只能查看":!(job.counts.failed||job.counts.unknown)?"没有失败或结果未知的客户":pending?"先查询原操作":undefined);
   return <Modal title="圈选客户群发" icon="users" wide busy={busy||uploading} onClose={onClose} footer={<div className="m-admin-toolbar"><Button disabled={busy||uploading} onClick={onClose}>{step===4?"知道了":"取消"}</Button>{!historyOpen&&<>{step>1&&step<4&&!pending&&<Button disabled={busy} onClick={()=>setStep(n=>n-1)}>上一步</Button>}{step===1&&!createBlocked&&<Button variant="primary" disabledReason={!selected.size?"先勾选客户":undefined} disabled={busy||previewDenied||Boolean(pending)} onClick={()=>void freeze()}>{busy?"核对名单…":"下一步：编写内容"}</Button>}{step===2&&<Button variant="primary" disabledReason={uploadPending?"先核对原图片上传结果":(image?!image.assetId:!text.trim())?(image?"先上传图片":"先写发送内容"):undefined} onClick={()=>{setStep(3);setAck(false);setPreviewList("included");}}>下一步：确认名单</Button>}{step===3&&!pending&&<Button variant="primary" disabled={busy} disabledReason={!ready&&!busy?"先写操作理由并勾选核对":undefined} onClick={()=>void submit()}>{busy?"提交中…":"确认提交群发"}</Button>}</>}{pending&&notReceived&&!isRetryExpired(pending)&&!pending.readOnlyRecovery&&<Button disabled={busy} onClick={()=>void submit(true,true)}>按原操作重试</Button>}{pending&&<Button variant="primary" disabled={busy} onClick={()=>void submit(true)}>查询原操作</Button>}</div>}>
-    <div className="ui-support-workflow ui-support-contact-picker rd-stack"><ol className="ui-workflow-steps" aria-label="群发步骤">{["圈选客户","编写内容","确认提交","逐客结果"].map((title,index) => <li key={title} aria-current={step === index + 1 ? "step" : undefined} className={step === index + 1 ? "current" : step > index + 1 ? "complete" : ""}><span>{index + 1}</span>{title}</li>)}</ol><p className="rd-sr-only" role="status">第 {step} 步：{["","圈选客户","编写内容","确认提交","逐客结果"][step]}</p>{error&&!(pending&&isRetryExpired(pending)&&error===RETRY_EXPIRED_TEXT)&&<Notice tone={pending?"warn":"danger"}>{error}</Notice>}{uploadPending && <Notice tone="warn">原图片上传结果未知。请选择同一张图片后按原操作重试；超过图片有效期或 24 小时，请联系管理员核对。</Notice>}
+    <div className="ui-support-workflow ui-support-contact-picker rd-stack"><Steps label="群发步骤" items={["圈选客户","编写内容","确认提交","逐客结果"].map((title,index) => ({ label: title, state: step > index + 1 ? "done" as const : step === index + 1 ? submitFailed && step === 3 ? "failed" as const : "current" as const : "todo" as const }))}/><p className="rd-sr-only" role="status">第 {step} 步：{["","圈选客户","编写内容","确认提交","逐客结果"][step]}</p>{error&&!(pending&&isRetryExpired(pending)&&error===RETRY_EXPIRED_TEXT)&&<Notice tone={pending?"warn":"danger"}>{error}</Notice>}{uploadPending && <Notice tone="warn">原图片上传结果未知。请选择同一张图片后按原操作重试；超过图片有效期或 24 小时，请联系管理员核对。</Notice>}
     {!historyOpen&&<>
     {previewIntent&&!pending&&<Notice tone="warn" action={<Button disabled={busy} onClick={()=>void generatePreview(previewIntent)}>{previewUnknown?"重新生成预览":"重新读取原名单"}</Button>}>按上次{previewIntent.input.selectionMode==="ALL_FILTERED"?"全部筛选结果":"明确选中名单"}重新读取并生成新快照，旧预览的确认作废；这会生成新的预览。</Notice>}
     {step===1&&createBlocked&&<Notice tone="warn">{createBlocked}</Notice>}
