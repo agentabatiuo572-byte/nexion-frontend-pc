@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { guardedFetch } from "@/lib/admin/error-messages";
 import { avatarProxyRoute } from "@/lib/admin/account-avatar-contract";
+import { isSupportSessionExpired, parseSupportApiEnvelope } from "@/lib/admin/m-support-client";
 export const advisorAvatarPath = (adminId: number, customerId?: string) => `/api/admin/content/support-agents/${adminId}/avatar${customerId ? "?customerId="+encodeURIComponent(customerId) : ""}`;
 export const customerAvatarPath = (customerId: string) => `/api/admin/content/support-workbench/customers/${encodeURIComponent(customerId)}/avatar`;
 // M-5: a 404 means "no avatar"; remember it for a while so every list render doesn't ask again.
@@ -19,8 +20,13 @@ export function SupportAvatar({ name, path, version, size = 34 }: { name: string
     const missKey = `${epoch}:${version ?? ""}:${path}`;
     if ((missing.get(missKey) ?? 0) > Date.now()) return;
     guardedFetch(path, { credentials:"same-origin", cache:"no-store", signal:controller.signal }).then(async r=>{
-      if(r.status===404){missing.set(missKey,Date.now()+MISSING_TTL_MS);return;}
-      if(!r.ok||!(path.includes("/support-workbench/customers/")?["image/jpeg","image/png","image/webp"]:["image/jpeg","image/png"]).includes((r.headers.get("Content-Type")??"").split(";")[0].toLowerCase()))throw new Error("avatar unavailable");
+      const imageTypes = path.includes("/support-workbench/customers/") ? ["image/jpeg", "image/png", "image/webp"] : ["image/jpeg", "image/png"];
+      if (!r.ok || !imageTypes.includes((r.headers.get("Content-Type") ?? "").split(";")[0].toLowerCase())) {
+        try { parseSupportApiEnvelope(r.status, await r.text(), false); }
+        catch (error) { if (isSupportSessionExpired(error)) return; }
+        if (r.status === 404) { missing.set(missKey, Date.now() + MISSING_TTL_MS); return; }
+        throw new Error("avatar unavailable");
+      }
       const blob=await r.blob(); if(controller.signal.aborted)return;
       objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);
     }).catch(()=>{if(!controller.signal.aborted)setFailed(true);});

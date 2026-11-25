@@ -2,7 +2,7 @@ import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, profilePerformance
 import { MContentReadError, parseMContentApiEnvelope } from "./m-support-read-contract.ts";
 import { parseBusinessTime } from "./business-time.ts";
 import { guardedFetch } from "./error-messages.ts";
-import { resetAdminSession } from "./auth-session.ts";
+import { isAdminAuthFailure, resetAdminSession } from "./auth-session.ts";
 import { isExplicitRejection } from "./explicit-rejection";
 import { parseInvitationInviter, type InvitationInviter } from "./invitation-read-contract.ts";
 
@@ -197,11 +197,20 @@ export class SupportClientError extends Error {
 
 export function isSupportSessionExpired(error: unknown): boolean {
   if (!(error instanceof SupportClientError || error instanceof MContentReadError)) return false;
-  return error.status === 401 || error.status === 200 && error.apiCode === 401;
+  return isAdminAuthFailure(error.status, error.backendMessage) || error.apiCode === 401;
 }
 
-export function handoffSupportReadAuthFailure(error: unknown) {
-  if (isSupportSessionExpired(error)) resetAdminSession();
+export function parseSupportApiEnvelope<T>(status: number, text: string, requireData: boolean): T {
+  try {
+    return parseMContentApiEnvelope<T>(status, text, requireData);
+  } catch (error) {
+    if (error instanceof MContentReadError && isSupportSessionExpired(error)) {
+      resetAdminSession();
+      // Access failure cannot establish the outcome of a saved command.
+      if (error.status !== 401) throw new MContentReadError(401, error.apiCode, error.backendMessage, "CONTENT_API_401", error.data);
+    }
+    throw error;
+  }
 }
 
 /** Only use a denial from a read or write directed at the original customer or thread. */
@@ -448,18 +457,18 @@ async function request<T>(path: string, parse: (value: unknown) => T, init: Requ
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const response = await guardedFetch(`${BASE}${path}`, { ...requestInit, headers, cache: "no-store", credentials: "same-origin" });
-  if (init.preserveUnknownOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
-    throw new SupportClientError(503, undefined, "UPSTREAM_OUTCOME_UNKNOWN");
-  }
-  const text = await response.text();
-  try { return parse(parseMContentApiEnvelope<unknown>(response.status, transformResponseText ? transformResponseText(text) : text, true)); }
-  catch (error) {
-    if (error instanceof MContentReadError) {
-      if ((init.method ?? "GET").toUpperCase() === "GET") handoffSupportReadAuthFailure(error);
-      throw new SupportClientError(error.status, error.apiCode, error.backendMessage, error.data);
+  const outcomeUnknown = init.preserveUnknownOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown";
+  try {
+    const text = await response.text();
+    const data = parseSupportApiEnvelope<unknown>(response.status, transformResponseText ? transformResponseText(text) : text, true);
+    if (!outcomeUnknown) return parse(data);
+  } catch (error) {
+    if (!outcomeUnknown) {
+      if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage, error.data);
+      throw error;
     }
-    throw error;
   }
+  throw new SupportClientError(503, undefined, "UPSTREAM_OUTCOME_UNKNOWN");
 }
 function json(method: "POST" | "PUT" | "PATCH", body: object, key: string, signal?: AbortSignal): RequestInit {
   return { method, body: JSON.stringify(body), headers: keyHeader(key), signal };
@@ -660,17 +669,14 @@ export const supportClient = {
     const headers = new Headers();
     if (range) headers.set("Range", range);
     const response = await guardedFetch(`${BASE}${attachmentPath(attachmentId)}/content`, { headers, credentials: "same-origin", cache: "no-store", signal });
-    if (!response.ok) {
-      const text = await response.text();
-      try { parseMContentApiEnvelope(response.status, text, true); }
+    if (!response.ok || !["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") || "").split(";")[0].toLowerCase())) {
+      try { parseSupportApiEnvelope(response.status, await response.text(), true); }
       catch (error) {
-        handoffSupportReadAuthFailure(error);
         if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
         throw error;
       }
-      throw new SupportClientError(response.status, undefined, undefined);
+      malformed("attachment.contentType");
     }
-    if (!["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") || "").split(";")[0].toLowerCase())) malformed("attachment.contentType");
     return response.blob();
   },
   cancelAttachment: (attachmentId: string, idempotencyKey: string, signal?: AbortSignal) =>

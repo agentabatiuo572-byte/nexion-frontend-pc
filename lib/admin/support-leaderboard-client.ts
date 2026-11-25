@@ -1,6 +1,6 @@
 import { PERFORMANCE_VERSION, legacyPerformanceSelectorError, performanceGeneration, performanceTotals, performanceObject, type PerformanceTotals } from "./support-performance-contract";
-import { MContentReadError, parseMContentApiEnvelope, supportContractMalformed } from "./m-support-read-contract";
-import { handoffSupportReadAuthFailure, SupportClientError, supportRequest } from "./m-support-client.ts";
+import { MContentReadError, supportContractMalformed } from "./m-support-read-contract";
+import { parseSupportApiEnvelope, SupportClientError, supportRequest } from "./m-support-client.ts";
 import { guardedFetch } from "./error-messages.ts";
 import { businessStamp, businessZone } from "./business-time.ts";
 import type { SupportBoardRow } from "../../app/components/domain-views/m-tabs/support-leaderboard";
@@ -183,9 +183,8 @@ export function publicLeaderboardAvatar(url: string, agentId: string, q: Leaderb
 export async function fetchLeaderboardAvatar(url: string, agentId: string, q: LeaderboardQuery, expectedVersion: string, signal: AbortSignal): Promise<Blob> {
   const response = await guardedFetch(publicLeaderboardAvatar(url, agentId, q, expectedVersion), { signal, credentials: "same-origin", cache: "no-store" });
   if (!response.ok || !["image/jpeg", "image/png"].includes((response.headers.get("Content-Type") ?? "").split(";")[0].toLowerCase())) {
-    try { parseMContentApiEnvelope(response.status, await response.text(), false); }
+    try { parseSupportApiEnvelope(response.status, await response.text(), false); }
     catch (error) {
-      handoffSupportReadAuthFailure(error);
       if (error instanceof MContentReadError) throw new SupportClientError(error.status, error.apiCode, error.backendMessage);
       throw error;
     }
