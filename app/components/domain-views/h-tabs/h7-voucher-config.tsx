@@ -110,7 +110,6 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const release = useVerifiedRelease(toast);
   const [submittingForm, setSubmittingForm] = useState(false);
   const [savedContinuation, setSavedContinuation] = useState<{ resume: () => void } | null>(null);
-  const [statusConflict, setStatusConflict] = useState<{ name: string; label: string } | null>(null);
   const pendingForm = directUnknown.find(record => record.commandKey === form?.commandKey);
   const dirty = !!form && !pendingForm && voucherDraftKeys(form.baseline, form.value, form.voucher).size > 0;
   const closeForm = useCallback(() => setForm(null), []);
@@ -217,7 +216,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     const blocked = blockNew(id);
     if (blocked) throw new Error(blocked);
   };
-  const openAdd = () => leaveEditor(() => { if (!blockNew()) { setStatusConflict(null); setForm(voucherForm()); } });
+  const openAdd = () => leaveEditor(() => { if (!blockNew()) setForm(voucherForm()); });
   const withLatestVoucher = (id: string, act: (voucher: OpsVoucher) => void) => leaveEditor(() => {
     const voucher = currentData.current.find(row => row.id === id);
     if (!voucher) return toast("最新列表中找不到这张券，请核对后重新操作。");
@@ -227,7 +226,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   });
   const openEdit = (id: string) => {
     if (form?.voucher?.id === id) return;
-    withLatestVoucher(id, voucher => { setStatusConflict(null); setForm(voucherForm(voucher)); });
+    withLatestVoucher(id, voucher => setForm(voucherForm(voucher)));
   };
   const replayReadProblem = (id: string, creating = false) => !fresh.current || !creating && !currentData.current.some(voucher => voucher.id === id)
     ? "请先成功刷新代金券，再按原操作重试。" : undefined;
@@ -265,10 +264,29 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       renderNotice: action => <H4StaleNote readLatest={action} />,
     }, "H7_VOUCHER_STALE");
   };
-  // 暂停、投放被「别人先改过」挡下：确认框关掉后，原因和下一步留在页面上，不只靠会消失的提示条（OP-81、ST-57）。
-  const readAfterStatusConflict = async (voucher: OpsVoucher) => {
-    setStatusConflict({ name: voucher.name, label: voucher.status === "active" ? "暂停" : "投放" });
-    await reload();
+  // 暂停、投放被「别人先改过」挡下：确认框不关，框里说明并给「读取最新」，已填的理由先留着（OP-81、OP-97）。
+  // 读到后按最新状态重新核对：已是目标状态、券已不在或已不能做这个动作就只留提示和「取消」；仍可操作时用最新版本重建这个框（理由此时清空），并列出别人改了什么。
+  const statusStale = (voucher: OpsVoucher) => {
+    const label = voucher.status === "active" ? "暂停" : "投放";
+    return new ConfirmReadConflict({
+    readLatest: async () => {
+      const payload = await reload();
+      if (!payload) throw new Error("最新代金券暂时没有读到，请再点「读取最新」。");
+      const latest = payload.vouchers.find(row => row.id === voucher.id);
+      if (!latest) throw new ConfirmReadConflict(undefined, `最新列表中找不到这张券，这次没有${label}。`, true);
+      if (latest.status !== voucher.status) {
+        throw new ConfirmReadConflict(undefined, `「${latest.name}」现在已经是${latest.status === "active" ? "投放中" : "已暂停"}，不用再${label}，关闭即可。`, true);
+      }
+      // 和卡片上「投放」按钮同一个判断：已过有效期不能投放。
+      const blocked = blockNew(latest.id) ?? (latest.status !== "active" && voucherPhase(latest, Date.now()) === "expired" ? "已过有效期，不能投放；先编辑有效期" : undefined);
+      if (blocked) throw new ConfirmReadConflict(undefined, blocked, true);
+      openToggle(latest, undefined, undefined, voucher);
+      return true;
+    },
+    preserveReason: true,
+    renderNotice: action => <Notice tone="warn" title={`别人先改过，这次没有${label}`}
+      action={<Button size="sm" onClick={action}>读取最新</Button>}>读取最新后按最新状态重新确认，那时理由要重填。</Notice>,
+    }, "H7_VOUCHER_STALE");
   };
   const executeDirect = async (record: H7DirectMutation, recovering: boolean, editor?: FormState, after?: () => void) => {
     const blocked = recovering ? replayReadProblem(record.voucherId, record.context.kind === "create") : undefined;
@@ -285,9 +303,10 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           return;
         }
       } else if (record.context.kind === "status" && isHGrowthReadConflict(cause)) {
-        await readAfterStatusConflict(record.context.voucher);
-        openActionConfirm(null);
-        return;
+        if (!recovering) throw statusStale(record.context.voucher);
+        // 按原操作重试只发原内容（OP-94），不按最新版本重建；重试被拒的记录留在恢复面板里核实后解除。
+        void reload();
+        throw new ConfirmReadConflict(undefined, `「${record.voucherName}」刚被别人改过，这次重试没有${record.context.voucher.status === "active" ? "暂停" : "投放"}。原操作记录保留，核实后可以解除。`, true);
       }
       throw cause;
     } finally {
@@ -308,8 +327,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     assertNew(context.kind === "create" ? undefined : next.id);
     if (context.kind !== "create" && currentData.current.find(v => v.id === next.id)?.version !== context.voucher.version) {
       if (editor) throw formConflict(editor);
-      await readAfterStatusConflict(context.voucher);
-      return;
+      throw statusStale(context.voucher);
     }
     await executeDirect(createH7VoucherMutation(session!, context, next, reason), false, editor, after);
   };
@@ -409,13 +427,15 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  const openToggle = (v: OpsVoucher, restored?: H7DirectMutation, initialRecovery?: "lookup" | "retry") => {
+  /** opened：版本冲突后按最新版本重建时，打开确认框那一刻的券；框里列出别人改了什么，并换一个新框（理由清空）。 */
+  const openToggle = (v: OpsVoucher, restored?: H7DirectMutation, initialRecovery?: "lookup" | "retry", opened?: OpsVoucher) => {
     if (!restored && blockNew(v.id)) return;
-    setStatusConflict(null);
     const next = v.status === "active" ? "paused" : "active";
     const label = next === "active" ? "投放" : "暂停";
     const wheelOnly = v.wheelOnly;
+    const othersChanged = opened && changedRows(initialForm(opened, toDateInput), initialForm(v, toDateInput), skuLabels, toMs, v.issuedCount, v);
     openActionConfirm({ briefKind: "content",
+      ...(opened ? { formKey: Date.now() } : {}),
       action: `${label}代金券 · ${v.name}`,
       title: `${label}代金券`,
       detail: wheelOnly
@@ -438,6 +458,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           <Fact k="有效期" tone={next === "active" && voucherPhase(v, Date.now()) === "expired" ? "warn" : undefined}>{next === "active" && voucherPhase(v, Date.now()) === "expired"
             ? `${periodText(v)}，已过期，不能投放；先编辑有效期` : periodText(v)}</Fact>
           <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
+          {othersChanged && <Fact k="别人改了">{othersChanged.length ? <DiffList rows={othersChanged} /> : "没有别的内容变化，只有版本变了。"}</Fact>}
         </Facts>
       ),
       confirmLabel: `确认${label}`,
@@ -715,8 +736,6 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <div className="h7-page">
       {header}
       {recovery}
-      {statusConflict && <Notice tone="warn" title={`「${statusConflict.name}」刚被别人改过，这次没有${statusConflict.label}`}
-        action={<Button size="sm" variant="ghost" onClick={() => setStatusConflict(null)}>知道了</Button>}>请核对最新内容后重新操作。</Notice>}
       {release.dialog}
       <BlockState state="error" title="代金券加载失败"
         detail={savedContinuation ? `已保存，读到最新代金券后再继续刚才的操作。${error}` : `${error} · 为避免误操作，读到之前不能新增、编辑和处置。`}
@@ -761,8 +780,6 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     <div className="h7-page">
       {header}
       {recovery}
-      {statusConflict && <Notice tone="warn" title={`「${statusConflict.name}」刚被别人改过，这次没有${statusConflict.label}`}
-        action={<Button size="sm" variant="ghost" onClick={() => setStatusConflict(null)}>知道了</Button>}>请核对最新内容后重新操作。</Notice>}
       {release.dialog}
       {conclusion}
 
