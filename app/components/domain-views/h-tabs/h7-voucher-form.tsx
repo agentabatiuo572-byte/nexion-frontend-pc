@@ -176,11 +176,11 @@ export function rebaseVoucherForm(base: H7FormValue, draft: H7FormValue, opened:
   const ownTypeChange = mine.has("type");
   const latestType = theirs.includes("type") ? (current.type === "percent" ? "折扣券" : "满减券") : undefined;
   const type = ownTypeChange ? draft.type : current.type;
-  const dropped: { field: string; value: string }[] = [];
+  const dropped: { key: string; field: string; value: string }[] = [];
   for (const key of mine) {
     if ((key === "amountUSD" && type !== "fixed") || (key === "percent" && type !== "percent")) {
       mine.delete(key);
-      if (latestType && !ownTypeChange) dropped.push({ field: FIELD_LABEL[key], value: draft[key] });
+      if (latestType && !ownTypeChange) dropped.push({ key, field: FIELD_LABEL[key], value: draft[key] });
     } else value[key] = draft[key];
   }
   const report = { theirs: [] as string[][], clashes: [] as string[][] };
@@ -243,7 +243,7 @@ export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, con
   baseline: H7FormValue;
   value: H7FormValue;
   dirty: boolean;
-  readFailed?: { retrying: boolean; onRetry: () => void; detail: string };
+  readFailed?: { retrying: boolean; onRetry: () => void; title: string; detail: string };
   conflict?: () => void;
   reading: boolean;
   mergeReport?: ReturnType<typeof rebaseVoucherForm>["report"];
@@ -302,15 +302,18 @@ export function H7VoucherForm({ voucher, baseline, value, dirty, readFailed, con
           <div className="h7-form">
             {recovery}
             {conflict && !readFailed && <H4StaleNote readLatest={conflict} reading={reading} />}
-            {readFailed && <Notice tone="warn" title="最新数据没读到"
-              action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>{conflict ? "读取最新" : "重试读取"}</Button>}>
-              {readFailed.detail} 填的内容还在。
+            {readFailed && <Notice tone="warn" title={readFailed.title}
+              action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>{conflict ? "读取最新" : "重试"}</Button>}>
+              {readFailed.detail}{readFailed.detail ? " " : ""}填的内容还在。
             </Notice>}
             <MergeNotice report={mergeReport ?? null} name={([key]) =>
               key === "type" && mergeReport?.latestType ? `类型（对方改成${mergeReport.latestType}）` : FIELD_LABEL[key] ?? null}>
-              {mergeReport?.dropped.map(({ field, value }) => (
-                <p key={field}>对方已把类型改成{mergeReport.latestType}，你填的{field}={value || "（空）"}不再适用，没有带过来。</p>
-              ))}
+              {/* 类型被对方改掉后用不上的输入：写清是哪一项、填的多少、现在按什么算（05 TX-05，不写字段名和等号）。 */}
+              {mergeReport?.dropped.map(({ key, value: mine }) => {
+                const was = key === "amountUSD" ? `面额 ${displayValue("amountUSD", { amountUSD: mine }, skuLabels, toMs)}` : `减 ${mine || "—"}%`;
+                const now = value.type === "percent" ? `减 ${displayValue("percent", value, skuLabels, toMs)}` : `面额 ${displayValue("amountUSD", value, skuLabels, toMs)}`;
+                return <p key={key}>对方把类型改成了{mergeReport.latestType}，你填的{was}用不上，没有带过来；现在是{now}。</p>;
+              })}
             </MergeNotice>
             <section className="h7-form-section" inert={locked} aria-labelledby="h7-f-face">
               <h3 id="h7-f-face" className="h7-form-title">券面</h3>

@@ -10,7 +10,7 @@ import { expiredTag, GRecoveryNotice, pendingTag, unknownTag, type GRecoveryRow 
  * 首屏回答「现在价格多少、怎么来的、接下来七天怎么走」：结论一句、四个数、七天计划（走势图 + 逐日表）、最近 24 小时价格和运行方式。
  * 少用的「应急改现价」和后端还没使用的参数收进折叠。读取和既定界面保留；写入保存完整原请求并按原命令号恢复。
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity, CalendarRange, CircleHelp, CircleSlash, Info, Clock3, Coins, Lock, PauseCircle, Pencil, PinIcon, RefreshCw, ShieldCheck, SlidersHorizontal, Star, TrendingDown, TrendingUp, TriangleAlert, Zap,
@@ -80,6 +80,8 @@ const RUNTIME_PRICE_UNAVAILABLE = "现价暂不可用，无法判断是否提价
 /** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
 // 只剩字符串时（页面上的 error）按开头认结果未知：A2 发起申请丢回包的句子以「结果未知，可能已经提交」开头。
 const UNKNOWN_TEXT = /^(提交结果未知|结果未知，可能已经提交)/;
+/** 概览读到后焦点的落点：价格摘要这一块（旧概览提示条、首次失败卡读到后都卸下，ST-56）。 */
+const G3_SUMMARY = { get current() { return document.querySelector<HTMLElement>('.rd-stats[aria-label="UVT 价格摘要"]'); } };
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
@@ -487,6 +489,19 @@ function G3MarketEditor() {
     }
   }, [showRead]);
 
+  // 旧概览提示里的「重试」读到后提示条卸下：焦点交给价格摘要，不掉到页面上（ST-56）；仍失败时焦点留在「重试」上。
+  const overviewRetryFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!overviewRetryFocus.current || overviewReading) return;
+    overviewRetryFocus.current = false;
+    const active = document.activeElement;
+    if (overviewError || (active && active !== document.body && active.isConnected)) return;
+    const frame = G3_SUMMARY.current;
+    if (!frame) return;
+    if (!frame.hasAttribute("tabindex")) frame.tabIndex = -1;
+    frame.focus({ preventScroll: true });
+  }, [overviewReading, overviewError]);
+
   const reload = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setError("");
@@ -620,8 +635,8 @@ function G3MarketEditor() {
     showRead(current);
     return true;
   };
-  const staleWriteReason = overviewError ? "最新 UVT 价格读取失败，请重试后再修改。"
-    : overviewReading ? "正在读取最新 UVT 价格，读到后才能修改。" : undefined;
+  const staleWriteReason = overviewError ? "最新 UVT 价格加载失败，请重试后再修改。"
+    : overviewReading ? "正在加载最新 UVT 价格，加载完才能修改。" : undefined;
   const newWriteBlockedReason = !overview ? "UVT 价格读取失败"
     : staleWriteReason ?? (rereadPending ? "原操作已完成，但 UVT 价格还没有重新读取成功，请先刷新" : undefined);
   const readBlockedReason = (change: G3MarketChange, value?: string, forceApproval = false) => {
@@ -735,6 +750,42 @@ function G3MarketEditor() {
       readOnly={overview && !canWriteAny ? "你只能查看；这个账号没有修改价格计划和运行方式的权限。" : undefined} />
   );
 
+  // 价格历史单独读取：概览没读到时照常显示读到的历史，没有今天计划价就不画那条参考线（ST-40、ST-65）。
+  const historyPanel = (plan?: { target: number; paused: boolean }) => {
+    const historyLatest = historyPoints.at(-1)?.sampledAt;
+    // 横轴只写时刻；24 小时窗口里时刻撞上时才带日期，保证每格名字不同。
+    const shortTicks = historyPoints.map((point) => sampleText(point.sampledAt).slice(11));
+    const historyTicks = new Set(shortTicks).size === shortTicks.length ? shortTicks : historyPoints.map((point) => sampleText(point.sampledAt).slice(5));
+    const change = chartPrices.length >= 2 ? changePct(chartPrices) : null;
+    const changeText = change == null ? "24 小时涨跌暂无" : `24 小时 ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
+    return (
+        <Panel title="最近 24 小时价格" icon={Activity} tone="role-1"
+          sub={chartPrices.length >= 2 ? `${changeText} · 最近 ${sampleText(historyLatest ?? "")}（${businessZone().label}）` : undefined}
+          explain={<>
+            <p>看图：价格这一天实际怎么走的，有没有到今天的计划价。</p>
+            <p>系统每 5 分钟记一次已发布的价格；暂停或没有价格时不记。时间为{businessZone().label}。{chartPrices.length >= 2 ? `这 24 小时共 ${historyPoints.length} 个采样点；涨跌按第一个和最后一个采样价算。` : ""}</p>
+          </>}>
+          {chartPrices.length >= 2 ? (
+            <div className="g3-history" data-tick-crowd={ticksCrowded(historyTicks.length) ? "" : undefined}><TrendLines label={`最近 24 小时 UVT 价格，${changeText}`} height={168}
+              ticks={historyTicks}
+              series={[{ key: "price", label: "价格", slot: 1, values: historyPoints.map((point) => point.price) }]}
+              format={(value) => `${price(value)} USDT`} axisFormat={(value) => price(value)}
+              marks={plan ? [{ key: "plan", text: `今天计划 ${price(plan.target)}`, value: plan.target, tone: "neutral" }] : []} /></div>
+          ) : (
+            <div data-proof="g3-history-empty">
+              {/* 重读价格历史时先显示加载中，不在结果回来前闪成「没有价格记录」（ST-31、BUG-710）。 */}
+              {historyLoading && !historyError && !historyPoints.length
+                ? <BlockState state="loading" compact title="正在加载最近 24 小时价格…" />
+                : historyError
+                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void readHistory()} retrying={historyLoading} />
+                : <BlockState state="empty" compact title={historyPoints.length === 1 ? "数据不足，暂时无法显示走势" : "最近 24 小时没有价格记录"}
+                  detail={historyPoints.length === 1 ? "只有 1 个采样点，至少 2 个才画走势。" : plan?.paused ? "价格暂停期间不记录。" : "暂停或没有价格时不记录。"} onRetry={() => void readHistory()} retryLabel="刷新" />}
+            </div>
+          )}
+        </Panel>
+    );
+  };
+
   if (loading && !overview) {
     return (
       <>
@@ -742,7 +793,7 @@ function G3MarketEditor() {
         {confirmationPanels}
         {recoveryNotice}
         {toastNode}
-        <BlockState state="loading" title="正在读取 UVT 价格…" />
+        <BlockState state="loading" title="正在加载 UVT 价格…" />
       </>
     );
   }
@@ -754,9 +805,14 @@ function G3MarketEditor() {
         {confirmationPanels}
         {recoveryNotice}
         {toastNode}
-        <BlockState retryKey="g3-market-773" state="error" title="UVT 价格读取失败"
-          detail={<>页面不显示任何旧价格。点「重新加载」；一直失败请联系值班同事。{overviewError && <Explain label="失败原因" content={overviewError} />}</>}
-          retryLabel="重新加载" onRetry={() => void reload()} />
+        {/* 概览没读到只挡概览这一块：重试只重读概览，单独读到的 24 小时历史照常显示（ST-35、ST-40）。 */}
+        <div className="rd-split" data-even="">
+          <Panel title="UVT 价格" icon={Coins} tone="role-1">
+            <BlockState retryKey="g3-market-773" state="error" title="UVT 价格加载失败" detail={overviewError}
+              retrying={overviewReading} afterRetryFocus={G3_SUMMARY} onRetry={() => void readOverview()} />
+          </Panel>
+          {historyPanel()}
+        </div>
       </>
     );
   }
@@ -860,12 +916,6 @@ function G3MarketEditor() {
             ? <Conclusion state="neutral" icon={PinIcon}>价格固定在 {pinV.trim().toUpperCase()}，现价 {price(overview.currentPrice)} USDT，不自动切换</Conclusion>
             : <Conclusion state="neutral" icon={CalendarRange} explain="没有暂停、没有固定、排程已配置。排程实际执行了没有，看「运行方式」里的排程执行情况；现价和计划价可以不同。">排程已配置，今天是 D{curDay}，现价 {price(overview.currentPrice)} USDT</Conclusion>;
 
-  const historyLatest = historyPoints.at(-1)?.sampledAt;
-  // 横轴只写时刻；24 小时窗口里时刻撞上时才带日期，保证每格名字不同。
-  const shortTicks = historyPoints.map((point) => sampleText(point.sampledAt).slice(11));
-  const historyTicks = new Set(shortTicks).size === shortTicks.length ? shortTicks : historyPoints.map((point) => sampleText(point.sampledAt).slice(5));
-  const change = chartPrices.length >= 2 ? changePct(chartPrices) : null;
-  const changeText = change == null ? "24 小时涨跌暂无" : `24 小时 ${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
 
   const planChart = (
     <TrendLines label={`七天目标价，今天 D${curDay}`} height={240}
@@ -969,12 +1019,12 @@ function G3MarketEditor() {
       {error && !confirm && !UNKNOWN_TEXT.test(error) && <Notice tone="warn">{error}</Notice>}
       {overviewError && overviewReadAt !== undefined ? (
         <Notice tone="warn"
-          title={`${rereadPending ? "原操作已完成。刷新失败" : "刷新失败"}，以下概览读取于 ${businessStamp(overviewReadAt)}（${businessZone().label}）`}
-          action={<Button size="sm" loading={overviewReading} onClick={() => void readOverview()}>重试</Button>}>
-          {overviewError} 最新概览读到后才能修改。
+          title={`${rereadPending ? "操作已完成。" : ""}以下是 ${businessStamp(overviewReadAt)}（${businessZone().label}）的概览，刷新失败`}
+          action={<Button size="sm" loading={overviewReading} onClick={() => { overviewRetryFocus.current = true; void readOverview(); }}>重试</Button>}>
+          {overviewError} 读到最新概览后才能修改。
         </Notice>
       ) : rereadPending && overviewReading && (
-        <Notice tone="progress" title={REREAD_TEXT}>读到最新价格之前，表里的修改先不可用。还有原记录的那一项照样能打开。</Notice>
+        <Notice tone="progress" title="操作已完成，正在加载最新 UVT 价格">读到之前表里的修改先不可用；有原记录的那一项照样能打开。</Notice>
       )}
       {conclusion}
 
@@ -1021,30 +1071,7 @@ function G3MarketEditor() {
       </Panel>
 
       <div className="rd-split" data-even="">
-        <Panel title="最近 24 小时价格" icon={Activity} tone="role-1"
-          sub={chartPrices.length >= 2 ? `${changeText} · 最近 ${sampleText(historyLatest ?? "")}（${businessZone().label}）` : undefined}
-          explain={<>
-            <p>看图：价格这一天实际怎么走的，有没有到今天的计划价。</p>
-            <p>系统每 5 分钟记一次已发布的价格；暂停或没有价格时不记。时间为{businessZone().label}。{chartPrices.length >= 2 ? `这 24 小时共 ${historyPoints.length} 个采样点；涨跌按第一个和最后一个采样价算。` : ""}</p>
-          </>}>
-          {chartPrices.length >= 2 ? (
-            <div className="g3-history" data-tick-crowd={ticksCrowded(historyTicks.length) ? "" : undefined}><TrendLines label={`最近 24 小时 UVT 价格，${changeText}`} height={168}
-              ticks={historyTicks}
-              series={[{ key: "price", label: "价格", slot: 1, values: historyPoints.map((point) => point.price) }]}
-              format={(value) => `${price(value)} USDT`} axisFormat={(value) => price(value)}
-              marks={[{ key: "plan", text: `今天计划 ${price(todayTarget)}`, value: todayTarget, tone: "neutral" }]} /></div>
-          ) : (
-            <div data-proof="g3-history-empty">
-              {/* 重读价格历史时先显示加载中，不在结果回来前闪成「没有价格记录」（ST-31、BUG-710）。 */}
-              {historyLoading && !historyError && !historyPoints.length
-                ? <BlockState state="loading" compact title="正在加载最近 24 小时价格…" />
-                : historyError
-                ? <BlockState retryKey="g3-market-1050" state="error" compact title="最近 24 小时价格加载失败" detail={<>这次没读到价格历史，不影响现价和七天计划；点「重试」再读一次。<Explain label="失败原因" content={historyError} /></>} onRetry={() => void readHistory()} retrying={historyLoading} />
-                : <BlockState state="empty" compact title={historyPoints.length === 1 ? "数据不足，暂时无法显示走势" : "最近 24 小时没有价格记录"}
-                  detail={historyPoints.length === 0 && paused ? "价格暂停期间不记录。" : undefined} onRetry={() => void readHistory()} retryLabel="刷新" />}
-            </div>
-          )}
-        </Panel>
+        {historyPanel({ target: todayTarget, paused })}
 
         <Panel title="运行方式" icon={SlidersHorizontal} tone="role-3"
           explain="决定现价什么时候按计划切换。暂停、固定、排程、D7 之后各管一件事，每项自己保存。">

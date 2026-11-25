@@ -379,6 +379,9 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h7-rec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
 .h7-rec-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
 .h7-rec-zone { margin: var(--rd-space-2) 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.h7-rec-reason { grid-column: 1 / -1; display: flex; gap: var(--rd-space-1); min-width: 0; color: var(--rd-text); overflow-wrap: anywhere; }
+.h7-rec-reason > span { flex: none; color: var(--rd-text-3); }
+.h7-rec-tech { grid-column: 1 / -1; min-width: 0; }
 @container hdom (max-width: 900px) {
   .h7-rec { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
   .h7-rec-state { justify-content: flex-end; }

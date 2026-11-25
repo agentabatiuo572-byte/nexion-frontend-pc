@@ -223,13 +223,14 @@ export function H7RecoveryNotice({ title, explain, rows, link }: { title: ReactN
             <span className="h7-rec-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
             <span className="h7-rec-state">{row.tag}{row.ticket && <span className="h7-rec-ticket">审批单 <span data-mono="">{row.ticket}</span></span>}</span>
             <span className="h7-rec-actions">{row.actions}</span>
+            {/* 原理由是要核对的事实，常显；编号只在查证时用，收进技术信息（OP-93、OP-154）。 */}
+            {row.original && <span className="h7-rec-reason"><span>原理由</span>{row.original.reason}</span>}
             {row.note && <span className="h7-rec-note">{row.note}</span>}
-            {row.original && <Fold title="技术信息" summary="原理由和编号" tone="role-4" inset>
+            {row.original && <div className="h7-rec-tech"><Fold title="技术信息" summary="原请求编号" tone="role-4" inset>
               <Facts>
-                <Fact k="原理由">{row.original.reason}</Fact>
                 <Fact k="原请求编号"><span data-mono="">{row.original.commandKey}</span></Fact>
               </Facts>
-            </Fold>}
+            </Fold></div>}
           </li>
         ))}
       </ul>

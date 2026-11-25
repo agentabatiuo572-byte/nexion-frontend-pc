@@ -174,12 +174,38 @@ export function PlatformParamsRegistry() {
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} onClick={() => void load()}>刷新</Button>} />
   );
 
+  const filtered = query.trim() !== "" || domain !== "ALL";
+  const domainCounts = new Map<string, number>();
+  for (const row of overview?.rows ?? []) domainCounts.set(row.domain, (domainCounts.get(row.domain) ?? 0) + 1);
+  const clear = () => { setQuery(""); setDomain("ALL"); };
+  // 查询区在加载、失败、读到时都在，填的条件不丢（ST-15）；没读到时模块只剩「全部模块」和已选的那一个。
+  const domainOptions = domains.length ? domains.map(([code, label]) => ({ value: code, label: `${code} · ${operatorCopyText(label)}（${domainCounts.get(code) ?? 0}）` }))
+    : domain !== "ALL" ? [{ value: domain, label: domain }] : [];
+  const searchBar = (
+    <div className="a5-search">
+      <FilterBar onClear={clear} canClear={filtered} clearLabel="清除筛选"
+        sort={overview ? <span className="rd-filter-result" role="status">{filtered ? `找到 ${visibleRows.length} 项` : `共 ${overview.stats.registeredCount} 项 · ${overview.stats.domainCount} 个模块`}</span> : undefined}>
+        <FilterField grow>
+          <span className="a5-search-box">
+            <Search size={16} aria-hidden />
+            <Input id={SEARCH_INPUT_ID} aria-label="搜索平台参数" placeholder="搜索参数名、参数键、当前值或所在页面" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </span>
+        </FilterField>
+        <FilterField>
+          <Select id={DOMAIN_FILTER_ID} aria-label="模块筛选" value={domain} onChange={setDomain}
+            options={[{ value: "ALL", label: "全部模块" }, ...domainOptions]} />
+        </FilterField>
+      </FilterBar>
+    </div>
+  );
+
   if (loading) {
     return (
       <RdPage className="a5-page">
         {header}
         {/* 参数区容器在加载、失败、读到三种状态下都在同一位置：重试时焦点落在这里，不落到整页（BUG-710）。 */}
         <div className="a5-body">
+          {searchBar}
           <div className="a5-loading" aria-label="正在加载平台参数">
             <div className="rd-skeleton a5-skel-line" />
             <div className="rd-skeleton a5-skel-bar" />
@@ -193,13 +219,14 @@ export function PlatformParamsRegistry() {
 
   if (errorKind || !overview) {
     const copy = errorKind === "emergency"
-      ? { title: "平台参数加载失败", detail: "紧急停用开关或地区访问限制没读到，已停止显示本批参数。请重试。" }
+      ? { title: "平台参数加载失败", detail: "紧急停用开关或地区访问限制没读到，已停止显示；请重试，持续失败请联系值班人员。" }
       : ERROR_COPY[errorKind ?? "unavailable"];
     return (
       <RdPage className="a5-page">
         {header}
         <div className="a5-body">
-          <Conclusion state="unknown" icon={SlidersHorizontal}>平台参数没读到，这页没有判断</Conclusion>
+          <Conclusion state="unknown" icon={SlidersHorizontal}>平台参数：暂时无法判断</Conclusion>
+          {searchBar}
           <Panel title="平台参数">
             <BlockState state={errorKind === "forbidden" ? "denied" : "error"} title={copy.title} detail={copy.detail} retryKey="a5-registry"
               onRetry={errorKind === "auth" ? undefined : () => void load()} />
@@ -214,10 +241,6 @@ export function PlatformParamsRegistry() {
   const geo = rows.find((row) => row.canonicalKey === "emergency.geo-block");
   const stopped = gates.filter((row) => row.currentValue === "disabled");
   const geoLimited = geo && geo.currentValue !== "没有限制" ? geo : null;
-  const filtered = query.trim() !== "" || domain !== "ALL";
-  const domainCounts = new Map<string, number>();
-  for (const row of rows) domainCounts.set(row.domain, (domainCounts.get(row.domain) ?? 0) + 1);
-  const clear = () => { setQuery(""); setDomain("ALL"); };
   const stats = overview.stats;
 
   const conclusion = stopped.length > 0 ? (
@@ -227,8 +250,8 @@ export function PlatformParamsRegistry() {
       有 {stopped.length} 个业务已紧急关停：{stopped.map((row) => operatorCopyText(row.displayName)).join("、")}
     </Conclusion>
   ) : partialSources.length > 0 ? (
-    <Conclusion state="warn" icon={SlidersHorizontal} hint="已读到的参数照常显示；哪一类不完整、为什么，见下方提示"
-      explain="未登记所属页面的参数不会显示。紧急开关或地区访问限制读取失败时，停止显示本批参数。">
+    <Conclusion state="warn" icon={SlidersHorizontal} hint="缺了哪一类、为什么，见下方提示"
+      explain="还没登记所属页面的参数不在这里显示，已登记的照常可查。">
       有 {partialSources.length} 个来源不完整，已读到 {stats.registeredCount} 项
     </Conclusion>
   ) : (
@@ -323,21 +346,7 @@ export function PlatformParamsRegistry() {
         </Panel>
       ) : (
         <>
-          <div className="a5-search">
-            <FilterBar onClear={clear} canClear={filtered} clearLabel="清除条件"
-              sort={<span className="rd-filter-result" role="status">{filtered ? `找到 ${visibleRows.length} 项` : `共 ${stats.registeredCount} 项 · ${stats.domainCount} 个模块`}</span>}>
-              <FilterField grow>
-                <span className="a5-search-box">
-                  <Search size={16} aria-hidden />
-                  <Input id={SEARCH_INPUT_ID} aria-label="搜索平台参数" placeholder="搜索参数名、参数键、当前值或所在页面" value={query} onChange={(event) => setQuery(event.target.value)} />
-                </span>
-              </FilterField>
-              <FilterField>
-                <Select id={DOMAIN_FILTER_ID} aria-label="模块筛选" value={domain} onChange={setDomain}
-                  options={[{ value: "ALL", label: "全部模块" }, ...domains.map(([code, label]) => ({ value: code, label: `${code} · ${operatorCopyText(label)}（${domainCounts.get(code) ?? 0}）` }))]} />
-              </FilterField>
-            </FilterBar>
-          </div>
+          {searchBar}
 
           {grouped.length === 0 && !emergencyShown ? (
             <Panel title="搜索结果">
@@ -346,7 +355,7 @@ export function PlatformParamsRegistry() {
                   <p>换个关键词或模块试试。参数名、参数键、当前值和所在页面都能搜，比如参数键的一段「withdraw」。</p>
                   <p>这里只收录启用中、已登记所属页面的参数{partialSources.some((source) => source.key === "config") ? "；有一部分参数还没登记所属页面，见上方提示" : ""}。</p>
                 </>}
-                retryLabel="清除条件" onRetry={clear} />
+                retryLabel="清除筛选" onRetry={clear} />
             </Panel>
           ) : (
             <div className="a5-groups">
