@@ -525,7 +525,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     const rejected = !partialExecution && (isOriginalRetry ? isExplicitRejection(error)
       : !error.unknownOutcome && !isIdempotencyOutcomeOpen(payload.message)
         && isDeterministicRejection(res.status, payload.code));
-    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
+    if (isWrite && (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED")) {
       useAdminAuth.getState().signOut();
     }
     if (rejected) {
@@ -547,7 +547,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
   }
   if (requestFailed) {
     if (isWrite) emergencyAttempts.forget(writeSlot);
-    if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
+    if (isWrite && (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED")) {
       useAdminAuth.getState().signOut();
     }
     const status = isJ1AutoRuleWrite && res.ok ? payload.code ?? res.status : res.status;

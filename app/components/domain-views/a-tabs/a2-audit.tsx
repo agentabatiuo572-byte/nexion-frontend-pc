@@ -12,7 +12,7 @@ import { PromotionRefundImpact } from "../promotion-refund-impact";
 import { PhoneCalibrationReview } from "../e-tabs/phone-calibration-review";
 import { AmbassadorMaterialSummary } from "../f-tabs/f4-ambassador-materials";
 import { aTicketPermissionText } from "@/lib/admin/a-approval-names";
-import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText } from "@/lib/admin/f-approval-names";
+import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText, H8_SETTLEMENT_APPROVAL_PERMISSION } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
 import { F2BootstrapReview, f2AppLimitIssue, f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
@@ -177,8 +177,9 @@ function approvalCoverageCopy(w: A2OperationRow) {
     : w.operationCode === "j1_gate_resume" ? J1_RESTORE_COVERAGE_COPY : isK1ClusterTicket(w) ? K1_CLUSTER_COVERAGE_COPY : COVERAGE_ON_APPROVAL_COPY;
 }
 
-function f2F4ApprovalPermissions(w: A2OperationRow): string | undefined {
+function superadminApprovalPermissions(w: A2OperationRow): string | undefined {
   const op = w.operationCode;
+  if (op === "h8_referral_settlement" || op === "h8_referral_settlement_user") return fApprovalPermissionText(H8_SETTLEMENT_APPROVAL_PERMISSION);
   const named = (code: string) => fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES[code]);
   if (w.ambassadorMaterialProposal) return named("network_f4_ambassador_approve");
   if (["f_unilevel_bootstrap", "f_direct_referral_policy"].includes(op ?? "")) return named("network_f2_royalty_rate");
@@ -201,7 +202,7 @@ function f2F4ApprovalPermissions(w: A2OperationRow): string | undefined {
 
 /** 「需有权限」一行：F2/F4 和 A1/A6 的单；和发起端写的是同一句，有它就不再另写「谁能批准」。 */
 function ticketPermissionText(w: A2OperationRow) {
-  return f2F4ApprovalPermissions(w) ?? aTicketPermissionText(w.operationCode);
+  return superadminApprovalPermissions(w) ?? aTicketPermissionText(w.operationCode);
 }
 
 const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";

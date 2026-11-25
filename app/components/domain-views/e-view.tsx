@@ -20,7 +20,7 @@ import { createPendingMutationStore, createPendingRecovery, isRetryExpired, RETR
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
-import { nextRecoveryDeadline, canCreateRecoveryProposal, currentRecoveryActor, recoveryQueryConclusion } from "@/lib/admin/abe-recovery-access";
+import { canReadOwnRecoveryProposal, nextRecoveryDeadline, canCreateRecoveryProposal, currentRecoveryActor, recoveryQueryConclusion } from "@/lib/admin/abe-recovery-access";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { monthlyTargetEstimateText } from "@/lib/admin/operator-copy";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -165,7 +165,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
   const canRefundE4 = useAdminAuth((s) => !!s.session
     && s.session.authorities.includes("device_e4_order_refund")
     && s.session.authorities.some((code) => ["platform_a2_proposal_create", "platform_a2_write"].includes(code)));
-  const canQueryE4 = useAdminAuth((s) => s.session?.authorities.some((code) => ["platform_a2_read", "platform_a2_proposal_create"].includes(code)) ?? false);
+  const canQueryE4 = useAdminAuth((s) => canReadOwnRecoveryProposal(s.session?.authorities ?? []));
   const canReadE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_read") ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
   const hasForceActivateE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_device_force_activate") ?? false);

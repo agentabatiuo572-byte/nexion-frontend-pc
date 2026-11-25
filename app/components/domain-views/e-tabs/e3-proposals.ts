@@ -1,5 +1,6 @@
 "use client";
 
+import { canReadOwnRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
@@ -78,7 +79,7 @@ export function useE3Proposals() {
   const [queryErrorsByKey, setQueryErrorsByKey] = useState<Record<string, string>>({});
   useSyncExternalStore(recovery.subscribe, recovery.getRevision, () => 0);
   const sending = useRef(false);
-  const canQuery = rights.some(r => ["platform_a2_read", "platform_a2_proposal_create"].includes(r));
+  const canQuery = canReadOwnRecoveryProposal(rights);
   // Every allowed E3 batch key has the same business authority as a single-key proposal.
   const allowed = (_batch: boolean) => rights.includes("device_e3_write")
     && rights.some(r => ["platform_a2_write", "platform_a2_proposal_create"].includes(r));
