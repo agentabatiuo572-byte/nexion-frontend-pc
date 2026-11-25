@@ -13,6 +13,7 @@ import { businessStamp, businessZone, businessZoneText, formatBusinessTimeCompac
 import { AVATAR_GENDER_OPTIONS, type AvatarGender } from "@/lib/admin/account-avatar-contract";
 import { avatarDrafts, avatarDraftFingerprint, newAccountAvatarTarget } from "@/lib/admin/account-avatar-pending";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
+import { aApprovalPermissionText } from "@/lib/admin/a-approval-names";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { A1CreateAccountInput, A1Operator, A1PasswordResetResult, A1RoleDefinition, A1UpdateAccountInput } from "@/lib/admin/a1-client";
 import { AccountAvatarPicker } from "./account-avatar-picker";
@@ -175,7 +176,11 @@ export const approvalTag = (note = "批准前账号不变。") => (
   <StatusTag tone="progress" filled explain={`另一位超级管理员在「操作记录与审批」批准后执行。${note}`}>批准后生效</StatusTag>
 );
 export const directTag = () => <StatusTag tone="progress" filled>立即生效</StatusTag>;
-export const approverFact = () => <Fact k="谁来批">另一位超级管理员，需有批准审批单的权限</Fact>;
+/** 「谁来批」写后端实际检查的人（另一位超级管理员），「需有权限」写要同时有的权限，名字照「权限清单」。 */
+export const approverFacts = (...permissions: string[]) => <>
+  <Fact k="谁来批">另一位超级管理员</Fact>
+  <Fact k="需有权限">{aApprovalPermissionText(...permissions)}</Fact>
+</>;
 
 /* ---------- 账号操作清单（详情抽屉） ---------- */
 

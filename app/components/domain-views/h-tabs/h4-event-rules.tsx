@@ -15,9 +15,10 @@ import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { APP_VISIBLE_TEXT_HINT, appVisibleTextError } from "@/lib/admin/content-language-rules";
 import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, confirmedH4Saves, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
 import { BlockState, Button, Check, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { formatTime } from "./h4-promotion-ui";
-import { ApprovalFact, h4OpeningReadFailure, h4ReadConflict, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, LOCALE_NAME, effectApproval, effectDirect, type LocaleCode } from "./h4-legacy-parts";
+import { ApprovalFact, h4OpeningReadFailure, h4ReadConflict, H4LeaveDialog, H4StaleNote, H4_MISSING_ORIGINAL, H4_OLD_RECORD_REJECTED, LOCALE_NAME, effectApproval, effectDirect, useH4DrawerFocus, type LocaleCode } from "./h4-legacy-parts";
 import { H4ConflictCompare, h4ConflictGroups, type H4ConflictGroup } from "./h4-conflict-compare";
 import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { amountDisplay } from "@/lib/format";
@@ -135,7 +136,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     return () => { window.removeEventListener("admin-h4-pending-changed", changed); window.removeEventListener("admin-h4-readback", readback); };
   }, []);
   const patchRule = (key: string, value: unknown) => setDraft(current => current ? { ...current, rules: { ...current.rules, [key]: value } } : current);
-  const save = (restored?: { base: EventRuleView; draft: EventRuleChange; rejection: PendingConfirmRejected }) => {
+  const save = (restored?: { base: EventRuleView; draft: EventRuleChange; rejection: PendingConfirmRejected }, after?: () => void) => {
     const base = restored?.base ?? selected, input = restored?.draft ?? draft;
     if (base && confirmedH4Saves().some(record => record.scope === `H/h4_event_rule/${base.eventCode}`)) return;
     if (!base || !input || !canWrite || !restored && (saving || conflictFields)) return;
@@ -263,6 +264,7 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
           await load();
           if (isH4ApprovalReceipt(result)) { setSelected(null); setDraft(null); }
           ctx.toast(isH4ApprovalReceipt(result) ? result.ticket.status === "pending" ? "已提交，等待审批后执行" : "已查询到原审批单，请在操作记录核对执行状态" : "活动规则已保存");
+          after?.();
         };
         try {
           const original = originalKey ? pendingH4Commands().find(r => r.commandKey === originalKey) : undefined;
@@ -364,7 +366,12 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     try { return !hasRuleChanges(selected, { ...draft, rules: { ...draft.rules, regions: parseEventRegions(regions) } }); }
     catch { return false; }
   })();
+  const leaveSwitch = useRef<EditorSwitch | null>(null);
+  const guard = useLeaveGuard(!!selected && !!draft && !savedUnread && unchanged === false, close, leaveSwitch);
+  useH4DrawerFocus(!!selected && !!draft, "h4l-plays");
   if (!canRead) return <BlockState state="denied" title="没有查看玩法规则的权限" detail="七类玩法需要「活动中心查看」权限。" />;
+  const opening = !!selected && !!draft?.enabled && !selected.enabled && !selected.rulesLocked;
+  const saveReason = !canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) ?? (unchanged ? "没有改动" : undefined) : undefined;
 
   const ended = (row: EventRuleView) => !!(row.rulesLocked && row.endsAt && Date.parse(row.endsAt) <= Date.now());
   const stateTag = (row: EventRuleView) => ended(row) ? <StatusTag tone="done" explain="开放时间已过：参与条件和时间保持原配置。">已结束</StatusTag>
@@ -481,10 +488,11 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
     {rows.length > 0 && error && !selected && <Notice tone="danger" title="玩法规则没有读到最新的">{error}</Notice>}
     {stale && !selected && <Notice tone="warn" title={`没有保存：${stale} 已被别人改过`} action={<Button size="sm" variant="ghost" onClick={() => setStale("")}>知道了</Button>}>{error ? "你这次改的没有提交。" : "已读到最新配置。你这次改的没有提交，关掉时已丢弃；要改就重新打开。"}</Notice>}
     {!loading && <p className="h4l-note">时间为北京时间</p>}
-    <Drawer open={!!editor} onClose={close} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode}
-      explain="先保存完整配置，再开启活动。关闭这个抽屉会丢掉没保存的改动。"
-      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={close}>取消</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={!canWrite ? "没有修改玩法的权限" : savedUnread ? "不用重新提交；关掉后点「刷新」，读到后再改。" : review ? "先在上面选一种继续" : selected ? h4ApprovalLockedReason(`H/h4_event_rule/${selected.eventCode}`) ?? (unchanged ? "没有改动" : undefined) : undefined} onClick={() => save()}>保存配置</Button>} />}>
+    <Drawer open={!!editor} onClose={guard.askClose} busy={saving} title={selected ? `${EVENT_KIND_LABELS[selected.kind] ?? "其他活动"}${/[A-Za-z0-9]$/.test(EVENT_KIND_LABELS[selected.kind] ?? "") ? " " : ""}的配置` : "玩法配置"} sub={selected?.eventCode} icon={Sparkles} tone="role-4"
+      explain="先保存完整配置，再开启活动。没保存的改动，关闭时会先问。"
+      footer={<Decision note={!canWrite ? "没有修改玩法的权限" : undefined} others={<Button disabled={saving} onClick={guard.askClose}>取消</Button>} primary={<Button variant="primary" loading={saving} loadingText="正在保存…" disabledReason={saveReason} onClick={() => save()}>保存配置</Button>} />}>
       {editor}
     </Drawer>
+    <H4LeaveDialog title="玩法配置还没保存" guard={guard} saveLabel={opening ? "提交审批后继续" : selected?.enabled && !draft?.enabled ? "保存并立即生效" : "保存配置后继续"} saveReason={saveReason} onSave={() => save(undefined, guard.saved)} />
   </Panel>;
 }

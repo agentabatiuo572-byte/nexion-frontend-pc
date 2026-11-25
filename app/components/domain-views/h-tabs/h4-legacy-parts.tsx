@@ -4,9 +4,10 @@
  * H4「既有活动与转盘」页签的展示件：既有活动卡、App 上的样子、转盘概率条、奖档表、护栏卡、确认框里的概率对比。
  * 只排版：数据由页面按后端读模型传进来，不发请求、不判权限、不改请求内容。
  */
-import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { CalendarRange, CircleAlert, Clock3, EyeOff, Flag, Gift, Hourglass, CircleHelp, Languages, Smartphone, Star, Users } from "lucide-react";
-import { Button, Explain, Fact, Facts, MoreMenu, Notice, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { CalendarRange, CircleAlert, Clock3, EyeOff, Flag, Gift, Hourglass, CircleHelp, Languages, ShieldCheck, Smartphone, Star, Users } from "lucide-react";
+import { Button, Explain, Fact, Facts, Modal, MoreMenu, Notice, SegmentBar, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
+import type { useLeaveGuard } from "../i-tabs/i5-writes";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { EVENT_KIND_LABELS } from "@/lib/admin/event-rule-form";
 import type { H4EventCapabilities } from "@/lib/admin/h-client";
@@ -16,6 +17,54 @@ import { amountText, formatTime } from "./h4-promotion-ui";
 import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+
+/** 抽屉里改过内容，关闭、切到别的页时先问（OP-29）；保存按钮按真实生效方式命名，由页面传。 */
+export function H4LeaveDialog({ title, guard, saveLabel, saveReason, onSave }: {
+  title: string; guard: Pick<ReturnType<typeof useLeaveGuard>, "asking" | "stay" | "discard" | "hide">;
+  saveLabel: string; saveReason?: ReactNode; onSave: () => void;
+}) {
+  if (!guard.asking) return null;
+  return <Modal title={title} icon={ShieldCheck} onClose={guard.stay}
+    footer={<><Button onClick={guard.stay}>继续编辑</Button><Button onClick={guard.discard}>放弃改动并返回</Button><Button variant="primary" disabledReason={saveReason} onClick={() => { guard.hide(); onSave(); }}>{saveLabel}</Button></>}>
+    <p>改动只在这个抽屉里，放弃后不会保存。</p>
+  </Modal>;
+}
+
+const buttonName = (element: Element) => element.getAttribute("aria-label") ?? element.textContent ?? "";
+/**
+ * 抽屉关上后焦点回打开它的按钮（CP-66）：按钮重画过就在原来那张卡、那一行里找同名的，没有就落到这一块的标题，不落到 body。
+ * 抽屉收起和确认框关闭的动画都在 0.16 秒内，收完再看；焦点已被点到别处时不动。
+ */
+export function useH4DrawerFocus(open: boolean, panelId: string) {
+  const opener = useRef<{ node: HTMLElement; area: Element | null; name: string } | null>(null);
+  const wasOpen = useRef(false);
+  const shown = useRef(false);
+  // 打开那一刻按钮还没重画，先记下来。
+  if (open && !wasOpen.current) {
+    const node = document.activeElement;
+    opener.current = node instanceof HTMLElement && node !== document.body ? { node, area: node.closest("article, li, section"), name: buttonName(node) } : null;
+  }
+  wasOpen.current = open;
+  useEffect(() => {
+    if (open) { shown.current = true; return; }
+    if (!shown.current) return;
+    shown.current = false;
+    const from = opener.current;
+    let timer = 0, waits = 20;
+    const settle = () => {
+      // 确认框可能比抽屉晚一步关（还在读最新）：等它收起再看，最多 6 秒。
+      if (document.querySelector(".rd-modal") && waits-- > 0) { timer = window.setTimeout(settle, 300); return; }
+      if (document.activeElement && document.activeElement !== document.body) return;
+      const usable = (element: HTMLElement) => element.isConnected && element.getClientRects().length > 0 && !(element instanceof HTMLButtonElement && element.disabled);
+      const same = from?.area?.isConnected ? [...from.area.querySelectorAll<HTMLElement>("button")].filter(element => usable(element) && buttonName(element) === from.name) : [];
+      const target = from && usable(from.node) ? from.node : same.length === 1 ? same[0] : document.getElementById(panelId)?.querySelector<HTMLElement>(".rd-panel-title");
+      if (target?.matches(".rd-panel-title")) target.tabIndex = -1;
+      target?.focus();
+    };
+    timer = window.setTimeout(settle, 300);
+    return () => window.clearTimeout(timer);
+  }, [open, panelId]);
+}
 
 export const H4_MISSING_ORIGINAL = "最新列表里已没有这个对象，你填的内容没有提交。";
 export const H4_OLD_RECORD_REJECTED = "原来的修改没有保存，记录太旧无法逐项对比，请按最新配置重新修改。";

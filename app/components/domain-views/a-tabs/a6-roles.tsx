@@ -9,6 +9,7 @@ import {
   type A6RoleOverview, type A6RoleDetail, type A6RoleCreateInput, type A6RoleUpdateInput, type A6RoleSummary,
 } from "@/lib/admin/a6-client";
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
+import { A_APPROVAL_PERMISSION_NAMES, aApprovalPermissionText } from "@/lib/admin/a-approval-names";
 import { permLabel } from "@/lib/admin/rbac-labels";
 import { fetchA8Permissions, type A8Permission } from "@/lib/admin/a8-client";
 import { domainOfPermission } from "@/lib/admin/perm-domain";
@@ -116,7 +117,10 @@ const approvalTag = (note: string, extra?: string) => (
   <StatusTag tone="progress" filled explain={`提交到「操作记录与审批」，另一位管理员批准后执行。${note}${extra ?? ""}`}>批准后生效</StatusTag>
 );
 const directTag = () => <StatusTag tone="progress" filled explain="填写理由并确认后立即生效，保留操作记录。">立即生效</StatusTag>;
-const approverFact = (authority: string) => <Fact k="谁来批">另一位管理员，需有批准审批单的权限和{authority}</Fact>;
+const approverFacts = (permission: string) => <>
+  <Fact k="谁来批">另一位管理员</Fact>
+  <Fact k="需有权限">{aApprovalPermissionText(permission)}</Fact>
+</>;
 const roleFact = (name: string, code: string) => <Fact k="角色">{name} <span className="a6-code" data-mono>{code}</span></Fact>;
 const describeOriginal = (original: A6Original) => original.kind === "a6-create" ? original.input.roleCode
   : original.kind === "a6-update" ? `${original.role.roleName} → ${original.input.roleName ?? original.role.roleName}`
@@ -504,7 +508,7 @@ export default function A6Roles() {
         <Fact k="绑定账号" lead unit="个">{bound ?? "—"}</Fact>
         {roleFact(d.roleName, d.roleCode)}
         <Fact k="状态"><Change from={d.status === 1 ? "已启用" : "已停用"} to={nextStatus === 1 ? "已启用" : "已停用"} /></Fact>
-        {approverFact("角色管理的修改权限")}
+        {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a6_write)}
       </Facts>,
     }, recovery, draft);
   };
@@ -528,7 +532,7 @@ export default function A6Roles() {
         <Fact k="会解绑的账号" lead unit="个" tone={bound !== undefined && bound > 0 ? "warn" : undefined}>{bound ?? "—"}</Fact>
         {roleFact(d.roleName, d.roleCode)}
         <Fact k="会清空的授权">权限 {d.permissionCodes.length} 项 · 菜单 {d.menuIds.length} 个</Fact>
-        {approverFact("角色管理的修改权限")}
+        {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a6_write)}
       </Facts>,
     }, recovery, draft);
   };
@@ -563,7 +567,7 @@ export default function A6Roles() {
         <Fact k="权限"><Change from={`${permBefore} 项`} to={`${payload.permissionCodes.length} 项`} /></Fact>
         <Fact k="菜单"><Change from={`${menuBefore} 个`} to={`${payload.menuIds.length} 个`} /></Fact>
         {d.status === 0 && <Fact k="角色状态" tone="warn">已停用：批准后也不生效，启用后才生效</Fact>}
-        {approverFact("改角色授权的权限")}
+        {approverFacts(A_APPROVAL_PERMISSION_NAMES.platform_a6_role_grants_update)}
       </Facts>,
       content: (
         <div className="a6-diff">
