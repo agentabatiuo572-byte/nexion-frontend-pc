@@ -89,7 +89,7 @@ export function PaymentSecurityBlock({ port, userLabel, reloadKey = 0, canReleas
         explain={<><p>支付密码仅用于钱包余额付款。HDPay 银行直付和 USDT-BSC / ERC20 链上直付无需支付密码，不受此锁定影响。</p>{record && <p>解除只处理本条支付密码异常，登录状态不受影响。</p>}</>}
         actions={!denied && !error && <Button size="sm" aria-label="刷新支付安全" icon={<RefreshCcw size={13} aria-hidden />} loading={loading} onClick={() => void load()}>刷新</Button>}>
         <div className="rd-detail-block">
-          {error ? <BlockState retryKey="payment-security-block-87" state="error" compact title="支付安全加载失败" detail={error} onRetry={() => { onRetry?.(); void load(); }} retrying={loading} /> : denied && <BlockState state="denied" compact title="无权限" />}
+          {error ? <BlockState retryKey="payment-security-block-87" state="error" compact title={loading ? "正在重新加载支付安全…" : "支付安全加载失败"} detail={loading ? undefined : error} onRetry={() => { onRetry?.(); void load(); }} retrying={loading} /> : denied && <BlockState state="denied" compact title="无权限" />}
           {record && <>
             <Facts>
               <Fact k="当前状态">{stateTag(record)}</Fact>
