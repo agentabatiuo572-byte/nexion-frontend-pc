@@ -188,7 +188,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         note: e3Proposals.queryErrorsByKey[p.original.commandKey], noteKey: e3Proposals.queryErrorsByKey[p.original.commandKey],
         actions: p.state === "rejected" ? undefined : <>
           {query(p, p.state === "pending" ? "查询审批结果" : "查询原结果")}
-          {p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy || !!recoveryState.replayBlock} onClick={() => void E3_RECOVERY.retry(p)}>按原请求重试</Button>}
+          {p.state === "unknown" && e3Proposals.allowed(p.input.command.op === "e3_config_batch") && <Button size="sm" disabled={busy || !!recoveryState.replayBlock} onClick={() => void E3_RECOVERY.retry(p)}>按原操作重试</Button>}
           {recoveryState.replayRejection && !p.original.ticketId && <Button size="sm" disabled={busy} onClick={() => setReleasing(p)}>解除原操作记录</Button>}
         </>,
         detail: changed(p) };

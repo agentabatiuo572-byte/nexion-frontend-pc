@@ -2,7 +2,7 @@
 
 /**
  * G4 原申请：参数修改、日分红调高、补发收益的原申请（待审批、结果未知、过期、已有结论待读回）逐条列出。
- * 只看本机保存的原记录，不依赖概览读取；按钮只查原审批单或按原请求重试，调用照临时组件 g-param-recovery 的写法。
+ * 只看本机保存的原记录，不依赖概览读取；按钮只查原审批单或按原操作重试，调用照临时组件 g-param-recovery 的写法。
  * 价格档位和首次日分红各有自己的原记录，页面把它们作为 extra 行传进来，按钮仍走各自原来的入口。
  */
 import { useState, type ReactNode } from "react";
@@ -112,7 +112,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
         change: batch ? <>批次 <span data-mono>{obj}</span></> : from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
         actions: <>
           <Button size="sm" disabled={busy} aria-label={`查询${name}${batch ? ` ${obj}` : ""}的原结果`} onClick={() => void recover(obj, false)}>查询原结果</Button>
-          {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原请求重试${name}${batch ? ` ${obj}` : ""}`} onClick={() => void recover(obj, true)}>按原请求重试</Button>}
+          {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原操作重试${name}${batch ? ` ${obj}` : ""}`} onClick={() => void recover(obj, true)}>按原操作重试</Button>}
         </>,
       };
     }),
@@ -120,9 +120,9 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
   ];
   return <GRecoveryNotice label="原操作" rows={rows}
     title={`${waiting ? "在等审批的原申请" : "还没有结论的原操作"} · ${total} 项`}
-    lead={waiting ? waitingLead : `这些操作先只能查询原结果或在 24 小时内按原请求重试，不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}；其他照常可改。`}
+    lead={waiting ? waitingLead : `这些操作先只能查询原结果或在 24 小时内按原操作重试，不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}；其他照常可改。`}
     explain={<>
-      <p>这里列你在这台电脑上提交过、还没处理完的原操作：参数修改、每日收益比例、补发收益、价格档位，以及直接生效但没收到结果的修改。原操作只能查询原结果，或在 24 小时内按原请求重试，不能改值。</p>
+      <p>这里列你在这台电脑上提交过、还没处理完的原操作：参数修改、每日收益比例、补发收益、价格档位，以及直接生效但没收到结果的修改。原操作只能查询原结果，或在 24 小时内按原操作重试，不能改值。</p>
       <p>补发收益按原批次号恢复，不会换成今天的批次。要改成别的值，等原操作有结论后再发起新修改。</p>
     </>} />;
 }

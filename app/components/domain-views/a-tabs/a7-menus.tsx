@@ -333,7 +333,7 @@ export default function A7Menus() {
     }, recovery, rechecked);
   };
 
-  // 恢复区「按原请求重试」接这里：打开原操作的确认框，按原请求重发。
+  // 恢复区「按原操作重试」接这里：打开原操作的确认框，按原请求重发。
   const restoreOriginal = (record: RbacCommand) => {
     const original = record.original;
     if (original.kind === "a7-delete") openDelete(original.node, original.parent, record);
@@ -396,11 +396,11 @@ export default function A7Menus() {
                   <span className="a7-recovery-time">{businessStamp(record.createdAt)} 提交</span>
                   {shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : expired
                     ? <StatusTag tone="neutral" icon={Hourglass} explain="超过 24 小时，不能再重试，仍可以查询原结果。">已过期</StatusTag>
-                    : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。">结果未知</StatusTag>}
+                    : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行。">结果未知</StatusTag>}
                   <span className="a7-recovery-actions">
                     <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
                     {closable && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
-                    {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+                    {!expired && <Button variant="ghost" disabledReason={canWrite ? undefined : displayAdminError(new Error("RBAC_OPERATION_FORBIDDEN"))} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
                   </span>
                   {shown && <span className="a7-recovery-line" role="status">{shown.line} <TechInfo commandKey={record.commandKey} receipt={outcome?.receipt} /></span>}
                 </li>

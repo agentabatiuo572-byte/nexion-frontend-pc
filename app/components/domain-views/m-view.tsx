@@ -522,7 +522,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           : `后台拒绝了这次操作：${message}`;
         // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
         const detail = message.includes("网络连接失败或系统暂时连不上") ? "" : ` · ${message}`;
-        const failure = rejected ? rejectionMessage : `结果未知${detail.replace(/。$/, "")}。再点确认会按原请求重试`;
+        const failure = rejected ? rejectionMessage : `结果未知${detail.replace(/。$/, "")}。再点确认会按原操作重试`;
         if (meta?.onFailure && !(rejected && confirming)) meta.onFailure(failure);
         else setToast(failure, rejected ? "error" : "warn");
         return false;

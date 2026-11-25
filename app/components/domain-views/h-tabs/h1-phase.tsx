@@ -285,7 +285,7 @@ export default function H1Phase({ ctx,
       boolean>>({});
   const [deepLink,
     setDeepLink] = useState<{ phase: string; dial: string } | null>(null);
-  /** 上次「查询原结果」查到的每个原请求（按原请求编号），决定这一步给不给「核查结案」。 */
+  /** 上次「查询原结果」查到的每个原请求（按操作编号），决定这一步给不给「核查结案」。 */
   const [receipts,
     setReceipts] = useState<Record<string, ECommandInvestigation | null>>({});
   const [closing,
@@ -898,7 +898,7 @@ export default function H1Phase({ ctx,
             const open = result.outcomes.find((outcome) => !eCommandSettled(outcome.receipt));
             const index = open ? current.requests.findIndex((request) => request.commandKey === open.request.commandKey) : -1;
             const unsent = index > 0 && current.requests.slice(0, index).some((request) => !request.acknowledged);
-            // 前面的步骤都确认了、这一步还没发出：24 小时内按原请求重试就是接着发这一步。
+            // 前面的步骤都确认了、这一步还没发出：24 小时内按原操作重试就是接着发这一步。
             const nextUnsent = !unsent && !!open && result.steps.some((step) => step.request.commandKey === open.request.commandKey && step.state === "NOT_SENT");
             setFeedback(`${lead}${steps && open ? `${open.request.label}${unsent || nextUnsent ? "" : "："}` : ""}${unsent ? "还没发出，原记录继续保留；请到操作记录与审批核对。"
               : nextUnsent ? "还没发出；按原操作重试接着发。" : stepLine(row, open?.receipt ?? null)}`);

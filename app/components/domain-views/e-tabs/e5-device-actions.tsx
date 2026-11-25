@@ -66,7 +66,7 @@ const CommandsContext = createContext<ActionsState | null>(null);
 const LEGACY_CLOSING = "这台设备已申请停用，批准时会一并停用。";
 const PROPOSALS: E5Intent[] = ["force-activate", "unbind", "legacy"];
 const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
-const E5_UNKNOWN = "没有收到结果，原请求和理由已保留；可以查询原结果，或按原请求重试。";
+const E5_UNKNOWN = "没有收到结果，原请求和理由已保留；可以查询原结果，或按原操作重试。";
 /** Query failures of an approval request, in words an operator can act on. */
 const proposalQueryError = (record: E5Command, cause: unknown) => record.receivedTicketId ? TICKET_UNREAD
   : cause instanceof Error && cause.message === "提案缺少有效票号" ? "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。" : eReadError(cause);
@@ -197,7 +197,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
     ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
       actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
-      detail: <Facts><Fact label="原请求编号" value={row.commandKey} mono copy /></Facts> })),
+      detail: <Facts><Fact label="操作编号" value={row.commandKey} mono copy /></Facts> })),
     ...drafts.map(record => ({
       key: record.commandKey, object: `${record.label} · ${record.device.serial}`, createdAt: record.createdAt,
       tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可以重新确认原操作。",
@@ -207,7 +207,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
     ...records.map(record => {
       const recovery = e5Recovery.state(record);
       const expired = recovery.expired, proposal = PROPOSALS.includes(record.intent), refused = recovery.replayRejection;
-      const state = refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
+      const state = refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原操作重试被明确拒绝；核对原操作的结果后，可以解除这条记录。" }
         : proposal && record.proposalStatus === "pending" ? { tag: "待审批", tone: "warn" as const, line: RECOVERY_LINE.pending, more: `审批单 ${record.receivedTicketId ?? ""}；批准前设备状态不变。` }
           : proposal && record.receivedTicketId ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created, more: "审批单已经建了，批没批准还没查到；点「查询原结果」再查，不会再建一张。" }
             : expired ? { tag: "结果未知", tone: "warn" as const, line: RETRY_EXPIRED_TEXT, more: "原记录继续保留。" }
@@ -224,12 +224,12 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
         actions: <>
           {<Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void queryRow(record)}>{proposal && record.proposalStatus === "pending" ? "查询审批结果" : "查询原结果"}</Button>}
           {direct(record) && canInvestigate && closureOpen(outcomes[record.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!busy} onClick={() => setClosing(record)}>核查结案</Button>}
-          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={writeBlock ?? (expired ? RETRY_EXPIRED_TEXT : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined)} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原请求重试</Button>}
+          {!(proposal && record.proposalStatus === "pending") && <Button size="sm" loading={busy === record.commandKey} disabledReason={writeBlock ?? (expired ? RETRY_EXPIRED_TEXT : proposal && record.receivedTicketId ? "审批单已经建了，只能查询" : !allowed(record) ? "当前账号缺少原操作所需权限" : busy ? "正在提交原操作" : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined)} onClick={() => { void execute(record, true).catch(() => { /* The record row displays this failure. */ }); }}>按原操作重试</Button>}
           {refused && !record.receivedTicketId && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>解除原操作记录</Button>}
         </>,
         detail: <>
           <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交 · {record.device.user} · 理由：{record.reason}</p>
-          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="原请求编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
+          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="操作编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
     }),
   ];
   return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, setEditorOpen, forgetDraft, refresh, toast, writeBlock }}>
@@ -251,8 +251,8 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
       if (releaseChecked && e5Recovery.releaseRejectedReplay(release)) { sync(); setRestoring(null); setRelease(null); setError(""); toast("已解除这条记录"); }
     }}>确认解除</Button></>}>
       <ReleaseBody label={`${release.label} · ${release.device.serial}`} />
-      <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="原请求编号" value={release.commandKey} mono copy /></Facts>
-      <Notice tone="danger" title="按原请求重试被拒绝">{e5Recovery.state(release).replayRejection}</Notice>
+      <Facts><Fact label="原操作时间" value={formatBusinessTimeCompact(new Date(release.createdAt).toISOString())} /><Fact label="操作编号" value={release.commandKey} mono copy /></Facts>
+      <Notice tone="danger" title="按原操作重试被拒绝">{e5Recovery.state(release).replayRejection}</Notice>
       <Check label="已核对原操作的结果，确认只解除本页这条记录" checked={releaseChecked} onChange={event => setReleaseChecked(event.target.checked)} />
     </Modal>}
     {children}

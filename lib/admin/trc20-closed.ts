@@ -8,7 +8,7 @@ export const TRC20_CLOSED = "通道暂未开放";
 
 export const TRC20_PAYMENT_METHOD = "CREGIS_USDT_TRC20";
 export const D5_APPROVAL_OP = "d5_withdrawal_limits";
-export const TRC20_REPLAY_UNVERIFIED = "读不到原单内容，核对不了会不会打开 TRC20，暂不能按原请求重试";
+export const TRC20_REPLAY_UNVERIFIED = "读不到原单内容，核对不了会不会打开 TRC20，暂不能按原操作重试";
 /** 原操作动到 TRC20 的几种情况。调用处按场景补主语（「这张单」「原请求」）和下一步（OP-93、OP-126）。 */
 export const TRC20_OPENS_WITHDRAWAL = "会打开 TRC20 提现";
 export const TRC20_CHANGES_FEE = "会改 TRC20 网络确认费";

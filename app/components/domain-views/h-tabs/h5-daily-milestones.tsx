@@ -386,7 +386,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       amplifies: false,
       businessForm: {
         kind: "multi-field",
-        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原请求重试。
+        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原操作重试。
         requireAnyChange: multiplier ? hasChange : !original,
         amplifies,
         onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); setPowerDirection(directionOf(values)); return values; },
@@ -598,7 +598,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   );
 
   const activeCommand = mc ? mutations.record(mc.target) : undefined;
-  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原请求重试时按原请求的路径写（OP-25、OP-37、OP-60）。
+  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原操作重试时按原请求的路径写（OP-25、OP-37、OP-60）。
   const powerEffectTag = (direction: "approval" | "direct", retry: boolean) => direction === "approval"
     ? <StatusTag tone="progress" filled explain={retry ? "按原操作重试：原来提交的是审批申请，批准后才生效。" : `${FUND_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的设置。`}>批准后生效</StatusTag>
     : <StatusTag tone="progress" filled explain={retry ? "按原操作重试：原来是直接保存，重发成功就生效。" : "不用审批，确认后就按新设置；已经激活的权益不收回。"}>立即生效</StatusTag>;

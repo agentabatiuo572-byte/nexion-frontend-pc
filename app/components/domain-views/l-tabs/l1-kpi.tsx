@@ -260,7 +260,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
       if (rejected) pendingExports.forget(EXPORT_SCOPE, key);
       syncPending();
       if (!unknown) throw cause;
-      ctx.toast("结果未知，不要重新导出。到页面上方按原请求重试。", "warn");
+      ctx.toast("结果未知，不要重新导出。到页面上方按原操作重试。", "warn");
       return;
     }
     pendingExports.forget(EXPORT_SCOPE);
@@ -379,7 +379,7 @@ function useL1Export(ctx: LCtx, source: L1ExportSource | null | undefined, rerea
           copy: { where: `「${pageName}」` },
           actions: <>
             <FundCheckButtons record={pending} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying} onCheck={() => void checkInvestigation(pending).catch(() => undefined)} onClose={() => setClosing(true)} />
-            {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原请求重试</Button>}
+            {!expired && <Button size="sm" loading={retrying} disabledReason={!ctx.canExport ? "这个账号已没有导出权限，请有权限的同事处理" : undefined} onClick={() => void retry(pending)}>按原操作重试</Button>}
           </>,
           detail: <>
             <p>任务可能已经生成，不要重新导出。{!expired && !ctx.canExport ? "这个账号已没有导出权限，不能重试，请有权限的同事处理。" : ""}{exportPage(`到「${pageName}」核对`)}</p>

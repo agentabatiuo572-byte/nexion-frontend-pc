@@ -333,7 +333,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
 
   const releaseRejectedRegistry = (commandKey: string) => ctx.openConfirm({
     briefKind: "record", action: "解除原操作记录", title: "解除原登记记录", reason: false,
-    detail: "按原请求重试被明确拒绝。",
+    detail: "按原操作重试被明确拒绝。",
     statedBrief: {
       impact: "核对原操作结果后，只解除这条本地记录。",
       check: "只解除这个标签页里的记录，不发请求，也不进操作记录。",
@@ -1093,10 +1093,10 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       submittedAt: pendingRegistry.createdAt,
       tag: expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原操作重试，不会建第二张。">结果未知</StatusTag>,
       actions: <>
         <Button size="sm" onClick={() => openRegistryRecovery()}>查询原结果</Button>
-        {!expired && !pendingRegistry.received && <Button size="sm" disabledReason={registryRetryBlock} onClick={() => openRegistryRecovery(true)}>按原请求重试</Button>}
+        {!expired && !pendingRegistry.received && <Button size="sm" disabledReason={registryRetryBlock} onClick={() => openRegistryRecovery(true)}>按原操作重试</Button>}
         {registryRecoveryState?.replayRejection && !pendingRegistry.received && <Button size="sm" onClick={() => releaseRejectedRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>}
       </>,
     });
@@ -1241,15 +1241,15 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       ? { tone: "danger", label: "没有查询权限", line: "请原操作人或有调查权限的超级管理员查询。" }
       : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" };
     const receipt = outcome.receipt;
-    if (!receipt) return { tone: "warn", label: "没有查到", line: expired ? "查不到不等于没执行，到操作记录与审批核对，不要另清理一次。" : "查不到不等于没执行；按原请求重试不会重复清理。" };
+    if (!receipt) return { tone: "warn", label: "没有查到", line: expired ? "查不到不等于没执行，到操作记录与审批核对，不要另清理一次。" : "查不到不等于没执行；按原操作重试不会重复清理。" };
     if (receipt.originalStatus === "PROCESSING") return { tone: "progress", label: "还在执行", line: "稍后再查，执行完之前不要重试。" };
     const closure = canCloseRetention ? "已过 24 小时，请核查结案。" : "请有调查权限的超级管理员核查结案。";
     if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: expired ? `系统记录这次失败了；${closure}`
-      : canRetry ? "系统记录这次失败了；按原请求重试不会重复清理，已做成的直接拿回结果。" : "系统记录这次失败了；请有操作权限的人按原请求重试。" };
+      : canRetry ? "系统记录这次失败了；按原操作重试不会重复清理，已做成的直接拿回结果。" : "系统记录这次失败了；请有操作权限的人按原操作重试。" };
     if (receiptRejected(receipt)) return { ...rejectedStatus({ expired, canRetry, canClose: canCloseRetention }), more: receiptExplain(receipt) };
-    // 后台只记「已处理」，看不出这次删没删（包括有别的清理在进行、一条没删）：记录保留，靠按原请求重试或核查结案确认。
+    // 后台只记「已处理」，看不出这次删没删（包括有别的清理在进行、一条没删）：记录保留，靠按原操作重试或核查结案确认。
     if (eCommandResult(receipt) === "BUSINESS_RESULT_UNAVAILABLE") return { tone: "warn", label: "已处理", more: receiptExplain(receipt), line: !expired
-      ? canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。"
+      ? canRetry ? "后台已处理，看不出成没成；按原操作重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原操作重试确认。"
       : `后台已处理，看不出成没成；${closure}` };
     if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: !canCloseRetention ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
       : expired ? "系统也没有结果；已过 24 小时，请核查结案。" : "系统也没有结果，重试也一样，请按证据核查结案。" };
@@ -1277,14 +1277,14 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : isRetryExpired(record)
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
         : <StatusTag tone="warn" icon={CircleHelp} explain={record.original.kind === "redrive"
-          ? "提交时没收到确定结果，可能已经重新排队。先查询原结果，核对这条事件现在的状态；按原请求重试不会再排一次。" : undefined}>结果未知</StatusTag>,
-      line: recovery.replayRejection ? "按原请求重试被明确拒绝" : recovery.expired ? RETRY_EXPIRED_TEXT : shown?.line,
+          ? "提交时没收到确定结果，可能已经重新排队。先查询原结果，核对这条事件现在的状态；按原操作重试不会再排一次。" : undefined}>结果未知</StatusTag>,
+      line: recovery.replayRejection ? "按原操作重试被明确拒绝" : recovery.expired ? RETRY_EXPIRED_TEXT : shown?.line,
       actions: <>
         <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
         {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setRetentionClosing(record)}>核查结案</Button>}
         <Button size="sm" disabledReason={recovery.expired ? RETRY_EXPIRED_TEXT
           : recovery.replayBlock ? "先查询原结果，查不到才能重试" : undefined}
-          onClick={() => recoverOriginal(record)}>按原请求重试</Button>
+          onClick={() => recoverOriginal(record)}>按原操作重试</Button>
         {recovery.replayRejection && <Button size="sm" onClick={() => releaseDirect(record)}>解除原操作记录</Button>}
       </>,
     };
@@ -1306,7 +1306,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
           : item.status === "CONFIRMED_NOT_EXECUTED" ? "核查确认这次清理没有执行，记录已解除。" : "核查确认这次清理已正常结束，记录已解除。"}
         onDismiss={() => setRetentionSettled((all) => all.filter((row) => row.key !== item.key))} />)}
       <A4RecoveryNotice title={`有 ${recoveryRows.length} 项原操作要处理`} rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原请求重试，不会重复执行。</p><p>记录存在这个浏览器标签页里，刷新后还在，关掉就没有了。</p><p>登记：查到审批单后清掉。</p><p>清理：按原请求重试拿到结果，或核查结案后清掉。</p><p>调参数、推进生命周期、重新排队：查到做成了就清掉；没有结论的，24 小时内按原请求重试，过期后核查结案。旧记录只能读现在的数据。</p></>} />
+        explain={<><p>提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内可以按原操作重试，不会重复执行。</p><p>记录存在这个浏览器标签页里，刷新后还在，关掉就没有了。</p><p>登记：查到审批单后清掉。</p><p>清理：按原操作重试拿到结果，或核查结案后清掉。</p><p>调参数、推进生命周期、重新排队：查到做成了就清掉；没有结论的，24 小时内按原操作重试，过期后核查结案。旧记录只能读现在的数据。</p></>} />
       {retentionClosing && <FundClosureModal label={retentionClosing.original.kind === "retention" ? "立即清理" : retentionClosing.name} createdAt={retentionClosing.createdAt} known={closureKnown(closingOutcome)}
         facts={<>
           <Fact k={retentionClosing.original.kind === "retention" ? "清理范围" : "改动"}>{retentionClosing.change}</Fact>

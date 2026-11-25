@@ -109,8 +109,8 @@ function dispatch(write: I5Write, key: string, actions: IContentActions, propose
 /** 这条操作能怎么恢复，只写接口真有的（OP-95）。放进提示图标。 */
 function recoveryText(op: I5Op, canQuery: boolean): string {
   if (op.kind === "a2") return canQuery ? "审批单可能已经建好，批准前不会执行。可以先查询原结果。" : "审批单可能已经建好，批准前不会执行。这个账号查不了原审批单，请能看操作记录的同事核查。";
-  if (op.kind === "content") return "可能已经保存。按原请求重试，系统认得出是同一次提交，不会重复执行。";
-  return "可能已经生效。按原请求重试不会写两次：已生效的话，重试会被拒。";
+  if (op.kind === "content") return "可能已经保存。按原操作重试，系统认得出是同一次提交，不会重复执行。";
+  return "可能已经生效。按原操作重试不会写两次：已生效的话，重试会被拒。";
 }
 
 /** 合并结果里要给人看的两类位置（路径）：别人改了的、两边都改了留下自己的。 */
@@ -346,7 +346,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       if (cause instanceof DisclosureReadbackPending) pendingWrites.remember(scope, key, { ...write, readback: cause.readback });
       sync();
       if (!unknown) throw cause;
-      toast(cause instanceof DisclosureReadbackPending ? readbackLine(cause.readback) : "结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
+      toast(cause instanceof DisclosureReadbackPending ? readbackLine(cause.readback) : "结果未知，不要重复操作。到页面上方查询原结果或按原操作重试。", "warn");
       await onSettled(write);
       return "unknown";
     }
@@ -522,7 +522,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         {record.op.kind === "content" && <Button size="sm" disabled={!!recovering} onClick={() => void queryContent(record)}>查询原结果</Button>}
         {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>查询原结果</Button>}
-        {!expired && !record.readback && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原请求重试</Button>}
+        {!expired && !record.readback && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原操作重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
       detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{!expired && !record.readback && recoveryText(record.op, canQuery)}</p>,

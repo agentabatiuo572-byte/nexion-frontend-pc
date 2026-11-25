@@ -51,7 +51,7 @@ export class A2OutcomeUncertainError extends Error {
     const raw = message.trim();
     const shown = /[一-鿿]/.test(raw) ? raw : ADMIN_ERROR_MESSAGES[raw] ?? "";
     const detail = /结果未知|未确认|是否已生效/.test(shown) ? "" : shown;
-    super(`结果未知，可能已经提交。不要重新填写；查询原结果或按原请求重试，都不会重复提交。${detail ? `（${detail}）` : ""}`);
+    super(`结果未知，可能已经提交。不要重新填写；查询原结果或按原操作重试，都不会重复提交。${detail ? `（${detail}）` : ""}`);
     this.queryMessage = `结果未知，可能已经提交。不要重新填写，请查询原结果。${detail ? `（${detail}）` : ""}`;
     this.name = "A2OutcomeUncertainError";
   }

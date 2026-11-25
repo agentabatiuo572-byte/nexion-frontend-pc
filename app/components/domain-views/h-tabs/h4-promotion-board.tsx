@@ -111,7 +111,7 @@ export function PromotionCard({ item, catalog, onDetail, onEdit, onRewards, more
 
 /** 新建活动、新建政策的原请求对象是集合名（promotions、promotion-policies），不是某个活动编号，不显示。 */
 const COLLECTION_TARGETS = new Set(['promotions', 'promotion-policies']);
-/** 结果未知逐条列：改的是什么、对哪个对象、什么时候提交的；按钮打开原确认框，只查询或按原请求重试。 */
+/** 结果未知逐条列：改的是什么、对哪个对象、什么时候提交的；按钮打开原确认框，只查询或按原操作重试。 */
 export function PendingList({ items, onOpen }: { items: PendingPromotion[]; onOpen: (item: PendingPromotion) => void }) {
     if (!items.length) return null;
     return <Notice tone="warn" title={`有 ${items.length} 个操作结果未知`} actionBelow action={<ul className="h4-pending">{items.map(p => <li key={p.commandKey}>

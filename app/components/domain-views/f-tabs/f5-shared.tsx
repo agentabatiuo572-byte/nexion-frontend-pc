@@ -293,16 +293,16 @@ export type F5RecoveryRow = {
   actions?: ReactNode;
 };
 
-/** 结果未知和待审批的原操作：逐条列出，按钮「查询原结果」「按原请求重试」由页面传。没有记录时不渲染。 */
+/** 结果未知和待审批的原操作：逐条列出，按钮「查询原结果」「按原操作重试」由页面传。没有记录时不渲染。 */
 export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
   if (!rows.length) return null;
   const timed = rows.some((row) => row.submittedAt !== undefined);
   const tag = ({ state, direct, exportOperation }: F5RecoveryRow) => state === "unknown"
     ? <StatusTag tone="warn" icon={CircleHelp} explain={exportOperation
-      ? "提交时没收到下载结果。原请求保存完整时，24 小时内可按原请求重试。"
+      ? "提交时没收到下载结果。原请求保存完整时，24 小时内可按原操作重试。"
       : direct
-      ? "提交时没收到结果。先核对原操作回执；明确查无后，才可以在 24 小时内按原请求重试。"
-      : "提交时没收到结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，系统认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>
+      ? "提交时没收到结果。先核对原操作回执；明确查无后，才可以在 24 小时内按原操作重试。"
+      : "提交时没收到结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原操作重试，系统认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>
     : state === "settled" ? <StatusTag tone="neutral">原操作未执行</StatusTag>
     : state === "pending"
       ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>

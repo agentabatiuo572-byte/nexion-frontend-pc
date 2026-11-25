@@ -183,7 +183,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     if (original.ticket) retain({ ...original, acknowledged: true, ticket: undefined });
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
     if (!ticket) {
-      // 过期后不能重试，下一步是去操作记录与审批核对（OP-152、OP-153）；没过期的照旧可以按原请求重试。
+      // 过期后不能重试，下一步是去操作记录与审批核对（OP-152、OP-153）；没过期的照旧可以按原操作重试。
       if (feedback !== "refresh") toast(isRetryExpired(original) ? "没查到原审批单。原申请已过期，记录和修改锁保留，请到操作记录与审批核对。" : "暂未查到原审批单，原操作继续保留。");
       return null;
     }

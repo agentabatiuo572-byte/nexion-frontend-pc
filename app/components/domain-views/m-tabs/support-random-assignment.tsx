@@ -89,14 +89,14 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
       if (!mounted.current || owner !== stamp()) return;
       const absent = e instanceof SupportClientError && e.status === 404 && e.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
       setNotReceived(absent && canReplayGroupCommand(record));
-      setError(absent && canReplayGroupCommand(record) ? "还没查到原结果，24 小时内可以按原请求重试。" : "暂时查不到原结果，原名单和内容仍保留。");
+      setError(absent && canReplayGroupCommand(record) ? "还没查到原结果，24 小时内可以按原操作重试。" : "暂时查不到原结果，原名单和内容仍保留。");
     } finally { if (mounted.current && owner === stamp()) setBusy(false); }
   }
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
   const selected = pending?.customers ?? customers, expired = pending && !canReplayGroupCommand(pending), reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   return <Modal title={result ? "逐客随机分配结果" : "随机分配客户"} wide busy={busy} onClose={onClose} footer={<>
     <Button disabled={busy} onClick={onClose}>{result ? "关闭结果" : "返回客户池"}</Button>
-    {pending ? <>{notReceived && !expired && <Button disabled={busy} onClick={() => void send(pending, true)}>按原请求重试</Button>}<Button variant="primary" loading={busy} onClick={() => void query()}>查询原结果</Button></> : !result && <Button variant="primary" disabled={!preview?.count || !ack || !reasonOk || busy || Date.parse(preview.expiresAt) <= Date.now()} onClick={() => void confirm()}>确认随机分配 {preview?.count ?? "—"} 位</Button>}
+    {pending ? <>{notReceived && !expired && <Button disabled={busy} onClick={() => void send(pending, true)}>按原操作重试</Button>}<Button variant="primary" loading={busy} onClick={() => void query()}>查询原结果</Button></> : !result && <Button variant="primary" disabled={!preview?.count || !ack || !reasonOk || busy || Date.parse(preview.expiresAt) <= Date.now()} onClick={() => void confirm()}>确认随机分配 {preview?.count ?? "—"} 位</Button>}
   </>}>
     <div className="m1-command-form">
     {pending && <Notice tone="warn">原操作结果未知，名单和理由已锁定，不能重新抽签。{expired && "已超过 24 小时，只能查询和核对，不能重新发送。"}</Notice>}
@@ -106,7 +106,7 @@ export function SupportRandomAssignment({ customers, onClose, onDone }: { custom
     {result ? <Table label="逐客随机分配结果"><thead><Tr><Th>客户编号</Th><Th>结果</Th><Th>专属客服</Th><Th>原因</Th></Tr></thead><tbody>{result.customers.map(c => <Tr key={c.customerId}><Td><span data-mono>{m1CustomerCode(String(c.customerId))}</span></Td><Td><StatusTag tone={c.status === "ASSIGNED" ? "ok" : c.status === "CONFLICT" ? "warn" : "done"}>{resultLabels[c.status] ?? "未知"}</StatusTag></Td><Td>{c.agentAdminId == null ? "—" : `客服账号 ${c.agentAdminId}`}</Td><Td>{c.status === "ASSIGNED" ? "已分配" : resultLabels[c.status] ?? "请核对原结果"}</Td></Tr>)}</tbody></Table> : <>
       <Segments label="随机预览名单" value={list} onChange={setList} items={[{ value: "included", label: "原选中名单" }, { value: "excluded", label: "排除名单" }]} />
       <Table label="随机预览名单"><thead><Tr><Th>客户</Th><Th>编码</Th><Th>结果</Th></Tr></thead><tbody>{list === "included" ? selected.map(c => <Tr key={c.customerId}><Td>{operatorNicknameText(c.displayName || "") || `客户 ${c.customerId}`}</Td><Td>{m1CustomerCode(c.customerId)}</Td><Td>{preview ? preview.customers.some(v => v.id === c.customerId) ? "纳入预览" : "已排除" : "待核对"}</Td></Tr>) : preview?.excluded.map(c => { const known = selected.find(item => String(item.customerId) === String(c.customerId)); return <Tr key={c.customerId}><Td>{known ? operatorNicknameText(known.displayName || "") || `客户 ${c.customerId}` : `客户 ${c.customerId}`}</Td><Td>{m1CustomerCode(String(c.customerId))}</Td><Td>{exclusionLabels[c.reason] ?? "当前不符合条件，请核对客户池"}</Td></Tr>; })}</tbody></Table>
-      {preview && <Fold inset title="技术信息" summary="规则版本与原请求编号"><Facts><Fact k="规则版本">{preview.rulesVersion}</Fact>{pending && <Fact k="原请求编号">{pending.commandKey}</Fact>}</Facts></Fold>}
+      {preview && <Fold inset title="技术信息" summary="规则版本与操作编号"><Facts><Fact k="规则版本">{preview.rulesVersion}</Fact>{pending && <Fact k="操作编号">{pending.commandKey}</Fact>}</Facts></Fold>}
       {!pending && (previewUnknown || !preview && error || preview && Date.parse(preview.expiresAt) <= Date.now()) && <Notice tone="warn" action={<Button disabled={busy} onClick={() => void generatePreview()}>{previewUnknown || preview ? "重新生成预览" : "重新读取原名单"}</Button>}>重新读取原名单后生成新快照，旧预览的确认作废；这会生成新的预览。</Notice>}
       <Field label="处理理由" required help={reasonLeft && !reasonOk ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonOk ? "请填写 8–200 字的处理理由。" : undefined}>{control => <Textarea {...control} rows={3} value={reason} maxLength={200} count={`${reason.trim().length}/200`} disabled={busy || Boolean(pending)} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
       <Check checked={ack || Boolean(pending)} disabled={busy || Boolean(pending)} onChange={e => setAck(e.target.checked)} label="已核对人数、排除项和新继承段规则，只处理此名单。" />

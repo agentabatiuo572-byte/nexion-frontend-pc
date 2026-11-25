@@ -424,7 +424,7 @@ function G4GenesisPage() {
   );
 
   /**
-   * 原操作改成了什么，写人话。行内「按原请求重试」直接执行，没有别处能看到原内容，所以保留对象、方向、数量或金额和单位，
+   * 原操作改成了什么，写人话。行内「按原操作重试」直接执行，没有别处能看到原内容，所以保留对象、方向、数量或金额和单位，
    * 以及决策编号、暂停原因这类执行内容；只省理由、操作人和版本号这类技术字段。
    */
   const directChangeText = (command: G4DirectCommand) => {
@@ -540,7 +540,7 @@ function G4GenesisPage() {
       key: command.commandKey, name: directName(command),
       change: directChangeText(command), submittedAt: command.createdAt,
       tag: g4DirectCommandExpired(command) ? expiredTag("direct") : unknownTag("direct"),
-      action: <><Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>查询原结果</Button>{canRetryG4DirectCommand(command) && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原请求重试</Button>}</>,
+      action: <><Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>查询原结果</Button>{canRetryG4DirectCommand(command) && <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, true).catch(() => undefined); }}>按原操作重试</Button>}</>,
     })), ...(!overview && tierPending ? [{
       key: "tiers", name: "价格档位", change: "档位修改的原申请（扩容或未售涨价）",
       tag: <StatusTag tone="warn" icon={Clock3}>结果未知</StatusTag>,
@@ -700,7 +700,7 @@ function G4GenesisPage() {
             <Fact k="什么时候生效" tone={dir === "loose" ? "warn" : undefined}>{original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位超级管理员批准；批准前参数不变"
-                : "原申请结果未知：24 小时内可以按原请求重试，不会重复建单"
+                : "原申请结果未知：24 小时内可以按原操作重试，不会重复建单"
               : tighteningDividend
                 ? "这次只能调低或保持不变，确认后立即生效；原调高申请还在，但比例变了，批准时会被拒绝，不会覆盖这次的值"
                 : dir === "loose"

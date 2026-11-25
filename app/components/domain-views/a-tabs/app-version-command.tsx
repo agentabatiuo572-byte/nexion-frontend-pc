@@ -133,7 +133,7 @@ export function AppVersionCommand({ state, action, language, onClose, onReload, 
     <Button onClick={() => setDiscard(false)}>继续编辑</Button><Button onClick={onClose}>放弃修改</Button>
   </> : <>
     <Button onClick={close} disabled={busy}>{uncertain || conflict ? "重新读取记录" : "取消"}</Button>
-    {!conflict && <Button variant="primary" loading={busy} onClick={() => void send()}>{uncertain ? "按原请求重试" : saving ? "保存草稿" : action === "publish" ? "确认发布" : action === "restore" ? "提交恢复审批" : actionNames[action]}</Button>}
+    {!conflict && <Button variant="primary" loading={busy} onClick={() => void send()}>{uncertain ? "按原操作重试" : saving ? "保存草稿" : action === "publish" ? "确认发布" : action === "restore" ? "提交恢复审批" : actionNames[action]}</Button>}
   </>;
   if (saving) return <Modal className="av-editor" title={title} icon={PackageCheck} sub={`${platforms[state.platform]} · 版本草稿`} onClose={close} dirty={dirty} busy={busy} footer={footer}>
     <div className="rd-form-stack" onChange={() => setDirty(true)}>

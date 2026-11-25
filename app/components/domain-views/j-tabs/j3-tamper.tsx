@@ -365,7 +365,7 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     actions: <>
       <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
-      {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+      {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原操作重试</Button>}
       {command && rejected && <VerifiedReleaseButton disabled={checking || !!jEmergencyRecovery.state(command).busy} onClick={() => release.ask({ operation: "修改告警设置", target: savedChange(saved), targetLabel: "改动", getSnapshot: jEmergencyRecovery.releaseSnapshot(command), createdAt: command.createdAt,
         release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(command); if (released) setConfigOpen(null); syncSaved(); return released; } })} />}
     </>,
@@ -821,7 +821,7 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, receiptStat
       footer={unknownAt !== null ? <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>
         <Button disabled={submitting} onClick={queryOriginal}>查询原结果</Button>
-        <Button variant="primary" loading={submitting} loadingText="提交中…" disabledReason={blocked} onClick={() => { setTouched(true); void submit(); }}>按原请求重试</Button>
+        <Button variant="primary" loading={submitting} loadingText="提交中…" disabledReason={blocked} onClick={() => { setTouched(true); void submit(); }}>按原操作重试</Button>
       </> : <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>
         <Button variant="primary" loading={submitting} loadingText="提交中…" disabledReason={blocked} onBlockedClick={() => setTouched(true)}

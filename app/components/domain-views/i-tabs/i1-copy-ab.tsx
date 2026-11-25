@@ -364,7 +364,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
         {target ? <FundCheckButtons record={target} outcome={outcome} expired={expired} busy={!!checking || !!retrying} checking={checking === record.commandKey}
           onCheck={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }} onClose={() => setClosing(record)} />
           : <Button size="sm" loading={checking === record.commandKey} disabled={!!checking || !!retrying} onClick={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retrying ? "提交中…" : retryBlocked} onClick={() => restore(record)}>按原请求重试</Button>}
+        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retrying ? "提交中…" : retryBlocked} onClick={() => restore(record)}>按原操作重试</Button>}
       </>,
       detail: <>
         {record.change && <p>{record.change}</p>}

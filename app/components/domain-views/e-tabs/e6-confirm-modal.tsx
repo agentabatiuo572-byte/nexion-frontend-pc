@@ -39,7 +39,7 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
   }, [record, m.records, m.settledByKey, props.onClose, onRecovered]);
   const rejected = !!record && m.rejected.includes(record.commandKey);
   const refusalMessage = refusal?.message ?? refused;
-  const blockedReason = props.blockedReason ?? (rejected ? "按原请求重试被明确拒绝，请关闭窗口，核对后解除这条记录。"
+  const blockedReason = props.blockedReason ?? (rejected ? "按原操作重试被明确拒绝，请关闭窗口，核对后解除这条记录。"
     : refusalMessage ? <span className="rd-toolbar"><span>{refusalMessage}</span><Button size="sm" icon={<RotateCcw size={14} aria-hidden />} loading={refusal?.reading} onClick={refusal?.retryRead ?? (() => { setRefused(undefined); onBack?.(); })}>{refusal?.retryRead ? "重新读取" : "返回修改"}</Button></span> : undefined);
   const facts = (value?: string) => {
     const direction = props.edit?.amplifiesWhen;
@@ -54,7 +54,7 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
         <div className="e6-fold-content">{typeof amplificationBasis === "function" ? amplificationBasis(value) : amplificationBasis}</div>
         <p>{props.coverageCheck ?? "批准时检查兑付覆盖率。"}</p>
       </Notice>}
-      {unknown && !blockedReason && <Notice tone="warn" title="结果未知">原内容和理由已保存。可以关掉窗口查询原结果，也可以按原请求重试；重试发的是同一份原请求。</Notice>}
+      {unknown && !blockedReason && <Notice tone="warn" title="结果未知">原内容和理由已保存。可以关掉窗口查询原结果，也可以按原操作重试；重试发的是同一份原请求。</Notice>}
     </div>;
   };
   return <OperationConfirmModal {...props} facts={facts} amplifies={false}
@@ -66,7 +66,7 @@ export function E6ConfirmModal({ scope, amplificationBasis, onRecovered, onBack,
         query: async () => { if (record.payload.kind === "proposal") await m.check(record.commandKey); else await m.checkDirect(record); } };
     }}
     getPendingReason={props.getPendingReason ?? (() => m.pendingReason(scope))}
-    blockedReason={blockedReason} confirmLabel={unknown ? "按原请求重试" : props.confirmLabel}
+    blockedReason={blockedReason} confirmLabel={unknown ? "按原操作重试" : props.confirmLabel}
     onConfirm={async (...args) => {
       if (originalKey.current && m.settledByKey[originalKey.current]) return;
       setUnknown(false);
