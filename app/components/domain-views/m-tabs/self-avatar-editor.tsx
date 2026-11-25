@@ -138,6 +138,12 @@ export function SelfAvatarEditor({ name, ctx, onChanged, onSnapshot, launch = fa
       setPending(acknowledged);
       const readback = await fetchSelfAvatar(abort.signal); if (!active(token)) return false;
       if (!isCurrentAvatar(acknowledged, readback)) throw new Error("AVATAR_SAVE_READBACK_MISMATCH");
+      // 读回的不是这次选的图、只凭版本结案：先核对登录账号，另一个标签页换了账号时这张是别人的头像（RR01）。核对不了按「已保存、最新值读不到」留着。
+      if (readback.assetId !== record.input.assetId) {
+        const sameAccount = await currentAdminSession({ signal: abort.signal }).then(result => result?.session.adminId === record.actorId, () => false);
+        if (!active(token)) return false;
+        if (!sameAccount) throw new Error("AVATAR_SAVE_READBACK_MISMATCH");
+      }
       complete(record, readback); return true;
     } catch (e) {
       if (!active(token)) return false;
