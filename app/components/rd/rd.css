@@ -1057,6 +1057,8 @@ td .rd-flow { margin-bottom: 0; }
 .rd-step[data-state="done"]:not(:last-child) .rd-step-label::after { background: var(--rd-brand); }
 .rd-step[data-state="todo"] .rd-step-label { color: var(--rd-text-3); }
 .rd-step[data-state="current"] .rd-step-label { color: var(--rd-text); font-weight: 500; }
+.rd-step[data-state="failed"] .rd-step-mark { background: var(--rd-danger-bg); color: var(--rd-danger); }  /* 这一步没走成：红叉，文字照常，原因写在这一步下面和抽屉底部 */
+.rd-step[data-state="failed"] .rd-step-label { color: var(--rd-text); font-weight: 500; }
 .rd-step-sub { grid-column: 2; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-fold-body > .rd-steps { margin-bottom: 16px; }
 /* 阶段线：等距节点只表示先后，连线一律灰；当前节点品牌色加一圈浅底，前面实心、后面空心。放不下时在这一块里横向滚动，两侧影子同表格。 */

@@ -231,9 +231,9 @@ export function exportStatus(task: ExportSubmitted): { tone: "ok" | "warn" | "pr
       : { tone: "progress", label: "已批准", line: "文件生成中，生成好才能下载" };
     case "READY": return task.canDownload ? { tone: "ok", label: "可下载", line: "CSV 文件" }
       : { tone: "neutral", label: "已生成", line: task.canDownload === undefined ? "暂时无法确认能否下载" : "你现在不能下载" };
-    case "REJECTED": return { tone: "neutral", label: "已驳回", line: "审批人驳回，理由见详情" };
+    case "REJECTED": return { tone: "done", label: "已驳回", line: "审批人驳回，理由见详情" };
     case "WITHDRAWN": return { tone: "done", label: "已撤回", line: task.mine ? "你撤回的" : "申请人撤回的" };
-    case "EXPIRED": return { tone: "neutral", label: "已过期", line: "文件已过保留期，不能再下载" };
+    case "EXPIRED": return { tone: "done", label: "已过期", line: "文件已过保留期，不能再下载" };
     case "FAILED": return { tone: "danger", label: task.decidedAt ? "已批准，执行失败" : "生成失败", line: "文件没生成出来" };
   }
 }

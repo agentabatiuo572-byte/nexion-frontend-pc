@@ -225,6 +225,8 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
   // 没有能提交的项时不要求填理由，也不显示理由框（5f、5g）。
   const requireReason = !originalHidden && !hiddenSettled && (unknown || !data || (!data.blocked && (selectable.length > 0 || notReady?.check.state === "failed" || notReady?.check.state === "checking")));
   const scopeLabel = (unknown ? queriedScopeLabel : undefined) ?? data?.scopes.find(row => row.value === scope)?.label ?? "—";
+  const monthEditable = !!data && (data.months.length > 1 || !month && !!data.restoration);
+  const scopeEditable = !!data && (data.scopes.length > 1 || !scope && !!data.restoration);
 
   const recovery = unknown && <div className="m1-export-recover"><Button size="sm" loading={querying} loadingText="正在查询…" onClick={() => {
         setQuerying(true); setLookupText(null); setQueriedScopeLabel(null);
@@ -285,16 +287,15 @@ export function PerfExportDialog({ ports, initialMonth, initialScope, onClose, o
       {recovery}
       {differences?.length ? <Notice tone="warn" title="原来的条件和现在不同，请重新选择"><dl className="m1-export-diff">{differences.map(row => <div key={row.k}><dt>{row.k}</dt><dd>{row.v}</dd></div>)}</dl></Notice>
         : versionChanged && data.recoveredReason !== undefined ? <Notice tone="warn" title="这次没有提交">业绩数据刚更新了一版，已按原来的月份、范围和内容重新核对，理由也保留着。核对无误后再点确认。</Notice> : null}
-      <div className="m1-export-scope">
-        <Field label="月份" help={data.since}>{control => (data.months.length > 1 || !month && !!data.restoration)
-          ? <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} placeholder="选择这次的月份" />
-          : <div id={control.id} className="m1-export-static">{month}</div>}</Field>
-        <Field label="范围">{control => (data.scopes.length > 1 || !scope && !!data.restoration)
-          ? <Select {...control} aria-label="范围" value={scope} options={unknown && queriedScopeLabel != null
-            ? data.scopes.map(choice => choice.value === scope ? { ...choice, label: queriedScopeLabel } : choice) : data.scopes} onChange={changeScope} disabled={unknown} placeholder="选择这次的范围" />
-          : <div id={control.id} className="m1-export-static">{scopeLabel}</div>}</Field>
-      </div>
+      {/* 能改的月份、范围是字段；只有一个选项时是只读事实，和统计截至同一行、弱标签加值（VS-54、VS-104）。 */}
+      {(monthEditable || scopeEditable) && <div className="m1-export-scope">
+        {monthEditable && <Field label="月份" help={data.since}>{control => <Select {...control} aria-label="月份" value={month} options={data.months} onChange={changeMonth} disabled={unknown} placeholder="选择这次的月份" />}</Field>}
+        {scopeEditable && <Field label="范围">{control => <Select {...control} aria-label="范围" value={scope} options={unknown && queriedScopeLabel != null
+            ? data.scopes.map(choice => choice.value === scope ? { ...choice, label: queriedScopeLabel } : choice) : data.scopes} onChange={changeScope} disabled={unknown} placeholder="选择这次的范围" />}</Field>}
+      </div>}
       <p className="m1-export-fixed">
+        {!monthEditable && <span><em>月份</em>{month}{data.since ? ` · ${data.since}` : ""}</span>}
+        {!scopeEditable && <span><em>范围</em>{scopeLabel}</span>}
         <span><em>统计截至</em>{data.asOf === "—" ? "—" : `${data.asOf}（${zone}）`}</span>
         <span><em>币种</em>USDT，越南盾只作参考列</span>
         <span><em>下载人</em>{data.downloader}</span>

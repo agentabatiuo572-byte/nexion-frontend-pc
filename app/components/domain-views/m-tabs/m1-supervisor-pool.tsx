@@ -324,7 +324,7 @@ export function M1SupervisorPool({ permission, initialGroupId, toast }: { permis
   }
 
   if (permission === "agent") return <Panel title="待分配"><BlockState state="empty" title="只有客服主管或超级管理员能查看待分配客户。" /></Panel>;
-  if (scopeError) return <Panel title="待分配"><BlockState state="error" title={scopeError} onRetry={() => setScopeReload(n => n + 1)} retryLabel="重新加载分配范围" /></Panel>;
+  if (scopeError) return <Panel title="待分配"><BlockState state="error" title="分配范围加载失败" detail={scopeError} onRetry={() => setScopeReload(n => n + 1)} /></Panel>;
   if (!scope) return <Panel title="待分配"><BlockState state="loading" title="正在加载分配范围…" /></Panel>;
   if (pending) return <Panel className="m1-pool-pending" title="上次分配结果未知" icon={Users} tone="warn"><Notice tone="warn" action={<Button size="sm" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}>有一次分配结果未知，先查询原结果，查到后才能继续。</Notice><Facts><Fact k="原目标专属客服">{poolCommands.list().find(r => r.commandKey === pending.key)?.target.name || pending.payload.targetAgentAdminId}</Fact><Fact k="原分配原因">{pending.payload.reason}</Fact><Fact k="原名单">{pending.payload.customers.length} 位</Fact></Facts><Fold title="原名单与命令" summary="保留原对象与版本"><p data-mono>{pending.key}</p><Table label="原分配名单"><thead><Tr><Th>客户</Th><Th>原版本</Th></Tr></thead><tbody>{pending.payload.customers.map(c => <Tr key={c.id}><Td>{m1CustomerCode(c.id)}</Td><Td>{c.expectedVersion}</Td></Tr>)}</tbody></Table></Fold>{error && <Notice tone="danger">{error}</Notice>}</Panel>;
   if (!readableScope) return <Panel title="待分配"><BlockState state="empty" title={groupId === undefined ? "当前没有可管理的客服组，请先在组管理中建立或接管组。" : "所选组不在当前授权范围，请重新选择。"} />{groupId !== undefined && <div className="m1-pool-back"><Button size="sm" disabled={Boolean(pending)} onClick={() => setGroupId(undefined)}>返回授权范围</Button></div>}</Panel>;
@@ -338,7 +338,7 @@ export function M1SupervisorPool({ permission, initialGroupId, toast }: { permis
         <FilterField label="客户" grow><Input aria-label="搜索客户名称或编码" value={keywordInput} onChange={event => setKeywordInput(event.target.value)} placeholder="客户名称或编码" /></FilterField>
         <FilterField label="入池原因"><Select aria-label="筛选入池原因" value={reasonFilter} onChange={value => { setPage(1); setReasonFilter(value as SupportPoolReason | ""); }} options={[{ value: "", label: "全部入池原因" }, ...Object.entries(POOL_REASONS).map(([value, label]) => ({ value, label }))]} /></FilterField>
       </FilterBar>
-      {error && <BlockState state="error" title={error} onRetry={pending ? undefined : () => setReload((n) => n + 1)} retryLabel="重新加载" />}
+      {error && <BlockState state="error" title="待分配客户加载失败" detail={error} onRetry={pending ? undefined : () => setReload((n) => n + 1)} />}
       {pending && <Notice tone="warn" action={<Button type="button" size="sm" onClick={() => setConfirm(true)}>继续确认上次分配</Button>}>上次分配结果未知，原客户范围已锁定。</Notice>}
       {loading && <BlockState state="loading" title="正在加载待分配客户…" />}
       {!loading && pool && !error && <>

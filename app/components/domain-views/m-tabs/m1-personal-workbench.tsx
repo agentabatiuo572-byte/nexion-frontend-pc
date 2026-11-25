@@ -394,7 +394,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const trendMax = trend?.reduce((max, point) => Math.max(max, point.executionCount, point.successfulCycleCount), 1) ?? 1;
   const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const actionFor = (row: SupportCustomer) => row.waitingReply ? "回复" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "联系维护" : "发起会话";
-  const listState = rowsLoading ? <BlockState state="loading" title="正在加载客户列表…" /> : rowsError ? <BlockState state="error" title={rowsError} onRetry={() => setRowsRefresh(n => n + 1)} /> : !listRecords.length ? <BlockState state="empty" title="当前筛选下没有客户。可切换筛选或等待主管分配。" /> : null;
+  const listState = rowsLoading ? <BlockState state="loading" title="正在加载客户列表…" /> : rowsError ? <BlockState state="error" title="客户列表加载失败" detail={rowsError} onRetry={() => setRowsRefresh(n => n + 1)} /> : !listRecords.length ? <BlockState state="empty" title="当前筛选下没有客户。可切换筛选或等待主管分配。" /> : null;
 
   const invitationWriteBlock = invitationRetrying ? INVITATION_REREAD_BLOCK : undefined;
   const showInviter = listRecords.some(row => row.inviter !== undefined);
@@ -406,6 +406,12 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     : invitationError || drawerStats?.status === "ERROR" ? { kind: "failed", reason: invitationError ?? COUNTS_FAILED_REASON, ...drawerRetry }
     : supportCountsView(drawerStats?.data?.invitations, drawerRetry);
   const drawerCountsFocus = useCountsRetryFocus(invitationRetrying, drawerCounts?.kind === "ready");
+  // 本人一栏（头像、姓名、更换本人头像、我的邀请码）：专属客服在首页，主管兼客服在「我的客户」顶部，同一块（01 PG-15：本人设置不放页头）。
+  const identity = <section className="m1-identity" aria-label="本人"><div className="m1-identity-line"><SupportAvatar name={(selfAgent?.name ?? operatorName) || "本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId && adminId ? advisorAvatarPath(adminId) : undefined} version={selfAvatarSnapshot?.avatarVersion ?? selfAgent?.avatarVersion ?? undefined} />
+      <strong>{(selfAgent?.name ?? operatorName) || "本人账号"}</strong><StatusTag tone="neutral" icon={Headset}>专属客服</StatusTag>
+      <SelfAvatarEditor name={selfAgent?.name ?? (operatorName || "本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot} onSnapshot={setSelfAvatarSnapshot} />
+    </div>
+    <Fold title="我的邀请码" summary="生成、重置与分享" explain="注册时使用客服码建立专属客服绑定。重置会作废旧码，已有绑定保留。"><SelfInviteCodeBar key={sessionKey} toast={ctx.toast} /></Fold></section>;
   return <section className="m1-personal" data-proof="s5a-workbench">
     <RecoveryPanel title={recoveryTitle(pendingRecords.length)} explainLabel="结果未知怎么处理" explain="维护调整发出后没收到明确结果，可能已经生效。先查询原结果；查到前这位客户不能再调整维护。" items={pendingRecords.map(record => ({ key: record.commandKey, createdAt: record.createdAt,
       object: `${record.payload.enabled ? "恢复维护" : "不再维护"} · ${m1CustomerCode(record.payload.customerId)}`, tag: <StatusTag tone="warn">结果未知</StatusTag>,
@@ -413,11 +419,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       actions: <Button size="sm" icon={<Search size={14} aria-hidden />} disabled={saving} onClick={() => void checkMaintenance(record)}>查询原结果</Button> }))} />
     {notice && <Notice tone="warn" action={<Button size="sm" onClick={() => setNotice(null)}>关闭提示</Button>}>{notice}</Notice>}
     {view === "dashboard" && <>
-      <section className="m1-identity" aria-label="本人"><div className="m1-identity-line"><SupportAvatar name={(selfAgent?.name ?? operatorName) || "本人专属客服"} path={selfAvatarSnapshot ? selfAvatarSnapshot.assetId ? "/api/admin/platform/accounts/self/avatar/content" : undefined : selfAgent?.avatarAssetId && adminId ? advisorAvatarPath(adminId) : undefined} version={selfAvatarSnapshot?.avatarVersion ?? selfAgent?.avatarVersion ?? undefined} />
-        <strong>{(selfAgent?.name ?? operatorName) || "本人账号"}</strong><StatusTag tone="neutral" icon={Headset}>专属客服</StatusTag>
-        <SelfAvatarEditor name={selfAgent?.name ?? (operatorName || "本人账号")} ctx={ctx} onChanged={setSelfAvatarSnapshot} onSnapshot={setSelfAvatarSnapshot} />
-      </div>
-      <Fold title="我的邀请码" summary="生成、重置与分享" explain="注册时使用客服码建立专属客服绑定。重置会作废旧码，已有绑定保留。"><SelfInviteCodeBar key={sessionKey} toast={ctx.toast} /></Fold></section>
+      {identity}
       <Conclusion state={pendingRecords.length ? "warn" : todoTotal === null ? "unknown" : "neutral"} icon={!pendingRecords.length && todoTotal ? ListChecks : undefined} hint={pendingRecords.length ? "先查询原结果。" : overview?.counts.waitingReplyCustomers ? "先打开待回复客户，继续处理会话。" : "从下方客户卡开始联系。"} explain="待办客户数按人算，一位客户有几类待办也只算一次；三类待办会重叠，不能相加。">{pendingRecords.length ? "有操作结果未知" : todoTotal === null ? "待办客户暂未读到" : todoTotal ? `有 ${todoTotal} 位待办客户` : "当前没有待办客户"}</Conclusion>
       {overviewError && <BlockState state="error" compact title={overviewError} onRetry={() => setRowsRefresh(n => n + 1)} />}
       <StatBand label="今日服务待办"><Stat label="待办客户" value={todoTotal ?? "—"} unit="位" lead icon={Users} onOpen={() => showCustomers("TODO")} explain="按客户算的待办总数，同一客户只算一次。" />
@@ -430,8 +432,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
           <div className="m1-todo-status"><StatusTag tone={accountTone(row)}>{labelForAccount(row.accountState)}</StatusTag><StatusTag tone={maintenanceTone(row)}>{labelForMaintenance(row)}</StatusTag>{row.waitingReply && <StatusTag tone="neutral">待专属客服回复</StatusTag>}{row.maintenanceEnabled && row.firstContact && <StatusTag tone="neutral">首次待联系</StatusTag>}<span className="rd-note">当前归属本人</span></div>
         </li>)}</ul>}
       </Panel>
-      <Fold title="最近会话" summary={recentError ? "读取失败" : recent === null ? "尚未读取" : `${recent.length} 条`} actions={<Button variant="ghost" size="sm" onClick={() => router.push("/service/sessions")}>查看会话</Button>}>
-        {recentError ? <BlockState state="error" title={recentError} onRetry={() => setRecentRefresh(n => n + 1)} /> : recent === null ? <BlockState state="loading" title="正在读取…" /> : !recent.length ? <BlockState state="empty" title="暂无最近会话。可从本人客户列表发起联系。" /> : <ul className="m1-recent-list">{recent.map(item => <li key={item.conversationNo}><Button variant="ghost" onClick={() => router.push(`/service/sessions?conversationNo=${encodeURIComponent(item.conversationNo)}`)}>{operatorNicknameText(item.customerName || "") || m1CustomerCode(item.customerId)}</Button><span data-user-content>{item.lastMessageKind === "IMAGE" ? "[图片]" : item.lastMessage || "暂无消息预览"}</span><span className="rd-note">{formatTime(new Date(item.lastTs).toISOString())}{item.unreadCount > 0 ? ` · ${item.unreadCount} 条未读` : ""}</span></li>)}</ul>}
+      <Fold title="最近会话" summary={recentError ? "读取失败" : recent === null ? "尚未读取" : `${recent.length} 条`} actions={<a className="rd-link" href="/service/sessions" onClick={event => { event.preventDefault(); router.push("/service/sessions"); }}>查看会话</a>}>
+        {recentError ? <BlockState state="error" title="最近会话加载失败" detail={recentError} onRetry={() => setRecentRefresh(n => n + 1)} /> : recent === null ? <BlockState state="loading" title="正在加载…" /> : !recent.length ? <BlockState state="empty" title="暂无最近会话。可从本人客户列表发起联系。" /> : <ul className="m1-recent-list">{recent.map(item => <li key={item.conversationNo}><Button variant="ghost" onClick={() => router.push(`/service/sessions?conversationNo=${encodeURIComponent(item.conversationNo)}`)}>{operatorNicknameText(item.customerName || "") || m1CustomerCode(item.customerId)}</Button><span data-user-content>{item.lastMessageKind === "IMAGE" ? "[图片]" : item.lastMessage || "暂无消息预览"}</span><span className="rd-note">{formatTime(new Date(item.lastTs).toISOString())}{item.unreadCount > 0 ? ` · ${item.unreadCount} 条未读` : ""}</span></li>)}</ul>}
       </Fold>
       <Fold title="本人客户与期间业绩" summary={overview ? `截至 ${formatTime(overview.evaluatedAt)}` : "尚未读取"}>
         <ul className="m1-tiles" aria-label="本人客户">{metricDefs.map(item => { const value = overview?.counts[item.key]; return <li key={item.key}><span>{item.key === "windowActiveCustomers" && overview?.activityWindowDays ? `近 ${overview.activityWindowDays} 天活跃` : item.label}</span><span className={`m1-tile-value${value ? "" : " m1-quiet"}`}><button type="button" className="rd-link" aria-label={`${item.label} ${value ?? "—"} 位，查看名单`} onClick={() => showCustomers(item.filter)}>{value ?? "—"}</button><small>位</small></span></li>; })}</ul>
@@ -448,8 +450,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       </Fold>
       {statSource && <M1StatisticDetails key={overview?.snapshotId} source={statSource} onClose={() => setMaintenanceChoice(null)} onInvalid={invalidateStatistic} />}
     </>}
+    {view === "customers" && permission !== "agent" && identity}
     {view === "customers" && <Panel title="我的客户" sub={rows ? `共 ${rows.total} 位 · 北京时间` : "总数待确认"} actions={canBulk ? <Button onClick={() => setBulkOpen(true)}>圈选群发</Button> : undefined}>
-      {permission !== "agent" && <Fold title="我的邀请码" summary="生成、重置与分享"><SelfInviteCodeBar key={sessionKey} toast={ctx.toast} /></Fold>}
       <FilterBar onSubmit={() => { setPage(1); setKeyword(keywordDraft.trim()); }} onClear={() => { setFilter("TODO"); setKeyword(""); setKeywordDraft(""); setPage(1); }} canClear={filter !== "TODO" || Boolean(keyword)} action={<Button type="submit">查询</Button>}>
         <FilterField label="客户" grow><Input aria-label="查询客户名称或用户编码" value={keywordDraft} onChange={e => setKeywordDraft(e.target.value)} placeholder="客户名称或用户编码" /></FilterField>
         <FilterField label="服务状态"><Select aria-label="筛选客户" value={filter} options={filters} onChange={value => { setFilter(value as SupportCustomerFilter); setPage(1); }} /></FilterField>
@@ -459,7 +461,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     </Panel>}
     {bulkOpen && <SupportBulkComposer ctx={ctx} onClose={() => setBulkOpen(false)} />}
     {detailId && <Drawer open title="客户资料" sub={detail ? <>{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></> : "正在读取"} busy={saving} onClose={closeDetail} footer={detail && <div className="m1-drawer-actions">{invitationWriteBlock && (canMaintain && !maintenancePending || permission !== "agent" && detail.assignmentId && transferInScope !== false) && <p className="rd-toolbar-note">{invitationWriteBlock}</p>}<Button onClick={() => openChat(detail.customerId)}>联系客户</Button>{canMaintain && <Button disabledReason={maintenancePending ? "原操作结果未知，请先查询原结果。" : invitationWriteBlock} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setReasonLeft(false); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</Button>}{permission !== "agent" && detail.assignmentId && transferInScope !== false && <Button data-transfer-customer={detail.customerId} disabledReason={invitationWriteBlock} onClick={() => onTransfer?.(detail.customerId)}>正式转绑客户</Button>}</div>}>
-      {detailLoading ? <BlockState state="loading" title="正在读取…" /> : detailError ? <BlockState state="error" title={detailError} onRetry={() => void openDetail(detailId)} /> : detail && <>
+      {detailLoading ? <BlockState state="loading" title="正在加载…" /> : detailError ? <BlockState state="error" title="客户资料加载失败" detail={detailError} onRetry={() => void openDetail(detailId)} /> : detail && <>
         <div className="m1-customer-name"><SupportAvatar name={customerName(detail)} path={detail.customerAvatarRef ?? undefined} /><strong>{customerName(detail)}</strong></div>
         <Facts><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="用户编码"><span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact>{drawerInviter && <Fact k="邀请人"><InviterValue view={drawerInviter} /></Fact>}<Fact k="账户状态"><StatusTag tone={accountTone(detail)}>{labelForAccount(detail.accountState)}</StatusTag></Fact><Fact k="维护状态"><StatusTag tone={maintenanceTone(detail)}>{labelForMaintenance(detail)}</StatusTag></Fact><Fact k="上次账户活动">{formatTime(detail.lastEffectiveAt)}</Fact><Fact k="下次维护">{formatTime(detail.nextMaintenanceAt)}</Fact></Facts>
         {/* 四个人数单独一组排在事实下面（DP-16，07a）。 */}
