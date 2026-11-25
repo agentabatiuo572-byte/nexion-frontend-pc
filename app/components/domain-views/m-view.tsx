@@ -739,6 +739,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           getPendingReason={tab === "M4" || tab === "M5" ? mc.getPendingReason : undefined}
           getPendingRecovery={tab === "M4" ? mc.getPendingRecovery : undefined}
           initialReason={tab === "M4" || tab === "M5" ? mc.initialReason : undefined}
+          returnFocus={tab === "M4" ? mc.returnFocus : undefined}
           title={mc.title}
           detail={mc.detail}
           amplifies={mc.amplifies}

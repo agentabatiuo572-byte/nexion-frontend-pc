@@ -1,4 +1,4 @@
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import type { M4FaqCommand } from "./m4-faq-command";
 import { m4FaqCommandOrigin } from "./m4-faq-command";
@@ -530,6 +530,7 @@ export type MContentData = {
   ticketsAvailable: boolean;
   conversationsAvailable: boolean;
   knowledgeAvailable: boolean;
+  knowledgeError?: string;
   sessionTemplatesAvailable: boolean;
   loadWarnings: string[];
 };
@@ -1738,7 +1739,7 @@ export async function sendM5Command(command: M5Command, commandKey: string): Pro
 
 export async function readSupportKnowledge() {
   const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
-  return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true };
+  return { faqs: knowledge.faqs!.map(adaptFaq), faqLastModifiedBy: knowledge.faqLastModifiedBy, sla: knowledge.sla!.map(adaptSla), knowledgeAvailable: true, knowledgeError: undefined };
 }
 
 export async function readSupportTemplates() {
@@ -1871,8 +1872,8 @@ export async function fetchMContentData(onProgress?: (data: MContentData) => voi
     }
     try {
       publish(await readSupportKnowledge());
-    } catch {
-      publish({ faqs: [], sla: [], knowledgeAvailable: false }, "响应时限");
+    } catch (error) {
+      publish({ faqs: [], sla: [], knowledgeAvailable: false, knowledgeError: displayAdminReadError(error) }, "响应时限");
     }
   })();
 
@@ -2117,6 +2118,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.support.ticketsAvailable": data.ticketsAvailable ? "1" : "0",
     "I.session.conversationsAvailable": data.conversationsAvailable ? "1" : "0",
     "I.support.knowledgeAvailable": data.knowledgeAvailable ? "1" : "0",
+    "I.support.knowledgeError": data.knowledgeError ?? "",
     "I.session.templatesAvailable": data.sessionTemplatesAvailable ? "1" : "0",
     "I.session.advisor.policy.enabled": data.advisorPolicy.enabled,
     "I.session.advisor.policy.delayMs": String(data.advisorPolicy.delayMs),

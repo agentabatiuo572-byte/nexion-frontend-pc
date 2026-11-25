@@ -64,7 +64,7 @@ function dismissesDrawer(target: EventTarget | null) {
 }
 
 /** 打开时聚焦容器，关闭后回到打开前的元素。Dialog 没有 Trigger 时要自己记。 */
-function useFocusHandoff(open: boolean) {
+function useFocusHandoff(open: boolean, returnFocus?: () => HTMLElement | null) {
   const previous = useRef<HTMLElement | null>(null);
   /** 打开者所在的行、面板或页签：原按钮被重画时只在这里面找同名的。 */
   const area = useRef<Element | null>(null);
@@ -84,7 +84,7 @@ function useFocusHandoff(open: boolean) {
     },
     onCloseAutoFocus: (event: Event) => {
       event.preventDefault();
-      const opener = previous.current;
+      const opener = returnFocus?.() ?? previous.current;
       if (opener?.isConnected) opener.focus();
       // 提交时按钮可能重画过（变灰、转圈后换了节点，BUG-536）：原节点不在了，就在它原来那一行、那块面板里找看得见的同名那一个；
       // 同名不止一个、或那一块也不在了，焦点不动。
@@ -207,7 +207,7 @@ export function Decision({ note, explain, danger, others, primary }: { note?: Re
 /** 搜索框不算填内容，打了字照样能关。 */
 const SEARCH_INPUT = 'input[type="search"], [role="searchbox"], [data-search]';
 
-export function Modal({ title, sub, icon, tone = "neutral", onClose, children, footer, wide = false, busy = false, dirty = false, className, style }: {
+export function Modal({ title, sub, icon, tone = "neutral", onClose, children, footer, wide = false, busy = false, dirty = false, className, style, returnFocus }: {
   title: ReactNode;
   /** 标题下面一行：生效方式、能不能撤销这类后果标签，或对象编号。 */
   sub?: ReactNode;
@@ -224,9 +224,10 @@ export function Modal({ title, sub, icon, tone = "neutral", onClose, children, f
   className?: string;
   /** 贴着触发器定位时传位置变量，比如会话页的快捷内容选择层。 */
   style?: CSSProperties;
+  returnFocus?: () => HTMLElement | null;
 }) {
   const surface = useRdSurface();
-  const focus = useFocusHandoff(true);
+  const focus = useFocusHandoff(true, returnFocus);
   const feedbackId = useDialogFeedback();
   const typed = useRef(false);
   // 失焦时校验提示换掉帮助文字（删了节点），Radix 的焦点圈在焦点换手途中看到删除，会把焦点拉回外框（BUG-536）；记下本来要去的控件，送过去。

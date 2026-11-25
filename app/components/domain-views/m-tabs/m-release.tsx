@@ -29,17 +29,23 @@ export function MAuditLink() {
     ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : null;
 }
 
-export function MReleaseModal({ target, where, onCancel, onConfirm }: {
+export function mFocusTarget(...targets: (HTMLElement | null | undefined)[]) {
+  return targets.find(target => target?.isConnected && target.getClientRects().length > 0
+    && !target.matches(":disabled, [aria-disabled=true]")) ?? null;
+}
+
+export function MReleaseModal({ target, where, onCancel, onConfirm, returnFocus }: {
   target: MReleaseTarget;
   /** 先到哪里核实，一句话。 */
   where: ReactNode;
   onCancel: () => void;
   onConfirm: () => void;
+  returnFocus?: () => HTMLElement | null;
 }) {
   const [checked, setChecked] = useState(false);
   const reason = target.rejection ? ADMIN_ERROR_MESSAGES[target.rejection] : undefined;
   return (
-    <Modal title="解除原操作记录" icon={ShieldCheck} onClose={onCancel} footer={<>
+    <Modal title="解除原操作记录" icon={ShieldCheck} onClose={onCancel} returnFocus={returnFocus} footer={<>
       <Button onClick={onCancel}>取消</Button>
       <Button variant="primary" disabledReason={checked ? undefined : "先勾选「已核实」"} onClick={onConfirm}>确认解除</Button>
     </>}>

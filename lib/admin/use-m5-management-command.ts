@@ -38,7 +38,9 @@ export function useM5ManagementCommand<T, B, R>(options: {
     controller: ReturnType<typeof createM5ManagementRecovery<T, B>>;
     expiry: "after-missing" | "load-latest";
     readAfterExpiry: (record: M5ManagementRecord<T, B>) => Promise<() => void>;
-    onLocalRelease: () => void;
+    canLoadLatest?: boolean;
+    canRelease: boolean;
+    onLocalRelease: (record: M5ManagementRecord<T, B>) => void;
   };
   fingerprint: (payload: T) => string;
   write: (payload: T, key: string) => Promise<R>;
@@ -50,6 +52,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
   const epoch = useAdminAuth(state => state.authEpoch);
   const [pending, setPending] = useState<M5ManagementRecord<T, B>>();
   const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [receiptMissing, setReceiptMissing] = useState(false);
   const [, setDeadline] = useState(0);
@@ -72,7 +75,8 @@ export function useM5ManagementCommand<T, B, R>(options: {
 
   async function run(action: "submit" | "replay" | "query" | "load-latest", payload?: T, before?: B) {
     const read = action === "query" || action === "load-latest";
-    if (running.current || !actorId || (read ? !options.canQuery : !options.canWrite)) return;
+    const allowed = action === "load-latest" ? recovery?.canLoadLatest : read ? options.canQuery : options.canWrite;
+    if (running.current || !actorId || !allowed) return;
     if (actorId !== useAdminAuth.getState().session?.adminId || epoch !== useAdminAuth.getState().authEpoch) return;
     const { store } = options;
     let record = store.list().find(row => row.actorId === actorId || row.actorId === undefined && row.fingerprint === options.legacySlot);
@@ -100,7 +104,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
       return;
     }
     const current = () => actorId === useAdminAuth.getState().session?.adminId && epoch === useAdminAuth.getState().authEpoch;
-    running.current = true; setBusy(true); setMessage(""); setReceiptMissing(false);
+    running.current = true; setBusy(true); setSubmitting(Boolean(recovery) && action === "submit"); setMessage(""); setReceiptMissing(false);
     if (action !== "query") setPending(record);
     let querying = action === "query";
     try {
@@ -199,17 +203,17 @@ export function useM5ManagementCommand<T, B, R>(options: {
       }
     } finally {
       running.current = false;
-      if (current()) setBusy(false);
+      if (current()) { setBusy(false); setSubmitting(false); }
     }
   }
   /** Call after the operator verifies the original outcome. The release itself is local. */
   function releaseRejectedReplay() {
-    if (!pending || !recovery || running.current || !options.canQuery || epoch !== useAdminAuth.getState().authEpoch
+    if (!pending || !recovery?.canRelease || running.current || epoch !== useAdminAuth.getState().authEpoch
       || actorId !== useAdminAuth.getState().session?.adminId || !recovery.controller.releaseRejectedReplay(pending)) return false;
     setPending(undefined);
     setMessage("");
-    recovery.onLocalRelease();
+    recovery.onLocalRelease(pending);
     return true;
   }
-  return { pending, busy, message, canReplay, recoveryState, releaseRejectedReplay, run };
+  return { pending, busy, submitting, message, canReplay, recoveryState, releaseRejectedReplay, run };
 }

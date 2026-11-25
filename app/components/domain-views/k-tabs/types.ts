@@ -5,6 +5,7 @@ import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec, I
 import type { ToastKind } from "@/lib/store/ui";
 
 export type ActionConfirmReq = {
+  returnFocus?: () => HTMLElement | null;
   initialReason?: string;
   initialRejection?: ConfirmReadConflict | PendingConfirmRejected;
   action: ReactNode;

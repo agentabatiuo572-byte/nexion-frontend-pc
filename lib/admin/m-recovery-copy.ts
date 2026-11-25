@@ -32,11 +32,12 @@ export const mUnknownText = (reason: string) => mUnknownReason(reason) && `${M_R
 export const mRejectedReason = (reason: string) => `拒绝原因：${ended(reason)}`;
 
 export type MRecoveryView = { tone: "warn" | "progress" | "danger" | "neutral" | "done" | "ok"; label: string; line: string };
+export const M_SUBMITTING_VIEW = { tone: "progress", label: "提交中…", line: "提交中…" } satisfies MRecoveryView;
 
 /** last：最近一次查询或重试得到的那句；expiredLine：过期后有自己出口的（M5 两条）换成自己的话。 */
 export function mRecoveryView(state: PendingRecoveryState, { last = "", expiredLine = RETRY_EXPIRED_TEXT }: { last?: string; expiredLine?: string } = {}): MRecoveryView {
   if (state.busy) return { tone: "progress", label: state.busy === "query" ? "查询中" : "提交中", line: state.busy === "query" ? M_RECOVERY.querying : M_RECOVERY.replaying };
-  if (state.replayRejection) return { tone: "warn", label: "重试被拒", line: `${M_RECOVERY.rejected}${last}` };
+  if (state.replayRejection) return { tone: "warn", label: "重试被拒", line: `${state.expired ? expiredLine : ""}${M_RECOVERY.rejected}${last}` };
   if (last.startsWith(M_RECOVERY.queryFailed)) return { tone: "danger", label: "查询失败", line: state.expired ? `${last}${expiredLine}` : last };
   if (state.expired) return { tone: "warn", label: "已过期", line: `${last}${expiredLine}` };
   if (state.conclusion === "not-found") return { tone: "warn", label: "没有查到", line: state.replayBlock ? M_RECOVERY.notFoundBlocked : M_RECOVERY.notFound };

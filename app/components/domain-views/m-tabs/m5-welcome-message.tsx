@@ -8,11 +8,12 @@ import { businessStamp, businessZone, formatBusinessTime } from "../../../../lib
 import { MessageCircleHeart, Save } from "lucide-react";
 import { BlockState, Button, Explain, Fact, Facts, Field, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { M5PendingWrites, type M5WelcomeSummary } from "./m5-views";
-import { M_RECOVERY_INTRO, M_RELEASED_TEXT, mNoticeTone, mRecoveryView } from "@/lib/admin/m-recovery-copy";
+import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView } from "@/lib/admin/m-recovery-copy";
 import { pendingReplayReason } from "../recovery-panel";
-import { MAuditLink, MReleaseModal } from "./m-release";
+import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { useToast } from "../design-kit";
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../../../../lib/admin/pending-mutation-store";
+import { useMOperationReason } from "./m-operation-reason";
+import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "../../../../lib/admin/shell-authorities";
 import { isM5ManagementPayload } from "@/lib/admin/m5-management-record";
 import { useAdminAuth } from "../../../../lib/store/admin-auth";
@@ -51,7 +52,11 @@ const EXPIRED_LINE = "已超过 24 小时，不能再重试。「加载最新内
 export function M5WelcomeMessage({ permission, onSummary }: { permission: MSupportPermission; onSummary?: (summary: M5WelcomeSummary) => void }) {
   const adminId = useAdminAuth((state) => state.session?.adminId);
   const authorities = useAdminAuth((state) => state.session?.authorities);
-  const canWrite = permission === "superadmin" && Boolean(authorities?.includes("service_m1_write"));
+  const canRead = Boolean(authorities?.includes("service_m1_read"));
+  const canQuery = canRead && permission === "superadmin";
+  const canLoadLatest = canRead;
+  const canRelease = canRead;
+  const canWrite = canQuery && Boolean(authorities?.includes("service_m1_write"));
   const [requiredLanguages, setRequiredLanguages] = useState<readonly OperatingLanguageCode[]>(OPERATING_LANGUAGE_CODES);
   const [checkingLanguages, setCheckingLanguages] = useState(false);
   const [current, setCurrent] = useState<SupportWelcomeMessage | null>(null);
@@ -70,26 +75,53 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const [lang, setLang] = useState<SupportWelcomeLanguage>("zh");
   const [releasing, setReleasing] = useState(false);
   const [, toast] = useToast();
+  const releasedRecord = useRef<WelcomePendingRecord | null>(null);
+  const [releasedFrom, setReleasedFrom] = useState<WelcomeBefore>();
+  const formAction = useRef<HTMLButtonElement>(null);
+  const releaseOpener = useRef<HTMLElement | null>(null);
+  const returnFocus = () => mFocusTarget(releaseOpener.current, formAction.current, document.querySelector<HTMLElement>(".m5-welcome-text"));
+  const openRelease = (opener: HTMLElement) => { releaseOpener.current = opener; setReleasing(true); };
+  function applyReleasedWelcome(value: SupportWelcomeMessage, required: readonly OperatingLanguageCode[], record: WelcomePendingRecord) {
+    setDraft({ ...mapSingleContentText(value.texts, required, "edit"), ...record.before?.editedTexts });
+    setReleasedFrom(record.before);
+    releasedRecord.current = null;
+  }
   const command = useM5ManagementCommand({
-    store: welcomeCommands, canQuery: Boolean(authorities?.includes("service_m1_read")), canWrite,
+    store: welcomeCommands, canQuery, canWrite,
     fingerprint: fingerprintOf, write: m5ManagementClient.welcome, query: m5ManagementClient.welcomeCommand,
     receiptRecovery: {
       controller: welcomeRecovery,
       expiry: "load-latest",
-      onLocalRelease: () => { setReason(""); setConfirm(false); setError(""); },
+      canLoadLatest, canRelease,
+      onLocalRelease: record => {
+        const base = latest ?? current;
+        if (base && !readUnavailable) {
+          setCurrent(base);
+          applyReleasedWelcome(base, requiredLanguages, record);
+        } else {
+          releasedRecord.current = record;
+          setDraft(null);
+        }
+        setLatest(null); setConflict(false); setReason(""); setConfirm(false); setError("");
+      },
       readAfterExpiry: async record => {
         const [value, required] = await Promise.all([supportWelcomeMessageClient.read(), getRequiredContentLanguages()]);
         return () => {
           refused.current = undefined;
           setRequiredLanguages(required);
           setCurrent(value);
-          setDraft({ ...record.payload.texts, ...record.before?.editedTexts });
+          if (record.before?.editedTexts) applyReleasedWelcome(value, required, record);
+          else {
+            // OP-153 keeps the old text as a draft on the explicit expiry read.
+            setDraft(record.payload.texts);
+            setReleasedFrom(record.before);
+          }
           setReason(""); setLatest(null); setSaved(false); setConflict(false);
           setReadUnavailable(false); setConfirm(false); setError("");
         };
       },
     },
-    onSuccess: () => { refused.current = undefined; setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
+    onSuccess: () => { refused.current = undefined; setReleasedFrom(undefined); setConfirm(false); setLoading(true); setReadUnavailable(true); setSaved(true); setReason(""); setReload(n => n + 1); },
     onRefusal: (cause, recovered, payload, before) => {
       setError(errorText(cause));
       if (recovered) {
@@ -102,7 +134,8 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     },
   });
   const saving = command.busy || checkingLanguages;
-  const retry = command.pending ? { ...command.pending, key: command.pending.commandKey } : null;
+  const pending = command.pending;
+  const retry = pending && !command.submitting ? pending : null;
 
 
   useEffect(() => {
@@ -118,7 +151,9 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
       } else {
         refused.current = undefined;
         setCurrent(value);
-        setDraft(pending?.payload.texts ?? { ...mapSingleContentText(value.texts, required, "edit"), ...rejected?.before?.editedTexts });
+        const released = releasedRecord.current;
+        if (released && released.actorId === adminId) applyReleasedWelcome(value, required, released);
+        else setDraft(pending?.payload.texts ?? { ...mapSingleContentText(value.texts, required, "edit"), ...rejected?.before?.editedTexts });
         setLatest(null); setConflict(false);
       }
       setError(""); setReadUnavailable(false);
@@ -133,8 +168,8 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const valid = Boolean(submittedTexts) && problems.every((problem) => !problem);
   const changed = current && submittedTexts ? changedLanguages(current.texts, submittedTexts) : [];
   const editable = canWrite && Boolean(current) && !loading && !readUnavailable && !saving && !conflict && !retry;
-  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
-  const canConfirm = editable && valid && changed.length > 0 && reasonOk;
+  const reasonRule = useMOperationReason(confirm && canWrite && !retry, retry?.payload.reason ?? reason);
+  const canConfirm = editable && valid && changed.length > 0 && reasonRule.ok;
 
   async function save() {
     if (saving) return;
@@ -163,6 +198,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     const next = mapSingleContentText(latest.texts, requiredLanguages, "edit");
     for (const key of edited) next[key] = draft[key];
     refused.current = undefined;
+    setReleasedFrom(current);
     setCurrent(latest); setDraft(next); setLatest(null); setConflict(false); setConfirm(false); setReason(""); setError("");
   }
 
@@ -175,40 +211,44 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const reloadAfterExpiry = () => command.run("load-latest");
   const restore = () => {
     if (!retry) return;
+    releaseOpener.current = null;
     setDraft(retry.payload.texts); setReason(retry.payload.reason); setError(""); setConfirm(true);
   };
   const original = retry?.before ?? (retry ? { version: retry.payload.expectedVersion, texts: retry.payload.texts, updatedAt: null, updatedBy: null, reason: null } : current);
 
-  const retryExpired = Boolean(command.recoveryState?.expired);
-  const loadExpired = retryExpired && Boolean(authorities?.includes("service_m1_read"));
+  const retryExpired = Boolean(retry && command.recoveryState?.expired);
+  const loadExpired = retryExpired && canLoadLatest;
   useEffect(() => {
     onSummary?.({ state: loading ? "loading" : readUnavailable ? "failed" : current ? "ready" : "failed", updatedAt: current?.updatedAt ?? null, pending: Boolean(retry) });
   }, [onSummary, current, loading, command.pending, readUnavailable]);
   const shownTexts = draft ?? current?.texts;
   const langLabel = LANGUAGES.find((item) => item.key === lang)?.label ?? lang;
-  const submittedAt = retry ? retry.expiresAt - PENDING_MUTATION_TTL_MS : 0;
+  const submittedAt = pending ? pending.expiresAt - PENDING_MUTATION_TTL_MS : 0;
   const updatedText = current?.updatedAt ? formatBusinessTime(current.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
   const errorTone = /查不到|还在处理|仍在处理|24 小时/.test(error) ? "warn" : "danger";
-  const view = retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: EXPIRED_LINE });
+  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canLoadLatest ? EXPIRED_LINE : RETRY_EXPIRED_TEXT });
   const replayRefused = Boolean(command.recoveryState?.replayRejection);
   const querying = command.recoveryState?.busy === "query";
-  const canQuery = Boolean(authorities?.includes("service_m1_read"));
+  const recoveryLine = view && `${view.line}${retry && !canQuery ? "查询欢迎语原结果需要超级管理员和客服工作台查看权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
+  const comparisonBefore = conflict ? current : releasedFrom;
+  const comparisonAfter = conflict ? latest : current;
+  const externalChanges = comparisonBefore && comparisonAfter ? changedLanguages(comparisonBefore.texts, comparisonAfter.texts) : [];
   const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改欢迎语" : retryExpired ? EXPIRED_LINE : pendingReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
   const changeText = retry ? `改了${(retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key)).map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、") || "内容"}` : "";
 
   return (
     <section className="m5-welcome" aria-label="新用户欢迎语">
-      {retry && view && <M5PendingWrites explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：「加载最新内容」读到后这条记录就解除，改过的文字留作草稿。有结论前欢迎语不能再改。</p></>} rows={[{
-        key: retry.key, name: "新用户欢迎语", submittedAt, expired: retryExpired, change: changeText,
-        status: view, note: <>{view.line}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
-        actions: <>
-          <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void checkPending()}>查询原结果</Button>
+      {pending && view && <M5PendingWrites submitting={command.submitting} explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：「加载最新内容」读到后这条记录就解除，改过的文字留作草稿。有结论前欢迎语不能再改。</p></>} rows={[{
+        key: pending.commandKey, name: "新用户欢迎语", submittedAt, expired: retryExpired, change: changeText,
+        status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
+        actions: retry && <>
+          {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
           {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原请求重试</Button>}
-          {loadExpired && <Button size="sm" variant="primary" loading={saving && !querying} disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>}
-          {replayRefused && <Button size="sm" variant="ghost" disabled={saving || !canQuery} onClick={() => setReleasing(true)}>核实后解除</Button>}
+          {loadExpired && <Button size="sm" variant="primary" loading={saving && !querying} loadingText="提交中…" disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>}
+          {replayRefused && canRelease && <Button size="sm" variant="ghost" disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
         </>,
       }]} />}
-      {retry && releasing && <MReleaseModal target={{ action: "保存新用户欢迎语", object: changeText, createdAt: retry.createdAt, rejection: command.recoveryState?.replayRejection }}
+      {retry && releasing && canRelease && <MReleaseModal returnFocus={returnFocus} target={{ action: "保存新用户欢迎语", object: changeText, createdAt: retry.createdAt, rejection: command.recoveryState?.replayRejection }}
         where="被拒说明不了原操作有没有生效，先核实。" onCancel={() => setReleasing(false)} onConfirm={() => {
           const released = command.releaseRejectedReplay();
           setReleasing(false);
@@ -257,26 +297,26 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
             <p className="m5-preview-note">只对之后注册的用户生效，已注册的不受影响。</p>
           </div>
         </div>}
-        {conflict && current && <Notice tone="warn" title="欢迎语已被别人改过" actionBelow
-          action={latest ? <Button size="sm" onClick={reviewLatest}>按最新内容重新核对</Button> : <Button size="sm" onClick={() => void refreshLatest()}>加载最新内容</Button>}>
-          <p>{latest ? `现在是第 ${latest.version} 版，你改的是第 ${current.version} 版。` : "还没读到最新内容。"}你填的内容还在。</p>
-          {latest && <ul className="m5-plain-list">{changedLanguages(current.texts, latest.texts).map((key) => <li key={key}>{LANGUAGES.find((item) => item.key === key)?.label}：已被改为「{latest.texts[key]}」</li>)}</ul>}
+        {(conflict || externalChanges.length > 0) && <Notice tone="warn" title="欢迎语已被别人改过" actionBelow
+          action={conflict ? latest ? <Button size="sm" onClick={reviewLatest}>按最新内容重新核对</Button> : <Button size="sm" onClick={() => void refreshLatest()}>加载最新内容</Button> : undefined}>
+          <p>{comparisonAfter && comparisonBefore ? `现在是第 ${comparisonAfter.version} 版，你改的是第 ${comparisonBefore.version} 版。` : "还没读到最新内容。"}{conflict ? "你填的内容还在。" : "你改过的文字已带到最新内容，请核对后重新确认。"}</p>
+          {comparisonAfter && <ul className="m5-plain-list">{externalChanges.map((key) => <li key={key}>{LANGUAGES.find((item) => item.key === key)?.label}：已被改为「{comparisonAfter.texts[key]}」</li>)}</ul>}
         </Notice>}
         {draft && current && permission === "superadmin" && !(readUnavailable && !retry) && <div className="rd-toolbar" data-end="">
-          <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : changed.length > 0 ? `改了${changed.map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、")}，还没保存` : "没有改动"}</span>
-          <Button variant="primary" icon={<Save size={14} aria-hidden />} disabled={retry ? false : !editable || !valid || changed.length === 0}
+          <span className="rd-toolbar-note">{retry ? "上次保存结果未知，先处理它" : command.submitting ? "提交中…" : changed.length > 0 ? `改了${changed.map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、")}，还没保存` : "没有改动"}</span>
+          <Button ref={formAction} variant="primary" icon={<Save size={14} aria-hidden />} disabled={retry ? false : !editable || !valid || changed.length === 0}
             disabledReason={!retry && editable && changed.length === 0 ? "还没有改动" : !retry && editable && !valid ? "内容未通过校验：请检查英文和必填语言是否已填、每种语言不超过 500 字，以及修改理由，再提交。" : undefined}
             onClick={() => retry ? restore() : setConfirm(true)}>{retry ? "查看结果未知的保存" : "预览并保存"}</Button>
         </div>}
       </Panel>
-      {confirm && !(retry && releasing) && original && draft && permission === "superadmin" && <Modal title="保存新用户欢迎语" icon={MessageCircleHeart} wide busy={saving} onClose={() => { if (!saving) setConfirm(false); }}
+      {confirm && !(retry && releasing) && original && draft && permission === "superadmin" && <Modal title="保存新用户欢迎语" icon={MessageCircleHeart} wide busy={saving} returnFocus={returnFocus} onClose={() => { if (!saving) setConfirm(false); }}
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
           <Button disabled={saving} onClick={() => setConfirm(false)}>取消</Button>
-          {retry && <Button variant={command.canReplay || replayRefused || retryExpired ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void checkPending()}>查询原结果</Button>}
-          {retry && replayRefused && <Button disabled={saving || !canQuery} onClick={() => setReleasing(true)}>核实后解除</Button>}
-          {retry && retryExpired ? <Button variant="primary" loading={saving && !querying} disabled={saving || !canQuery} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>
-            : !(retry && replayRefused) && <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} disabled={!canWrite || (retry ? !command.canReplay : !canConfirm) || saving} disabledReason={saving ? undefined : retry ? replayReason : !reasonOk ? "操作理由要 8–200 字" : undefined} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
+          {retry && canQuery && <Button variant={command.canReplay || replayRefused || retryExpired ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
+          {retry && replayRefused && canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
+          {retry && retryExpired ? loadExpired && <Button variant="primary" loading={saving && !querying} disabled={saving} onClick={() => void reloadAfterExpiry()}>加载最新内容</Button>
+            : !(retry && replayRefused) && <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} loadingText="提交中…" disabled={!canWrite || (retry ? !command.canReplay : !canConfirm) || saving} disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
         </>}>
         <div className="m5-wdiff">
           {(retry ? retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key) : changed).map((key) => <div key={key} className="m5-wdiff-row">
@@ -290,11 +330,11 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <Fact k="不变的">已经注册的用户不会再收到；已发出的欢迎语不改</Fact>
         </Facts>
         {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
-          <p>{view.line}</p>
+          <p>{recoveryLine}</p>
           <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}
-        <Field label="操作理由" required hint="至少 8 字">
-          {(control) => <Textarea {...control} rows={3} value={reason} maxLength={200} disabled={saving || Boolean(retry)} count={`${reason.trim().length}/200`} placeholder="例如：活动期间欢迎语加上新手指引" onChange={(event) => setReason(event.target.value)} />}
+        <Field label="操作理由" required hint={retry ? undefined : reasonRule.hint} error={!retry && reason ? reasonRule.fieldError : undefined}>
+          {(control) => <Textarea {...control} rows={3} value={retry?.payload.reason ?? reason} disabled={saving || Boolean(retry)} count={reasonRule.count} placeholder="例如：活动期间欢迎语加上新手指引" onChange={(event) => setReason(event.target.value)} />}
         </Field>
         {(retry ? error : error || command.message) && <Notice tone={errorTone}>{(retry ? "" : command.message) || error}</Notice>}
       </Modal>}

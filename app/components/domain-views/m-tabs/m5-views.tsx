@@ -72,11 +72,11 @@ export type M5PendingRow = { key: string; name: ReactNode; change: ReactNode; su
   status?: { tone: StateTone; label: string }; note?: ReactNode };
 
 /** 结果未知的写操作逐条列出（和 G 域、M4 同一个排法）：改的是什么、从什么改成什么、什么时候提交、查询原结果、按原请求重试。 */
-export function M5PendingWrites({ rows, explain }: { rows: readonly M5PendingRow[]; explain?: ReactNode }) {
+export function M5PendingWrites({ rows, explain, submitting = false }: { rows: readonly M5PendingRow[]; explain?: ReactNode; submitting?: boolean }) {
   if (rows.length === 0) return null;
   return (
-    <Notice tone="warn" title={<>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content={explain ?? "提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。页面上的现状证明不了原操作有没有执行。有结论前同一项不能再改。"} /></>}>
-      <ul className="m5-pending" aria-label="结果未知的操作">
+    <Notice tone="warn" title={submitting ? "提交中…" : <>有 {rows.length} 个操作结果未知<Explain label="结果未知怎么处理" content={explain ?? "提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。页面上的现状证明不了原操作有没有执行。有结论前同一项不能再改。"} /></>}>
+      <ul className="m5-pending" aria-label={submitting ? "正在提交的操作" : "结果未知的操作"}>
         {rows.map((row) => (
           <li key={row.key}>
             <span className="m5-pending-name">{row.name}</span>
