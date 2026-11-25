@@ -12,6 +12,8 @@
  * - IconButton 只有图标，aria-label 同时是悬停和聚焦时的提示。
  * - disabledReason 让按钮不可点但仍可聚焦，悬停和聚焦都能看到原因，读屏也读得到（DP-42）。
  *   没有原因的场景才用原生 disabled。onBlockedClick 是这时点一下要做的事，比如把字段错误亮出来。
+ * - 调用方传 aria-disabled（true）时同样不可点、仍可聚焦、读屏读出不可用，按钮节点不换：
+ *   状态来回切的地方（分页条加载中、到首页末页）用它，原生 disabled 一按下焦点就掉到页面上，disabledReason 切换时会多包一层提示、换节点（BUG-746）。
  * - 弹窗和抽屉的底栏（TipSide side="left"）里，原因气泡朝左开：按钮贴着右下角，朝上开会盖住上面理由框的字数
  *   （Ant Design Tooltip 的 placement="left"）。放不下时照常翻边。
  * - 贴着窗口右边、朝上开的（抽屉底栏里旁边有别的按钮时）传 TipSide align="end"，气泡和按钮右边对齐（placement="topRight"）。
@@ -53,8 +55,8 @@ function WithReason({ reason, id, children }: { reason: ReactNode; id?: string; 
 }
 
 function blockedProps(props: CommonProps, reasonId: string) {
-  const { loading, disabledReason, onBlockedClick, onClick, disabled, ...rest } = props;
-  const blocked = Boolean(loading || disabledReason);
+  const { loading, disabledReason, onBlockedClick, onClick, disabled, "aria-disabled": ariaDisabled, ...rest } = props;
+  const blocked = Boolean(loading || disabledReason || ariaDisabled === true || ariaDisabled === "true");
   return {
     ...rest,
     type: rest.type ?? ("button" as const),

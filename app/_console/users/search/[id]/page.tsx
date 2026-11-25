@@ -730,6 +730,9 @@ export default function UserDetailPage() {
   // 撤销告警按全部支付方式算（含已解绑、含别的页），不跟着列表的筛选和翻页走。
   const [revokeScan, setRevokeScan] = useState<UserPaymentMethod[] | null>(null);
   const [revokeScanFailed, setRevokeScanFailed] = useState(false);
+  const paymentReadSeq = useRef(0);
+  // 表里现在画的是哪个条件读到的行：换了条件、新的还在读时，表格先占位，不显示旧条件的行（03 ST-32）。
+  const [paymentShownKey, setPaymentShownKey] = useState("");
   const [paymentSecurity, setPaymentSecurity] = useState<{ state: PaymentSecurityState; pending: boolean }>({ state: "loading", pending: false });
   const [openFolds, setOpenFolds] = useState<Record<string, boolean>>({});
   const [openRecordList, setOpenRecordList] = useState<RecordKind | "audit" | null>();
@@ -852,7 +855,8 @@ export default function UserDetailPage() {
     const active = () => generation === requestGeneration.current && currentReadKey.current === readKey && !controller.signal.aborted;
     // Keep folds that were open or closed by default before replacing the data.
     setOpenFolds(current => ({
-      security: securityAlert || securityFailed,
+      // 支付安全正在重读时「安全」组也按开着存，不存成收起（BUG-746 I05）。
+      security: securityKeepOpen,
       funds: fundsFailed || fundsAlert,
       devices: devicesFailed || devicesAlert,
       team: teamFailed || countsAlert,
@@ -947,6 +951,8 @@ export default function UserDetailPage() {
 
   const loadPaymentMethods = useCallback(async () => {
     if (supportScope || !userId) return;
+    // 连着切筛选会并发读：只认最后一次，旧回包不覆盖当前条件、不提前结束加载（03 ST-27、ST-32）。
+    const seq = ++paymentReadSeq.current;
     setPaymentLoading(true);
     const scan = async () => {
       const all: UserPaymentMethod[] = [];
@@ -957,7 +963,8 @@ export default function UserDetailPage() {
       }
     };
     const [listed, scanned] = await Promise.allSettled([fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10), scan()]);
-    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
+    if (seq !== paymentReadSeq.current) return;
+    if (listed.status === "fulfilled") { setPaymentMethods(listed.value); setPaymentShownKey(`${userId}|${includeUnbound}|${paymentPage}`); setPaymentError(null); } else setPaymentError(displayAdminReadError(listed.reason));
     setRevokeScan(scanned.status === "fulfilled" ? scanned.value : null);
     setRevokeScanFailed(scanned.status === "rejected");
     setPaymentLoading(false);
@@ -984,7 +991,9 @@ export default function UserDetailPage() {
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
   // 超过 5 条只先列最近 5 条，其余收在「查看全部」后面（VS-109）；和时间线同样按时间排，再取前 5 条。
   const auditRecent = useMemo(() => [...auditEntries].sort((a, b) => parseBusinessTime(b.at) - parseBusinessTime(a.at)).slice(0, 5), [auditEntries]);
-  const methods = useMemo(() => paymentMethods?.items ?? [], [paymentMethods]);
+  // 不看 paymentLoading：换条件后的第一帧读取还没开始，也不能画旧条件的行。
+  const paymentConditionStale = paymentShownKey !== `${userId}|${includeUnbound}|${paymentPage}`;
+  const methods = useMemo(() => paymentConditionStale ? [] : paymentMethods?.items ?? [], [paymentConditionStale, paymentMethods]);
   const unfinishedRevokes = useMemo(() => (revokeScan ?? []).filter(revokeUnfinished), [revokeScan]);
   const devices = useMemo(() => asArray(detail?.devices?.records), [detail?.devices?.records]);
   const deposits = useMemo(() => asArray(detail?.deposits?.records), [detail?.deposits?.records]);
@@ -1259,7 +1268,14 @@ export default function UserDetailPage() {
   // 能看登录安全的角色 sessions 总在，这时 security 是空就是这一项读失败了，后端把它写成 false，不能当没问题（DP-65）。
   const securityUnread = !!detail?.sessions && detail.security == null;
   const securityAlert = paymentSecurity.state === "exception" || paymentSecurity.pending || summary.locked === true || unfinishedRevokes.length > 0;
-  const securityFailed = paymentSecurity.state === "failed" || !!paymentError || revokeScanFailed || securityUnread;
+  // 支付方式重读在途时不算失败（03 ST-30）：读完仍失败才回到失败。
+  const paymentFailed = !!paymentError && !paymentLoading;
+  const revokeFailed = revokeScanFailed && !paymentLoading;
+  // 失败后的重读在途：旧失败退场，页面按「正在核对」写，不拿旧列表下「正常」的结论。
+  const paymentRereading = paymentLoading && (!!paymentError || revokeScanFailed);
+  const securityFailed = paymentSecurity.state === "failed" || paymentFailed || revokeFailed || securityUnread;
+  // 支付安全重读在途时「安全」组不收起：页头「刷新」、更新事件触发的重读不经过「重试」，没手动展开过的组不先收起再展开（BUG-746）。颜色仍只按异常和失败。
+  const securityKeepOpen = securityAlert || securityFailed || paymentRereading || paymentSecurity.state === "reloading";
   const latestFundsFailed = detail?.latestDepositStatus === "ERROR" || detail?.latestWithdrawalStatus === "ERROR";
   const fundsFailed = failedSection(detail?.deposits, detail?.withdrawals, detail?.financial, detail?.account) || ledgerUnread || latestFundsFailed;
   const fundsAlert = withdrawalExceptions + withdrawalsWaiting > 0;
@@ -1283,7 +1299,7 @@ export default function UserDetailPage() {
     ? { id, label: `${name} · 加载失败` }
     : count ? { id, label: `${name} ${count}`, alert: true } : { id, label: waiting ? `${name} · ${waiting}` : name };
   const sections: SectionNavItem[] = [
-    securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果未知" : ""),
+    securityPresent && navItem("security", "安全", securityFailed, securityIssues > 0 ? `${securityIssues} 项` : "", paymentSecurity.pending ? "解除结果未知" : paymentSecurity.state === "reloading" ? "正在重新加载" : ""),
     fundsPresent && navItem("funds", "资金", fundsFailed, withdrawalExceptions > 0 ? `${withdrawalExceptions} 笔` : "", withdrawalsWaiting > 0 ? `${withdrawalsWaiting} 笔待处理` : ""),
     devicesPresent && navItem("devices", "设备与收益", devicesFailed, deviceExceptions > 0 ? `${deviceExceptions} 台` : ""),
     // 推荐团队整块重读在途时页签不写「加载失败」，和块里只留「重试中…」一致（ST-30，R26）。
@@ -1334,8 +1350,9 @@ export default function UserDetailPage() {
       <RdPage>
         <PageHeader title={pageName} back={<Link href={returnTo} prefetch={false}><ArrowLeft size={14} aria-hidden /> {returnLabel}</Link>} />
         {writeResultNotice}
+        {/* 无权限卡也用同一个 key：重试回 403 时这一块不卸下，焦点留在这张卡上，不掉到整页外框（BUG-746）。 */}
         {denied
-          ? <BlockState state="denied" title="无权限访问" detail={error} />
+          ? <BlockState key="profile-read" state="denied" title="无权限访问" detail={error} />
           : <BlockState key="profile-read" retryKey="page-1330" state="error" title={`${supportScope ? "客户资料" : "用户详情"}加载失败`} detail={error} onRetry={() => void load()} afterRetryFocus={PROFILE_FIRST_BLOCK} />}
       </RdPage>
     );
@@ -1409,12 +1426,12 @@ export default function UserDetailPage() {
   const unreadable = [
     securityUnread && "账号锁定和两步验证",
     paymentSecurity.state === "failed" && "支付安全",
-    paymentError && "支付方式",
-    !paymentError && revokeScanFailed && "支付方式的撤销状态",
+    paymentFailed && "支付方式",
+    !paymentError && revokeFailed && "支付方式的撤销状态",
     ledgerUnread && "账单流水",
     (failedSection(detail.deposits, detail.withdrawals, detail.financial, detail.account) || latestFundsFailed) && "资金",
     failedSection(detail.devices, detail.earnings) && "设备与收益",
-    teamFailed && "团队与互动",
+    teamFailed && !referralRetrying && "团队与互动",
     recordsFailed && "记录",
     detail.financial?.totalsStatus === "ERROR" && "累计金额",
     detail.risk && !riskAuthorityReady && !supportScope && "风险分",
@@ -1431,7 +1448,7 @@ export default function UserDetailPage() {
     detail.commerce && "最近 50 单订单",
     detail.notifications && "通知推送失败",
   ].filter((value): value is string => !!value);
-  const checking = paymentSecurityPort && paymentSecurity.state === "loading" || !supportScope && (!paymentMethods && !paymentError || !revokeScan && !revokeScanFailed);
+  const checking = paymentSecurityPort && (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") || !supportScope && (paymentRereading || !paymentMethods && !paymentFailed || !revokeScan && !revokeFailed) || referralRetrying;
   const firstIssue = issues.find((issue) => issue.go);
   const firstGo = firstIssue?.go;
   const c2Link = canReadC2 && !supportScope
@@ -1456,7 +1473,7 @@ export default function UserDetailPage() {
         : unreadable.length > 0
           ? <Conclusion state="unknown" hint={`${unreadText}，这部分没有判断。${paymentScopeNote}`} explain={checkedExplain}>账户正常，{unreadCount}</Conclusion>
           : checking
-            ? <Conclusion state="unknown" hint={paymentScopeNote || undefined}>账户正常，正在核对其余项目…</Conclusion>
+            ? <Conclusion state="unknown" hint={paymentScopeNote || undefined}>{paymentSecurity.state === "reloading" ? "已读到的项目没发现问题，正在重新加载支付安全…" : "已读到的项目没发现问题，正在核对其余项目…"}</Conclusion>
             // 结果未确认在下面的提示里写一次，这里不写「没发现问题」，也不再说一遍（VS-105）。
             : pendingCount > 0
               ? paymentScopeNote ? <Conclusion state="unknown" explain={checkedExplain}>{paymentScopeNote}</Conclusion> : null
@@ -1625,13 +1642,13 @@ export default function UserDetailPage() {
   // 摘要只给收起时看，展开后下面有同样的数（DP-61）。有异常时只写异常。
   const foldSummary = (group: string, alert: boolean, text: string) => (openFolds[group] ?? alert) ? "" : text;
   const securityText = securityFailed
-    ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentError && "支付方式加载失败", !paymentError && revokeScanFailed && "撤销状态加载失败"])
+    ? joined([securityUnread && "账号锁定和两步验证暂时无法确认", paymentSecurity.state === "failed" && "支付安全暂时无法确认", paymentFailed && "支付方式加载失败", !paymentError && revokeFailed && "撤销状态加载失败"])
     : securityAlert
       ? joined([summary.locked === true && "账号已锁定", paymentSecurity.state === "exception" && "支付密码有异常", paymentSecurity.pending && "支付密码解除结果未知", unfinishedRevokes.length > 0 && `${unfinishedRevokes.length} 张卡仍可能被扣款`])
       : joined([
         detail.sessions && `在线登录设备 ${numberLabel(summary.activeSessionCount)}`,
         detail.sessions && `两步验证${summary.twoFactorEnabled ? "开启" : "关闭"}`,
-        paymentSecurity.state === "clear" ? "支付密码无异常" : paymentSecurity.state === "loading" && "正在加载…",
+        paymentSecurity.state === "clear" ? "支付密码无异常" : (paymentSecurity.state === "loading" || paymentSecurity.state === "reloading") && "正在加载…",
         !supportScope && paymentCount !== null && `支付方式 ${paymentCount} 张`,
       ]);
   const fundsIssue = joined([withdrawalExceptions > 0 && `${withdrawalExceptions} 笔提现异常`, withdrawalsWaiting > 0 && `${withdrawalsWaiting} 笔提现等待处理`]);
@@ -1747,7 +1764,7 @@ export default function UserDetailPage() {
 
       <div className="rd-detail-groups">
         {securityPresent && <div id={nav.anchor("security")}>
-          <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityAlert || securityFailed, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityAlert || securityFailed)}>
+          <Fold title="安全" icon={ShieldCheck} tone="role-3" summary={foldSummary("security", securityKeepOpen, securityText)} alertTone={securityFailed ? "danger" : "warn"} {...foldProps("security", securityKeepOpen)} alert={securityAlert || securityFailed}>
             {detail.sessions && <Block title="登录安全" {...listProps("session")} section={{ sourceStatus: "READY" }} issue={summary.locked === true ? "账号已锁定" : undefined} sub={filteredSessions.length > C1_SESSION_PAGE_SIZE ? "最近 50 条登录记录" : `最近 50 条登录记录 · 筛选后 ${filteredSessions.length} 条`} explain="这是最近最多 50 条样本，不是全部历史。登录记录读取失败时也显示为空，0 条或没有记录不能证明没登录过。">
               <Values rows={[
                 ["在线登录设备", numberLabel(summary.activeSessionCount)],
@@ -1763,12 +1780,12 @@ export default function UserDetailPage() {
               <PaymentSecurityBlock key={`${readKey}|${paymentSecurityPort.key}`} port={paymentSecurityPort} userLabel={`${displayNickname} · ${userNo}`} reloadKey={reloadTick} canRelease={canReleasePayment} writeBlockedReason={profileWriteBlockedReason} onWriteBusy={setPaymentWriteBusy}
                 onState={onPaymentSecurity} onRetry={() => keepFoldOpen("security")} />
             </div>}
-            {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError} failureRetry={{ onRetry: () => { keepFoldOpen("security"); void loadPaymentMethods(); }, retrying: paymentLoading }}
+            {!supportScope && <Block id="hub-payment-methods" title="支付方式" {...listProps("payment")} section={{ sourceStatus: "READY" }} failure={paymentError} failureRetry={{ onRetry: () => { keepFoldOpen("security"); void loadPaymentMethods(); }, retrying: paymentLoading }} reloading={paymentLoading && !!paymentError}
               sub={paymentMethods && paymentMethods.total > 0 ? `${paymentMethods.total} 条` : undefined}
               issue={unfinishedRevokes.length > 0 ? `${unfinishedRevokes.length} 张卡仍可能被扣款` : undefined} issueTone="danger"
-              actions={<Button size="sm" aria-label="刷新支付方式" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => void loadPaymentMethods()}>刷新</Button>}>
+              actions={<Button size="sm" aria-label="刷新支付方式" icon={<RefreshCcw size={13} aria-hidden />} loading={paymentLoading} onClick={() => { keepFoldOpen("security"); void loadPaymentMethods(); }}>刷新</Button>}>
               <Check label="显示已解绑" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); setRecord(null); }} />
-              {revokeScanFailed && <Notice tone="warn">撤销状态读取失败：已解绑的卡有没有撤销完暂时无法确认，点这一行的「刷新」重读。</Notice>}
+              {revokeScanFailed && (paymentLoading ? <p className="rd-note" role="status">正在重新读取撤销状态…</p> : <Notice tone="warn">撤销状态读取失败：已解绑的卡有没有撤销完暂时无法确认，点这一行的「刷新」重读。</Notice>)}
               {unfinishedRevokes.map((method) => (
                 <Notice key={method.id} tone={method.revokeDeadlineAt && new Date(method.revokeDeadlineAt).getTime() < Date.now() ? "danger" : "warn"} title={`${method.brand} ···· ${method.last4}`}>
                   我们这边已解绑，但支付商那边{method.pspRevokeStatus === "FAILED" ? "撤销失败" : "还在处理"}，这张卡仍可能被扣款，还不算彻底解绑。
@@ -1776,7 +1793,7 @@ export default function UserDetailPage() {
                   <Explain label="撤销详情" content={[method.revokeCommandNo && `命令 ${method.revokeCommandNo}`, method.revokeAttempts && `已重试 ${method.revokeAttempts} 次`, method.revokeLastError].filter(Boolean).join(" · ") || "暂无更多信息"} />
                 </Notice>
               ))}
-              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading ? "正在加载支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
+              <RecordTable label="支付方式" rows={methods} columns={paymentColumns} empty={paymentLoading || paymentConditionStale ? "正在加载支付方式…" : "该用户暂无支付方式"} {...recordProps("payment")} />
               {!!paymentMethods && paymentMethods.total > paymentMethods.pageSize && <Pager label="支付方式" total={paymentMethods.total} page={paymentMethods.page} pageSize={paymentMethods.pageSize} sizes={[paymentMethods.pageSize]} loading={paymentLoading} onPage={(page) => { setRecord(null); setPaymentPage(page); }} onPageSize={() => undefined} />}
             </Block>}
           </Fold>
