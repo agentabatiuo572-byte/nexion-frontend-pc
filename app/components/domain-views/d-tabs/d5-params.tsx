@@ -87,7 +87,6 @@ import {
   type WithdrawalReplayObservation,
   type WithdrawalProposalLookup,
   WITHDRAWAL_CONFIG_READ_FAILED,
-  WITHDRAWAL_SUBMISSION_CONFIRMED,
   type WithdrawalApprovalReceipt,
 } from "@/lib/admin/withdrawal-config-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -1097,7 +1096,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const copy = { missingOrigin: "只能按原请求编号查审批单进度；这条记录早于执行核查，查不了更细的执行结果。" };
       return { key, title: "放宽提现参数", record: loosenRecord, outcome, createdAt: loosenRecord.createdAt, expired, canRetry: !expired && !retryDisabled && !confirmed,
         canQuery: canLookupOwn, copy,
-        status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED
+        status: confirmed ? withdrawalApprovalLookupStatus(proposalLookups[key], undefined, expired, true)
           // TRC20 确认费的限制排在查询失败前面：查询再成功也解不开它，要一直看得到（OP-126）。
           : loosenReplayBlock && !expired && !processing
           ? queryOnlyStatus(loosenReplayBlock, withdrawalApprovalLookupStatus(proposalLookups[key], outcome, expired)

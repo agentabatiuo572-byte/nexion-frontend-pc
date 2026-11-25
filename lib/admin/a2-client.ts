@@ -57,6 +57,14 @@ export class A2OutcomeUncertainError extends Error {
   }
 }
 
+/** 按原号查到的审批单缺字段：调用方按类型认，不比对显示文字。 */
+export class A2ProposalReceiptIncompleteError extends Error {
+  constructor() {
+    super("提交结果不完整，请稍后再查。");
+    this.name = "A2ProposalReceiptIncompleteError";
+  }
+}
+
 export function isA2OutcomeUncertainError(error: unknown): error is A2OutcomeUncertainError {
   const candidate = error as (Error & { commandKey?: unknown }) | null;
   return error instanceof A2OutcomeUncertainError
@@ -1053,13 +1061,13 @@ function hasProposalTicketFacts(row: BackendTicket) {
 export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
-    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new Error("提交结果不完整，请稍后再查。");
+    if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new A2ProposalReceiptIncompleteError();
     // A requires raw action; F does not. B5 additionally requires operation metadata and normalizes status.
     if (strictTicket && strictTicket !== "h8" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
       || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(strictTicket === "metadata" ? row.status.trim().toLowerCase() : row.status)
       || strictTicket !== "f" && typeof row.action !== "string"
       || strictTicket === "metadata" && typeof row.operationCode !== "string")) {
-      throw new Error("提交结果不完整，请稍后再查。");
+      throw new A2ProposalReceiptIncompleteError();
     }
     if (strictTicket === "h8" && !validH8CommandTicket(row)) throw new Error("H8_PROPOSAL_RECEIPT_INVALID");
     return (await withRoleGrantsNames([fromTicket(row)]))[0];

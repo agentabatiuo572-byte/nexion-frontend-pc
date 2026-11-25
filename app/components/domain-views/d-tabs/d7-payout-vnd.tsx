@@ -43,7 +43,7 @@ import {
   withdrawalApprovalReplayQueryBlock, withdrawalApprovalLookupStatus, lookupWithdrawalApproval, type WithdrawalProposalLookup,
   withdrawalDirectRecoveryStatus, withdrawalReplayQueryBlock, rememberWithdrawalProcessing,
   WITHDRAWAL_COMMAND_PROCESSING, WITHDRAWAL_CONFIG_READ_FAILED, WITHDRAWAL_REPLAY_RESEND,
-  WITHDRAWAL_SUBMISSION_CONFIRMED, type WithdrawalReplayObservation, type WithdrawalApprovalReceipt,
+  type WithdrawalReplayObservation, type WithdrawalApprovalReceipt,
 } from "@/lib/admin/withdrawal-config-approval";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -739,7 +739,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     }
     return { key: approval.commandKey, title: "放宽提交", record: approval, outcome, createdAt: approval.createdAt, expired, canRetry: !expired && !confirmed && !retryDisabled,
       canQuery: canQueryOriginal, copy: { missingOrigin: "只能查审批单进度，查不了更细的执行结果。" },
-      status: confirmed ? WITHDRAWAL_SUBMISSION_CONFIRMED
+      status: confirmed ? withdrawalApprovalLookupStatus(proposalLookups[approval.commandKey], undefined, expired, true)
         : withdrawalApprovalLookupStatus(proposalLookups[approval.commandKey], outcome, expired)
         ?? (approval.withdrawalStillProcessing ? WITHDRAWAL_COMMAND_PROCESSING
           : !expired && !canQueryOriginal ? { tone: "warn", label: "结果未知", line: "这个账号查不了原审批单，请有权限的同事核对。" }

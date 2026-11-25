@@ -264,8 +264,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       renderNotice: action => <H4StaleNote readLatest={action} />,
     }, "H7_VOUCHER_STALE");
   };
-  // 暂停、投放被「别人先改过」挡下：确认框不关，框里说明并给「读取最新」（OP-81、OP-97）。
-  // 读到后按最新状态重新核对：已是目标状态或券已不在就只留提示和「取消」；仍可操作时用最新版本重建这个框，理由清空。
+  // 暂停、投放被「别人先改过」挡下：确认框不关，框里说明并给「读取最新」，已填的理由先留着（OP-81、OP-97）。
+  // 读到后按最新状态重新核对：已是目标状态、券已不在或已不能做这个动作就只留提示和「取消」；仍可操作时用最新版本重建这个框（理由此时清空），并列出别人改了什么。
   const statusStale = (voucher: OpsVoucher) => {
     const label = voucher.status === "active" ? "暂停" : "投放";
     return new ConfirmReadConflict({
@@ -277,13 +277,15 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       if (latest.status !== voucher.status) {
         throw new ConfirmReadConflict(undefined, `「${latest.name}」现在已经是${latest.status === "active" ? "投放中" : "已暂停"}，不用再${label}，关闭即可。`, true);
       }
-      const blocked = blockNew(latest.id);
+      // 和卡片上「投放」按钮同一个判断：已过有效期不能投放。
+      const blocked = blockNew(latest.id) ?? (latest.status !== "active" && voucherPhase(latest, Date.now()) === "expired" ? "已过有效期，不能投放；先编辑有效期" : undefined);
       if (blocked) throw new ConfirmReadConflict(undefined, blocked, true);
-      openToggle(latest);
+      openToggle(latest, undefined, undefined, voucher);
       return true;
     },
+    preserveReason: true,
     renderNotice: action => <Notice tone="warn" title={`别人先改过，这次没有${label}`}
-      action={<Button size="sm" onClick={action}>读取最新</Button>}>读取最新后按最新状态重新确认，理由要重填。</Notice>,
+      action={<Button size="sm" onClick={action}>读取最新</Button>}>读取最新后按最新状态重新确认，那时理由要重填。</Notice>,
     }, "H7_VOUCHER_STALE");
   };
   const executeDirect = async (record: H7DirectMutation, recovering: boolean, editor?: FormState, after?: () => void) => {
@@ -425,12 +427,15 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  const openToggle = (v: OpsVoucher, restored?: H7DirectMutation, initialRecovery?: "lookup" | "retry") => {
+  /** opened：版本冲突后按最新版本重建时，打开确认框那一刻的券；框里列出别人改了什么，并换一个新框（理由清空）。 */
+  const openToggle = (v: OpsVoucher, restored?: H7DirectMutation, initialRecovery?: "lookup" | "retry", opened?: OpsVoucher) => {
     if (!restored && blockNew(v.id)) return;
     const next = v.status === "active" ? "paused" : "active";
     const label = next === "active" ? "投放" : "暂停";
     const wheelOnly = v.wheelOnly;
+    const othersChanged = opened && changedRows(initialForm(opened, toDateInput), initialForm(v, toDateInput), skuLabels, toMs, v.issuedCount, v);
     openActionConfirm({ briefKind: "content",
+      ...(opened ? { formKey: Date.now() } : {}),
       action: `${label}代金券 · ${v.name}`,
       title: `${label}代金券`,
       detail: wheelOnly
@@ -453,6 +458,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           <Fact k="有效期" tone={next === "active" && voucherPhase(v, Date.now()) === "expired" ? "warn" : undefined}>{next === "active" && voucherPhase(v, Date.now()) === "expired"
             ? `${periodText(v)}，已过期，不能投放；先编辑有效期` : periodText(v)}</Fact>
           <Fact k="还没用">{`${countText(v.availableCount)} 张`}</Fact>
+          {othersChanged && <Fact k="别人改了">{othersChanged.length ? <DiffList rows={othersChanged} /> : "没有别的内容变化，只有版本变了。"}</Fact>}
         </Facts>
       ),
       confirmLabel: `确认${label}`,

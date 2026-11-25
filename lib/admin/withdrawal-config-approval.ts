@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandOrigin, type FundInvestigationOutcome } from "./fund-command-investigation";
 import {
   A2OutcomeUncertainError,
+  A2ProposalReceiptIncompleteError,
   createA2CommandKey,
   createA2OperationProposal,
   fetchA2Overview,
@@ -392,7 +393,7 @@ export async function lookupWithdrawalApproval(source: WithdrawalApprovalSource,
   } catch (cause) {
     // fetchA2ProposalByKey 对缺字段的单抛「提交结果不完整」；对不上本人、对象或动作时抛结果未知。
     const reason = isA2OutcomeUncertainError(cause) ? "查到的审批单和原申请对不上"
-      : cause instanceof Error && cause.message === "提交结果不完整，请稍后再查。" ? "收到的数据不完整"
+      : cause instanceof A2ProposalReceiptIncompleteError ? "收到的数据不完整"
         : displayAdminReadError(cause).replace(/[。！]+$/, "");
     return { state: "failed", reason } as const;
   }
@@ -402,7 +403,13 @@ export async function lookupWithdrawalApproval(source: WithdrawalApprovalSource,
 }
 
 /** 放宽行查询后的结论：按原号查单没查成时常显这一路的失败和下一步，不因为通用核查查无就写没有查到；两路都查无才交给共用面板的「没有查到」。过期时主句先写不能重试（OP-93、OP-153）。 */
-export function withdrawalApprovalLookupStatus(proposal: WithdrawalProposalLookup | undefined, outcome: FundInvestigationOutcome | undefined, expired: boolean) {
+export function withdrawalApprovalLookupStatus(proposal: WithdrawalProposalLookup | undefined, outcome: FundInvestigationOutcome | undefined, expired: boolean, submitted?: boolean) {
+  // 通用核查已证实建单：「审批已提交」是已知事实，这次查单没成的原因同时常显，两路谁也不盖谁。
+  if (submitted) {
+    const lookupFailed = proposal?.state === "failed" ? `查审批单没有成功：${proposal.reason}。请再点「查询原操作」。` : "";
+    return { ...WITHDRAWAL_SUBMISSION_CONFIRMED,
+      line: `${lookupFailed && expired ? "已超过 24 小时，不能再重试。" : ""}${WITHDRAWAL_SUBMISSION_CONFIRMED.line}${lookupFailed}` };
+  }
   const failure = proposal?.state === "failed" ? `查审批单没有成功：${proposal.reason}。请再点「查询原操作」。`
     : outcome && "error" in outcome ? withdrawalReplayReadError(outcome.error) : undefined;
   if (failure) return { tone: "danger" as const, label: expired ? "已过期" : "查询失败", line: `${expired ? "已超过 24 小时，不能再重试。" : ""}${failure}` };
@@ -410,7 +417,8 @@ export function withdrawalApprovalLookupStatus(proposal: WithdrawalProposalLooku
 
 /** 通用命令回执证明已建单时，仍须用原号查审批单本身。 */
 export async function checkWithdrawalApprovalCommand(record: ConfigAttempt, evidence?: FundCommandEvidence) {
-  const receipt = await checkFundCommand(record, evidence);
+  // 只有放宽单核查认「审批建单成功、回执没有业务码」这一种回执（后端 A2 建单只存审批单本体）。
+  const receipt = await checkFundCommand(record, evidence, { acceptA2ProposalCreated: true });
   const submitted = record.withdrawalSubmissionConfirmed || fundCommandResult(receipt) === "SUCCEEDED";
   if (submitted && !record.withdrawalSubmissionConfirmed) {
     attempts.remember(record.fingerprint, record.commandKey, { ...record, withdrawalSubmissionConfirmed: true });
