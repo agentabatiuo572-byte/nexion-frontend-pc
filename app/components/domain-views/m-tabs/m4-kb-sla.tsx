@@ -399,7 +399,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
         // 换成最新内容的同时写出别人改了什么（OP-97 第 2 步）。
         const changes = faqChangeLines(target, latest);
         setStatusTarget(latest);
-        onFailure(new Error(`${REVIEW_LATEST}现在是第 ${latest.version} 版，你确认的是第 ${target.version} 版。${changes.length ? `别人改了：${changes.join("；")}。` : ""}`));
+        onFailure(new Error(`${REVIEW_LATEST}现在是第 ${latest.version} 版，你确认的是第 ${target.version} 版。${changes.length ? `别人改了：${changes.join("；").replace(/[。.]$/, "")}。` : ""}`));
       }
     }
     if (!factsAvailable) return false;
