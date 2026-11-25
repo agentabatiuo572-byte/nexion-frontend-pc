@@ -191,7 +191,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     }
     record = { ...record, retryRejection: undefined, absent: false };
     commands.remember(record.fingerprint, record.commandKey, record);
-    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(retry ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+    if (!commands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error(retry ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
     sending.current = true; begin(record.commandKey);
     try {
       if (record.payload.kind === "proposal") {
@@ -235,7 +235,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
       if (firstRejection) commands.forget(record.fingerprint, record.commandKey);
       if (active.current) {
         sync();
-        setNotes(n => ({ ...n, [record.commandKey]: retry && isExplicitRejection(failure) ? "按原请求重试被明确拒绝，核对后可以解除这条记录。" : "原请求已保留，结果仍待核实。" }));
+        setNotes(n => ({ ...n, [record.commandKey]: retry && isExplicitRejection(failure) ? "按原操作重试被明确拒绝，核对后可以解除这条记录。" : "原请求已保留，结果仍待核实。" }));
         setTechnicalErrors(n => ({ ...n, [record.commandKey]: JSON.stringify(failure instanceof Error ? { ...failure, name: failure.name, message: failure.message } : failure, null, 2) }));
         if (retry && isYieldSkuProposal(record.payload)
           && response.backendMessage === "ONBOARDING_COMPARISON_VERSION_CONFLICT") await refreshYieldBinding();
@@ -453,10 +453,10 @@ function TicketVerdict({ record }: { record: E6Pending }) {
 }
 const RISK_STATUS: Partial<Record<PhoneRiskReceipt["status"], { tone: "progress" | "warn" | "neutral"; title: string; text: string }>> = {
   PROCESSING: { tone: "progress", title: "原保存仍在处理", text: "还在保存，稍后再查；不要重复保存。" },
-  UNKNOWN: { tone: "warn", title: "结果仍未知", text: "原保存中途中断，再按原请求重试也是同样结果，需要按证据核查结案。" },
-  FAILED: { tone: "neutral", title: "原保存以失败结束", text: "系统记录这次失败了；24 小时内按原请求重试不会做两遍，已做成的直接拿回结果。" },
+  UNKNOWN: { tone: "warn", title: "结果仍未知", text: "原保存中途中断，再按原操作重试也是同样结果，需要按证据核查结案。" },
+  FAILED: { tone: "neutral", title: "原保存以失败结束", text: "系统记录这次失败了；24 小时内按原操作重试不会做两遍，已做成的直接拿回结果。" },
 };
-const GENERIC_NOTES = ["原请求已保留，结果仍待核实。", "按原请求重试被明确拒绝，核对后可以解除这条记录。", "已提交，等待审批后执行。"];
+const GENERIC_NOTES = ["原请求已保留，结果仍待核实。", "按原操作重试被明确拒绝，核对后可以解除这条记录。", "已提交，等待审批后执行。"];
 export function E6PendingNotice({ section, onRead, toast }: { section: E6Section; onRead?: (result?: E6WriteReceipt) => void; toast: (message: string, kind?: ToastKind) => void }) {
   const m = useE6Mutations();
   const records = m.records.filter(r => r.section === section && m.visible(section));
@@ -502,11 +502,11 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
         : end ? { tag: end.tag, tone: end.tone, line: end.text, more: verified ? "可按「准备新变更」重新核对原草稿。" : "按「准备新变更」读取当前数据。" }
         : waiting ? m.notes[r.commandKey] === TICKET_UNREAD ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created, more: `审批单 ${r.ticketId} 已经建了，批没批准还没查到；点「查询审批结果」再查，不会再建一张。` }
           : { tag: "待审批", tone: "warn" as const, line: RECOVERY_LINE.pending, more: `审批单 ${r.ticketId}。` }
-          : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原请求重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
+          : refused ? { tag: "重试被拒绝", tone: "danger" as const, line: RECOVERY_LINE.refused, more: "按原操作重试被明确拒绝；核对拒绝原因后，可以解除这条记录。" }
             : r.payload.kind === "proposal" ? { tag: "结果未知", tone: "warn" as const,
               line: expired ? RETRY_EXPIRED_TEXT : recovery.conclusion === "not-found" ? RECOVERY_LINE.absent : RECOVERY_LINE.unknown,
               more: expired ? "原记录继续保留。" : "重试只发原内容和原理由。" }
-              : r.payload.kind === "risk" ? { tag: "结果未知", tone: "warn" as const, line: r.payload.receiptVersion !== 1 ? "旧记录查不到原结果，只能读取现在的设置。" : expired ? RETRY_EXPIRED_TEXT : "先查询原结果；重试不会重复保存。",
+              : r.payload.kind === "risk" ? { tag: "结果未知", tone: "warn" as const, line: r.payload.receiptVersion !== 1 ? "旧记录查不到原结果，只能读取现在的设置。" : expired ? RETRY_EXPIRED_TEXT : "先查询原操作；重试不会重复保存。",
                 more: "现在的设置一样，也不代表原保存成功了。" }
                 : { tag: "结果未知", tone: "warn" as const, line: expired ? RETRY_EXPIRED_TEXT : RECOVERY_LINE.direct, more: expired ? "已超过 24 小时，不能再重试；现在的状态不代表原操作的结果。" : "重试只发原内容和原理由。" };
       const riskShown = r.payload.kind === "risk" && !outcomes[r.commandKey] && riskReceipts[r.commandKey] ? RISK_STATUS[riskReceipts[r.commandKey].status] : undefined;
@@ -524,8 +524,8 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
             if (!opened) toast("暂时不能打开原草稿，请核对当前编辑和对象状态。", "warn");
           }).catch(failure => toast(eReadError(failure), "warn"));
         }}>准备新变更</Button><Button size="sm" onClick={() => discardRecovery.ask(() => m.forget(r))}>放弃这份草稿</Button></> : <>
-          {r.payload.kind === "proposal" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={m.isBusy(r.commandKey)} onClick={() => { void m.check(r.commandKey).then(ticket => { if (ticket && ticket.status !== "pending" && section === "calibration") onRead?.(); }); }}>{waiting ? "查询审批结果" : "查询原结果"}</Button>}
-          {r.payload.kind === "device" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原结果</Button>}
+          {r.payload.kind === "proposal" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={m.isBusy(r.commandKey)} onClick={() => { void m.check(r.commandKey).then(ticket => { if (ticket && ticket.status !== "pending" && section === "calibration") onRead?.(); }); }}>{waiting ? "查询审批结果" : "查询原操作"}</Button>}
+          {r.payload.kind === "device" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(receipt => showDevice(r, receipt as ECommandInvestigation | null), () => { /* checkDirect keeps the query failure on the row. */ }).finally(() => onRead?.()); }}>查询原操作</Button>}
           {r.payload.kind === "risk" && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!m.busy} onClick={() => { void m.checkDirect(r).then(async receipt => {
             showRisk(r, receipt as PhoneRiskReceipt | null);
             if (r.payload.kind !== "risk" || r.payload.receiptVersion !== 1 || !receipt || ["SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED"].includes((receipt as PhoneRiskReceipt).status)) return;
@@ -534,11 +534,11 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
               if (eCommandSettled(original)) await m.settleDirect(r, recoveryQueryConclusion(original!.originalStatus));
               showDevice(r, original);
             } catch (failure) { setOutcomes(values => ({ ...values, [r.commandKey]: { error: eReadError(failure) } })); }
-          }, () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原结果" : "读取当前风控设置"}</Button>}
+          }, () => { /* The row retains the query failure. */ }).finally(() => window.dispatchEvent(new Event("e6-read-risk"))); }}>{r.payload.receiptVersion === 1 ? "查询原操作" : "读取当前风控设置"}</Button>}
           {r.payload.kind === "device" && m.canInvestigate && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
           {r.payload.kind === "risk" && r.payload.receiptVersion === 1 && m.canInvestigateRisk && closureOpen(outcomes[r.commandKey], expired) && <Button size="sm" variant="danger-outline" disabled={!!m.busy} onClick={() => setClosing(r)}>核查结案</Button>}
-          {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.canRetry(r) || m.busy} disabledReason={section === "phones" ? m.phoneWriteBlock : undefined} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
-          {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原请求重试</Button>}
+          {r.payload.kind !== "risk" && !r.ticketId && !expired && !refused && <Button size="sm" disabled={!m.canRetry(r) || m.busy} disabledReason={section === "phones" ? m.phoneWriteBlock : undefined} onClick={() => { void m.send(r, true).then(onRead).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原操作重试</Button>}
+          {r.payload.kind === "risk" && m.canRetry(r) && !refused && <Button size="sm" disabled={!!m.busy} onClick={() => { void m.send(r, true).then(result => { riskDone("RETRIED"); window.dispatchEvent(new Event("e6-read-risk")); onRead?.(result); }).catch(() => { /* send has recorded the failure on the row. */ }); }}>按原操作重试</Button>}
           {r.terminal && <Button size="sm" disabled={section === "phones" && m.isBusy(r.commandKey)} onClick={() => {
             if (section === "phones" && r.terminal === "approved") {
               void m.rereadApprovedPhone(r);

@@ -253,7 +253,7 @@ export default function G4AdminOperations({ ctx, refreshVersion = 0, blocked = f
   }
 
   const configuredCount = G4_CONFIGS.filter((definition) => data.config[definition.key] != null && data.config[definition.key] !== "").length;
-  const simulationAction = canWrite && <Button size="sm" variant="primary" disabledReason={blocked || readFailed ? "页面要先重新读取成功，才能再改" : !!session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "operations/simulations") ? "上次操作结果未知，先查询原结果" : !(Number(quantity) > 0) || !(Number(unitPrice) > 0) ? "数量和单价都要大于 0" : undefined} onClick={createSimulation}>创建模拟成交</Button>;
+  const simulationAction = canWrite && <Button size="sm" variant="primary" disabledReason={blocked || readFailed ? "页面要先重新读取成功，才能再改" : !!session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "operations/simulations") ? "上次操作结果未知，先查询原操作" : !(Number(quantity) > 0) || !(Number(unitPrice) > 0) ? "数量和单价都要大于 0" : undefined} onClick={createSimulation}>创建模拟成交</Button>;
   return <>
     {error && <Notice tone="warn" title="刷新失败，下面是上次加载的数据" action={<Button size="sm" onClick={() => void load()}>重试</Button>}><p>{error}</p></Notice>}
     <Fold title="认购、预售与持有人规则" icon={ShieldCheck} tone="role-3"

@@ -204,7 +204,7 @@ export async function submitF1Policy(
   if (mode !== "submit" && !previous) throw new Error("原操作已处理，请关闭弹窗并刷新后再操作。");
   const unresolved = listF1PolicyOperations(session.adminId).find(item => !item.ticket && item.original.values.rank === editor.row.v);
   if (mode === "submit" && unresolved) {
-    const copy = "这一级有结果未知的原操作，请先查询原结果。";
+    const copy = "这一级有结果未知的原操作，请先查询原操作。";
     const error = new A2OutcomeUncertainError(copy, unresolved.commandKey);
     throw unresolved.original.approval ? withF1ProposalLookupCopy(error, copy) : error;
   }
@@ -336,7 +336,7 @@ export async function submitF1Policy(
     if (rejected) attempts.forget(fingerprint, key);
     else if (saved) {
       const uncertain = isA2OutcomeUncertainError(error) ? error
-        : new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原结果。", key);
+        : new A2OutcomeUncertainError(error instanceof Error ? error.message : "原操作结果未知，请查询原操作。", key);
       if (original.approval) throw withF1ProposalLookupCopy(uncertain,
         saved.received || saved.ticket ? "原申请已建单，当前结果还没读到，请继续查询。" : undefined);
       throw uncertain;

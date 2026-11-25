@@ -41,7 +41,7 @@ export function processedStatus({ expired, canRetry, canClose, canRelease = fals
     return { tone: "warn", label: "已处理", line: `后台已处理，看不出成没成；${next}`, more };
   }
   const next = canRelease ? RETRY_REJECTED_NEXT
-    : canRetry && !expired ? "按原请求重试可确认，不会重复执行。"
+    : canRetry && !expired ? "按原操作重试可确认，不会重复执行。"
       : canClose ? "可以核查结案。"
         : canReachAudit !== false ? "请到操作记录与审批核对。"
           : closable ? "现在只能查询；超过 24 小时后由有调查权限的超级管理员核查结案。" : "请有操作记录与审批查看权限的同事核对。";

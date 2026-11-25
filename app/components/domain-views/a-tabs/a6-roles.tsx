@@ -80,9 +80,9 @@ const TICKET_LOOK: Record<NonNullable<Submitted["status"]>, { label: string; ton
   expired: { label: "审批已过期", tone: "neutral", icon: Hourglass },
 };
 const ticketTag = (status: Submitted["status"]) => {
-  if (!status) return <StatusTag tone="warn" icon={CircleHelp} explain="审批单已经建好，还没查到它现在的状态。点「查询原结果」再查。">已建单，状态未查到</StatusTag>;
+  if (!status) return <StatusTag tone="warn" icon={CircleHelp} explain="审批单已经建好，还没查到它现在的状态。点「查询原操作」再查。">已建单，状态未查到</StatusTag>;
   const look = TICKET_LOOK[status];
-  return <StatusTag tone={look.tone} icon={look.icon} explain="上次查到的状态。重新进入这页会再查一次，也可以点「查询原结果」。">{look.label}</StatusTag>;
+  return <StatusTag tone={look.tone} icon={look.icon} explain="上次查到的状态。重新进入这页会再查一次，也可以点「查询原操作」。">{look.label}</StatusTag>;
 };
 
 /**
@@ -164,7 +164,7 @@ export default function A6Roles() {
   const [recheckOriginal, setRecheckOriginal] = useState<A6Original | null>(null);
   const [closing, setClosing] = useState<RbacCommand | null>(null);
   const [releasing, setReleasing] = useState<RbacCommand | null>(null);
-  /** 查询原结果后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
+  /** 查询原操作后记录还保留时，这一行写查到了什么；重试或解除后不再用。 */
   const [outcomes, setOutcomes] = useState<Record<string, RbacOutcome>>({});
   const editingRef = useRef(false);
   editingRef.current = !!(formMode || grantsOpen || confirmReq);
@@ -401,7 +401,7 @@ export default function A6Roles() {
       }
       // Start/stop without earlier ticket evidence also asked for the original result above.
       setToast(record.original.kind === "a6-status" && !record.ticket && !record.receipt
-        ? "没查到审批单，也没查到原结果，原记录仍保留；请稍后再查，或在 24 小时内按原请求重试。"
+        ? "没查到审批单，也没查到原结果，原记录仍保留；请稍后再查，或在 24 小时内按原操作重试。"
         : displayAdminReadError(new Error("A6_ORIGINAL_PROPOSAL_NOT_FOUND"))); return false;
     }
     closeOriginalView(record);
@@ -679,7 +679,7 @@ export default function A6Roles() {
   const replayBlock = (record: RbacCommand) => {
     const state = a6Recovery.state(record);
     return state.expired ? RETRY_EXPIRED_TEXT
-      : state.replayBlock ? "先查询原结果，查不到才能重试" : undefined;
+      : state.replayBlock ? "先查询原操作，查不到才能重试" : undefined;
   };
   const unknownRows: UnknownRow[] = commands.records.filter(record => !record.verifiedNotExecuted && !record.ticket && !record.receipt).map(record => {
     const expired = isRetryExpired(record);
@@ -692,11 +692,11 @@ export default function A6Roles() {
       line: expired ? RETRY_EXPIRED_TEXT : shown?.line, receipt: outcome?.receipt,
       tag: shown ? <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag> : expired
         ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-        : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原请求重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"}>结果未知</StatusTag>,
+        : <StatusTag tone="warn" icon={CircleHelp} explain={rbacProposal(original) ? "没收到确定结果，可能已建审批单。24 小时内可以按原操作重试，不会建第二张。" : "没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行。"}>结果未知</StatusTag>,
       actions: <>
-        <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原结果</Button>
+        <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原操作</Button>
         {canInvestigateECommand("platform_a6_read") && rbacClosureConclusions(outcome, expired).length > 0 && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
-        {!expired && <Button variant="ghost" disabledReason={replayBlock(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {!expired && <Button variant="ghost" disabledReason={replayBlock(record)} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
         {releasable && <Button variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>,
     };
@@ -783,7 +783,7 @@ export default function A6Roles() {
                 <span className="a6-recovery-time">{businessStamp(row.at)} 提交</span>
                 {ticketTag(row.status)}
                 <span className="a6-recovery-actions">
-                  <Button variant="ghost" onClick={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }}>查询原结果</Button>
+                  <Button variant="ghost" onClick={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }}>查询原操作</Button>
                   {reach("/platform/audit") && <Link className="rd-link" href={`/platform/audit?domain=A&object=${encodeURIComponent(row.roleCode)}`}>看审批单 <span data-mono>{row.ticket}</span></Link>}
                 </span>
                 {row.desired && detail?.id === row.roleId && <SavedCheck desired={row.desired} detail={detail} approved={row.status === "approved"} permByCode={permByCode} menuById={menuById} onRetry={() => { const record = commands.records.find(record => (record.ticket ?? record.receipt)?.id === row.ticket); if (record) void queryOriginal(record).catch(error => setToast(displayAdminReadError(error))); }} />}

@@ -106,15 +106,15 @@ export function M5UnboundPolicy({ permission, onSummary }: { permission: MSuppor
       key: pending.commandKey, name: "待分配设置", submittedAt: pending.createdAt, expired: !denied && Date.now() >= pending.expiresAt,
       change: denied ? "当前无权查看原内容" : `提醒 ${pending.payload.alertMinutes} 分钟 · 兜底 ${pending.payload.fallbackMinutes} 分钟 · 默认接收组 ${groupName(pending.payload.defaultGroupId)}`,
       actions: <>
-        <Button size="sm" variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原结果</Button>
-        <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving || !command.canReplay} disabledReason={!saving && !command.canReplay ? "先查询原结果；查不到原结果、还在 24 小时内才能重试" : undefined} onClick={() => void command.run("replay")}>按原请求重试</Button>
+        <Button size="sm" variant={command.canReplay ? "secondary" : "primary"} disabled={saving} onClick={() => void command.run("query")}>查询原操作</Button>
+        <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving || !command.canReplay} disabledReason={!saving && !command.canReplay ? "先查询原操作；查不到原结果、还在 24 小时内才能重试" : undefined} onClick={() => void command.run("replay")}>按原操作重试</Button>
       </>,
     }]} />}
     <Panel icon={Timer} tone="role-3" title="没人接的客户" sub={policy ? `第 ${policy.version} 版` : undefined}
       explain="客户发来消息后还没有专属客服时，按这里的时长提醒主管和自动兜底。保存后立即生效，正在等待的客户也按新时长算。">
       {!editable && <Notice tone="neutral">只有带客服管理修改权限的超级管理员能改。</Notice>}
       {pending && <Notice tone="warn" title="上次保存结果未知">
-        <p>{saving ? "正在查询原结果…" : command.message || "先查询原结果；有结论前这里不能再改。"}</p>
+        <p>{saving ? "正在查询原操作…" : command.message || "先查询原操作；有结论前这里不能再改。"}</p>
         {!denied && <p className="m5-pending-reason">原理由：{pending.payload.reason}</p>}
       </Notice>}
       {editable && !pending && command.message && <Notice tone="warn">{command.message}</Notice>}

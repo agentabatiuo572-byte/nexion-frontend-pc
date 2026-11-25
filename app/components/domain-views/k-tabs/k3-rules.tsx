@@ -201,7 +201,7 @@ const STATE_TONE: Record<RuleState, StateTone> = { draft: "neutral", active: "ok
 const STATE_ICON = { draft: FileText, active: CheckIcon, paused: Pause, archived: Archive };
 const DIM_ICON = { 金额: Coins, 速度: Gauge, 新账户: Users, 地址信誉: ShieldCheck };
 const REASON_PLACEHOLDER = "例如：依据提现风险复核工单，调整新账户的检查条件";
-const UNKNOWN_RESULT_TEXT = "结果未知，可能已经生效，已保留原请求。可以查询原结果，或按原请求重试。";
+const UNKNOWN_RESULT_TEXT = "结果未知，可能已经生效，已保留原请求。可以查询原操作，或按原操作重试。";
 const COVERAGE_LEAD = "这项操作可能让平台多付钱";
 const COVERAGE_CHECK = "提交时会先检查兑付覆盖率。";
 const ACTIVE_EFFECT = "保存后直接用于后续评估；已创建提现在放行复核时也可能按当前规则判断。";
@@ -444,7 +444,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
   const missing = byDimension.filter((group) => !group.rules.length).map((group) => group.name);
   const locked = (target: string) => pending.some((record) => isSavedCommand(record) ? record.target === target : !legacyTarget(record) || legacyTarget(record) === target);
   const permissionFor = (kind: WriteKind) => kind === "create" ? canCreate : kind === "archived" ? canArchive : kind === "active" || kind === "paused" ? canToggle : canWrite;
-  const blocked = (target: string, kind?: WriteKind) => !healthy ? "请先完整读取提现风险规则" : invalidActive && kind !== "paused" && kind !== "archived" ? "生效规则包含历史放行或未知条件，请先由风控负责人核查；仅保留合法停用与归档" : locked(target) ? "这个对象有结果未知的原操作，请先在页面上方查询原结果" : undefined;
+  const blocked = (target: string, kind?: WriteKind) => !healthy ? "请先完整读取提现风险规则" : invalidActive && kind !== "paused" && kind !== "archived" ? "生效规则包含历史放行或未知条件，请先由风控负责人核查；仅保留合法停用与归档" : locked(target) ? "这个对象有结果未知的原操作，请先在页面上方查询原操作" : undefined;
   const openWrite = (kind: WriteKind, rule?: K3Rule, initialDimension?: K3RuleDimensionName) => {
     if (!canRead || !permissionFor(kind) || blocked(targetOf(kind, rule), kind)) return;
     setDraft({ kind, rule, initialDimension });
@@ -562,8 +562,8 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           setBusyKey(`read:${record.commandKey}`);
           try { await reload(); setReadback("已重新读取规则和命中记录；现在的值证明不了原操作成没成，请到操作记录与审批核对。"); }
           catch (error) { setReadback(`读取失败 · ${errorText(error)}`); } finally { setBusyKey(null); }
-        }}>查询原结果</Button>
-        <Button size="sm" disabledReason={noRetry} loading={busyKey === record.commandKey} loadingText="提交中…" onClick={() => saved && void execute(saved, true).catch(() => undefined)}>按原请求重试</Button>
+        }}>查询原操作</Button>
+        <Button size="sm" disabledReason={noRetry} loading={busyKey === record.commandKey} loadingText="提交中…" onClick={() => saved && void execute(saved, true).catch(() => undefined)}>按原操作重试</Button>
         {saved?.rejected && <Button size="sm" onClick={() => setReleasing(saved)}>解除原操作记录</Button>}
         <Button size="sm" variant="ghost" onClick={() => setInspecting(record)}>技术信息</Button>
       </>}>
@@ -727,7 +727,7 @@ function RuleEditor({ draft, pending, onSubmit, onClose, onRebase, coverage, can
   const changed = draft.kind === "create" ? hasDraftChanges : condition !== buildK3Condition(k3KindFromDimension(dimension), originalValue)
     || actionFromBusinessValue(value) !== rule!.action || priorityFromBusinessValue(value) !== rule!.priority;
   const dirty = hasDraftChanges || reason.length > 0;
-  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原结果或按原请求重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在读取理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage, canReadCoverage) : undefined);
+  const disabledReason = pending ? "原操作结果未知，内容已锁定；请关闭后查询原操作或按原操作重试" : rule && editableReason(rule) ? editableReason(rule) : conflict ? "请先读取最新版本并重新核对" : !policy ? policyError ?? "正在读取理由规则" : Object.values(issues).find(Boolean) ?? reasonError ?? (draft.kind === "edit" && !changed ? "条件、命中处置和优先级都没有改动" : draft.kind === "edit" && loosensRule(rule!, originalValue, value) ? coverageBlock(coverage, canReadCoverage) : undefined);
   const effect = draft.kind === "create" ? CREATE_EFFECT : rule!.state === "active" ? ACTIVE_EFFECT : rule!.state === "draft" ? "仍为草稿，启用后才参与检查。" : "仍为已停用，重新启用后才参与检查。";
   const save = async () => {
     if (busy || disabledReason) return;

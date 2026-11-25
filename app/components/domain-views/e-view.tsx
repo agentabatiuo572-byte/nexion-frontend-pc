@@ -646,7 +646,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!e4PendingCommands.isDurablyStored(scope, key)) {
       if (!retained) e4PendingCommands.forget(scope, key);
       throw new Error(retained
-        ? "浏览器存不下原操作，这次没有发送，原操作结果仍未知。原记录继续保留，请查询原结果。"
+        ? "浏览器存不下原操作，这次没有发送，原操作结果仍未知。原记录继续保留，请查询原操作。"
         : "浏览器存不下这次操作，没有提交。换一个窗口再试。");
     }
     let createdTicket;
@@ -722,7 +722,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     // 先核实持久副本；读取失败只停发，不能把本地故障当成原命令结案。
     if (!e4PendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      noteE4Pending(record, "浏览器里查不到这条记录，本次没有发送，结果仍未知。记录继续保留，请查询原结果。");
+      noteE4Pending(record, "浏览器里查不到这条记录，本次没有发送，结果仍未知。记录继续保留，请查询原操作。");
       return;
     }
     setE4Retrying(record.fingerprint);

@@ -695,7 +695,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
   const lock = hasPendingApproval ? "等审批结果：批准、驳回或撤回后再改"
     : ctx.f1Loading || ctx.f1Error ? "请先成功重新读取会员等级。"
     : hasUnknownOperation
-      ? "这一级有结果未知的原操作，请先查询原结果。" : undefined;
+      ? "这一级有结果未知的原操作，请先查询原操作。" : undefined;
 
   const single = (field: "selfBuy" | "teamGv" | "directRefs", source: F1VRankRow | undefined) => {
     const raw = source?.[field];
@@ -724,7 +724,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
     );
   };
   const numeric = (raw: string | undefined) => raw !== undefined && /^\d+(\.\d+)?$/.test(raw) ? Number(raw) : 0;
-  const unknownTag = <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag>;
+  const unknownTag = <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原操作重试。">结果未知</StatusTag>;
   const evalWhen = top ? "保存后，之后评估时按新值判断谁进「V8 审核」名单；不会自动升到 V8，不重算已有等级。" : "保存后，之后每次评估用户时按新值算；不重算已有等级，不补发历史奖励。";
   const needCount = [row.selfBuy, row.teamGv, row.directRefs, legCount].filter((raw) => raw !== undefined && raw !== "0").length;
 
@@ -877,7 +877,7 @@ function RankDetail({ row, rows, ctx, rewards, title, panel, canWrite, pendingOf
                       <span className="f1-reward-kind">
                         {REWARD_KIND[kind].name} · 发给晋级本人
                         {stale && <StatusTag tone="warn" icon={TriangleAlert} explain="它已不在现在可发的券或商品里（停用、过期、发完或下架）。升到这一级时可能发不出；编辑时要重新选。">现在不可发</StatusTag>}
-                        {pending ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag> : null}
+                        {pending ? <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果。点「查看原操作」查询或按原操作重试。">结果未知</StatusTag> : null}
                       </span>
                     </span>
                     {canWrite && <span className="f1-row-actions">

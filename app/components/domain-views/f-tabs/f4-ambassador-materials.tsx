@@ -202,13 +202,13 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
           const revoked = !ctx.can(pending.input.stage === "BUSINESS" ? "network_f4_ambassador_material_review" : "network_f4_ambassador_finance_review");
           return <Notice tone="warn" title={<>{pending.input.stage === "BUSINESS" ? "业务" : "财务"}核验结果未知{expired ? <StatusTag tone="neutral">已过期</StatusTag> : unknownTag("direct")}</>}
           action={<>
-            <Button size="sm" onClick={() => setConfirmation(pending.input)}>{materialRecovery.state(pending).replayBlock ? "查询原结果" : "按原请求重试"}</Button>
+            <Button size="sm" onClick={() => setConfirmation(pending.input)}>{materialRecovery.state(pending).replayBlock ? "查询原操作" : "按原操作重试"}</Button>
             {pending.replayRejection && <FReleaseButton label={`申请 #${application.id} 的核验`} toast={ctx.toast} onRelease={async () => {
               if (!materialRecovery.releaseRejectedReplay(pending)) throw new Error("PENDING_RELEASE_BLOCKED");
               pendingRef.current = undefined; setPending(undefined); setConfirmation(null);
             }} />}
           </>}>
-          {`材料第 ${pending.input.expectedMaterialRevision} 版 · ${pending.input.decision === "PASSED" ? "通过" : "需补材料"} · ${businessStamp(pending.createdAt)} 提交（${zoneNote()}）。${expired ? RETRY_EXPIRED_TEXT : revoked ? "这个账号已经没有这项核验权限，只能查询，不能再重试。" : materialRecovery.state(pending).replayRejection ? "原请求重试已被拒绝，请核实原操作结果。" : "原内容和理由已保留，请查询原结果。"}`}
+          {`材料第 ${pending.input.expectedMaterialRevision} 版 · ${pending.input.decision === "PASSED" ? "通过" : "需补材料"} · ${businessStamp(pending.createdAt)} 提交（${zoneNote()}）。${expired ? RETRY_EXPIRED_TEXT : revoked ? "这个账号已经没有这项核验权限，只能查询，不能再重试。" : materialRecovery.state(pending).replayRejection ? "原请求重试已被拒绝，请核实原操作结果。" : "原内容和理由已保留，请查询原操作。"}`}
         </Notice>;
         })()}
         <Steps label="申请进度" items={["提交材料", "业务核验", "财务核验", "最终批准"].map((label, index) => ({

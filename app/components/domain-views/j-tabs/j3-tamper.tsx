@@ -119,7 +119,7 @@ function investigationRecord(command: J3PendingCommand, adminId: string): FundCo
 
 type J3Settled = { key: string; label: string; status: string };
 
-/** 修改框里「查询原结果」没有结论时的一句。 */
+/** 修改框里「查询原操作」没有结论时的一句。 */
 function outcomeText(outcome: FundInvestigationOutcome) {
   if ("error" in outcome) return `原结果没查到：${outcome.error}`;
   const status = outcome.receipt?.originalStatus;
@@ -363,9 +363,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
       : { tone: "warn", label: "结果未知", line: outcome && "error" in outcome ? outcome.error : "改版前的旧记录可核对原号和现在的设置。" }
       : replayRejectedStatus(rejected, outcome)),
     actions: <>
-      <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原结果</Button>
+      <Button size="sm" loading={checking || ctx.contentLoading} disabled={closing} onClick={queryOriginal}>查询原操作</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={checking} onClick={() => setClosing(true)}>核查结案</Button>}
-      {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原请求重试</Button>}
+      {canConfigure && !expired && !!command && !rejected && <Button size="sm" disabled={checking} disabledReason={readBlocked ?? jEmergencyRetryBlocked(command)} onClick={() => setConfigOpen({ original: saved })}>按原操作重试</Button>}
       {command && rejected && <VerifiedReleaseButton disabled={checking || !!jEmergencyRecovery.state(command).busy} onClick={() => release.ask({ operation: "修改告警设置", target: savedChange(saved), targetLabel: "改动", getSnapshot: jEmergencyRecovery.releaseSnapshot(command), createdAt: command.createdAt,
         release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(command); if (released) setConfigOpen(null); syncSaved(); return released; } })} />}
     </>,
@@ -820,8 +820,8 @@ function J3ConfigModal({ ctx, original, context, draft, readBlocked, receiptStat
       onClose={() => { if (!submitting) onClose(); }}
       footer={unknownAt !== null ? <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>
-        <Button disabled={submitting} onClick={queryOriginal}>查询原结果</Button>
-        <Button variant="primary" loading={submitting} loadingText="提交中…" disabledReason={blocked} onClick={() => { setTouched(true); void submit(); }}>按原请求重试</Button>
+        <Button disabled={submitting} onClick={queryOriginal}>查询原操作</Button>
+        <Button variant="primary" loading={submitting} loadingText="提交中…" disabledReason={blocked} onClick={() => { setTouched(true); void submit(); }}>按原操作重试</Button>
       </> : <>
         <Button disabled={submitting} onClick={onClose}>取消</Button>
         <Button variant="primary" loading={submitting} loadingText="提交中…" disabledReason={blocked} onBlockedClick={() => setTouched(true)}

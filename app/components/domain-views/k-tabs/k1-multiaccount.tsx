@@ -85,7 +85,7 @@ function isK1PendingCommand(record: PendingMutationRecord): record is K1PendingC
       && value.commandOrigin?.originalMethod === "POST" && value.commandOrigin.originalPath === "/api/admin/platform/audit/operations"
       && value.commandOrigin.originalAdminId === String(record.commandOwnerId) && value.commandOrigin.readAuthority === "risk_k1_read");
 }
-/** 全部写操作共用一张表，刷新后还能用同一命令号按原内容重试。 */
+/** 全部写操作共用一张表，刷新后还能用同一命令号按原操作重试。 */
 const commandEvidence = createPendingMutationStore<K1PendingCommand | PendingMutationRecord>({
   storageKey: "nexion-admin-k1-multiaccount-commands-v1",
   retainExpiredRecords: true, // 过期不能重试，但记录和对象锁都留着（OP-96）
@@ -180,7 +180,7 @@ const RELEASE_APPROVAL_EFFECT = <StatusTag tone="progress" filled explain="另�
 const APPROVAL_LINE = {
   pending: "等另一位超级管理员批准，批准前不生效。",
   created: "审批单已建，进度没查到；只查询，不会再建。",
-  absent: "现在查不到这张审批单，可以按原请求重试。",
+  absent: "现在查不到这张审批单，可以按原操作重试。",
 } as const;
 const PENDING_PARAM_TIP = "另一位超级管理员批准后才生效，批准前仍按现在的值；审批结束前这一项不能再改。";
 const PENDING_ENTRY_TIP = "另一位超级管理员批准后才放行，批准前这笔仍锁着；审批结束前不能再提交。";
@@ -848,7 +848,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const retainApproval = (record: K1PendingCommand) => {
     pendingCommands.remember(record.fingerprint, record.commandKey, record);
     syncPending();
-    if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原结果。");
+    if (!pendingCommands.isDurablyStored(record.fingerprint, record.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原操作。");
   };
   const queryClusterApproval = async (record: K1PendingCommand) => {
     const note = (message: string) => setPendingNotes(current => ({ ...current, [record.commandKey]: message }));
@@ -881,7 +881,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       if (!exact) throw new Error(`当前数据里找不到原账户组 ${current.target}`);
     } catch (error) {
       const detail = displayAdminReadError(error);
-      note(`审批单${PROPOSAL_STATUS[ticket.status]}；原账户组事实未读回：${detail}。请查询原结果重试。`);
+      note(`审批单${PROPOSAL_STATUS[ticket.status]}；原账户组事实未读回：${detail}。请查询原操作重试。`);
       return ticket;
     }
     if (!k1Recovery.settleFromQuery(current, result.conclusion)) return ticket;
@@ -947,8 +947,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     requireReleaseMaker();
     const scope = `${extra.kind}|${extra.target}`;
     const retained = pendingCommands.list().find(record => record.fingerprint === scope);
-    if (!recovering && retained) throw new Error("这一项有未结束的原操作，请先查询原结果。");
-    if (recovering && !retained?.approval) throw new Error("原申请记录读不到，不能重发，请查询原结果。");
+    if (!recovering && retained) throw new Error("这一项有未结束的原操作，请先查询原操作。");
+    if (recovering && !retained?.approval) throw new Error("原申请记录读不到，不能重发，请查询原操作。");
     if (!retained) {
       const key = createA2CommandKey(extra.approval!.request.command.op);
       pendingCommands.remember(scope, key, { ...extra, commandOrigin: fundCommandOrigin("POST", "/api/admin/platform/audit/operations", "risk_k1_read") });
@@ -979,7 +979,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           || error.backendMessage === "K1_EARNINGS_RELEASE_ENTRY_NOT_PROTECTED")) await refreshProtectedEntries();
         throw cause;
       }
-      ctx.toast("结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
+      ctx.toast("结果未知，不要重复操作。到页面上方查询原操作或按原操作重试。", "warn");
       return;
     }
     if (recovering) return;
@@ -1000,7 +1000,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const sendCommand = async (extra: K1PendingExtra, send: (key: string) => Promise<unknown>, done: () => Promise<void>, recovering: boolean) => {
     const scope = `${extra.kind}|${extra.target}`;
     const retained = pendingCommands.get(scope);
-    if (!!retained !== recovering) throw new Error("原操作待确认，请查询原结果。");
+    if (!!retained !== recovering) throw new Error("原操作待确认，请查询原操作。");
     const key = retained ?? newK1CommandKey();
     const original = pendingCommands.list().find(row => row.fingerprint === scope && row.commandKey === key);
     const base = "/api/admin/risk/multi-account/", target = encodeURIComponent(extra.target);
@@ -1020,7 +1020,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       if (!unknown && !recovering) pendingCommands.forget(scope, key);
       syncPending();
       if (!unknown) throw cause;
-      ctx.toast("结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。", "warn");
+      ctx.toast("结果未知，不要重复操作。到页面上方查询原操作或按原操作重试。", "warn");
       return;
     }
     if (extra.kind === "cluster") {
@@ -1051,7 +1051,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     switch (record.kind) {
       case "cluster": {
         const proposal = record.clusterProposal;
-        if (!proposal) throw new Error("原申请记录读不到，不能重发，请查询原结果。");
+        if (!proposal) throw new Error("原申请记录读不到，不能重发，请查询原操作。");
         return sendOriginal(async key => {
           const ticket = await createA2OperationProposal(proposal, key, "proposal");
           if (!ticket.mine || ticket.obj !== proposal.obj || ticket.operationCode !== proposal.command.op) throw new A2OutcomeUncertainError("审批单和原操作对不上。", key);
@@ -1122,7 +1122,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     const readProblem = retryReadProblem(record);
     if (readProblem) return readProblem;
     if (!k1CanReplay(record)) return "这个账号没有这项权限，不能重试，请有权限的同事核对。";
-    return state.replayBlock ? "先查询原结果，明确查不到才能按原请求重试。" : undefined;
+    return state.replayBlock ? "先查询原操作，明确查不到才能按原操作重试。" : undefined;
   };
 
   const [investigationResults, setInvestigationResults] = useState<Record<string, FundInvestigationOutcome>>({});
@@ -1224,7 +1224,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (!record) return undefined;
     if (!record.approval?.pendingTicketId) return record.approval?.acknowledged
       ? <StatusTag tone="neutral" icon={Clock3} explain="审批单已建，进度没查到；到页面上方查询原审批单。">已建单</StatusTag>
-      : <StatusTag tone="warn" explain="这次提交的结果还没确认，先到页面上方查询原结果。">结果未知</StatusTag>;
+      : <StatusTag tone="warn" explain="这次提交的结果还没确认，先到页面上方查询原操作。">结果未知</StatusTag>;
     return <>
       <StatusTag tone="warn" icon={Clock3} explain={kind === "entry" ? PENDING_ENTRY_TIP : PENDING_PARAM_TIP}>待审批</StatusTag>{change && ` ${change}`}
       <span className="rd-approval-meta">{record.operator} · <time dateTime={new Date(record.createdAt).toISOString()}>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}</time> 提交</span>
@@ -1249,7 +1249,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         await reloadAfter(`已找回原审批单 ${receipt.id}`, `已找回原审批单 ${receipt.id}，但页面刷新失败；请重新加载核对。`);
         return;
       }
-      ctx.toast("暂未找到原审批单，请稍后再查询原结果。", "warn");
+      ctx.toast("暂未找到原审批单，请稍后再查询原操作。", "warn");
     } catch (cause) {
       ctx.toast(errorText(cause), "error");
     } finally {
@@ -1826,11 +1826,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             ...(approval ? { canQuery: canQueryProposal } : {}), ...(status ? { status } : {}),
             actions: <>
               {(record.approval || record.kind === "cluster" && canQueryProposal) && !fundInvestigationAccess(record).canRead
-                ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>{record.approval ? "查询原审批单" : "查询原结果"}</Button>
+                ? <Button size="sm" loading={checking === record.fingerprint} disabled={Boolean(retrying || checking)} onClick={() => void checkPending(record)}>{record.approval ? "查询原审批单" : "查询原操作"}</Button>
                 : <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={Boolean(retrying || checking)} checking={checking === record.fingerprint}
                   onCheck={() => void lookupPending(record)} onClose={() => setClosing(record)} />}
               {record.kind === "registration-param" && canReadAudit && <Link className="rd-link" href={auditLink(record.target)}>到操作记录与审批核对</Link>}
-              {record.kind !== "registration-param" && !expired && !record.approval?.acknowledged && !record.clusterReceipt && !rejected && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+              {record.kind !== "registration-param" && !expired && !record.approval?.acknowledged && !record.clusterReceipt && !rejected && <Button size="sm" loading={retrying === record.fingerprint} disabled={Boolean(retrying || checking)} disabledReason={blocked} onClick={() => void retryPending(record)}>按原操作重试</Button>}
               {rejected && <VerifiedReleaseButton disabled={Boolean(retrying || checking || k1Recovery.state(record).busy)} onClick={() => verifiedRelease.ask({ operation: title, target: record.kind === "entry" ? <>收益记录 <span data-mono>{record.target}</span></> : undefined, getSnapshot: k1Recovery.releaseSnapshot(record), createdAt: record.createdAt,
                 release: () => { const released = k1Recovery.releaseRejectedReplay(record); syncPending(); return released; } })} />}
             </>,

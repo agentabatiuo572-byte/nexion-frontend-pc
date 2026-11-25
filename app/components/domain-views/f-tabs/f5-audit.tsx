@@ -543,7 +543,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     const change = saved?.row && ["freeze", "unlock", "unfreeze", "reverse"].includes(saved.action) ? `${statusName(saved.row.status)} → ${statusName(nextStatus)}`
       : saved?.action === "reissue" ? "每笔生成一条新记录，原记录保持已冲正"
         : saved?.action === "suspend" || saved?.action === "resume" ? `${((spec?.command.params.kinds ?? []) as string[]).map(kindName).join("、")} → ${saved.action === "suspend" ? "暂停中" : "恢复"}`
-          : request ? `金额偏离 ${saved?.sigma ?? "—"} → ${request.commissionAnomalySigma}；层比例 ${saved?.ratio ?? "—"}% → ${request.layerRatioAnomalyPct}%` : "原请求不完整，只能查询原结果。";
+          : request ? `金额偏离 ${saved?.sigma ?? "—"} → ${request.commissionAnomalySigma}；层比例 ${saved?.ratio ?? "—"}% → ${request.layerRatioAnomalyPct}%` : "原请求不完整，只能查询原操作。";
     return { key: original.commandKey,
       name: saved?.name ?? spec?.action ?? (record.kind === "anomaly" ? "调整异常预警标准" : "奖励处置"),
       change: `${change}${!ticket && record.kind === "proposal" && record.original.received ? " · 原申请建过单，批没批准还没查到" : ""}`,
@@ -551,8 +551,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       state: ticket?.status === "pending" ? "pending" : isRetryExpired(original) ? "expired" : "unknown",
       direct: record.kind === "anomaly",
       actions: <>
-        <Button size="sm" onClick={() => { if (saved && !ticket) openOriginal(record); else void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原结果</Button>
-        {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原请求重试</Button>}
+        <Button size="sm" onClick={() => { if (saved && !ticket) openOriginal(record); else void ctx.recoverF5(record, "query").catch(error => ctx.toast(displayAdminError(error))); }}>查询原操作</Button>
+        {retryable && <Button size="sm" onClick={() => openOriginal(record)}>按原操作重试</Button>}
         {original.replayRejection
           && <FReleaseButton label={saved?.name ?? spec?.action ?? "奖励处置"} toast={ctx.toast} onRelease={() => ctx.recoverF5(record, "release")} />}
       </>,
@@ -575,7 +575,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     && ["f_commission_status", "f5_commission_reverse", "f5_commission_reissue", "f5_commission_suspension"].includes(ticket.operationCode ?? "")
     && !ownTicketIds.has(ticket.id) && rows.findIndex(other => other.id === ticket.id) === index);
   recoveryRows.push(...pendingTickets.map(ticket => ({ key: ticket.id, name: ticket.action, change: `${ticket.before} → ${ticket.after}`, state: "pending" as const,
-    actions: <Button size="sm" onClick={() => { void ctx.refreshF5(applied); }}>查询原结果</Button>,
+    actions: <Button size="sm" onClick={() => { void ctx.refreshF5(applied); }}>查询原操作</Button>,
   })));
 
   const blockedRecord = (row: F5CommissionEvent) => {

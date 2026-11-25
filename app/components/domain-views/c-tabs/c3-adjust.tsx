@@ -84,7 +84,7 @@ const ACCOUNT_STATUS: Record<string, string> = { ACTIVE: "正常", FROZEN: "冻�
 const C01_FLOW = "提交后余额不会马上变，需由另一位同事复核批准后才生效。";
 const C01_RULE = "余额调整只用于纠错和补偿。调错了用「冲正」抵消，原记录会保留。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果或按原请求重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作或按原操作重试。";
 const LOCKED_ROW = "这张单有结果未知的操作，先到页面上方核对";
 const LOCKED_USER = "这个用户有一笔结果未知的提交，先到页面上方核对";
 const MINE = "这是你发起的，需要另一位管理员处理";
@@ -1065,7 +1065,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const row = latest.adjustment;
     // 只改说法：没变、变了且和这次对得上、变了但对不上分开说。处理人是后端记的复核人（撤回不记复核人，只有提交人能撤回）。
     const verb = record.kind === "approve" ? "批准" : record.kind === "reject" ? "驳回" : record.kind === "withdraw" ? "撤回" : "冲正";
-    const tail = !isRetryExpired(record) && canRetry(record) ? "按原请求重试可确认，不会重复执行。" : "原记录继续保留。";
+    const tail = !isRetryExpired(record) && canRetry(record) ? "按原操作重试可确认，不会重复执行。" : "原记录继续保留。";
     const checker = text(row.checker, "").trim();
     const byMe = !!checker && checker.toLowerCase() === makerUsername;
     const label = statusOf(row).label;
@@ -1426,7 +1426,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   /* ── 结果未知：收成一个面板，每条一行，默认露三条（提示不把正事挤出首屏） ── */
   const pendingNotices = <RecoveryPanel title={recoveryTitle(pending.length)} explainLabel="结果未知怎么处理"
-    explain="提交时没收到确定结果，可能已经生效。先查询原结果；24 小时内按原请求重试不会多建单，也不会重复入账。"
+    explain="提交时没收到确定结果，可能已经生效。先查询原操作；24 小时内按原操作重试不会多建单，也不会重复入账。"
     items={pending.map((record) => {
       const expired = isRetryExpired(record);
       // 重试被明确拒绝后，和账户操作、用户详情同一个说法：标签换成「重试被拒绝」，这句说可以解除。
@@ -1436,16 +1436,16 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         object: record.label,
         createdAt: record.createdAt,
         tag: refused ? <StatusTag tone="danger">重试被拒绝</StatusTag> : expired ? <StatusTag tone="warn" icon={Hourglass}>已过期</StatusTag> : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>,
-        line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : record.kind === "large" ? "旧入口已停用，不能重试。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
+        line: refused ? "重试被明确拒绝；查询原操作核对后，可以解除。" : record.kind === "large" ? "旧入口已停用，不能重试。" : expired ? "超过 24 小时不能再重试，先查询原操作。" : "可能已经生效，先查询原操作。",
         note: pendingNotes[record.fingerprint],
         actions: <>
-          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原结果</Button>
-          {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>}
+          <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原操作</Button>
+          {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>}
           {refused && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
         detail: <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
-          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}` : "按原请求重试不会多建单，也不会重复入账。"}
+          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
         </p>,
         tech: <p><Explain label="这次操作的技术信息" rows={[
@@ -1538,6 +1538,6 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     </Drawer>
 
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain={`重试被拒说明不了原操作的结果。先查询原结果，或${canReadAudit ? "到操作记录与审批按单号核对" : AUDIT_ELSEWHERE}。解除后原操作不再重试，系统仍按这张单现在的状态校验。`} />}
+      explain={`重试被拒说明不了原操作的结果。先查询原操作，或${canReadAudit ? "到操作记录与审批按单号核对" : AUDIT_ELSEWHERE}。解除后原操作不再重试，系统仍按这张单现在的状态校验。`} />}
   </>;
 }

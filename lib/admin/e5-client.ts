@@ -450,7 +450,7 @@ export async function proposeLegacyUnknownCancellation(candidate: LegacyUnknownC
       method: "POST", body: JSON.stringify(body), idempotencyKey: commandKey,
     });
     if (!ticket || typeof ticket.id !== "string" || !ticket.id.trim())
-      throw new E5OutcomeUncertainError("提案提交结果未知，请不要改内容，按原请求重试，或到「操作记录与审批」核对原提案。", commandKey);
+      throw new E5OutcomeUncertainError("提案提交结果未知，请不要改内容，按原操作重试，或到「操作记录与审批」核对原提案。", commandKey);
     return ticket;
   });
 }

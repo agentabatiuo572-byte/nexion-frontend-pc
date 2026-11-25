@@ -354,7 +354,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
     const outcome = outcomes[record.commandKey];
     const processed = outcome && "receipt" in outcome && !!outcome.receipt && fundCommandResult(outcome.receipt) === "BUSINESS_RESULT_UNAVAILABLE";
     const retryBlocked = !record.original ? "原操作记录不完整，只能查询核对，不能重试。"
-      : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原结果。" : undefined;
+      : !(isSuperadmin || session?.authorities.includes(record.permission)) ? "当前账号没有这项操作权限，请查询原操作。" : undefined;
     const target = investigationRecord(record);
     return {
       key: record.commandKey, title: <span title={label}>{label}</span>, record: target, outcome, createdAt: record.createdAt, expired,
@@ -363,8 +363,8 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
       actions: <>
         {target ? <FundCheckButtons record={target} outcome={outcome} expired={expired} busy={!!checking || !!retrying} checking={checking === record.commandKey}
           onCheck={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }} onClose={() => setClosing(record)} />
-          : <Button size="sm" loading={checking === record.commandKey} disabled={!!checking || !!retrying} onClick={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }}>查询原结果</Button>}
-        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retrying ? "提交中…" : retryBlocked} onClick={() => restore(record)}>按原请求重试</Button>}
+          : <Button size="sm" loading={checking === record.commandKey} disabled={!!checking || !!retrying} onClick={() => { void queryOriginal(record).catch((error) => toast(displayAdminError(error))); }}>查询原操作</Button>}
+        {!expired && <Button size="sm" disabled={!!checking} disabledReason={retrying ? "提交中…" : retryBlocked} onClick={() => restore(record)}>按原操作重试</Button>}
       </>,
       detail: <>
         {record.change && <p>{record.change}</p>}

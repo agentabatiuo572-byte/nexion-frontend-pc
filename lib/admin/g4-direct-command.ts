@@ -77,7 +77,7 @@ export async function executeG4DirectCommand<T>(request: G4DirectRequest, send: 
   let original = listG4DirectCommands(adminId).find(record => g4DirectObject(record) === object);
   if (saved && original?.commandKey !== saved.commandKey) throw new Error("原操作已结束，请重新读取当前状态。");
   if (original && !saved && (original.body !== request.body || original.method !== request.method || original.path !== request.path)) {
-    throw new A2OutcomeUncertainError("这一项有结果未知的原操作，请查询或按原请求重试，不能改值或理由。", original.commandKey);
+    throw new A2OutcomeUncertainError("这一项有结果未知的原操作，请查询或按原操作重试，不能改值或理由。", original.commandKey);
   }
   if (!auth.session!.authorities.includes(g4DirectAuthority(original ?? request))) throw new Error("当前账号没有此项修改权限；仍可只读核对原操作。");
   if (!original) {

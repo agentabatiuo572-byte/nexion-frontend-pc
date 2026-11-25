@@ -350,7 +350,7 @@ export default function CommandCenter() {
       {/* 导出结果未知：原快照、理由和请求号在浏览器里，刷新后也要看得见，并能回到原确认框（入口同页头按钮）。放在今天的状况下面，不抢首屏结论。 */}
       {canExport && pendingExport && (
         <Notice tone="warn" title="上次导出资金数据结果未知" action={<Button size="sm" onClick={exportSnapshot}>查看原导出</Button>}>
-          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原数据和理由已保留，{pendingExport.expiresAt > Date.now() ? "打开后可以按原请求重试。" : "已超过 24 小时不能再重试，请联系值班人员到操作记录核对。"}
+          {formatBusinessTimeCompact(new Date(pendingExport.createdAt).toISOString())}（{businessZone().label}）发起。原数据和理由已保留，{pendingExport.expiresAt > Date.now() ? "打开后可以按原操作重试。" : "已超过 24 小时不能再重试，请联系值班人员到操作记录核对。"}
         </Notice>
       )}
 

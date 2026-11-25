@@ -15,7 +15,7 @@ export type L1PendingExport = PendingMutationRecord & {
   commandOrigin?: FundCommandOrigin;
 };
 
-export const L1_EXPORT_ORIGINAL_INCOMPLETE = "保存的原请求不完整，不能重发。请查询原结果，到「操作记录与审批」核对。";
+export const L1_EXPORT_ORIGINAL_INCOMPLETE = "保存的原请求不完整，不能重发。请查询原操作，到「操作记录与审批」核对。";
 
 export type L1ExportSource = {
   parentData: unknown;

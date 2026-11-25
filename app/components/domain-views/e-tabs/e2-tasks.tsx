@@ -37,7 +37,7 @@ const PRODUCT_STATES = { PUBLISHED: "已发布", DRAFT: "草稿", DELISTED_WITH_
 const MINUTES = [{ value: 0, text: "0" }, { value: 60, text: "60" }, { value: 120, text: "120" }];
 const TASK_RULES = "等级只决定跑什么任务，收益由商品的月收益目标决定。当前任务保持原配置，修改只影响之后的新任务。每级最多 200 个启用任务、300 个任务（含停用）。";
 const GENERATION = "系统生成同池唯一的英文名称，时长为 5 分钟整数倍：向量计算 30–60 分钟，语音处理 45–90 分钟，图像生成和大模型推理 60–120 分钟，模型微调和视频生成 90–120 分钟。新任务立即启用。";
-const RETRY_HELP = "先查询原结果。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
+const RETRY_HELP = "先查询原操作。查不到时可重新发送保存的原请求，系统认得出是同一次提交，不会重复执行。";
 const MISSING_TASK_WEIGHT = "这条任务还没有权重，暂时不能编辑";
 const READ_BACK_ERRORS: Record<ReadScope, string> = {
   all: "最新任务等级摘要和任务列表暂时读不到。",
@@ -63,12 +63,12 @@ function editRejection(code: string, create: boolean, data: unknown) {
   if (code === "TASK_POOL_ENABLED_LIMIT") return `这个等级已启用 ${cap(200)} 个任务，这次没有新增。可以不勾「新增后立即启用」，先加为停用。`;
 }
 
-/** 冻结框（结果未知的原操作）只放一条提示，随状态变（OP-93）：没查过先查；查过写查询结论；按原请求重试被明确拒绝写原因。 */
+/** 冻结框（结果未知的原操作）只放一条提示，随状态变（OP-93）：没查过先查；查过写查询结论；按原操作重试被明确拒绝写原因。 */
 function FrozenNotice({ expired, rejected, outcome, canClose }: { expired: boolean; rejected?: string; outcome?: CommandOutcome; canClose: boolean }) {
-  return <Notice tone="warn" title={expired ? "已超过 24 小时，不能再重试" : rejected !== undefined ? "按原请求重试被明确拒绝" : "结果未知，原操作已冻结"}>
-    {!expired && rejected !== undefined ? <>{rejected && <p>{rejected}</p>}<p>先查询原结果核实，再决定是否解除原操作记录。</p></>
+  return <Notice tone="warn" title={expired ? "已超过 24 小时，不能再重试" : rejected !== undefined ? "按原操作重试被明确拒绝" : "结果未知，原操作已冻结"}>
+    {!expired && rejected !== undefined ? <>{rejected && <p>{rejected}</p>}<p>先查询原操作核实，再决定是否解除原操作记录。</p></>
       : outcome ? <CommandOutcomeLine outcome={outcome} expired={expired} canClose={canClose} retryOnMissingOnly />
-        : <p>{expired ? "原请求继续保留，这个等级仍暂停新操作。先查询原结果，再到操作记录与审批核对。" : "先查询原结果；查不到再按原请求重试，不会重复执行。"}</p>}
+        : <p>{expired ? "原请求继续保留，这个等级仍暂停新操作。先查询原操作，再到操作记录与审批核对。" : "先查询原操作；查不到再按原操作重试，不会重复执行。"}</p>}
   </Notice>;
 }
 
@@ -80,9 +80,9 @@ function FrozenActions({ expired, rejected, outcome, retryBlock, saving, queryin
   const missing = !!outcome && "receipt" in outcome && outcome.receipt === null;
   const retryable = !expired && !rejected;
   const queryFirst = !(rejected && !expired) && !(retryable && missing);
-  const query = <Button variant={queryFirst ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabledReason={saving ? "正在提交" : undefined} onClick={onQuery}>查询原结果</Button>;
+  const query = <Button variant={queryFirst ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabledReason={saving ? "正在提交" : undefined} onClick={onQuery}>查询原操作</Button>;
   const next = rejected && !expired ? <Button variant="primary" disabledReason={saving || querying ? "正在处理" : undefined} onClick={onRelease}>解除原操作记录</Button>
-    : retryable && <Button variant={missing ? "primary" : "secondary"} loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : querying ? "正在查询原结果" : retryBlock} onClick={onRetry}>按原请求重试</Button>;
+    : retryable && <Button variant={missing ? "primary" : "secondary"} loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : querying ? "正在查询原操作" : retryBlock} onClick={onRetry}>按原操作重试</Button>;
   return <>
     {closure && <Button variant="danger-outline" disabled={saving || querying} onClick={onClosure}>核查结案</Button>}
     <Button disabled={saving} onClick={onClose}>收起</Button>
@@ -144,7 +144,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [denied, setDenied] = useState(false);
   const [pending, setPending] = useState<E2Pending[]>([]);
   const [rejected, setRejected] = useState<string[]>([]);
-  /** 按原请求重试被明确拒绝的原因，只用来显示（冻结框和待确认条）。 */
+  /** 按原操作重试被明确拒绝的原因，只用来显示（冻结框和待确认条）。 */
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<PoolDialog | null>(null);
   const [releasing, setReleasing] = useState<E2Pending | null>(null);
@@ -610,16 +610,16 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     {query.reset && <Notice tone="warn" action={<Button size="sm" onClick={() => setQuery(old => ({ ...old, reset: false }))}>知道了</Button>}>网址里无效的查询条件已重置。</Notice>}
     {receipt && <Notice tone={receipt.includes("读不到") ? "warn" : "ok"} action={<Button size="sm" onClick={retryFailedRead}>刷新</Button>}>{receipt}</Notice>}
     {pending.map(record => <Notice key={record.commandKey} tone="warn" title={`${record.pool.code} ${record.pool.name} · ${e2CommandLabel(record)}，结果未知`}
-      actionBelow action={<><Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原结果</Button>
-        {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} data-e2-editor-leave onClick={() => leaveEditorThen(() => { viewOriginal(record); void send(record, true); })}>按原请求重试</Button>}
+      actionBelow action={<><Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => void queryOriginal(record))}>查询原操作</Button>
+        {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} data-e2-editor-leave onClick={() => leaveEditorThen(() => { viewOriginal(record); void send(record, true); })}>按原操作重试</Button>}
         <Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => viewOriginal(record))}>查看原操作</Button>
         {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => setClosing(record))}>核查结案</Button>}
         {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => releaseOriginal(record))}>解除原操作记录</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
-      {rejected.includes(record.commandKey) && rejectReasons[record.commandKey] && <p>按原请求重试被明确拒绝：{rejectReasons[record.commandKey]}</p>}
+      {rejected.includes(record.commandKey) && rejectReasons[record.commandKey] && <p>按原操作重试被明确拒绝：{rejectReasons[record.commandKey]}</p>}
       {/* 过期后下一步只说一处：查过的由下面的结论句说（含核查结案），没查过的先查询。 */}
-      {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原结果。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
+      {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原操作。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
       {pendingNote && !outcomes[record.commandKey] && <p>{pendingNote}</p>}
       <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} canClose={canInvestigate} retryOnMissingOnly />
       {outcomes[record.commandKey] && <p><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p>}

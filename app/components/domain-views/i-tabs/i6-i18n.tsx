@@ -379,10 +379,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const newWriteProblem = (scope: string) => {
     if (conflictReview.blockedReason()) return conflictReview.blockedReason();
     if (!freshOverview()) return "请先成功重新读取数据，再发起新的修改。";
-    if (pendingI6Commands().some(record => record.scope === "unknown" || record.scope === scope)) return "此对象有结果未知的原操作，请先查询原结果。";
+    if (pendingI6Commands().some(record => record.scope === "unknown" || record.scope === scope)) return "此对象有结果未知的原操作，请先查询原操作。";
     const proposal = scope.startsWith("course:") ? pendingHIRewardCommands().find(record => record.payload.kind === "proposal"
       && record.payload.input.command.domain === "I" && record.payload.input.obj === scope.slice(7) && record.ticketStatus !== "pending") : undefined;
-    if (proposal) return proposal.receiptKnown ? "这门课的申请已提交，审批状态还没查到；先点「查询原结果」。" : "此对象有结果未知的原操作，请先查询原结果。";
+    if (proposal) return proposal.receiptKnown ? "这门课的申请已提交，审批状态还没查到；先点「查询原操作」。" : "此对象有结果未知的原操作，请先查询原操作。";
     return undefined;
   };
   const finishRecovery = async (commandKey?: string, finish?: () => void, message = "原操作结果已核对") => {
@@ -399,7 +399,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
   const recoveryReadProblem = (record: HIRewardCommand | I6Command) => {
     const data = freshOverview();
-    if (!data) return "请先成功重新读取数据，再按原请求重试。";
+    if (!data) return "请先成功重新读取数据，再按原操作重试。";
     if ("payload" in record) {
       const target = record.payload.kind === "proposal" ? record.payload.input.obj : undefined;
       if (target && !data.courses.some(course => course.id === target))
@@ -416,7 +416,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     const state = i6CourseRecovery.state(record);
     if (state.replayRejection) return RETRY_REJECTED_TEXT;
     if (state.expired) return RETRY_EXPIRED_TEXT;
-    return recoveryReadProblem(record) ?? i6CourseProposalPermission(record) ?? (state.replayBlock ? "请查询原结果" : undefined);
+    return recoveryReadProblem(record) ?? i6CourseProposalPermission(record) ?? (state.replayBlock ? "请查询原操作" : undefined);
   };
   const coursePendingRecovery = (record: HIRewardCommand, query: () => Promise<void>) => {
     const state = i6CourseRecovery.state(record);
@@ -824,7 +824,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   /* ============ tutorial actions ============ */
   const activateCourse = async (c: Course, kind: "first_publish" | "version_publish" | "version_rollback", reason: string, target: LearningCourseVersionView | LearningCourseView) => {
     const scope = hiCourseScope(c.id);
-    if (pendingHIRewardCommand(scope)) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
+    if (pendingHIRewardCommand(scope)) throw new Error("此对象有原操作尚未核清，请先查询原操作。");
     const versions = await actions.fetchI7CourseVersions(c.id);
     const currentTarget = kind === "first_publish" ? versions.find(v => v.status === "DRAFT")
       : versions.find(v => v.version === target.version);
@@ -916,7 +916,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   // 课程奖励调整沿用原专用审批。
   const adjRwd = (c: Course) => {
     if (rewardApprovalBlocked) { toast(rewardApprovalBlocked, "warn"); return; }
-    if (pendingHIRewardCommand(hiCourseRewardScope(c.id))) { toast("此对象有原操作尚未核清，请先查询原结果。", "warn"); return; }
+    if (pendingHIRewardCommand(hiCourseRewardScope(c.id))) { toast("此对象有原操作尚未核清，请先查询原操作。", "warn"); return; }
     confirmI6(`course:${c.id}`, { briefKind: "config",
       action: <>课程奖励调整 · {nexGridBrandText(c.title)}</>,
       title: "提交审批：调整课程奖励",
@@ -1591,10 +1591,10 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       <span className="i6-pending-change">{ordinaryChange(record)}</span>
       <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
       <span className="i6-pending-act">
-        <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原结果</Button>
+        <Button size="sm" disabled={!!ordinaryBusy && ordinaryBusy !== record.commandKey} loading={ordinaryBusy === record.commandKey} onClick={() => void queryOrdinary(record)}>查询原操作</Button>
         {canInvestigateECommand(record.original?.path.startsWith("/i18n-learning/courses/") ? "content_i7_read" : "content_i6_read") && eCommandClosureOffer(ordinaryOutcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!ordinaryBusy} onClick={() => setClosingOrdinary(record)}>核查结案</Button>}
         {!i6Recovery.state(record).replayRejection && <Button size="sm" variant="primary" disabledReason={ordinaryRetryProblem(record)}
-          onClick={() => void retryOrdinary(record)}>按原请求重试</Button>}
+          onClick={() => void retryOrdinary(record)}>按原操作重试</Button>}
         {i6Recovery.state(record).replayRejection && <VerifiedReleaseButton disabled={!!ordinaryBusy || !!i6Recovery.state(record).busy} onClick={() => release.ask({ operation: record.label,
           target: <>{record.target && <>{courseOf(record) ? nexGridBrandText(courseOf(record)!.titleZh || courseOf(record)!.title) : <span className="i6-mono">{record.target}</span>} </>}{ordinaryChange(record)}</>,
           getSnapshot: i6Recovery.releaseSnapshot(record), createdAt: record.createdAt, release: () => { const released = i6Recovery.releaseRejectedReplay(record); updateRecovery(value => value + 1); return released; } })} />}
@@ -1654,17 +1654,17 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 <span className="i6-pending-change">{change(record)}</span>
                 <span className="i6-pending-at">{businessStamp(record.createdAt)} 提交</span>
                 <span className="i6-pending-act">
-                <Button size="sm" disabled={!!lookupKey && lookupKey !== record.commandKey} loading={lookupKey === record.commandKey} onClick={() => void queryCourseOriginal(record)}>查询原结果</Button>
+                <Button size="sm" disabled={!!lookupKey && lookupKey !== record.commandKey} loading={lookupKey === record.commandKey} onClick={() => void queryCourseOriginal(record)}>查询原操作</Button>
                 {!queryOnly && !replayRejected && <Button size="sm" variant="primary" disabled={!!lookupKey} disabledReason={courseRetryBlocked(record)}
                   onClick={() => {
                   const confirmation: ActionConfirmReq = { briefKind: "record",
                   action: `核对原操作 · ${label}`,
-                  title: "按原请求重试",
+                  title: "按原操作重试",
                   detail: expired ? <>原操作已超过 24 小时，只查询原审批单，不会重发。</> : <>刚查过，没查到这张审批单；确认后按原内容再提交一次，不会重复建单。理由沿用原操作。</>,
                   effect: <StatusTag tone="progress" filled>批准后生效</StatusTag>,
                   statedBrief: { impact: "按原内容再提交一次，不会建第二张审批单。", check: "核对是哪门课、哪个版本。" },
                   facts: <Facts><Fact k="原操作">{label}</Fact><Fact k="改动">{change(record) ?? "—"}</Fact><Fact k="提交时间">{businessStamp(record.createdAt)}（{BJ}）</Fact></Facts>,
-                  confirmLabel: "按原请求重试",
+                  confirmLabel: "按原操作重试",
                   getPendingReason: () => pendingHIRewardCommands().find((row) => row.commandKey === record.commandKey)?.payload.input.reason,
                   getPendingRecovery: () => coursePendingRecovery(record, () => queryCourseOriginal(record)),
                   run: async () => {
@@ -1681,12 +1681,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                 };
                   recoveryConfirm.current = { commandKey: () => record.commandKey, finish: () => ctx.closeActionConfirm(confirmation) };
                   openActionConfirm(confirmation);
-                }}>按原请求重试</Button>}
+                }}>按原操作重试</Button>}
                 {replayRejected && !record.receiptKnown && record.ticketStatus !== "pending" && <VerifiedReleaseButton disabled={!!lookupKey || !!i6CourseRecovery.state(record).busy} onClick={() => release.ask({ operation: label, target: change(record), targetLabel: "改动", getSnapshot: i6CourseRecovery.releaseSnapshot(record), createdAt: record.createdAt,
                   release: () => { try { releaseRejectedI6Course(record); } finally { updateRecovery(value => value + 1); } } })} />}
                 </span>
                 {approvalQuery.errors[record.commandKey] && <span className="i6-pending-note">{approvalQuery.errors[record.commandKey]}</span>}
-                {record.receiptKnown || record.ticketStatus === "pending" ? <span className="i6-pending-note">审批单已经建了，点「查询原结果」看状态。</span>
+                {record.receiptKnown || record.ticketStatus === "pending" ? <span className="i6-pending-note">审批单已经建了，点「查询原操作」看状态。</span>
                   : replayRejected ? <span className="i6-pending-note">{RETRY_REJECTED_NEXT}</span>
                   : expired && <span className="i6-pending-note">{RETRY_EXPIRED_TEXT}</span>}
               </li>;
@@ -2091,9 +2091,9 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
   const hiddenCount = allCourses.filter(c => appHidden(c).length > 0).length;
   const conclusion = unknownCount > 0
-    ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里先查询原结果" }
+    ? { state: "warn" as const, text: `${count(unknownCount)} 个课程操作结果未知，先核对`, hint: "在下面「等批准和结果未知」里先查询原操作" }
     : submittedCount > 0
-      ? { state: "neutral" as const, text: `${count(submittedCount)} 张课程申请已提交，审批状态还没查到`, hint: "在下面点「查询原结果」再查" }
+      ? { state: "neutral" as const, text: `${count(submittedCount)} 张课程申请已提交，审批状态还没查到`, hint: "在下面点「查询原操作」再查" }
     : pendingCourseCount > 0
       ? { state: "neutral" as const, text: `${count(pendingCourseCount)} 门课在等${APPROVER}批准`, hint: counts.draft ? `另有 ${count(counts.draft)} 门草稿没发布` : undefined }
       : hiddenCount > 0

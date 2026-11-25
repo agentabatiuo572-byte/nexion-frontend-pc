@@ -150,7 +150,7 @@ export function parsePhoneReceipt(value: unknown): PhoneReceipt {
         || !["PENDING", "SUCCEEDED", "FAILED"].includes(String(value.status)) || !safeInteger(value.submittedAt)
         || !(value.completedAt === null || safeInteger(value.completedAt))
         || !(value.originalResult === null || record(value.originalResult)) || !(value.currentResource === null || record(value.currentResource)))
-        throw new Error("操作结果未知，请继续查询原结果。");
+        throw new Error("操作结果未知，请继续查询原操作。");
     return value as unknown as PhoneReceipt;
 }
 export function parsePhoneOverview(value: unknown): PhoneOverview {
@@ -198,7 +198,7 @@ export const phoneLabels: Record<string, string> = {
     PHONE_LOW_BATTERY: "手机电量不足", PHONE_OFFLINE: "手机离线", USER_AUTH_REQUIRED: "账号当前不可执行此操作",
     POLICY_VERSION_CHANGED: "策略已更新，请刷新并重新确认", BINDING_VERSION_CHANGED: "绑定已变化，请刷新当前账号",
     GRANT_STATE_CHANGED: "授权状态已变化，请查看当前结果", REQUEST_UNAVAILABLE: "申请已到期、关闭或处理，请刷新",
-    ACTIVE_GRANT_EXISTS: "已有有效特批，请先核对现有授权", IDEMPOTENCY_MISMATCH: "该操作标识已用于另一份内容，请查询原结果",
+    ACTIVE_GRANT_EXISTS: "已有有效特批，请先核对现有授权", IDEMPOTENCY_MISMATCH: "该操作标识已用于另一份内容，请查询原操作",
     PERMISSION_DENIED: "当前账号无权执行此操作", ADMIN_AUTH_REQUIRED: "管理会话已失效，请重新登录",
     OPERATION_RESULT_UNKNOWN: "暂未查到原操作，结果仍待核实。请勿重新提交。",
     PHONE_INSTALLATION_NOT_FOUND: "没有找到这台手机的校准记录，请刷新", PHONE_MODEL_LOCK_RELEASE_CONFLICT: "机型锁状态已变化，请刷新后核对",

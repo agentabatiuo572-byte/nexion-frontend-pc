@@ -78,7 +78,7 @@ export function useSupportManagementCommand<T, R>(options: {
           return;
         }
         if (receipt.status !== "SUCCEEDED") {
-          setMessage("原操作结果未知，请稍后再查询原结果。");
+          setMessage("原操作结果未知，请稍后再查询原操作。");
           return;
         }
         result = receipt.result;
@@ -104,7 +104,7 @@ export function useSupportManagementCommand<T, R>(options: {
         store.remember(slot, commandKey, { payload, denied: true });
         setDenied(true); setMessage(deniedNotice);
       } else {
-        setMessage(action === "query" ? "暂时查询不了原结果，请稍后再查。" : "结果未知，请先查询原结果。");
+        setMessage(action === "query" ? "暂时查询不了原结果，请稍后再查。" : "结果未知，请先查询原操作。");
       }
     } finally {
       running.current = false;
@@ -113,6 +113,6 @@ export function useSupportManagementCommand<T, R>(options: {
   }
 
   const notice = expired ? `${message}${RETRY_EXPIRED_TEXT}`
-    : canReplay ? `${message}可稍后再查或按原请求重试。` : message;
+    : canReplay ? `${message}可稍后再查或按原操作重试。` : message;
   return { pending, busy, message: notice, canReplay, denied, run };
 }

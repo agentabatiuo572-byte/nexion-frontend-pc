@@ -13,7 +13,7 @@ export { FAILED_EXPIRED_LINE, closureKnown, closureConflict } from "./recovery-p
 /**
  * 资金类「结果未知」记录的恢复面板：D2、D3、D5、D6、D7、J1、K1、L1、E4 共用一个样子。
  * 一个面板、每条一行（操作 · 状态 · 一句结论 · 固定在右侧的按钮），点开一行才看发出时间、详细说明和技术信息。
- * 查询原结果只读（GET by-command-key）；核查结案是另一个按钮、另一个确认框，只给有调查权限的超级管理员。
+ * 查询原操作只读（GET by-command-key）；核查结案是另一个按钮、另一个确认框，只给有调查权限的超级管理员。
  * 资金操作系统证明不了「确实没执行」，所以没查到、仍未知都不写成没执行。
  */
 
@@ -37,9 +37,9 @@ export type FundRecoveryRow = {
   /** 发出时间；旧记录没有时不写。 */
   createdAt?: number;
   expired: boolean;
-  /** 现在这个账号能不能按原请求重试。 */
+  /** 现在这个账号能不能按原操作重试。 */
   canRetry: boolean;
-  /** 这一行有没有「查询原结果」按钮；不传时按记录本身能不能查判断。 */
+  /** 这一行有没有「查询原操作」按钮；不传时按记录本身能不能查判断。 */
   canQuery?: boolean;
   /** 这个账号能不能核查结案；不传时按记录本身（fundInvestigationAccess）判断。没有资金原记录的页面自己传。 */
   canClose?: boolean;
@@ -53,7 +53,7 @@ export type FundRecoveryRow = {
 };
 
 type Shown = { tone: StateTone; label: string; line: string; more?: string };
-/** 24 小时内重试原请求：后台对还在执行的返回「处理中」、对结果未知的返回「结果未知」，都不会再执行一次，也拿不到新结果。 */
+/** 24 小时内按原操作重试：后台对还在执行的返回「处理中」、对结果未知的返回「结果未知」，都不会再执行一次，也拿不到新结果。 */
 export const PROCESSING_LINE = "过一会儿再查询；现在重试不会重复执行，也拿不到新结果。";
 export const UNKNOWN_LINE = "系统也没有结果，重试也拿不到新结果；请按证据核查结案。";
 function lookupStatus(expired: boolean, result: Shown): Shown {
@@ -65,7 +65,7 @@ export function unsettledLookupStatus(state: "NOT_FOUND" | "PROCESSING", expired
     ? { tone: "warn", label: "没有查到", line: `查不到不等于没执行，先到${where}核对，不要另做一次。` }
     : { tone: "progress", label: "还在执行", line: expired ? "稍后再查，执行完才有结论。" : PROCESSING_LINE });
 }
-const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原结果；按原请求重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
+const INTRO = "这些操作发出后没收到明确结果：直接生效的可能已经生效，走审批的可能已经提交了申请。先查询原操作；按原操作重试只会重发原内容，不会多做一次。有结果前，相关对象不能再操作。";
 
 /** 原请求是提交到「操作记录与审批」的申请：批准前什么都不生效，结果未知时只能说「可能已经提交」。 */
 function isProposal(record?: FundCommandRecord) {
@@ -100,8 +100,8 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
   const canQuery = row.canQuery ?? !block;
   const maybe = isProposal(row.record) ? "可能已经提交" : "可能已经生效";
   if (!outcome) return row.expired
-    ? { tone: "warn", label: "已过期", line: canQuery ? "超过 24 小时不能再重试，先查询原结果。" : `超过 24 小时不能再重试，到${where}核对。` }
-    : { tone: "warn", label: "结果未知", line: canQuery ? `${maybe}，先查询原结果。` : block ? `${block}。` : `${maybe}，这个账号查不了原结果，到${where}核对。` };
+    ? { tone: "warn", label: "已过期", line: canQuery ? "超过 24 小时不能再重试，先查询原操作。" : `超过 24 小时不能再重试，到${where}核对。` }
+    : { tone: "warn", label: "结果未知", line: canQuery ? `${maybe}，先查询原操作。` : block ? `${block}。` : `${maybe}，这个账号查不了原结果，到${where}核对。` };
   if ("error" in outcome) return lookupStatus(row.expired, /只有原操作人或有调查权限/.test(outcome.error)
     ? { tone: "danger", label: "没有查询权限", line: "请原操作人或有调查权限的超级管理员查询。" }
     : { tone: "danger", label: "查询失败", line: "这不代表没执行，记录保留，稍后再查。" });
@@ -117,12 +117,12 @@ function shown(row: Pick<FundRecoveryRow, "record" | "outcome" | "expired" | "ca
   // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine；记为失败过期时总有一句），说不了的沿用原句。
   const step = closureLine(eCommandClosureOffer(outcome, row.expired), receipt, canClose);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", label: "记为失败", line: row.expired ? step!
-    : row.canRetry ? "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
+    : row.canRetry ? "系统记录这次失败了；按原操作重试不会做两遍，已做成的直接拿回结果。" : `系统记录这次失败了，到${where}核对后再决定要不要重新发起。` };
   if (receipt.originalStatus === "UNKNOWN") return { tone: "warn", label: "仍未知", line: step ?? (!canClose ? "系统也没有结果，请有调查权限的超级管理员核查结案。"
     : row.expired ? "系统也没有结果；已过 24 小时，请核查结案。" : UNKNOWN_LINE) };
-  // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
+  // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原操作重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(fundCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", label: "已处理", more, line: row.expired ? `后台已处理，看不出成没成；${closure}`
-    : row.canRetry ? "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原请求重试确认。" };
+    : row.canRetry ? "后台已处理，看不出成没成；按原操作重试可确认，不会重复执行。" : "后台已处理，看不出成没成；请有操作权限的人按原操作重试确认。" };
   return { tone: "done", label: "已有结论", line: "刷新页面查看现在的结果。" };
 }
 
@@ -214,12 +214,12 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, settl
   </>;
 }
 
-/** 每行右侧的查询类按钮：查询原结果（只读）、核查结案（单独确认框）。按原请求重试由页面自己放在后面。 */
+/** 每行右侧的查询类按钮：查询原操作（只读）、核查结案（单独确认框）。按原操作重试由页面自己放在后面。 */
 export function FundCheckButtons({ record, outcome, expired, busy, checking, onCheck, onClose, lookupWithoutOrigin, canLookupOwnProposal }: {
   record: FundCommandRecord;
   /** 超过 24 小时：查到已处理完或记为失败也给核查结案（不能再重试，这是唯一的出路）。不传时只在仍未知时给。 */
   expired?: boolean;
-  /** 没有原请求出处的旧审批记录：仍给「查询原结果」，页面只调查审批单的读取。 */
+  /** 没有原请求出处的旧审批记录：仍给「查询原操作」，页面只调查审批单的读取。 */
   lookupWithoutOrigin?: boolean;
   /** 原发起人查票用该票种的原号查询权限。 */
   canLookupOwnProposal?: boolean;
@@ -233,7 +233,7 @@ export function FundCheckButtons({ record, outcome, expired, busy, checking, onC
   const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
   return <>
     {(canLookupOwnProposal || !access.unavailableReason || access.unavailableReason === "MISSING_ORIGIN" && lookupWithoutOrigin) && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={checking} disabled={busy}
-      disabledReason={canLookupOwnProposal || access.unavailableReason ? undefined : fundReadBlock(record)} onClick={onCheck}>查询原结果</Button>}
+      disabledReason={canLookupOwnProposal || access.unavailableReason ? undefined : fundReadBlock(record)} onClick={onCheck}>查询原操作</Button>}
     {access.canSubmit && eCommandClosureRequests(receipt, !!expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={busy} onClick={onClose}>核查结案</Button>}
   </>;
 }

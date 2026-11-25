@@ -129,8 +129,8 @@ export type H8RecoveryRow = {
 
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。到「操作记录与审批」核对；24 小时内可以按原请求重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
+    ? "提交时没收到确定结果，可能已经生效。到「操作记录与审批」核对；24 小时内可以按原操作重试，不会重复执行。"
+    : "提交时没收到确定结果，可能已经建了审批单。可以查询原操作；24 小时内也可以按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 export function expiredTag(kind: "direct" | "approval") {

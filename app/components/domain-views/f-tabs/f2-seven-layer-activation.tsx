@@ -97,9 +97,9 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
       : ctx.f2ActivationPendingError && canAudit ? "审批进度没读到，刷新后再试"
         : !supported ? "后台页面和系统版本对不上，暂时只能查看；请刷新后再试"
           : ctx.f2ActivationPending ? "已有申请在等另一位超级管理员批准"
-            : ctx.f2ActivationAttempt ? "上一次申请结果未知，先按原请求重试或去核对"
+            : ctx.f2ActivationAttempt ? "上一次申请结果未知，先按原操作重试或去核对"
               : submitted ? "刚提交的申请在等另一位超级管理员批准"
-                : recovering ? "正在按原请求重试" : checkedReason);
+                : recovering ? "正在按原操作重试" : checkedReason);
   const state = !policy ? null : !policy.sevenLayerEnabled ? "off" : policy.sevenLayerPaused ? "paused" : "running";
   const stateName = { off: "未启用", paused: "已暂停", running: "运行中" } as const;
 
@@ -149,10 +149,10 @@ export function F2SevenLayerActivation({ ctx, openConfirm, recovering }: { ctx: 
 /** 原申请写成运营看得懂的名字和改动；配置键不上屏。 */
 function attemptLabel(attempt: F2Proposal): { name: string; change: string } {
   const slot = attempt.fingerprint, spec = attempt.spec;
-  if (!spec) return { name: "团队奖励参数", change: "原请求不完整，只能查询原结果" };
+  if (!spec) return { name: "团队奖励参数", change: "原请求不完整，只能查询原操作" };
   const known = spec.before !== "—" || spec.after !== "—";
-  const plain = known ? `${spec.before} → ${spec.after}` : "原请求不完整，只能查询原结果";
-  if (slot === F2_ACTIVATION_SLOT) return { name: a2ActionText(spec.action), change: known ? plain : "原请求不完整，只能查询原结果" };
+  const plain = known ? `${spec.before} → ${spec.after}` : "原请求不完整，只能查询原操作";
+  if (slot === F2_ACTIVATION_SLOT) return { name: a2ActionText(spec.action), change: known ? plain : "原请求不完整，只能查询原操作" };
   if (slot === F2_POLICY_SLOT) return { name: "好友奖励政策", change: known ? "按原申请的政策内容" : plain };
   if (slot === F2_BOOTSTRAP_SLOT) {
     // 建单后用审批单上后端写的七层数；还没有审批单时用原请求里运营填的七层。
@@ -162,7 +162,7 @@ function attemptLabel(attempt: F2Proposal): { name: string; change: string } {
       ? layers.map((layer) => f4Decimal(String((layer as { usdtPct?: unknown } | null)?.usdtPct ?? "").replace(/[%,]/g, ""))) : [];
     const valid = sent.filter((value): value is string => value !== null && !value.startsWith("-"));
     const rates = rows ? rows.map(row => row.usdtPct) : valid.length === 7 ? valid : null;
-    const change = !rates ? "原请求不完整，只能查询原结果"
+    const change = !rates ? "原请求不完整，只能查询原操作"
       : f2BootstrapUsesRank(rates[0], rates[1]) ? "第 1、2 层按受益人等级，区间未知" : `L1–L7 合计占订单 ${num(f2PctSum(rates))}%`;
     return { name: "首次配置七层规则", change };
   }
@@ -170,7 +170,7 @@ function attemptLabel(attempt: F2Proposal): { name: string; change: string } {
   if (layer) return { name: `${layer[2]} ${layer[1] ? "UVT 系数" : "USDT 比例"}`, change: plain };
   if (slot.startsWith("f-config-batch:")) {
     const pauses = spec.after.split(" / ").flatMap((item) => { const m = /^F\.unilevel\.(L[1-7])\.paused=(\w+)$/.exec(item.trim()); return m ? [`${m[1]} ${m[2] === "on" ? "暂停" : "发放"}`] : []; });
-    return { name: "七层逐层暂停", change: pauses.length ? `改为 ${pauses.join("、")}` : "原请求不完整，只能查询原结果" };
+    return { name: "七层逐层暂停", change: pauses.length ? `改为 ${pauses.join("、")}` : "原请求不完整，只能查询原操作" };
   }
   const key = slot.replace(/^f-config:/, "");
   if (key === "F.partner.tiers") return { name: "合作伙伴权益门槛", change: known ? "按原申请的四档门槛" : plain };
@@ -183,7 +183,7 @@ function attemptLabel(attempt: F2Proposal): { name: string; change: string } {
  */
 export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { ctx: FViewCtx; recovering: boolean; setRecovering: (value: boolean) => void; drafts: readonly { original: F2Proposal; edit?: () => void }[] }) {
   const [error, setError] = useState<{ query: boolean; text: string } | null>(null);
-  // 只让点的那个按钮转圈：查询时别的行和「按原请求重试」只灰着，不显示「正在重试…」。
+  // 只让点的那个按钮转圈：查询时别的行和「按原操作重试」只灰着，不显示「正在重试…」。
   const [active, setActive] = useState<string | null>(null);
   // 查过的那一行原地写查到了什么；查到已结束的审批单时记录清掉，改用轻提示。
   const [notes, setNotes] = useState<Record<string, { tone: "warn" | "danger"; text: string }>>({});
@@ -202,7 +202,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
     try {
       if (!query) { await ctx.retryF2Proposal(attempt.fingerprint); return; }
       const ticket = await ctx.queryF2Proposal(attempt.fingerprint);
-      if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT : "没查到原审批单。可以稍后再查，或按原请求重试，不会建第二张。" });
+      if (!ticket) note({ tone: "warn", text: attempt.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT : "没查到原审批单。可以稍后再查，或按原操作重试，不会建第二张。" });
       else if (ticket.status === "pending") note({ tone: "warn", text: "审批单已建，在等批准；批准前不生效。" });
       else ctx.toast(fProposalEndText(ticket.status));
     } catch (cause) {
@@ -213,7 +213,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
-    <div ref={box}><Notice tone="warn" title={<>{drafts.length ? attempts.length ? "原申请与草稿" : "原申请未执行的草稿" : open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原结果；24 小时内可以按原请求重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
+    <div ref={box}><Notice tone="warn" title={<>{drafts.length ? attempts.length ? "原申请与草稿" : "原申请未执行的草稿" : open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原操作；24 小时内可以按原操作重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
       <ul className="f2-recovery" aria-label="还没有结论的原申请">
         {(all ? ordered : ordered.slice(0, 3)).map(({ attempt }) => {
           const { name, change } = attemptLabel(attempt);
@@ -224,12 +224,12 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
             <span className="f2-recovery-time">{businessStamp(attempt.createdAt)} 提交</span>
             <span>{attempt.ticket?.status === "pending"
               ? <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
-              : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原结果，不要重新提交。">已建单，未查到</StatusTag>
+              : attempt.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原操作，不要重新提交。">已建单，未查到</StatusTag>
                 : expired ? <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>
-                  : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原结果；24 小时内也可以按原请求重试，不会建第二张。">结果未知</StatusTag>}</span>
+                  : <StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经建了审批单。先查询原操作；24 小时内也可以按原操作重试，不会建第二张。">结果未知</StatusTag>}</span>
             <span className="f2-actions">
-              {attempt.canQuery && <Button size="sm" loading={active === `${attempt.commandKey}:query`} disabled={recovering} onClick={() => void recover(attempt, true)}>查询原结果</Button>}
-              {attempt.canRetry && !expired && <Button size="sm" loading={active === `${attempt.commandKey}:retry`} disabled={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原请求重试</Button>}
+              {attempt.canQuery && <Button size="sm" loading={active === `${attempt.commandKey}:query`} disabled={recovering} onClick={() => void recover(attempt, true)}>查询原操作</Button>}
+              {attempt.canRetry && !expired && <Button size="sm" loading={active === `${attempt.commandKey}:retry`} disabled={recovering} loadingText="正在重试…" onClick={() => void recover(attempt, false)}>按原操作重试</Button>}
               {attempt.canRelease && !attempt.ticket && <FReleaseButton label={name} toast={ctx.toast} onRelease={() => ctx.releaseF2Proposal(attempt.fingerprint)} />}
             </span>
             {expired && notes[attempt.commandKey]?.text !== RETRY_EXPIRED_TEXT && <span className="f2-recovery-line">{RETRY_EXPIRED_TEXT}</span>}
@@ -249,7 +249,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
       </ul>
       {attempts.length > 3 && <div className="fund-rows-foot"><Button size="sm" variant="ghost" onClick={() => setAll((value) => !value)}>{all ? "只看前 3 条" : `展开全部 ${attempts.length} 条`}</Button></div>}
       <p className="f2-recovery-zone">提交时间为{businessZone().label}{canAudit && <> · <Link className="rd-link" href="/platform/audit">去操作记录与审批核对</Link></>}</p>
-      {error && <Notice tone="danger" title="按原请求重试没有成功">{error.text}</Notice>}
+      {error && <Notice tone="danger" title="按原操作重试没有成功">{error.text}</Notice>}
     </Notice></div>
   );
 }

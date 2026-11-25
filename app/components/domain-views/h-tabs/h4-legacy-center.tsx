@@ -485,7 +485,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   const wheelCommandBlocks = (_op: string, _tierName?: string) => {
     if (!h4Blocked(HI_WHEEL_SCOPE)) return false;
-    toast("原操作结果未知，请先在本页顶部查询原结果。", "warn");
+    toast("原操作结果未知，请先在本页顶部查询原操作。", "warn");
     return true;
   };
 
@@ -498,7 +498,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   // ===== 既有活动 =====
   const openEventReward = (event: LegacyEvent) => {
-    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const current = text(event.reward);
     // Rule existence and fixed-code support are independent backend conditions.
     // Unknown reads must not be interpreted as a rule-less event.
@@ -621,7 +621,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
 
   /** 旧页面一个「上架 / 下架」框里选新状态；这里拆成「开放」「结束」两个入口，提交的状态值和旧框选中的一样。 */
   const openEventStatus = (event: LegacyEvent, value: "ongoing" | "ended") => {
-    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const missing = missingFor(event);
     const opening = value === "ongoing";
     const reopened = conflictDraft.reopenedAfterConflict;
@@ -728,7 +728,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openEventFeatured = (event: LegacyEvent) => {
-    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(event.id))) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const next = conflictDraft.intent === undefined ? !Boolean(event.featured) : conflictDraft.intent === "true";
     if (next === Boolean(event.featured) && !conflictDraft.rejection) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "没有改动"); return; }
     openConfirm({ rebaseValue: String(next), briefKind: "record",
@@ -754,7 +754,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openLocalizedContent = (code: string, field: "name" | "description" | "rewardName", locale: LocaleCode, source: string) => {
-    if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(hiEventScope(code))) { toast(h4ApprovalLockedReason(hiEventScope(code)) ?? "原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const required = requiredLanguages;
     const expectedValue = eventContent[code]?.[locale]?.[field];
     const current = text(expectedValue, "");
@@ -1029,7 +1029,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openWheelBudget = (guard: { key: string; label: string; value: string }) => {
-    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const current = text(guard.value);
     const raises = (value?: string) => value !== undefined && h4WheelGuardAmplifies("budget", value, current);
     openActionConfirm({ briefKind: "config",
@@ -1056,7 +1056,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
   };
 
   const openWheelKill = (guard: { key: string; label: string; value: string }) => {
-    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原结果。", "warn"); return; }
+    if (h4Blocked(`H/h4_wheel_guard/${guard.key}`)) { toast("原操作结果未知，请先在本页顶部查询原操作。", "warn"); return; }
     const current = text(guard.value);
     const on = killOn(current);
     const next = conflictDraft.intent ?? (on ? "关" : "开");
@@ -1460,15 +1460,15 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
     const approval = "proposal" in record.request;
     const change = hiCommandChange(record);
     const request: ActionConfirmReq = { briefKind: "record",
-      action: `核对原操作 · ${subject}`, title: "按原请求重试",
+      action: `核对原操作 · ${subject}`, title: "按原操作重试",
       statedBrief: { impact: approval
         ? expired ? "原申请已超过 24 小时，只查询原审批单，不会重发。" : "先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。"
-        : "按原请求原样重发，不会重复执行。理由沿用原操作。", check: "核对原操作和提交时间；内容和理由不能改。" },
+        : "按原操作原样重发，不会重复执行。理由沿用原操作。", check: "核对原操作和提交时间；内容和理由不能改。" },
       detail: approval
         ? expired ? <>原申请已超过 24 小时，只查询原审批单，不会重发。</> : <>先按原申请查审批单；查不到才原样重发，不会建第二张单。理由沿用原操作。</>
-        : <>按原请求原样重发，不会重复执行。理由沿用原操作。</>,
+        : <>按原操作原样重发，不会重复执行。理由沿用原操作。</>,
       facts: <Facts><Fact k="原操作">{subject}</Fact>{change && <Fact k="原改动">{change}</Fact>}<Fact k="提交时间">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}（北京时间）</Fact><Fact k="原请求">内容和理由锁住，原样重发</Fact></Facts>,
-      confirmLabel: "按原请求重试",
+      confirmLabel: "按原操作重试",
       getPendingReason: () => pendingH4Commands().some(r => r.commandKey === record.commandKey) ? record.reason : undefined,
       getPendingRecovery: () => {
         const pending = pendingH4Commands().find(r => r.commandKey === record.commandKey);
@@ -1523,11 +1523,11 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(record.createdAt).toISOString(), "Asia/Shanghai")}</span>（北京时间）</span>
           {record.approvalTicket ? <StatusTag tone={pending ? "warn" : "done"}>{h4TicketResult(record.approvalTicket)}</StatusTag> : pending ? pendingTag(subject) : rejection ? <StatusTag tone="warn">{record.rejectedReceipt?.state === "REJECTED" ? "已拒绝" : "未执行"}</StatusTag> : record.replayRejection ? rejectedTag() : lookup ? <StatusTag tone={lookup.tone}>{lookup.label}</StatusTag> : expired ? expiredTag() : media ? <StatusTag tone="warn">结果未知</StatusTag> : unknownTag("proposal" in record.request ? "approval" : "direct")}
           <span className="h4-pending-actions">
-            {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => terminal ? void refreshSavedCommands([record], record.approvalTicket?.status === "approved") : void lookupH4Command(record)}>{terminal ? "重新读取" : rejection ? "继续处理" : "查询原结果"}</Button>}
+            {!media && <Button size="sm" disabledReason={lookupKey ? "正在查询" : undefined} loading={lookupKey === record.commandKey} onClick={() => terminal ? void refreshSavedCommands([record], record.approvalTicket?.status === "approved") : void lookupH4Command(record)}>{terminal ? "重新读取" : rejection ? "继续处理" : "查询原操作"}</Button>}
             {!expired && !record.acknowledged && !rejection && (media ? <>
-              <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原请求重试</Button>
+              <Button size="sm" disabledReason={retryBlocked} loading={lookupKey === record.commandKey} onClick={() => void retryUpload(record)}>按原操作重试</Button>
               <span className="h4-pending-change">重新发送同一个文件，不会重复保存。</span>
-            </> : <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原请求重试</Button>)}
+            </> : <Button size="sm" disabledReason={retryBlocked} onClick={() => openResumeHICommand(record, subject)}>按原操作重试</Button>)}
             {h4ReleaseSnapshot(record) !== undefined && <VerifiedReleaseButton disabled={!!lookupKey} onClick={() => release.ask({
               operation: subject, target: hiCommandChange(record), targetLabel: "改动", createdAt: record.createdAt,
               getSnapshot: () => h4ReleaseSnapshot(record), release: () => releaseH4RejectedReplay(record),

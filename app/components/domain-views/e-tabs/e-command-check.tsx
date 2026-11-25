@@ -37,25 +37,25 @@ function view(outcome: CommandOutcome, expired: boolean, canClose = true, retryO
   // 过期：三件事都写上（OP-153）——已超过 24 小时、不能再重试、去操作记录与审批核对。
   if (!receipt) return { tone: "warn", title: "没有查到", text: expired
     ? `${RETRY_EXPIRED_TEXT}这次没查到原请求，查不到不等于没执行，记录保留。`
-    : "原请求可能没送到，查不到不等于没执行。记录保留，可以按原请求重试，不会重复执行。" };
+    : "原请求可能没送到，查不到不等于没执行。记录保留，可以按原操作重试，不会重复执行。" };
   if (receipt.originalStatus === "PROCESSING") return { tone: "progress", title: "还在执行", text: expired || retryOnMissingOnly ? "原操作还在执行，稍后再查；不要重复提交。" : "原操作还在执行，过一会儿再查询；现在重试不会重复执行，也拿不到新结果。" };
   if (receipt.originalStatus === "CONFIRMED_REJECTED") return { tone: "done", title: "已结案", text: "核查确认是后台拒绝，记录已解除。" };
   if (eCommandRollbackConfirmed(receipt)) return { tone: "done", title: "确认未执行", text: "原操作没有生效，请按当前状态重新核对。" };
   if (receiptRejected(receipt)) return { tone: "warn", title: "后台拒绝", text: expired
     ? canClose ? "后台拒绝了，不保证没有改动；已过 24 小时，可按「后台拒绝」结案。" : "后台拒绝了，不保证没有改动；请有调查权限的超级管理员核查结案。"
     : retryOnMissingOnly ? "后台拒绝了，暂时无法确认是否有改动。请继续核对原结果。"
-      : "后台拒绝了，不保证没有改动；按原请求重试可看原因，不会重复执行。" };
+      : "后台拒绝了，不保证没有改动；按原操作重试可看原因，不会重复执行。" };
   // 过期的记为失败、仍未知：按结案框能选的结论说下一步（closureLine）。
   const step = closureLine(eCommandClosureOffer(outcome, expired), receipt, canClose);
   if (receipt.originalStatus === "FAILED") return { tone: "neutral", title: "记为失败", text: expired
     ? step!
     : retryOnMissingOnly ? "系统记为失败，暂时无法确认是否生效。请继续核对原结果。"
-      : "系统记录这次失败了；按原请求重试不会做两遍，已做成的直接拿回结果。" };
-  // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原请求重试能拿到当时的结果。
+      : "系统记录这次失败了；按原操作重试不会做两遍，已做成的直接拿回结果。" };
+  // 后端把被业务规则拒绝的请求也记成处理完：这里看不出成没成，只有按原操作重试能拿到当时的结果。
   if (["BUSINESS_RESULT_UNAVAILABLE", "REJECTED", "BATCH_RESULT"].includes(eCommandResult(receipt)) || receipt.originalStatus === "SUCCEEDED") return { tone: "warn", title: "已处理", text: expired
     ? canClose ? "后台已处理，看不出成没成；已过 24 小时，需要核查结案。" : "后台已处理，看不出成没成；请有调查权限的超级管理员核查结案。"
     : retryOnMissingOnly ? "后台已处理，暂时无法确认是否生效。请继续核对原结果。"
-      : "后台已处理，看不出成没成；按原请求重试可确认，不会重复执行。" };
+      : "后台已处理，看不出成没成；按原操作重试可确认，不会重复执行。" };
   return { tone: "warn", title: "仍未知", text: (receipt.originalStatus === "UNKNOWN" ? step : undefined) ?? (!canClose ? "原操作处理到一半中断了；请有调查权限的超级管理员核查结案。"
     : expired ? "原操作处理到一半中断了；已过 24 小时，需要按证据核查结案。" : "原操作处理到一半中断了，重试也拿不到新结果；需要按证据核查结案。") };
 }
@@ -192,13 +192,13 @@ export const PROPOSAL_END: Record<string, { tag: string; tone: StateTone; text: 
 /** One-line conclusions for recovery rows; the longer wording sits in the row details. */
 export const RECOVERY_LINE = {
   unknown: "不知道审批单建没建成；先查询，重试不会重复建单。",
-  absent: "现在查不到这张审批单，可以按原请求重试。",
-  expired: "超过 24 小时不能重试，先查询原结果。",
+  absent: "现在查不到这张审批单，可以按原操作重试。",
+  expired: "超过 24 小时不能重试，先查询原操作。",
   created: "审批单已建，进度没查到；只查询，不会再建。",
   missing: "按原请求查不到，说明没建成；核对后可以解除。",
   refused: "重试被明确拒绝；核对原因后可以解除。",
   pending: "等另一位管理员批准，批准前不生效。",
-  direct: "现在的状态不代表原操作的结果，先查询原结果。",
+  direct: "现在的状态不代表原操作的结果，先查询原操作。",
 } as const;
 
 /** Device pages use the shared recovery panel, so their rows look exactly like the fund pages' rows. */

@@ -169,7 +169,7 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
       businessForm={confirm.businessForm}
       getPendingReason={() => original()?.request?.reason}
       getPendingBusinessValue={() => original() ? originalValues.current ?? confirm.initial : confirm.initial}
-      blockedReason={!command.current && existing ? "这项操作有保存的原申请，请先查询原结果。" : undefined}
+      blockedReason={!command.current && existing ? "这项操作有保存的原申请，请先查询原操作。" : undefined}
       getPendingRecovery={() => {
         const record = original();
         return record && fConfirmRecovery(f1ProposalRecovery, record, async () => {
@@ -188,7 +188,7 @@ export function F1ConfirmHost({ confirm, ctx, onClose }: { confirm: F1Confirm; c
             await ctx.recoverF1(slot.current, "retry");
           } else {
             slot.current = typeof confirm.proposalSlot === "function" ? confirm.proposalSlot(businessValue) : confirm.proposalSlot ?? "";
-            if (slotRecord()) throw new Error("这项操作有保存的原申请，请先查询原结果。");
+            if (slotRecord()) throw new Error("这项操作有保存的原申请，请先查询原操作。");
             originalValues.current = businessValue;
             try { await ctx.runFContinuation(confirm.draft?.commandKey, () => confirm.submit(reason, businessValue, newValue)); }
             finally { command.current = slotRecord()?.commandKey; }

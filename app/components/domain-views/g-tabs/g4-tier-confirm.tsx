@@ -190,7 +190,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       try { ticket = await createA2OperationProposal(original.proposal, original.commandKey, true); }
       catch (failure) {
         if (original.ticket || !isExplicitRejection(failure)) {
-          throw new A2OutcomeUncertainError("原档位申请结果未知，请查询原结果，或按原请求重试。", original.commandKey);
+          throw new A2OutcomeUncertainError("原档位申请结果未知，请查询原操作，或按原操作重试。", original.commandKey);
         }
         attempts.forget(slot(session.adminId), original.commandKey);
         if (hadPending) { onClose(); await onError(failure); }
@@ -199,12 +199,12 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
     }
     ensureOwner(false, original.form);
     if (ticket.mine !== true || ticket.obj !== "tiers" || ticket.action !== "调整创世节点价格档位") {
-      throw new A2OutcomeUncertainError("查到的审批单和你的原档位申请对不上，请继续查询原结果。", original.commandKey);
+      throw new A2OutcomeUncertainError("查到的审批单和你的原档位申请对不上，请继续查询原操作。", original.commandKey);
     }
     attempts.remember(slot(session.adminId), original.commandKey, { input: JSON.stringify({ change: original.change, form: original.form, reason: original.reason, proposal: original.proposal, ticket }) });
     let active;
     try { active = await readActive(); }
-    catch { throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已建好，但当前档位没读到，请再查询原结果。`, original.commandKey); }
+    catch { throw new A2OutcomeUncertainError(`审批单 ${ticket.id} 已建好，但当前档位没读到，请再查询原操作。`, original.commandKey); }
     ensureOwner(false, original.form);
     if (ticket.status !== "pending") attempts.forget(slot(session.adminId), original.commandKey);
     const status = { pending: "查询时待审，另一位超级管理员批准后生效", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[ticket.status];
@@ -238,7 +238,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       : <>起点 {number(basis.from)}，截止和单价都填整数。{basis.nextTierId && <>改截止时下一档 <b>{basis.nextTierId}</b> 的起点会跟着调整，系列总量不变。</>}尚未发布系列时仍需单独发布，不会自动开放销售。</>}
       扩大已有系列的总量，或让还没卖出的节点涨价时，要另一位超级管理员批准；待审期间沿用原档位和原总量。只影响以后的销售，已下单的按下单时价格结算。</>}
     content={<>
-      {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>查询原结果不会把旧方案重新提交为当前配置。</p><p className="rd-note">技术信息：档位版本 {basis.expectedTiersVersion} · 原申请编号 <span data-mono>{opening.pending.commandKey}</span></p></RdNotice>}
+      {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>查询原操作不会把旧方案重新提交为当前配置。</p><p className="rd-note">技术信息：档位版本 {basis.expectedTiersVersion} · 原申请编号 <span data-mono>{opening.pending.commandKey}</span></p></RdNotice>}
       {session.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=G">到「操作记录与审批」查看</Link>}
     </>}
     briefKind="config" reasonMin={8} reasonMax={200} amplifies={false}

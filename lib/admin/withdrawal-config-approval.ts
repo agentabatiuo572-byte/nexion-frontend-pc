@@ -322,16 +322,16 @@ export function rememberWithdrawalProcessing<T extends PendingMutationRecord & W
 }
 
 export const WITHDRAWAL_COMMAND_PROCESSING = {
-  tone: "progress", label: "还在执行", line: "上次查询显示仍在处理，请稍后查询原结果。",
+  tone: "progress", label: "还在执行", line: "上次查询显示仍在处理，请稍后查询原操作。",
 } as const;
 export const WITHDRAWAL_SUBMISSION_CONFIRMED = {
   tone: "progress",
   label: "审批已提交",
-  line: "审批单号暂时没读到。继续查询原结果，核对审批单号和状态。",
+  line: "审批单号暂时没读到。继续查询原操作，核对审批单号和状态。",
 } as const;
 
-export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原结果，查到结论后才能决定是否按原请求重试。";
-export const WITHDRAWAL_REPLAY_RESEND = "按原请求重试会重发原内容，已成功的不会重复执行。";
+export const WITHDRAWAL_REPLAY_QUERY_REQUIRED = "先查询原操作，查到结论后才能决定是否按原操作重试。";
+export const WITHDRAWAL_REPLAY_RESEND = "按原操作重试会重发原内容，已成功的不会重复执行。";
 
 /** 直接写只在尚未查询或查询失败时阻止重试，查到的回执按原有规则处理。 */
 export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean) {
@@ -343,13 +343,13 @@ export function withdrawalReplayQueryBlock(outcome: FundInvestigationOutcome | u
 /** 放宽须先按原号明确查不到审批单；能读命令回执的账号还要先查过一次（读失败不算）。查到回执后不另外挡：已建单、处理中由各自的标记挡，其余按原号重试取回当时的结果。 */
 export function withdrawalApprovalReplayQueryBlock(outcome: FundInvestigationOutcome | undefined, canInvestigate: boolean, proposalMissing: boolean) {
   if (!proposalMissing && !(canInvestigate && outcome && "error" in outcome)) {
-    return "先查询原结果，确认查不到原审批单后才能按原请求重试。";
+    return "先查询原操作，确认查不到原审批单后才能按原操作重试。";
   }
   return withdrawalReplayQueryBlock(outcome, canInvestigate);
 }
 
 export function withdrawalReplayReadError(error: string) {
-  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原结果」。`;
+  return `查询没有成功：${error.replace(/[。！]+$/, "")}。请再点「查询原操作」。`;
 }
 
 /** 有回执时交给通用状态显示；没有回执时说明当前的查询或重试路径。 */
@@ -592,7 +592,7 @@ async function submitConfigApprovalTicket(
   if (mode === "retry-original") {
     if (!previous) throw new Error("原审批申请已处理，请刷新页面后重新操作。");
     if (withdrawalApproval && previous.withdrawalSubmissionConfirmed) throw new Error("审批已提交，请继续查询原审批单。");
-    if (withdrawalApproval && previous.withdrawalStillProcessing) throw new Error("原请求仍在处理，请继续查询原结果。");
+    if (withdrawalApproval && previous.withdrawalStillProcessing) throw new Error("原请求仍在处理，请继续查询原操作。");
     if (withdrawalApproval && previous.replayRejection) throw new Error("重试已被拒绝，请核实后解除。");
     [values, reason] = configApprovalOriginalInput(sourceDomain, previous.input);
   }

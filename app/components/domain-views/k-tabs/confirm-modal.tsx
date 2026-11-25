@@ -145,7 +145,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       footer={
         <>
           <Btn disabled={submitting || readingConflict} onClick={onClose}>取消</Btn>
-          {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原结果</Btn>}
+          {pendingRecovery?.query && <Btn disabled={submitting || readingConflict} onClick={() => void queryPending()}>查询原操作</Btn>}
           {finalConflict ? null : surface ? (
             <RdButton
               variant={req.confirmTone ?? "primary"}
@@ -155,7 +155,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
-              {pendingRecovery ? "按原请求重试" : req.okLabel ?? "确认"}
+              {pendingRecovery ? "按原操作重试" : req.okLabel ?? "确认"}
             </RdButton>
           ) : (
             <Btn

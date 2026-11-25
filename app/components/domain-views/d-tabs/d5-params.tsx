@@ -547,13 +547,13 @@ function tightenReplayBlock(record: TightenRecord, params: D5ParamData | null) {
 
 /**
  * 只能查询的原请求（会打开 TRC20、改它的确认费，或读不到原值）：为什么不能重试和下一步写在行上常显（OP-126、OP-93），
- * 不只放在按钮提示里；共用状态里叫人按原请求重试的那句换成读现值和操作记录。
+ * 不只放在按钮提示里；共用状态里叫人按原操作重试的那句换成读现值和操作记录。
  */
 function queryOnlyStatus(reason: string, base: NonNullable<FundRecoveryRow["status"]>, canQuery: boolean, notFound = false) {
-  const head = /按原请求重试/.test(reason) ? `${reason}。` : `${reason}，不能按原请求重试。`;
+  const head = /按原(操作|请求)重试/.test(reason) ? `${reason}。` : `${reason}，不能按原操作重试。`;
   const next = notFound ? "原审批单暂未查到；刷新页面读现在的值，到操作记录与审批核对。"
     : base.label === "已处理" ? "后台已处理，看不出成没成；刷新页面读现在的值，再到操作记录与审批核对。"
-      : base.label === "结果未知" ? canQuery ? "先查询原结果，再刷新页面读现在的值，或到操作记录与审批核对。" : "刷新页面读现在的值，到操作记录与审批核对。"
+      : base.label === "结果未知" ? canQuery ? "先查询原操作，再刷新页面读现在的值，或到操作记录与审批核对。" : "刷新页面读现在的值，到操作记录与审批核对。"
         : base.line;
   return { ...base, line: head + next };
 }
@@ -642,8 +642,8 @@ function commandAuthorities(changes: Record<string, unknown>) {
 /** 解除框要解除的是哪一条：只是弹窗的对象，原命令还在各自的持久记录里。 */
 type ReleaseTarget = { label: string; slot: string; commandKey: string; loosen: boolean };
 
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果。";
-const TIGHTEN_LOCK = "这页有修改的结果未知，先到上方查询原结果";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作。";
+const TIGHTEN_LOCK = "这页有修改的结果未知，先到上方查询原操作";
 const NO_WRITE = "这个账号已没有这项权限，请有权限的同事处理";
 /** 过期、还没查询时展开后的出路：行内已经说了不能重试、先查询，这里只说查到以后谁来核查结案。 */
 const EXPIRED_CLOSE_HERE = "查到原结果后，可以在这一行核查结案。";
@@ -749,7 +749,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   /** 放宽现在为什么提交不了，从上往下取第一条。 */
   const loosenBlock = proposeBlock
     ?? (loosenPending?.withdrawalSubmissionConfirmed ? "上一次放宽已提交，先到上方查询审批单"
-      : loosenPending ? "上一次放宽的结果未知，先到上方查询原结果" : undefined)
+      : loosenPending ? "上一次放宽的结果未知，先到上方查询原操作" : undefined)
     ?? approvals.blockReason
     ?? coverageBlock
     ?? undefined;
@@ -931,7 +931,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       const { label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore } = record;
       const outcome = await sendTighten({ label, changes, expectedVersion, reason, operator, commandOrigin, trc20FeeBefore }, true);
       if (outcome === "unknown") note(record.commandKey, canInvestigate
-        ? "重试结果仍未知，原操作继续保留，请先查询原结果。" : "重试结果仍未知，原操作继续保留。");
+        ? "重试结果仍未知，原操作继续保留，请先查询原操作。" : "重试结果仍未知，原操作继续保留。");
       else await settleDirect(record, "SUCCEEDED");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
@@ -1005,7 +1005,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       throw cause;
     } finally { setRecovering(""); }
   };
-  /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
+  /** 查询原操作：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
   const lookupLoosen = async () => {
     const missing = await recoverLoosen("lookup");
     const original = session ? pendingConfigApproval("D5", session.adminId) : undefined;
@@ -1088,7 +1088,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             onCheck={() => void lookupLoosen()} onClose={() => setClosing(true)} />}
           {!expired && !confirmed && <Button size="sm" disabled={!!recovering}
             disabledReason={retryDisabled}
-            onClick={() => void recoverLoosen("retry")}>按原请求重试</Button>}
+            onClick={() => void recoverLoosen("retry")}>按原操作重试</Button>}
           {!confirmed && loosenRecord.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: "放宽提现参数", slot: loosenRecord.fingerprint, commandKey: key, loosen: true })}>解除原操作记录</Button>}
         </>,
         detail: <>
@@ -1122,7 +1122,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         actions: <>
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
-          {!expired && !processing && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} onClick={() => void retryTighten(record)}>按原请求重试</Button>}
+          {!expired && !processing && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} onClick={() => void retryTighten(record)}>按原操作重试</Button>}
           {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
         </>,
         detail: <>
@@ -1160,7 +1160,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         <ul>
           <li>能改：{writableNames}。</li>
           <li>{proposeBlock ? "只能收紧。放宽要提交审批，这个账号缺少发起审批的权限。" : "收紧提交后立即生效；放宽提交审批，另一位超级管理员批准后生效。"}</li>
-          <li>{canQuery ? "能看到有没有放宽在等批准。" : "看不到放宽有没有在等批准，提交时被拒才知道，进度到操作记录与审批问有权限的同事。"}{!canQuery && canLookupOwn && "自己发起的放宽结果未知时，能查询原结果。"}</li>
+          <li>{canQuery ? "能看到有没有放宽在等批准。" : "看不到放宽有没有在等批准，提交时被拒才知道，进度到操作记录与审批问有权限的同事。"}{!canQuery && canLookupOwn && "自己发起的放宽结果未知时，能查询原操作。"}</li>
         </ul>
       ) : <p>你只能查看，修改要有这页的修改权限。</p>}
       <h3>以前页头的说明</h3>

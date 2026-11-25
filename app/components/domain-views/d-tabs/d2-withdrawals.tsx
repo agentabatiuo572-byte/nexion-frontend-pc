@@ -785,9 +785,9 @@ const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不
 
 const RECOVERY_HINT: Record<string, string> = {
   review: "",
-  batch: "按原请求重试会按原来那批提现单和理由原样重发。",
-  cregis: "按原请求重试不会重新打款。",
-  bank: "按原请求重试只查原单，不会重新打款。",
+  batch: "按原操作重试会按原来那批提现单和理由原样重发。",
+  cregis: "按原操作重试不会重新打款。",
+  bank: "按原操作重试只查原单，不会重新打款。",
   simulate: "只在本地开发环境出现。",
 };
 
@@ -1152,7 +1152,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         // 状态被别人改了：单笔审核的框留着，刷新成最新状态（D2-C89）；其余操作关框，列表已是最新（BUG-291）。重试的原命令继续走待确认。
         // 框留着时原因写在框里，不再弹同一句盖住标题；框关了才提示。
         if (unknown || (moved && !retained && extra.kind !== "review")) {
-          toast(unknown ? "结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
+          toast(unknown ? "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。" : "提现已被他人或系统处理，已刷新列表，请核对最新状态。", "warn");
           return;
         }
         throw cause;
@@ -1578,7 +1578,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   /** 现在不能做的原因，写给人看（OP-126）。没有权限的动作不走这里，直接隐藏（OP-124）。 */
   function blockedReason(row: D2Withdrawal, action?: D2ReviewAction) {
     if (action === "REFUND" && erc20ConfirmationLost(row)) return "这笔 ERC20 提现已丢失链上确认，保持冻结并继续占提现额度，不能退款；原操作记录继续保留，请核对链上结果";
-    if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未知的操作，先到页面上方查询原结果";
+    if (pendingNos.has(row.withdrawalNo)) return "这笔有结果未知的操作，先到页面上方查询原操作";
     if (loading) return "正在刷新列表";
     if (!writesEnabled) return "列表读取失败，已暂停操作，请先重试";
     if (roleBlock(action)) return roleBlock(action);
@@ -1704,7 +1704,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <FundCheckButtons record={record} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!submitting} checking={submitting === record.fingerprint}
           onCheck={check} onClose={() => setClosing(record)} />
         {unsupported && record.kind !== "batch" && <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>看现在的状态</Button>}
-        <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
+        <Button size="sm" disabled={!!submitting} disabledReason={expired ? RETRY_EXPIRED : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
       </>,
       detail: <>{RECOVERY_HINT[record.kind] && <p>{RECOVERY_HINT[record.kind]}</p>}{pendingNotes[record.fingerprint] && <p>{pendingNotes[record.fingerprint]}</p>}</>,
       tech: `操作人 ${record.operator} ｜ 理由 ${record.reason}`,
@@ -1874,7 +1874,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           {(["UNFREEZE", "APPROVE"] as const).filter((action) => detailActions.includes(action)).map((action) => decisionButton(shown, action))}
         </>} />}>
       {shown && <>
-        {pendingCommands.some((record) => record.nos.includes(shown.withdrawalNo)) && <Notice tone="warn">这笔有结果未知的操作，不要重复处理。状态变了也不算有了结果。到页面上方查询原结果。</Notice>}
+        {pendingCommands.some((record) => record.nos.includes(shown.withdrawalNo)) && <Notice tone="warn">这笔有结果未知的操作，不要重复处理。状态变了也不算有了结果。到页面上方查询原操作。</Notice>}
         {detailError && <Notice tone="danger" title="详情读取失败" action={<Button size="sm" onClick={() => void openDetail(shown)}>重试</Button>}>{detailError}</Notice>}
         <JudgmentPoints title={`判断要点 · 时间均为${businessZone().label}`} loading={detailLoading} rows={judgment} />
         <Fold inset title="风险规则" summary={ruleCount ? `${ruleCount} 条命中` : "没有命中"} alert={ruleCount > 0} icon={Shield} tone="risk">

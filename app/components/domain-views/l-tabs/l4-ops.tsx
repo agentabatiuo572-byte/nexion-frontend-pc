@@ -527,7 +527,7 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         <p>{!report
           ? expired
             ? <>可能已经生成了一份快照。已超过 24 小时，只能核对：{askExportPage("看有没有这一份")}。</>
-            : <>可能已经生成了一份快照。先{canOpenExportPage ? <>点「查询原结果」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原请求重试，不会重复生成。</>
+            : <>可能已经生成了一份快照。先{canOpenExportPage ? <>点「查询原操作」到「{exportPageName}」看有没有</> : <>请有「{exportPageName}」权限的同事核对</>}；没有的话，24 小时内可以按原操作重试，不会重复生成。</>
           : awaitingApproval
             ? <>另一位有这项导出权限的管理员放行后才能下载，你不能批自己的申请。放行后点「查询报表」{canOpenExportPage ? <>，或{exportPageLink(`到「${exportPageName}」看进度`)}</> : null}。</>
           : grantUnknown
@@ -536,8 +536,8 @@ export function L4Ops({ ctx, title, summary }: { ctx: LCtx; title: ReactNode; su
         {pendingTree && <span className="rd-toolbar">
           {pendingTree.result
             ? <Button size="sm" loading={treeExporting} disabledReason={canQueryTree ? undefined : formatAdminApiError("L4_TREE_QUERY_PERMISSION", "L4_TREE_QUERY_PERMISSION")} onClick={() => void queryTree(pendingTree)}>查询报表</Button>
-            : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原结果</Link>}
-          {!awaitingApproval && <Button size="sm" loading={treeExporting} disabledReason={!ctx.canExportNetworkTree ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : treeRecoveryBlocked} onClick={() => requestNetworkTreeExport(pendingTree)}>{pendingTree.result ? "只下载" : "按原请求重试"}</Button>}
+            : canOpenExportPage && <Link className="rd-link" href={EXPORT_PAGE}>查询原操作</Link>}
+          {!awaitingApproval && <Button size="sm" loading={treeExporting} disabledReason={!ctx.canExportNetworkTree ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : treeRecoveryBlocked} onClick={() => requestNetworkTreeExport(pendingTree)}>{pendingTree.result ? "只下载" : "按原操作重试"}</Button>}
         </span>}
       </Notice>
     );

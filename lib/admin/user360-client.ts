@@ -660,7 +660,7 @@ function requireC3Detail(value: unknown): UserAssetAdjustmentDetail {
 
 export class UsersOutcomeUnknownError extends Error {
   constructor(public readonly commandKey: string) {
-    super("结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。");
+    super("结果未知，可能已经生效。不要重复操作，到页面上方查询原操作，或按原操作重试。");
     this.name = "UsersOutcomeUnknownError";
   }
 }

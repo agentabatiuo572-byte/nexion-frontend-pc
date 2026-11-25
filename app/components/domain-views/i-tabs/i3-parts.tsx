@@ -252,7 +252,7 @@ export type I3RecoveryRow = { key: string; name: string; object: string; change?
 
 /**
  * 结果未知逐条提醒：由页面传入持久化的原操作；未读取到概览时同样显示。
- * 每条写改的是什么、对哪条、从多少到多少、什么时候提交，按钮「查询原结果」「按原请求重试」。
+ * 每条写改的是什么、对哪条、从多少到多少、什么时候提交，按钮「查询原操作」「按原操作重试」。
  */
 export function I3RecoveryNotice({ rows }: { rows: I3RecoveryRow[] }) {
   // 多条时默认露出三条，其余点开再看，首屏留给通知列表（提示不盖正事）。

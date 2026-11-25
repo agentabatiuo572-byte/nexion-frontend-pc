@@ -41,7 +41,7 @@ let requestSeq = 0;
 const g2Cause = (text: string) => text.split(/[，；;,。]/)[0];
 
 export class G2OutcomeUnknownError extends Error {
-  constructor(readonly commandKey: string, message = "结果未知，可能已经生效。原请求已保留：有效期内可以按原请求重试，过期后只能查询。") {
+  constructor(readonly commandKey: string, message = "结果未知，可能已经生效。原请求已保留：有效期内可以按原操作重试，过期后只能查询。") {
     super(message);
     this.name = "G2OutcomeUnknownError";
   }
@@ -161,7 +161,7 @@ async function send(original: G2PendingCommand, recovering = false) {
   }
   const epoch = requireActor(original.adminId, original.path, true);
   if (!commands.isDurablyStored(original.fingerprint, original.commandKey)) {
-    throw new Error(recovering ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原结果。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
+    throw new Error(recovering ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");
   }
   try {
     const response = await g2Request<BackendOverview>(original.path, {
@@ -179,7 +179,7 @@ async function send(original: G2PendingCommand, recovering = false) {
       commands.forget(original.fingerprint, original.commandKey);
       throw error;
     }
-    throw new G2OutcomeUnknownError(original.commandKey, `结果未知，可能已经生效（${g2Cause(displayAdminError(error))}）。原请求已保留，可以查询原结果或按原请求重试。`);
+    throw new G2OutcomeUnknownError(original.commandKey, `结果未知，可能已经生效（${g2Cause(displayAdminError(error))}）。原请求已保留，可以查询原操作或按原操作重试。`);
   }
 }
 

@@ -270,7 +270,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     const fingerprint = original?.fingerprint ?? `m4|${command.kind === "create" ? "create" : command.row.id}`;
     if (!original) mCommands.remember(fingerprint, commandKey, { faq: command });
     if (!mCommands.isDurablyStored(fingerprint, commandKey)) {
-      const failure = "原操作未能保存，暂未提交。请恢复浏览器存储后按原请求重试。";
+      const failure = "原操作未能保存，暂未提交。请恢复浏览器存储后按原操作重试。";
       if (!original) mCommands.forget(fingerprint, commandKey);
       onFailure?.(new Error(failure)); toast(failure, "warn"); return false;
     }
@@ -692,10 +692,10 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     note: <>{gone && goneText(record)}{view.line} {audit && <><MAuditLink /> </>}<TechInfo commandKey={record.commandKey} receipt={receiptOf(outcome)} /></>,
     actions: submittingKey !== record.commandKey && <>
       {record.faq && <Button size="sm" loading={state.busy === "query"} loadingText="查询中…" disabled={writePending || state.busy === "replay"}
-        disabledReason={canQueryM4 ? undefined : "当前账号没有知识库查看权限"} onClick={() => void queryOriginal(record)}>查询原结果</Button>}
+        disabledReason={canQueryM4 ? undefined : "当前账号没有知识库查看权限"} onClick={() => void queryOriginal(record)}>查询原操作</Button>}
       {canInvestigateECommand("service_m4_read") && eCommandClosureOffer(outcomes[record.commandKey], isRetryExpired(record)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={writePending || Boolean(state.busy)} onClick={() => setClosing(record)}>核查结案</Button>}
       {record.faq && canWriteM4 && !state.expired && !state.replayRejection && <Button size="sm" disabled={writePending}
-        disabledReason={writePending ? undefined : faqRecoveryBindings(record).blockedReason} onClick={() => restore(record)}>按原请求重试</Button>}
+        disabledReason={writePending ? undefined : faqRecoveryBindings(record).blockedReason} onClick={() => restore(record)}>按原操作重试</Button>}
       {state.replayRejection && canQueryM4 && <Button size="sm" variant="ghost" disabled={writePending || Boolean(state.busy)} onClick={() => openRelease(record)}>核实后解除</Button>}
     </> };
   });
@@ -981,10 +981,10 @@ function FaqModal({
         <>
           <Button disabled={pending} onClick={onClose}>{gone ? "关闭" : "取消"}</Button>
           {recovery && <Button variant={recoveryBindings?.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={pending} disabledReason={recoveryBindings?.query ? undefined : "当前账号没有知识库查看权限"}
-            onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原结果</Button>}
+            onClick={() => { setFailure(null); void recoveryBindings?.query?.(); }}>查询原操作</Button>}
           {gone ? null : info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
             : <Button variant={recovery && recoveryBindings?.state?.replayBlock ? "secondary" : "primary"} data-proof="support-faq-save" loading={pending && !querying} loadingText="提交中…" disabled={disabled}
-              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原请求重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
+              disabledReason={pending ? undefined : recovery ? recoveryBindings?.blockedReason : disabled ? "问答正在读取或没读到，读到后再保存" : reasonRule.blocked} onClick={save}>{recovery ? "按原操作重试" : row ? "保存修改" : status === "published" ? "保存并发布" : "保存草稿"}</Button>}
         </>
       }
     >

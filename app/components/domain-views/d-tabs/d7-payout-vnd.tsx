@@ -450,7 +450,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
           if (isA2OutcomeUncertainError(cause) || isDOutcomeUnknownError(cause)) {
             syncPending();
             closeAfterWrite();
-            toast("结果未知，不要重复提交。到页面上方查询原结果。", "warn");
+            toast("结果未知，不要重复提交。到页面上方查询原操作。", "warn");
             return;
           }
           const code = errorCode(cause);
@@ -539,7 +539,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       || withdrawalReplayQueryBlock(investigationResults[record.commandKey], canInvestigate)) return;
     // 要在 list() 之前查：list() 会从内存副本恢复已删除的记录，那样就成了换号重发。
     if (!directCommands.isDurablyStored(record.fingerprint, record.commandKey)) {
-      note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请先查询原结果。");
+      note(record.commandKey, "浏览器里查不到这条记录，本次没有发送。记录继续保留，请先查询原操作。");
       return;
     }
     setRecovering(`retry:${record.commandKey}`);
@@ -556,16 +556,16 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       if (isDOutcomeUnknownError(cause)) {
         note(record.commandKey, canInvestigate
-          ? "重试的结果也未知，记录继续保留。请先查询原结果。" : "重试的结果也未知，记录继续保留。");
+          ? "重试的结果也未知，记录继续保留。请先查询原操作。" : "重试的结果也未知，记录继续保留。");
       } else {
         const rejection = explicitRejectionCode(cause);
         if (rejection) {
-          note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「查询原结果」核实。解除原操作记录不代表原操作没执行，也不算核查结案。`);
+          note(record.commandKey, `重试被拒绝：${reasonOf(displayAdminError(cause))}。先点「查询原操作」核实。解除原操作记录不代表原操作没执行，也不算核查结案。`);
           directCommands.markReplayRejected(record.fingerprint, record.commandKey, rejection);
           syncPending();
         } else {
           // 登录、权限、限流这类不是对原操作的结论，不给解除（OP-153）。
-          note(record.commandKey, `重试没有完成：${reasonOf(displayAdminError(cause))}。记录继续保留。${canInvestigate ? "请先查询原结果。" : ""}`);
+          note(record.commandKey, `重试没有完成：${reasonOf(displayAdminError(cause))}。记录继续保留。${canInvestigate ? "请先查询原操作。" : ""}`);
         }
       }
     } finally {
@@ -596,7 +596,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       throw cause;
     } finally { setRecovering(""); }
   };
-  /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
+  /** 查询原操作：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
   const lookupApproval = async () => {
     const missing = await queryApproval();
     const original = session ? pendingConfigApproval("D7", session.adminId) : undefined;
@@ -671,7 +671,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       const message = isA2OutcomeUncertainError(cause)
         ? uncertainDetail(cause) || "没有收到明确结果"
         : reasonOf(displayAdminError(cause));
-      note(key, `重试没有完成：${message}。记录继续保留，请先查询原结果。`);
+      note(key, `重试没有完成：${message}。记录继续保留，请先查询原操作。`);
     } finally {
       setRecovering("");
     }
@@ -701,7 +701,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       actions: <>
         <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === `verify:${record.commandKey}`}
           onCheck={() => void verifyDirect(record)} onClose={() => setDirectClosing(record)} />
-        {!expired && !processing && <Button size="sm" disabled={!!recovering} loading={recovering === `retry:${record.commandKey}`} disabledReason={retryBlock} onClick={() => void retryDirect(record)}>按原请求重试</Button>}
+        {!expired && !processing && <Button size="sm" disabled={!!recovering} loading={recovering === `retry:${record.commandKey}`} disabledReason={retryBlock} onClick={() => void retryDirect(record)}>按原操作重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>解除原操作记录</Button>}
       </>,
       detail: <>
@@ -734,7 +734,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         {canQueryOriginal && <FundCheckButtons record={approval} canLookupOwnProposal={canQueryOriginal} outcome={confirmed ? undefined : outcome} expired={expired} busy={!!recovering} checking={recovering === "query" || recovering === approval.commandKey}
           onCheck={() => void lookupApproval()} onClose={() => setClosing(true)} />}
         {!expired && !confirmed && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} loading={recovering === "approval-retry"}
-          onClick={() => void retryApproval()}>按原请求重试</Button>}
+          onClick={() => void retryApproval()}>按原操作重试</Button>}
         {!confirmed && approval.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "approval", commandKey: approval.commandKey })}>解除原操作记录</Button>}
       </>,
       detail: <>
@@ -750,7 +750,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     settled={settled} onDismissSettled={key => setSettled(current => current.filter(item => item.key !== key))} />;
   const releaseModal = <>
     {releasing && <ReleaseModal label={releasing.kind === "approval" ? "放宽提交" : "参数修改"} onCancel={() => setReleasing(null)} onConfirm={releasePending}
-      explain={releasing.kind === "approval" ? APPROVAL_REPLAY_RELEASE : "重试被拒说明不了原操作的结果，先查询原结果。解除后原操作不再重试。"} />}
+      explain={releasing.kind === "approval" ? APPROVAL_REPLAY_RELEASE : "重试被拒说明不了原操作的结果，先查询原操作。解除后原操作不再重试。"} />}
     {directClosing && <CommandClosureModal label="参数修改" commandKey={directClosing.commandKey} createdAt={directClosing.createdAt}
       offer={eCommandClosureOffer(investigationResults[directClosing.commandKey], isRetryExpired(directClosing))} facts={<Fact k="提交的值">{valuesSummary(directClosing.values).split("、").map((item, index, all) => <span key={item} className="rd-keep">{item}{index < all.length - 1 ? "、" : ""}</span>)}</Fact>}
       onClose={() => setDirectClosing(null)} onSubmit={async evidence => {

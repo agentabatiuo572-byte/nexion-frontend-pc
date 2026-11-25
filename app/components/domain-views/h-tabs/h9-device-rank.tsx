@@ -157,7 +157,7 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
     if (!original) return;
     const display = original.display;
     ctx.openActionConfirm({ briefKind: "config", action: display.action, title: display.title,
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "按原请求重试",
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "按原操作重试",
       statedBrief: { impact: display.impact, check: "核对档位占比合计 100% 和算力范围，理由写清调整依据。" },
       detail: "在线设备数取自首页数字增长。排名是独立的一套设置，不受本页其他块的保存影响。",
       getPendingReason: () => pendingH9Command("rank")?.commandKey === record.commandKey ? original.reason : undefined,
@@ -189,10 +189,10 @@ export function H9DeviceRank({ ctx, onData }: { ctx: HCtx; onData: (snapshot: Ra
         status: h9Status(pending, outcomes[pending.commandKey], canWrite),
         tech: <TechInfo commandKey={pending.commandKey} receipt={receiptOf(outcomes[pending.commandKey])} />,
         actions: <>
-          <Button size="sm" disabled={loading || saving} onClick={() => void load()}>查询原结果</Button>
+          <Button size="sm" disabled={loading || saving} onClick={() => void load()}>查询原操作</Button>
           {canInvestigateECommand("growth_h9_read") && eCommandClosureOffer(outcomes[pending.commandKey], isRetryExpired(pending)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={loading || saving} onClick={() => setClosing(pending)}>核查结案</Button>}
           <Button size="sm" disabled={saving} disabledReason={!canRetryH9Command(pending) ? pending.original ? RETRY_EXPIRED_TEXT : formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE") : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined}
-            onClick={() => recover(pending)}>按原请求重试</Button>
+            onClick={() => recover(pending)}>按原操作重试</Button>
         </> }]} />
     : issue?.kind === "conflict"
       ? <Notice tone="warn" title="保存没成功：排名设置已被别人改过" action={<Button size="sm" disabled={loading} onClick={() => void load()}>刷新这一块</Button>}>这次没有保存。刷新读到最新值后再改，避免盖掉别人的设置。</Notice>

@@ -140,7 +140,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
       coverageLead: "这项修改要另一位管理员批准",
       amplifies: true,
       run: async reason => {
-        if (loading || error || reviewError || staleDraft || commandState().blocked) throw new Error("请先查询原结果并刷新地区规则，再发起新的修改。");
+        if (loading || error || reviewError || staleDraft || commandState().blocked) throw new Error("请先查询原操作并刷新地区规则，再发起新的修改。");
         await submitProposal(params, reason, describe(draftBase.mappings), describe(params.mappings), draftBase.mappings);
         await reload();
         setDraft(null);
@@ -249,7 +249,7 @@ export function H3RegionPanel({ region, canAudit }: { region: H3RegionState; can
   if (!canRead) return null;
   const now = Date.now();
   const firstUnset = policy?.revision === 0 && !policy.nextActivation;
-  const editBlock = loading ? "正在读取地区规则" : error ? "地区规则读取失败，读到后才能编辑" : reviewError ? reviewError : pending ? "已有一份修改在等批准，批准或驳回前不能再改" : commandBlocked ? "这一项结果未知，请先查询原结果" : firstUnset ? "首次生效时间还没确定，暂时不能提交修改" : undefined;
+  const editBlock = loading ? "正在读取地区规则" : error ? "地区规则读取失败，读到后才能编辑" : reviewError ? reviewError : pending ? "已有一份修改在等批准，批准或驳回前不能再改" : commandBlocked ? "这一项结果未知，请先查询原操作" : firstUnset ? "首次生效时间还没确定，暂时不能提交修改" : undefined;
   const rows = draft ?? policy?.mappings ?? [];
   // 编辑时只看规则本身；实际一列只在查看时出现，旧后端没给就不出现。
   const actual = !draft ? policy?.actualAssignments : undefined;

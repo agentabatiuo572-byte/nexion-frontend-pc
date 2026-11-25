@@ -416,7 +416,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       }
     } catch {
       dropCheck(record.commandKey);
-      toast("没有解除：解除前的读取没有成功，原记录还在。稍后再查询原结果核对。", "error");
+      toast("没有解除：解除前的读取没有成功，原记录还在。稍后再查询原操作核对。", "error");
     } finally { setReleasing(null); }
   };
   const openRelease = useCallback((record: A3Command) => setReleasing({ record, busy: false }), []);
@@ -457,10 +457,10 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
   };
   const isContent = (record: A3Command) => record.original.kind === "docs" || record.original.kind === "how";
   const contentTag = (record: A3Command) => isRetryExpired(record)
-    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
+    ? <StatusTag tone="neutral" icon={Hourglass} explain="原提交已超过 24 小时，不能再重试。查询原操作会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。">已过期</StatusTag>
     : <StatusTag tone="warn" icon={CircleHelp} explain={a3Deduplicates(record)
-      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原请求重试，不会重复保存；查询原结果和原提交一致就算已保存。"
-      : "提交时没收到确定结果，可能已经保存。查询原结果会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。"}>结果未知</StatusTag>;
+      ? "提交时没收到确定结果，可能已经保存。24 小时内可以按原操作重试，不会重复保存；查询原操作和原提交一致就算已保存。"
+      : "提交时没收到确定结果，可能已经保存。查询原操作会和现在的内容对比：一致就算已保存，对不上时可以核对后解除。"}>结果未知</StatusTag>;
   const recoveryRows: GRecoveryRow[] = commands.pending.map(record => {
     const outcome = originalOutcomes[record.commandKey];
     const shown = outcome && originalShown(record, outcome);
@@ -471,13 +471,13 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     key: record.commandKey, name: record.name, change: isContent(record) ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
     tag: shown ? <StatusTag tone={shown.tone} explain={[shown.line, shown.more].filter(Boolean).join(" ")}>{shown.label}</StatusTag>
       : isContent(record) ? contentTag(record) : isRetryExpired(record) ? record.original.kind === "schedule" || record.original.kind === "cancel" ? expiredTag("direct")
-        : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原结果；查到的，按证据核查结案。">已过期</StatusTag> : unknownTag("direct"),
+        : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原操作；查到的，按证据核查结案。">已过期</StatusTag> : unknownTag("direct"),
     actions: <>
-      <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      <Button size="sm" loading={querying === record.commandKey} onClick={() => void queryOriginal(record)}>查询原操作</Button>
       {closable && <Button size="sm" variant="danger-outline" disabled={!!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
       {checks[record.commandKey] && <Button size="sm" variant="ghost" disabled={querying === record.commandKey} onClick={() => openRelease(record)}>解除原操作记录…</Button>}
       {a3Deduplicates(record) && !isRetryExpired(record) && <Button size="sm" disabledReason={mutating ? "正在提交" : (record.original.kind === "experience" || record.original.kind === "docs" || record.original.kind === "how" ? canWriteExperience : session?.role === "superadmin") ? undefined : "你只能查看"}
-        onClick={() => void recoverOriginal(record)}>按原请求重试</Button>}
+        onClick={() => void recoverOriginal(record)}>按原操作重试</Button>}
     </>,
   }; });
 
@@ -500,7 +500,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     if (banner?.status === "on") issues.push({ key: "banner", tone: "warn", title: "维护公告横幅开着", sub: "后台顶部正在显示维护提示", open: "switches" });
     if (downGates.length) issues.push({ key: "gates", tone: "warn", title: `${downGates.length} 项被紧急停用或限制：${downGates.map((gate) => gate.name).join("、")}`, sub: "在紧急停用开关、地区访问限制处理", href: reach("/emergency/kill-switch") ? "/emergency/kill-switch" : undefined });
   }
-  if (recoveryRows.length) issues.push({ key: "recovery", tone: "warn", title: `${recoveryRows.length} 条原操作结果未知`, sub: "在页面上方逐条查询原结果" });
+  if (recoveryRows.length) issues.push({ key: "recovery", tone: "warn", title: `${recoveryRows.length} 条原操作结果未知`, sub: "在页面上方逐条查询原操作" });
   if (calendar?.pending) issues.push({ key: "calendar", tone: "progress", title: `业务时区已安排：${calendar.pending}`, sub: "生效前可以撤销，看「业务日历」", open: "calendar" });
 
   const worst: "ok" | "warn" | "danger" | "unknown" | "neutral" = !overview ? "unknown"
@@ -677,7 +677,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={loading} onClick={() => { void refreshOverview(); setCalendarNonce((value) => value + 1); }}>刷新</Button>} />
 
       <GRecoveryNotice title="有原操作结果未知" rows={recoveryRows}
-        explain={<><p>提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行；也可以先点「查询原结果」核对。</p><p>说明内容和开发者文档查询时会和现在的内容对比，一致就算已保存；对不上时，能重试的先按原请求重试，不能重试的可以核对后解除。</p></>}
+        explain={<><p>提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行；也可以先点「查询原操作」核对。</p><p>说明内容和开发者文档查询时会和现在的内容对比，一致就算已保存；对不上时，能重试的先按原操作重试，不能重试的可以核对后解除。</p></>}
         lead={contentLead.length ? contentLead : undefined} />
 
       {releasing && releaseModal(releasing.record, releasing.busy)}

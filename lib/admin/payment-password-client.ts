@@ -11,14 +11,14 @@ import { parsePaymentSecuritySummary, parsePaymentSecurityDetail, parsePaymentSe
 const base = "/api/admin/users/security/payment-password-policy";
 export class PaymentPasswordApiError extends Error { constructor(message: string, readonly status: number, readonly unknownOutcome = false, readonly backendMessage?: string) { super(message); } }
 class PaymentPasswordOutcomeUnknownError extends PaymentPasswordApiError {
-  constructor(status: number, backendMessage?: string) { super("处理结果未知，请查询原结果，不要重复提交。", status, true, backendMessage); }
+  constructor(status: number, backendMessage?: string) { super("处理结果未知，请查询原操作，不要重复提交。", status, true, backendMessage); }
 }
 async function request(path: string, body?: unknown, key?: string, originalBody?: string): Promise<unknown> {
   let response: Response;
   try {
     response = await guardedFetch(path, { method: body === undefined ? "GET" : "POST", cache: "no-store", signal: AbortSignal.timeout(20_000), ...(body === undefined ? {} : { headers: { "Content-Type": "application/json", "Idempotency-Key": key! }, body: originalBody ?? JSON.stringify(body) }) });
   } catch {
-    throw new PaymentPasswordApiError(body === undefined ? "支付密码服务暂时无法连接，请稍后重新加载。" : "处理结果未知，请查询原结果，不要重复提交。", 0, body !== undefined);
+    throw new PaymentPasswordApiError(body === undefined ? "支付密码服务暂时无法连接，请稍后重新加载。" : "处理结果未知，请查询原操作，不要重复提交。", 0, body !== undefined);
   }
   const raw: unknown = await response.json().catch(() => null);
   const backendMessage = isPaymentRecord(raw) && typeof raw.message === "string" ? raw.message : undefined;

@@ -22,7 +22,7 @@ export function i4SectionPermission(sectionKey: string, highSensitivity = false)
   const session = auth.session;
   if (!auth.isAuthenticated || auth.logoutPending || !session) return "请先登录后再提交。";
   const sensitive = highSensitivity || ["financials", "nexnarrative", "nexstory", "compliancebadges", "auditsreserves"].includes(sectionKey.replace(/[^a-z0-9]/gi, "").toLowerCase());
-  if (!session.authorities.includes(sensitive ? "content_i4_trust_section_manage" : "content_i4_publish_standard")) return "当前账号没有这个版块的发布权限，请查询原结果。";
+  if (!session.authorities.includes(sensitive ? "content_i4_trust_section_manage" : "content_i4_publish_standard")) return "当前账号没有这个版块的发布权限，请查询原操作。";
   if (!session.authorities.some(permission => ["platform_a2_write", "platform_a2_proposal_create"].includes(permission))) return "缺少提交审批权限";
   return undefined;
 }
@@ -83,7 +83,7 @@ export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2
   const result = await i4SectionRecovery.query(original, async () => {
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
     if (!ticket) {
-      if (original.receiptKnown || original.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+      if (original.receiptKnown || original.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原操作。");
       return { conclusion: "not-found", ticket } as const;
     }
     // 24972948 OpsAuditCenterService.createProposalOnce preserves I4's action/values;
@@ -92,7 +92,7 @@ export async function queryI4SectionCommand(saved: I4SectionCommand): Promise<A2
       || ticket.action !== `${{ publish: "发布", rollback: "回滚", archive: "下架" }[original.action]}信任版块 · ${original.sectionKey}`
       || original.before && ticket.before !== original.before || original.after && ticket.after !== original.after
       || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.rawStatus ?? "")) {
-      throw new Error("返回的审批单与原操作不符，请保留原记录并查询原结果。");
+      throw new Error("返回的审批单与原操作不符，请保留原记录并查询原操作。");
     }
     return { conclusion: ticket.status === "pending" ? "unknown" : ticket.status === "approved" ? "succeeded" : "not-executed", ticket } as const;
   });
@@ -124,9 +124,9 @@ async function send(original: I4SectionCommand, retry: boolean) {
     response = await guardedFetch("/api/admin/platform/audit/operations", { method: "POST", cache: "no-store",
       headers: { "Content-Type": "application/json", "Idempotency-Key": original.commandKey }, body: JSON.stringify(original.request) });
     envelope = await response.json();
-  } catch { throw new OutcomeUnknownError("结果未知，请查询原结果或按原请求重试。"); }
+  } catch { throw new OutcomeUnknownError("结果未知，请查询原操作或按原操作重试。"); }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || !Number.isInteger(envelope.code)
-    || envelope.message !== undefined && typeof envelope.message !== "string") throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原结果。");
+    || envelope.message !== undefined && typeof envelope.message !== "string") throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原操作。");
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(envelope.message);
   if (!response.ok || envelope.code !== 0 || unknown) {
     const status = response.ok && envelope.code >= 400 && envelope.code < 500 ? envelope.code : response.status;
@@ -136,7 +136,7 @@ async function send(original: I4SectionCommand, retry: boolean) {
     if (rejected && !unknown) { if (!retry) pending.forget(original.fingerprint, original.commandKey); throw Object.assign(failure, { rejectedCommand: retry ? undefined : original }); }
     throw new OutcomeUnknownError(failure.message);
   }
-  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原结果。");
+  if (!envelope.data || typeof envelope.data.id !== "string" || !envelope.data.id) throw new OutcomeUnknownError("原申请的返回内容无法核实，请保留原记录并查询原操作。");
   pending.remember(original.fingerprint, original.commandKey, { ...original, receiptKnown: true });
 }
 
@@ -146,9 +146,9 @@ async function readSubmittedI4Section(original: I4SectionCommand, observe?: (rec
     const ticket = await queryI4SectionCommand(original);
     if (ticket) { observe?.(original, ticket); return ticket; }
   } catch (error) {
-    throw Object.assign(new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`), { commandKey: original.commandKey });
+    throw Object.assign(new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原操作"}`), { commandKey: original.commandKey });
   }
-  throw Object.assign(new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。"), { commandKey: original.commandKey });
+  throw Object.assign(new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原操作。"), { commandKey: original.commandKey });
 }
 
 export async function retryI4SectionCommand(original: I4SectionCommand, observe?: (record: I4SectionCommand, ticket: A2OperationRow) => void) {
@@ -159,13 +159,13 @@ export async function retryI4SectionCommand(original: I4SectionCommand, observe?
 export function releaseRejectedI4Section(original: I4SectionCommand) {
   if (pendingI4SectionCommands().some(row => row.commandKey === original.commandKey && row.ticketStatus === "approved"))
     throw new Error("审批单已批准，请重新读取当前版块。");
-  if (!i4SectionRecovery.releaseRejectedReplay(original)) throw new Error("原操作记录继续保留，请查询原结果。");
+  if (!i4SectionRecovery.releaseRejectedReplay(original)) throw new Error("原操作记录继续保留，请查询原操作。");
 }
 
 export async function proposeI4Section(spec: ProposeSpec, inputFingerprint: string, snapshot: I4ProposalSnapshot, observe?: (record: I4SectionCommand, ticket: A2OperationRow) => void): Promise<A2OperationRow> {
   const permission = i4SectionPermission(spec.obj, snapshot.section.highSensitivity);
   if (permission) throw new Error(permission);
-  if (pendingI4SectionCommands().some(row => row.sectionKey === spec.obj)) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
+  if (pendingI4SectionCommands().some(row => row.sectionKey === spec.obj)) throw new Error("此对象有原操作尚未核清，请先查询原操作。");
   const session = useAdminAuth.getState().session!;
   const request: Proposal = { action: spec.action, obj: spec.obj, beforeValue: spec.before, afterValue: spec.after,
     operator: session.operator || session.username, operatorRole: roleLabel(session.role), type: spec.type, amplifies: !!spec.amplifies,

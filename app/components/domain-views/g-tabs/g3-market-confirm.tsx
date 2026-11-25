@@ -200,7 +200,7 @@ export function G3MarketConfirm({ session, epoch, requested, today, frames, tuni
             ?? (!/^[0-9a-f]{64}$/.test(change.expectedRevision) ? "当前配置版本未就绪，请关闭弹窗后重新读取页面。" : undefined),
         };
       },
-      recoverLabel: expiredRecovery === "reload" ? "读取当前配置" : undefined,
+      recoverLabel: expiredRecovery === "reload" || pending?.request.kind === "direct" ? "读取当前配置" : undefined,
       recover: expiredRecovery === "reload" ? readCurrent : () => execute("lookup"),
       retry: () => execute("retry").then(() => undefined),
     }}

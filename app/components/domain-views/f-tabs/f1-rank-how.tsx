@@ -225,7 +225,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
         action={<Button size="sm" loading={loading} onClick={() => void checkOriginal()}>重新读取核对</Button>}>
         {comparison
           ? <p>{`现在的内容和原提交对不上：修订号应为 ${comparison.revision.expected}，实际是 ${comparison.revision.current}，内容${comparison.contentMatches ? "相同" : "不同"}。请到操作记录与审批核对。`}</p>
-          : <p>提交时没收到确定结果，可能已经保存。不能按原内容重发，先刷新核对；你填的内容还在下面。</p>}
+          : <p>提交时没收到确定结果，可能已经保存。不能按原操作重发，先刷新核对；你填的内容还在下面。</p>}
       </Notice>}
       {preserveDraft.current && document && baseline && (() => {
         const diff = draftDiff(document, baseline);

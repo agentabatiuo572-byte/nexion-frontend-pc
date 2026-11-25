@@ -125,11 +125,11 @@ export function PermGroups({ codes, label, tone, empty = "没有权限", markRis
 
 export type A1RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; note?: string; actions: ReactNode };
 
-/** 结果未知的说明按操作写：note 写「可能已经怎样、能不能按原请求重试」。 */
+/** 结果未知的说明按操作写：note 写「可能已经怎样、能不能按原操作重试」。 */
 export function unknownTag(kind: "direct" | "approval", note?: string) {
   return <StatusTag tone="warn" icon={CircleHelp} explain={note ?? (kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。点「查询原结果」核对。")}>结果未知</StatusTag>;
+    ? "提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，不会重复执行。"
+    : "提交时没收到确定结果，可能已经建了审批单。点「查询原操作」核对。")}>结果未知</StatusTag>;
 }
 
 export function expiredTag(note = "原请求超过 24 小时，不能再重试，只能查询核对。") {
@@ -157,7 +157,7 @@ export function A1RecoveryNotice({ title, rows }: { title: ReactNode; rows: A1Re
 }
 
 /**
- * 原头像的独立处理位置：账号列表读不到、编辑框打不开时也能按原请求重试准备头像。
+ * 原头像的独立处理位置：账号列表读不到、编辑框打不开时也能按原操作重试准备头像。
  * 用的是同一个头像选择件和同一条原记录（按账号编号对上），这里不另发请求。
  */
 export function AvatarRecoveryModal({ target, onClose }: { target: string; onClose: () => void }) {

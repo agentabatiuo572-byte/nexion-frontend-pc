@@ -163,14 +163,14 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
   const retain = (original: H5PendingCommand) => {
     pending.remember(original.fingerprint, original.commandKey, original);
     update();
-    if (!pending.isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原结果。");
+    if (!pending.isDurablyStored(original.fingerprint, original.commandKey)) throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原操作。");
   };
   const checkTicket = (original: H5PendingCommand, ticket: A2OperationRow) => {
     const { request } = original;
     const matches = request.kind === "approval" ? validTicket(ticket, request.body.obj, request.body.command.op)
       : request.kind === "earn-create" && validTicket(ticket, request.body.milestoneKey, EARN_CREATE_OPERATION);
     if (!matches) {
-      throw new Error("审批单与保存的原申请不符，原请求继续保留，请查询原结果。");
+      throw new Error("审批单与保存的原申请不符，原请求继续保留，请查询原操作。");
     }
   };
   const query = async (original: H5PendingCommand, feedback: "lookup" | "refresh" | "submitted" = "lookup") => {
@@ -183,7 +183,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     if (original.ticket) retain({ ...original, acknowledged: true, ticket: undefined });
     const ticket = await fetchA2ProposalByKey(original.commandKey, true);
     if (!ticket) {
-      // 过期后不能重试，下一步是去操作记录与审批核对（OP-152、OP-153）；没过期的照旧可以按原请求重试。
+      // 过期后不能重试，下一步是去操作记录与审批核对（OP-152、OP-153）；没过期的照旧可以按原操作重试。
       if (feedback !== "refresh") toast(isRetryExpired(original) ? "没查到原审批单。原申请已过期，记录和修改锁保留，请到操作记录与审批核对。" : "暂未查到原审批单，原请求继续保留。");
       return null;
     }
@@ -203,7 +203,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
   const send = async (original: H5PendingCommand, recovering: boolean) => {
     requireActor(original.change.target, true);
     if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
-    if (original.acknowledged || original.ticket) throw new Error("申请已建单，请查询原结果。");
+    if (original.acknowledged || original.ticket) throw new Error("申请已建单，请查询原操作。");
     try { retain(original); } catch (error) {
       if (!recovering) forget(original);
       throw error;
@@ -232,7 +232,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       const acknowledged = { ...original, acknowledged: true };
       retain(acknowledged);
       const current = await query(acknowledged, recovering ? "lookup" : "submitted");
-      if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原结果，原请求继续保留。");
+      if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原操作，原请求继续保留。");
       if ((recovering || request.kind === "earn-create") && current.status === "pending") await settled(original.commandKey);
       return;
     }
@@ -259,7 +259,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
       : kind === "power" ? updated?.source === "nx_streak_power_up" && updated.powerUpId === Number(id) && updated.day === body.day && updated.note === body.note
         : kind === "earn" ? updated?.source === "nx_earning_milestone_rule" && updated.key === id && h5Amount(String(updated.newThresholdUsd)) === h5Amount(String(body.thresholdUsd)) && h5Amount(String(updated.newRewardNex)) === h5Amount(String(body.rewardNex))
           : updated?.configKey === "growth.earn_milestone.tick_interval_seconds" && String(updated.seconds) === String(tickSeconds);
-    if (!valid) throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原请求继续保留，请查询原结果。");
+    if (!valid) throw new OutcomeUnknownError("保存后返回的内容和原修改对不上，原请求继续保留，请查询原操作。");
     forget(original);
     await settled(original.commandKey);
     toast(original.change.success);
@@ -270,7 +270,7 @@ export function useH5Mutations(toast: (message: string) => void, settled: (comma
     const refusal = ruleKey === undefined ? undefined : h5RuleWriteRefusal(ruleKey);
     if (refusal) throw new Error(refusal);
     if (!isFresh()) throw new Error("请先成功刷新签到数据，再发起新的修改。");
-    if (record(change.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
+    if (record(change.target)) throw new Error("这一项有未结束的原操作，请先查询原操作。");
     const fingerprint = `${actor.adminId}|H5|${change.target}`;
     const proposal = change.proposal ? {
       action: change.action, obj: change.target.slice(change.target.indexOf(":") + 1), beforeValue: change.before, afterValue: change.after,

@@ -300,7 +300,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const replayRefused = Boolean(command.recoveryState?.replayRejection);
   const querying = command.recoveryState?.busy === "query";
   const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改服务规则" : retryExpired ? EXPIRED_LINE : pendingReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
-  const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原结果的权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
+  const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原操作的权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
   const comparisonBefore = conflict ? current : releasedFrom;
   const comparisonAfter = conflict ? latest : current;
   const externalChanges = comparisonBefore && comparisonAfter ? changedFields(comparisonBefore, comparisonAfter) : [];
@@ -312,8 +312,8 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         key: pending.commandKey, name: "服务规则", change: changeText || "规则保存", submittedAt, expired: retryExpired,
         status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: retry && <>
-          {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
-          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原请求重试</Button>}
+          {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}
+          {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原操作重试</Button>}
           {replayRefused && canRelease && <Button size="sm" variant="ghost" disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>}
         </>,
       }]} />}
@@ -375,10 +375,10 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         sub={<><StatusTag tone="progress" filled>保存后立即生效</StatusTag><span className="m5-modal-id">第 {original.version} 版</span></>}
         footer={<>
           <Button disabled={saving} onClick={closeConfirm}>取消</Button>
-          {retry && canQuery && <Button variant={command.canReplay || replayRefused ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>}
+          {retry && canQuery && <Button variant={command.canReplay || replayRefused ? "secondary" : "primary"} loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}
           {retry && replayRefused ? canRelease && <Button disabled={saving} onClick={event => openRelease(event.currentTarget)}>核实后解除</Button>
             : <Button variant={retry && !command.canReplay ? "secondary" : "primary"} loading={saving && !querying} loadingText="提交中…" disabled={!canWrite || (retry ? !command.canReplay : !canConfirm || Boolean(latest)) || saving}
-              disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原请求重试" : "确认保存"}</Button>}
+              disabledReason={saving ? undefined : retry ? replayReason : reasonRule.blocked} onClick={() => void save()}>{retry ? "按原操作重试" : "确认保存"}</Button>}
         </>}>
         <DiffList rows={confirmedChanges.map((field) => ({ key: field, label: LABELS[field], before: beforeLabel(field), after: labelValue(field, confirmed[field]) }))} />
         <Facts>

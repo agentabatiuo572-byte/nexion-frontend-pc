@@ -913,7 +913,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
     {!isPersonal && <M1LiveService ctx={ctx} />}
-    {(maintenanceInBar || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果未知，先查询原结果" actionBelow action={<>
+    {(maintenanceInBar || unresolvedPool || unresolvedGroups || unresolvedInvite || unresolvedAvatar || unresolvedBulk || unresolvedPayments.length > 0) && <Notice tone="warn" title="有操作结果未知，先查询原操作" actionBelow action={<>
       {maintenanceInBar && <Button size="sm" onClick={() => openTab(isPersonal ? "my-customers" : "mine")}>核对维护原操作</Button>}
       {unresolvedPool && <Button size="sm" onClick={() => openTab("pool")}>核对分配原操作</Button>}
       {unresolvedGroups && <Button size="sm" onClick={() => openTab("team")}>核对分组原操作</Button>}

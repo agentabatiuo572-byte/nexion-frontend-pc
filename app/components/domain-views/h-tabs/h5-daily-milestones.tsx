@@ -122,7 +122,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const [powerDirection, setPowerDirection] = useState<"approval" | "direct" | null>(null);
   const openActionConfirm = (req: H5Confirm) => {
     if (!req.original && (!fresh.current || mutations.record(req.target))) {
-      toast("请先查询原结果并成功刷新签到数据，再发起新的修改。");
+      toast("请先查询原操作并成功刷新签到数据，再发起新的修改。");
       return;
     }
     const next = conflictDraft.action(req, () => !!mutations.record(req.target)), values = next.getPendingBusinessValue?.();
@@ -386,7 +386,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       amplifies: false,
       businessForm: {
         kind: "multi-field",
-        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原请求重试。
+        // 非倍率权益不显示说明文字：重开的原操作可能只改了说明文字，看不到改动也要能按原操作重试。
         requireAnyChange: multiplier ? hasChange : !original,
         amplifies,
         onFieldChange: (_key, values) => { setApprovalLabel(amplifies(values)); setPowerDirection(directionOf(values)); return values; },
@@ -533,7 +533,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     const original = mutations.record(target);
     return original?.ticket?.status === "pending" ? target.startsWith("rule:") ? { approver: RULE_APPROVER, note: RULE_PENDING_NOTE } : { approver: FUND_APPROVER, note: FUND_PENDING_NOTE } : undefined;
   };
-  const blocked = (target: string) => mutations.record(target) ? "这一项有未结束的原操作，请先查询原结果" : !fresh.current ? "请先成功刷新签到数据" : undefined;
+  const blocked = (target: string) => mutations.record(target) ? "这一项有未结束的原操作，请先查询原操作" : !fresh.current ? "请先成功刷新签到数据" : undefined;
   const restore = (original: H5PendingCommand) => {
     const snapshot = original.change.snapshot;
     const [kind, ...idParts] = original.change.target.split(":");
@@ -562,8 +562,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       : record.acknowledged ? acknowledgedTag() : isRetryExpired(record) ? expiredTag(record.request.kind === "direct" ? "direct" : "approval") : unknownTag(record.request.kind === "direct" ? "direct" : "approval"),
     ticket: record.ticket?.id,
     actions: <>
-      <Button size="sm" onClick={() => void queryOriginal(record)}>查询原结果</Button>
-      {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原请求重试</Button>}
+      <Button size="sm" onClick={() => void queryOriginal(record)}>查询原操作</Button>
+      {!isRetryExpired(record) && !record.acknowledged && !record.ticket && <Button size="sm" disabledReason={mutations.canRetry(record) ? undefined : "当前账号没有原操作的修改权限"} onClick={() => restore(record)}>按原操作重试</Button>}
     </>,
   }));
   const unknownCount = mutations.records.filter(r => !r.ticket && !r.acknowledged).length;
@@ -573,8 +573,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     <H5RecoveryNotice title={[unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, builtCount && `${builtCount} 个申请没查到进度`].filter(Boolean).join("；")} rows={recoveryRows}
       explain={<>
         <p>原修改（改的是哪一项、从多少到多少、理由）保存在这个浏览器标签页里。</p>
-        <p>结果未知：提交时没收到确定结果。先「查询原结果」；查不到、又没过 24 小时，可以「按原请求重试」，不会重复执行或建第二张审批单。过了 24 小时只能查询。</p>
-        <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
+        <p>结果未知：提交时没收到确定结果。先「查询原操作」；查不到、又没过 24 小时，可以「按原操作重试」，不会重复执行或建第二张审批单。过了 24 小时只能查询。</p>
+        <p>待审批、已建单：申请已经建好，点「查询原操作」看审批进度，不会重发。</p>
         <p>结果确认之前，这页不能再改同一项。</p>
       </>}
       link={canAudit ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />
@@ -598,10 +598,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   );
 
   const activeCommand = mc ? mutations.record(mc.target) : undefined;
-  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原请求重试时按原请求的路径写（OP-25、OP-37、OP-60）。
+  // 成长权益的生效标签：填了有效新值按这一笔的方向写；按原操作重试时按原请求的路径写（OP-25、OP-37、OP-60）。
   const powerEffectTag = (direction: "approval" | "direct", retry: boolean) => direction === "approval"
-    ? <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来提交的是审批申请，批准后才生效。" : `${FUND_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的设置。`}>批准后生效</StatusTag>
-    : <StatusTag tone="progress" filled explain={retry ? "按原请求重试：原来是直接保存，重发成功就生效。" : "不用审批，确认后就按新设置；已经激活的权益不收回。"}>立即生效</StatusTag>;
+    ? <StatusTag tone="progress" filled explain={retry ? "按原操作重试：原来提交的是审批申请，批准后才生效。" : `${FUND_APPROVER}批准后才生效，提交人不能批自己的；批准前仍按现在的设置。`}>批准后生效</StatusTag>
+    : <StatusTag tone="progress" filled explain={retry ? "按原操作重试：原来是直接保存，重发成功就生效。" : "不用审批，确认后就按新设置；已经激活的权益不收回。"}>立即生效</StatusTag>;
   const retryCommand = mc?.original ?? activeCommand;
   const confirmEffect = !mc?.target.startsWith("power:") ? mc?.effect
     : retryCommand ? powerEffectTag(retryCommand.request.kind === "direct" ? "direct" : "approval", true)
@@ -620,7 +620,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       initialReason={mc.original?.change.reason ?? mc.initialReason}
       getPendingReason={() => mutations.record(mc.target)?.change.reason}
       getPendingBusinessValue={() => mc.original?.change.businessValue ?? mutations.record(mc.target)?.change.businessValue ?? mc.getPendingBusinessValue?.()}
-      blockedReason={activeCommand && !mutations.canRetry(activeCommand) ? isRetryExpired(activeCommand) ? "已超过 24 小时，只能查询原结果" : activeCommand.acknowledged ? "申请已建单，请查询原结果。" : "当前账号不能重试原操作，请查询原结果" : !mc.original && !mutations.record(mc.target) && !fresh.current ? "请先成功刷新签到数据" : undefined}
+      blockedReason={activeCommand && !mutations.canRetry(activeCommand) ? isRetryExpired(activeCommand) ? "已超过 24 小时，只能查询原操作" : activeCommand.acknowledged ? "申请已建单，请查询原操作。" : "当前账号不能重试原操作，请查询原操作" : !mc.original && !mutations.record(mc.target) && !fresh.current ? "请先成功刷新签到数据" : undefined}
       confirmLabelForValue={mc.confirmLabelForValue}
       confirmLabel={mc.target.startsWith("power:") || mc.target.startsWith("earn:") ? approvalLabel ? "提交审批" : mc.confirmLabel : mc.confirmLabel}
       confirmTone={mc.confirmTone}
@@ -713,7 +713,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           : "兑付覆盖率高于红线";
     // 结论只写状态和下一步（ST-74）：签到人数和签到率在「今日签到」卡里，原操作的条数在页顶恢复条里。
     const summary = [stats.todaySign == null ? "今天签到人数读不到" : undefined, coverageText,
-      unknownCount > 0 ? "有修改结果未知，先查询原结果" : undefined, pendingCount > 0 ? "有修改在等批准" : undefined].filter(Boolean).join("；");
+      unknownCount > 0 ? "有修改结果未知，先查询原操作" : undefined, pendingCount > 0 ? "有修改在等批准" : undefined].filter(Boolean).join("；");
     return (
       <Conclusion state={unknownCount || coverageBad ? "warn" : "neutral"} icon={CalendarCheck}
         explain={<>

@@ -143,7 +143,7 @@ function staleText(failure: unknown) {
   return <><b>{conflict ? "刚被别人改过，这次没有保存，最新的规则也没读到。" : "这次没有保存，最新的规则也没读到。"}</b>{!conflict && <><br />{rejectionText(failure)}</>}<br />关掉这个框，在页面上重新加载后再打开。</>;
 }
 const STALE_TOAST = "最新的规则没读到，现在不能提交。关掉这个框，重新加载后再打开。";
-const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不能再重试，只能查询原结果。";
+const C6_EXPIRED_TEXT = "原请求已超过 24 小时或没有保存完整，不能再重试，只能查询原操作。";
 
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const reach = useReach();
@@ -248,7 +248,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       // 重试被 401／403／429 挡下：说这次为什么没执行，原操作仍是结果未知。
       const retryRefused = row && !rejected && retry && err instanceof UsersRequestError && [401, 403, 429].includes(err.status);
       const message = retryRefused ? `这次重试没有执行：${rejectionText(err)}原操作仍是结果未知，原请求已保留。`
-        : row && !rejected ? "结果未知 · 已保留原请求，在页面上方查询原结果或按原请求重试" : `操作失败 · ${errorMessage(err)}`;
+        : row && !rejected ? "结果未知 · 已保留原请求，在页面上方查询原操作或按原操作重试" : `操作失败 · ${errorMessage(err)}`;
       // 第一次提交被拒时原框还开着，原因写在框里，不再弹同一句；最新规则没读到时页面照旧停在「没有保存」。
       const keptOpen = Boolean(row && rejected && !retry);
       if (!keptOpen || !overviewRef.current) setError(message);
@@ -305,7 +305,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
   // Restore from the saved request even when the overview cannot be loaded.
   const pendingNotices = pending.length > 0 && (
-    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原请求重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能查询原结果。「查询原结果」读的是现在的规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
+    <Notice tone="warn" title={<>有 {pending.length} 个操作结果未知<Explain label="结果未知怎么处理" content="提交时没收到确定结果，可能已经生效。24 小时内可以按原操作重试，系统认得出是同一次提交，不会重复执行；超过 24 小时只能查询原操作。「查询原操作」读的是现在的规则，证明不了原操作有没有执行。有结论前这一项不能再改。" /></>}>
       <ul className="c6-pending" aria-label="结果未知的操作">
         {pending.map((record) => {
           const complete = isCompleteC6Command(record);
@@ -315,13 +315,13 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
               <span className="c6-pending-name">{record.label ?? pendingLabel(record.fingerprint)}</span>
               <span className="c6-pending-time">{businessStamp(record.createdAt)} 提交</span>
               <span>{!complete
-                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能查询原结果</StatusTag>
+                ? <StatusTag tone="neutral" icon={CircleHelp} explain="这条是旧页面留下的记录，没有保存原请求，不能重试。">只能查询原操作</StatusTag>
                 : expired
                   ? <StatusTag tone="neutral" icon={CircleHelp} explain="原请求超过 24 小时，不能再重试。">已过期</StatusTag>
                   : <StatusTag tone="warn" icon={CircleHelp}>结果未知</StatusTag>}</span>
               <span className="c6-pending-actions">
-                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>查询原结果</Button>
-                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能查询原结果" : undefined} onClick={() => void perform(record)}>按原请求重试</Button>}
+                <Button size="sm" loading={loading} disabledReason={busy ? "正在提交，请稍候" : undefined} onClick={() => void loadData()}>查询原操作</Button>
+                {complete && !expired && <Button size="sm" variant="primary" disabledReason={busy ? "正在提交，请稍候" : !canWrite ? "你没有修改权限，只能查询原操作" : undefined} onClick={() => void perform(record)}>按原操作重试</Button>}
               </span>
             </li>
           );
@@ -547,7 +547,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     },
     get content() { return (
       <>
-        {original.getPendingReason() !== undefined && <Notice tone="warn" title="结果未知，可能已经生效">理由已锁住。按原请求重试只发原来那一次，不会重复执行；也可以关掉后在页面上方查询原结果。</Notice>}
+        {original.getPendingReason() !== undefined && <Notice tone="warn" title="结果未知，可能已经生效">理由已锁住。按原操作重试只发原来那一次，不会重复执行；也可以关掉后在页面上方查询原操作。</Notice>}
         {stale && <Notice tone="warn">{staleText(after.failure)}</Notice>}
         <Facts>
           <Fact k="人机验证"><Change from={basis.stats?.captchaTemporarilyDisabled ? "临时关闭" : "开启"} to="开启" /></Fact>
@@ -560,7 +560,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     ); },
     reason: true,
     reasonPlaceholder: "例如：滑块服务已恢复，提前打开人机验证",
-    get okLabel() { return original.getPendingReason() !== undefined ? "按原请求重试" : "确认恢复"; },
+    get okLabel() { return original.getPendingReason() !== undefined ? "按原操作重试" : "确认恢复"; },
     getPendingBlockReason: () => original.getPendingExpired() ? C6_EXPIRED_TEXT : undefined,
     // 共用的普通确认框不认 blockedReason，按钮还能点：点了只提示原因，不发请求。
     run: stale ? () => { toast(STALE_TOAST, "warn"); return false; } : (reason) => {
@@ -613,7 +613,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       kind: "select", current: basis.stats?.captchaTemporarilyDisabled ? formatCaptchaRestoreAt(basis.stats.captchaRestoreAt) : "开启", initialValue: CAPTCHA_RECOVERY_OPTIONS[0], options: CAPTCHA_RECOVERY_OPTIONS,
       label: "关闭多久", optionLabels: CAPTCHA_RECOVERY_LABELS,
       hint: "只能选这四档，不能永久关闭",
-      preview: (value) => `${CAPTCHA_RECOVERY_LABELS[value] ?? value}后自动恢复，从关闭生效时起算；按原请求重试不会重新计时。`,
+      preview: (value) => `${CAPTCHA_RECOVERY_LABELS[value] ?? value}后自动恢复，从关闭生效时起算；按原操作重试不会重新计时。`,
     },
     run: (reason, nextValue) => {
       const value = (nextValue ?? "").trim();

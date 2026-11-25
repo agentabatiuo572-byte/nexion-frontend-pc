@@ -5,19 +5,19 @@
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "./pending-mutation-store";
 
 export const M_RECOVERY = {
-  unknown: "可能已经生效，先查询原结果。",
-  querying: "正在查询原结果…",
-  replaying: "正在按原请求重试…",
-  notFound: "没有查到原操作，24 小时内可以按原请求重试，不会重复执行。",
+  unknown: "可能已经生效，先查询原操作。",
+  querying: "正在查询原操作…",
+  replaying: "正在按原操作重试…",
+  notFound: "没有查到原操作，24 小时内可以按原操作重试，不会重复执行。",
   notFoundBlocked: "没有查到原操作，这个账号现在不能重试，请到操作记录与审批核对。",
   notFoundShort: "没有查到原操作。",
-  unsettled: "后台还没有结论，稍后再查询原结果。",
+  unsettled: "后台还没有结论，稍后再查询原操作。",
   queryFailed: "没有查成，原记录还在，可以再查一次。",
   rejected: "后台已拒绝重试，先核实原操作的结果，再解除这条记录。",
 } as const;
 
 /** 面板问号里的通用说明；各页再补一句自己锁住了什么。 */
-export const M_RECOVERY_INTRO = "提交时没收到确定结果，可能已经生效。先「查询原结果」：查不到、没过 24 小时，才能「按原请求重试」，不会重复执行。重试被后台拒绝的，核实后解除。";
+export const M_RECOVERY_INTRO = "提交时没收到确定结果，可能已经生效。先「查询原操作」：查不到、没过 24 小时，才能「按原操作重试」，不会重复执行。重试被后台拒绝的，核实后解除。";
 
 export const M_RELEASED_TEXT = "已解除这条记录，可以重新提交。";
 

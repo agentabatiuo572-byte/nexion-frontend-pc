@@ -363,7 +363,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setPendingNote(`查询没有成功：${displayAdminReadError(cause)}。记录继续保留。`);
     } finally { setRetrying(false); }
   };
-  /** 查询原结果：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
+  /** 查询原操作：先按原请求查审批单（原有查询），还没有结论时再查原请求的执行记录。两次都是读取。 */
   const lookupProposal = async (record: PendingFx) => {
     await queryOriginal(record);
     const left = pendingFx.list()[0];
@@ -482,7 +482,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
     const what = `把${param.label}改成 ${valueText(pending.param, pending.after)}`;
     const retryRejected = pending.replayRejection ? retryRejectedReason(new Error(pending.replayRejection)) : undefined;
     const retryBlock = expired ? "已超过 24 小时，不能再重试" : !canManage ? NO_WRITE : retryRejected ? RETRY_AGAIN
-      : pending.proposal ? proposalBlocked ?? (proposalNotFound !== pending.commandKey ? "先查询原结果，查不到才能重试" : undefined) : undefined;
+      : pending.proposal ? proposalBlocked ?? (proposalNotFound !== pending.commandKey ? "先查询原操作，查不到才能重试" : undefined) : undefined;
     // 改版前没存出处的直接修改按当前账号查，queryD6DirectCommand 再核原操作人。
     const target = pending.proposal ? pending : { ...pending, commandOrigin: pending.commandOrigin ?? dConfigCommandOrigin("D6") };
     // 查到记为失败时，「可能已经提交」不再写。
@@ -495,7 +495,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
           onCheck={() => void lookupProposal(pending)} onClose={() => setClosing(true)} />}
         {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
-        {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原请求重试</Button>}
+        {!expired && <Button size="sm" loading={retrying} disabledReason={retryBlock} onClick={() => void retryPending(pending)}>按原操作重试</Button>}
         {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
       </>,
       detail: <>

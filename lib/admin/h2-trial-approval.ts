@@ -125,7 +125,7 @@ export async function submitH2TrialApproval(
   } catch (error) {
     if (error instanceof Error && "backendMessage" in error
         && ["IDEMPOTENCY_REQUEST_IN_PROGRESS", "IDEMPOTENCY_RESULT_UNKNOWN", "IDEMPOTENCY_KEY_PAYLOAD_MISMATCH"].includes(String(error.backendMessage))) {
-      throw new A2OutcomeUncertainError("原审批申请还没有结果，请查询原结果。", key);
+      throw new A2OutcomeUncertainError("原审批申请还没有结果，请查询原操作。", key);
     }
     const rejection = explicitRejectionCode(error);
     if (previous && rejection) attempts.markReplayRejected(slot, key, rejection);

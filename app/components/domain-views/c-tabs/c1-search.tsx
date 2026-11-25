@@ -84,7 +84,7 @@ const STATUS: Record<string, { label: string; tone: StateTone; icon: LucideIcon 
 };
 const UNKNOWN_STATUS = { label: "状态未知", tone: "warn" as StateTone, icon: CircleHelp };
 const SEARCH_EXPLAIN = "可以搜用户编码、系统编号、昵称、推荐码、脱敏手机号（138****8010）和手机号哈希。为保护隐私，不能按完整手机号查。停止输入后自动查询。";
-const RETRY_EXPLAIN = "按原请求重发。原操作已经生成过文件时，直接给回那个文件，不会再记一条导出。";
+const RETRY_EXPLAIN = "按原操作重发。原操作已经生成过文件时，直接给回那个文件，不会再记一条导出。";
 
 const exportStore = createPendingMutationStore<PendingExport>({
   storageKey: "nexion-admin-pending-c1-export-v1",
@@ -518,7 +518,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
   const pendingNeedsRisk = !!pending && (present(pending.query.riskBand) || present(pending.query.riskMin));
   const retryBlocked = !pending ? undefined
     : pendingExpired ? RETRY_EXPIRED_TEXT
-      : pendingNeedsRisk && !canReadRisk ? "原操作按风险条件筛选，你的账号现在没有风险读权，不能按原请求重试，请到操作记录与审批核对" : undefined;
+      : pendingNeedsRisk && !canReadRisk ? "原操作按风险条件筛选，你的账号现在没有风险读权，不能按原操作重试，请到操作记录与审批核对" : undefined;
 
   const closeDialog = () => {
     if (exporting) return;
@@ -617,7 +617,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       }
       syncPending();
       setDialog({ mode: "pending" });
-      setDialogNotice({ tone: "warn", title: "导出结果未知", text: `${exportCause(error)}，不知道名单生成没有。可能已生成文件并记录导出，请先到操作记录与审批核对，或按原请求重试。` });
+      setDialogNotice({ tone: "warn", title: "导出结果未知", text: `${exportCause(error)}，不知道名单生成没有。可能已生成文件并记录导出，请先到操作记录与审批核对，或按原操作重试。` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
       exportingRef.current = false;
@@ -651,7 +651,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       const verdict = retryVerdict(error);
       setRetryRejected(verdict);
       setDialogNotice(outcomeUnknown(error)
-        ? { tone: "warn", title: "重试结果未知", text: `${exportCause(error)}，不知道这次重试生效没有。原操作继续保留，可以稍后再按原请求重试。` }
+        ? { tone: "warn", title: "重试结果未知", text: `${exportCause(error)}，不知道这次重试生效没有。原操作继续保留，可以稍后再按原操作重试。` }
         : { tone: "warn", title: "重试没有成功", text: `${exportCause(error)}。原操作的结果仍不确定，${verdict ? "核实后可以解除原操作记录，再发起新导出。" : "继续保留，请到操作记录与审批核对。"}` });
     } finally {
       exportCooldownUntil.current = Date.now() + 1_000;
@@ -736,8 +736,8 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         <KeepText text={`${businessStamp(pending.createdAt)}（${businessZone().label}）发起，可能已生成文件并记录导出，确认前不能发起新导出。`} />
         {!canExport ? <><span className="rd-keep">你的账号现在不能导出名单，</span><span className="rd-keep">请到{auditLink}核对。</span></>
           : pendingExpired ? <><KeepText text="已超过 24 小时，不能再重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
-            : retryBlocked ? <><KeepText text="你的账号现在没有风险读权，不能按原请求重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
-              : <><span className="rd-keep">点右上角「继续原导出」按原请求重试，</span><span className="rd-keep">或到{auditLink}核对。</span></>}
+            : retryBlocked ? <><KeepText text="你的账号现在没有风险读权，不能按原操作重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
+              : <><span className="rd-keep">点右上角「继续原导出」按原操作重试，</span><span className="rd-keep">或到{auditLink}核对。</span></>}
         <Explain label="技术信息" content={`原请求编号 ${pending.commandKey} ｜ 操作者 ${pending.operator} ｜ 理由 ${pending.reason}`} />
       </Notice>
     )}
@@ -940,13 +940,13 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
               onBlockedClick={() => setReasonTouched(true)} onClick={() => void runNewExport()}>确认并导出</Button>} />
         ) : (
           <Decision
-            explain={<><p>按原请求重试：{RETRY_EXPLAIN}</p><p>原操作有结果前不能发起新导出。重试被明确拒绝后，核实原操作的结果，可以解除原操作记录。</p></>}
+            explain={<><p>按原操作重试：{RETRY_EXPLAIN}</p><p>原操作有结果前不能发起新导出。重试被明确拒绝后，核实原操作的结果，可以解除原操作记录。</p></>}
             others={<>
               <Button disabled={exporting} onClick={closeDialog}>稍后处理</Button>
               {retryRejected && <Button ref={releaseButton} disabled={exporting} onClick={() => setDialog({ mode: "release" })}>解除原操作记录</Button>}
             </>}
             primary={<Button variant="primary" loading={exporting} loadingText="生成中…" disabledReason={retryBlocked}
-              onClick={() => void retryExport()}>按原请求重试</Button>} />
+              onClick={() => void retryExport()}>按原操作重试</Button>} />
         )}>
         <div className="rd-stack">
           {dialogNotice ? <Notice tone={dialogNotice.tone} title={dialogNotice.title}><KeepText text={dialogNotice.text} /></Notice>

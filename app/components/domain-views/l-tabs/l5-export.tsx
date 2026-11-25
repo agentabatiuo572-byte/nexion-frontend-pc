@@ -446,7 +446,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       if (!(auth.role?.toLowerCase() === "superadmin" || auth.authorities.includes("bi_l5_read"))) {
         const canWrite = record.action === "approve" ? canApproveTask(record.task) : ctx.canAccessReportType?.(record.task.reportType, record.task.pii);
         const step = isRetryExpired(record) ? "已过 24 小时不能再重试，请有导出任务查看权限的同事核对。"
-          : canWrite ? "24 小时内可以按原请求重试。" : "请有导出任务查看权限的同事核对。";
+          : canWrite ? "24 小时内可以按原操作重试。" : "请有导出任务查看权限的同事核对。";
         notify.warn(record.task.id, `${!original ? "查询失败，这不代表没执行" : "还没查出原结果的结论"}，原请求继续保留；${step}`);
         return;
       }
@@ -471,10 +471,10 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
       submittedAt: record.createdAt, expired,
       actions: <>
         <Button size="sm" loading={busyTask === record.task.id} disabledReason={!canRead ? formatAdminApiError("L5_TASK_QUERY_PERMISSION", "L5_TASK_QUERY_PERMISSION") : undefined}
-          onClick={() => void queryTask(record)}>查询原结果</Button>
+          onClick={() => void queryTask(record)}>查询原操作</Button>
         {!expired && <Button size="sm" disabledReason={!canWrite ? formatAdminApiError("PERMISSION_DENIED", "PERMISSION_DENIED") : undefined}
           onClick={() => record.action === "approve" ? requestApproveTask(record.task, record.requester, record)
-            : void sendTaskAction(record.task, record.action, record.requester, record.request.reason, record).catch(error => toast(displayAdminError(error), "error"))}>按原请求重试</Button>}
+            : void sendTaskAction(record.task, record.action, record.requester, record.request.reason, record).catch(error => toast(displayAdminError(error), "error"))}>按原操作重试</Button>}
       </>,
     };
   });
@@ -780,7 +780,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     const approvalBlocked = !canApproveTask(t) ? isNetworkTree(t) ? networkApprovalHint : "你没有放行权限，要有导出任务审批权的管理员放行"
       : t.approvalEligibility === "SELF" ? "这是你申请的，要另一位管理员放行"
       : t.approvalEligibility === "ELIGIBLE" ? null : "暂时不能放行：系统核对不了申请人，请找技术同事";
-    if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原结果</span>;
+    if (recoveryIds.has(t.id)) return <span className="rd-toolbar-note">结果未知，先在页面上方查询原操作</span>;
     return approvalBlocked
       ? <span className="rd-toolbar-note" data-tone={t.approvalEligibility === "MAKER_UNVERIFIED" ? "warn" : undefined}>{approvalBlocked}</span>
       : <Button variant="primary" icon={<ShieldCheck size={14} aria-hidden />} onClick={() => requestApproveTask(t, requesterText(t))}>放行…</Button>;
@@ -803,7 +803,7 @@ export function L5Export({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
     );
     if (acts.includes("retry") && canAccessTask) out.push(
       <Button key="retry" size="sm" icon={<RotateCcw size={14} aria-hidden />} loading={busy} loadingText="正在发起…"
-        disabledReason={recoveryIds.has(t.id) ? "结果未知，先在页面上方查询原结果" : undefined}
+        disabledReason={recoveryIds.has(t.id) ? "结果未知，先在页面上方查询原操作" : undefined}
         onClick={() => { setBusyTask(t.id); void retryTask(t).catch((error) => toast(error instanceof Error ? displayAdminError(error) : "重新发起失败")).finally(() => setBusyTask(null)); }}>重新发起</Button>,
     );
     if (out.length === 0) out.push(<span key="none" className="l5-weak">—</span>);

@@ -103,7 +103,7 @@ export async function submitH7VoucherApproval(session: AdminSession, input: H7Vo
   if (mode === "lookup") return previous ? lookup(previous) : null;
   requireProposalActor(session.adminId, previous?.proposal?.command.op ?? input.op);
   if (previous) {
-    if (mode !== "retry") throw new Error("原操作待确认，请查询原结果。");
+    if (mode !== "retry") throw new Error("原操作待确认，请查询原操作。");
     await h7ApprovalRecovery.replay(previous, original => send(session, original, original.commandKey, slot, original));
     return readSubmitted(slot, previous.commandKey);
   }
@@ -149,12 +149,12 @@ async function readSubmitted(slot: string, key: string) {
       const current = await lookup(record);
       if (current) return current;
     } catch (error) {
-      throw new A2OutcomeUncertainError(`申请已建单，当前审批状态未读到：${error instanceof Error ? error.message : "请查询原结果"}`, key);
+      throw new A2OutcomeUncertainError(`申请已建单，当前审批状态未读到：${error instanceof Error ? error.message : "请查询原操作"}`, key);
     }
   }
-  throw new A2OutcomeUncertainError("申请已建单，批没批准还没查到。请查询原结果。", key);
+  throw new A2OutcomeUncertainError("申请已建单，批没批准还没查到。请查询原操作。", key);
 }
 
 export function releaseRejectedH7VoucherApproval(record: H7VoucherApprovalAttempt) {
-  if (!h7ApprovalRecovery.releaseRejectedReplay(record)) throw new Error("原操作记录继续保留，请查询原结果。");
+  if (!h7ApprovalRecovery.releaseRejectedReplay(record)) throw new Error("原操作记录继续保留，请查询原操作。");
 }

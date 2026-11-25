@@ -26,7 +26,7 @@ function reasonValid(value: string) { return supportGroupReason(value).valid; }
 function authStamp() { const a = useAdminAuth.getState(); return adminShellSessionKey(a.session, a.authEpoch) + JSON.stringify(a.session?.menuNodes ?? null) + `|${a.isAuthenticated}|${a.logoutPending}|${a.logoutUnknown}`; }
 export { canManageSupportQualifications } from "@/lib/admin/support-group-client";
 function expiredText() { return "原操作已超过 24 小时，不能再重试；请先核对它是否已经执行。原内容和理由仍保留。"; }
-const QUERY_PENDING_TEXT = "不能重复提交，先查询原结果。";
+const QUERY_PENDING_TEXT = "不能重复提交，先查询原操作。";
 type Intent = GroupPendingRecord["intent"];
 /** 作废拿到终局回执（成功或原操作没生效）、还没重读到新码时的那一格：旧码不可信（code 为空，不再给作废入口），显示「待刷新」，不和缺数据的「-」「读取失败」混在一起。 */
 const INVITE_REVOKED = { code: null, link: null, version: null, issuedAt: null };
@@ -186,7 +186,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
       if (!live()) return;
       if ([401,403].includes(code) || rejected && code === 404) { revoke(); setError(errorText(cause)); return; }
       if (rejected && code === 409) afterInviteChange();
-      setInviteError(!rejected ? "作废结果未知，原因和原操作已锁定；请查询原结果。" : code === 409 ? "邀请码刚被修改过，已重新读取；原因已保留，请核对后再确认。" : errorText(cause));
+      setInviteError(!rejected ? "作废结果未知，原因和原操作已锁定；请查询原操作。" : code === 409 ? "邀请码刚被修改过，已重新读取；原因已保留，请核对后再确认。" : errorText(cause));
     } finally { if (live()) setInviteBusy(false); }
   };
   const checkInviteRevoke = async (record: InviteRevokeRecord) => {
@@ -204,7 +204,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
       // No record on the server (or no answer): the request may never have arrived, so a same-key retry is offered inside the replay window.
       const absent = cause instanceof SupportClientError && cause.status === 404 && cause.backendMessage === "SUPPORT_COMMAND_NOT_FOUND";
       setInviteUnresolved(keys => absent ? keys.includes(record.commandKey) ? keys : [...keys, record.commandKey] : keys.filter(k => k !== record.commandKey));
-      setInviteError((errorStatus(cause) === 404 ? "还没查到原操作的结果，这说明不了它没有执行。" : "暂时查不到原结果。") + (canReplayGroupCommand(record) ? "可以按原请求重试；原因和原操作仍锁定。" : expiredText()));
+      setInviteError((errorStatus(cause) === 404 ? "还没查到原操作的结果，这说明不了它没有执行。" : "暂时查不到原结果。") + (canReplayGroupCommand(record) ? "可以按原操作重试；原因和原操作仍锁定。" : expiredText()));
     } finally { if (live()) setInviteBusy(false); }
   };
   const replayInviteRevoke = async (record: InviteRevokeRecord) => {
@@ -228,7 +228,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   const openInviteRevoke = (adminId: string) => { setInviteReasonTouched(false); setInviteRevoke({ adminId, reason: "" }); setInviteError(""); };
   const inviteCell = (invite: InviteRow["inviteCode"], enabled: boolean) => invite === INVITE_REVOKED ? <span className="m-invite-muted">待刷新</span> : invite === undefined ? "-" : invite === null ? <span className="m-invite-muted">读取失败</span> : invite.code === null ? <span className="m-invite-muted">未生成</span> : <span className={enabled ? "m-invite-code" : "m-invite-code m-invite-muted"}>{invite.code}{enabled ? "" : " · 不可使用"}</span>;
   const revokeButton = (adminId: string, invite: InviteRow["inviteCode"]) => (invite?.code || revokePendings.some(r => r.intent.targetId === adminId)) && <Btn sm disabled={!writeAllowed || saving || inviteBusy} onClick={() => openInviteRevoke(adminId)}>作废邀请码</Btn>;
-  const invitePanel = inviteRevoke && (invitePending || inviteMember && inviteTarget) && <Modal title="作废成员邀请码" busy={inviteBusy} onClose={() => { if (!inviteBusy) setInviteRevoke(undefined); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</Button>{invitePending ? <><Button type="button" disabled={inviteBusy} onClick={() => void checkInviteRevoke(invitePending)}>{inviteBusy ? "正在处理…" : "查询原结果"}</Button>{replayButton(invitePending) && <Button type="button" disabled={inviteBusy} onClick={() => void replayInviteRevoke(invitePending)}>按原请求重试</Button>}{inviteRejected.includes(invitePending.commandKey) && <Button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(invitePending); }}>解除原操作记录</Button>}</> : <Button type="button" variant="danger" disabled={inviteBusy} disabledReason={!writeAllowed ? "当前账号没有写权限" : inviteReason.error || undefined} onBlockedClick={() => setInviteReasonTouched(true)} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</Button>}</div>}>
+  const invitePanel = inviteRevoke && (invitePending || inviteMember && inviteTarget) && <Modal title="作废成员邀请码" busy={inviteBusy} onClose={() => { if (!inviteBusy) setInviteRevoke(undefined); }} footer={<div className="m1-drawer-actions"><Button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteError(""); }}>取消</Button>{invitePending ? <><Button type="button" disabled={inviteBusy} onClick={() => void checkInviteRevoke(invitePending)}>{inviteBusy ? "正在处理…" : "查询原操作"}</Button>{replayButton(invitePending) && <Button type="button" disabled={inviteBusy} onClick={() => void replayInviteRevoke(invitePending)}>按原操作重试</Button>}{inviteRejected.includes(invitePending.commandKey) && <Button type="button" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(invitePending); }}>解除原操作记录</Button>}</> : <Button type="button" variant="danger" disabled={inviteBusy} disabledReason={!writeAllowed ? "当前账号没有写权限" : inviteReason.error || undefined} onBlockedClick={() => setInviteReasonTouched(true)} onClick={() => void revokeInviteCode()}>{inviteBusy ? "正在作废…" : "确认作废"}</Button>}</div>}>
     <div className="m1-command-form">
     <Facts><Fact k="专属客服">{invitePending?.intent.payload.name ?? inviteMember?.name}</Fact><Fact k="原邀请码">{invitePending?.intent.payload.code ?? inviteTarget?.code}</Fact></Facts>
     <Notice tone="danger">{invitePending?.intent.payload.code ?? inviteTarget?.code} 会立即失效，之后填这个码注册会提示邀请码无效；已经绑定的客户不受影响。</Notice>
@@ -244,13 +244,13 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
   const recoveryItems: RecoveryItem[] = [
     ...(allowed && pending ? [{ key: pending.commandKey, object: pending.label, createdAt: pending.createdAt,
       tag: <StatusTag tone="warn">{canReplayGroupCommand(pending) ? "结果未知" : "已过期"}</StatusTag>,
-      line: canReplayGroupCommand(pending) ? QUERY_PENDING_TEXT : "超过 24 小时不能再重试，先查询原结果。",
-      actions: <Button size="sm" icon={QUERY_ICON} disabled={saving} onClick={() => void checkPending()}>查询原结果</Button>,
+      line: canReplayGroupCommand(pending) ? QUERY_PENDING_TEXT : "超过 24 小时不能再重试，先查询原操作。",
+      actions: <Button size="sm" icon={QUERY_ICON} disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>,
       detail: <p>{canReplayGroupCommand(pending) ? "原内容和理由已保留，查到结果前不能重复提交。" : expiredText()}</p> }] : []),
     ...revokePendings.map(r => { const refused = inviteRejected.includes(r.commandKey), expired = !canReplayGroupCommand(r); return { key: r.commandKey, object: `作废邀请码 · ${r.intent.payload.name}`, createdAt: r.createdAt,
       tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-      line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "确认前不能修改或重新提交，先查询原结果。",
-      actions: <><Button size="sm" icon={QUERY_ICON} disabled={inviteBusy} onClick={() => void checkInviteRevoke(r)}>查询原结果</Button>{replayButton(r) && <Button size="sm" disabled={inviteBusy} onClick={() => void replayInviteRevoke(r)}>按原请求重试</Button>}{refused && <Button size="sm" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(r); }}>解除原操作记录</Button>}</>,
+      line: refused ? "重试被明确拒绝；查询原操作核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原操作。" : "确认前不能修改或重新提交，先查询原操作。",
+      actions: <><Button size="sm" icon={QUERY_ICON} disabled={inviteBusy} onClick={() => void checkInviteRevoke(r)}>查询原操作</Button>{replayButton(r) && <Button size="sm" disabled={inviteBusy} onClick={() => void replayInviteRevoke(r)}>按原操作重试</Button>}{refused && <Button size="sm" disabled={inviteBusy} onClick={() => { setInviteRevoke(undefined); setInviteRelease(r); }}>解除原操作记录</Button>}</>,
       detail: <p>邀请码 {r.intent.payload.code}；原因：「{r.intent.payload.reason}」。{expired && expiredText()}</p> }; }),
   ];
   const targetGroups = rows.filter(g => g.status === "ENABLED" && g.id !== draft?.member?.currentMember.groupId);
@@ -268,7 +268,7 @@ export function M1GroupManagement({ mode, initialGroupId, actions, onChanged, on
     {mode === "ALL" && !selectedId && <PageTabs level={2} label="分组目录" value={directoryView} onChange={value => { setDirectoryView(value); setPage(1); }} items={[{ value: "groups", label: "客服组" }, { value: "unassigned", label: "待分组客服" }]} />}
     {!allowed && <Notice tone="danger">当前账号不能管理客服组。主管只能管理本人负责的组。</Notice>}{notice && <Notice tone={notice === INVITE_READBACK_FAILED ? "warn" : "ok"}>{notice}</Notice>}{error && <Notice tone={pending ? "warn" : "danger"}>{error}</Notice>}
     {allowed && loading && <p className="m1-group-state" role="status">正在加载获准组资料…</p>}
-    <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理" explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；有结果前，相关的组、成员或邀请码不能再修改或重新提交。" items={recoveryItems} />{!invitePanel && inviteError && <Notice tone={inviteRejected.length || !revokePendings.length ? "danger" : "warn"}>{inviteError}</Notice>}
+    <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理" explain="这些操作发出后没收到明确结果，可能已经生效。先查询原操作；有结果前，相关的组、成员或邀请码不能再修改或重新提交。" items={recoveryItems} />{!invitePanel && inviteError && <Notice tone={inviteRejected.length || !revokePendings.length ? "danger" : "warn"}>{inviteError}</Notice>}
     {directoryReady && !loading && !selectedId && directoryView === "groups" && <div className="m-admin-table-wrap"><Table label="客服与分组" className="m1-group-directory"><thead><Tr><Th>组 / 负责人</Th><Th align="right">客服（人）</Th><Th align="right">绑定客户（人）</Th><Th align="right">待分配（人）</Th><Th>状态</Th><Th sticky="end" fit>操作</Th></Tr></thead><tbody>{rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map(g => <Tr key={g.id}>
       <Td data-label="组 / 负责人"><span className="m-group-name" title={g.name}>{g.name}</span><span className="rd-note" title={g.supervisorName ?? undefined}>{g.supervisorName ?? "负责人未同步"}</span></Td>
       <Td align="right" data-label="客服（人）"><Button variant="ghost" size="sm" className={`m-group-count${g.memberCount ? "" : " m-group-quiet"}`} type="button" disabled={saving} title={g.memberCount == null ? "客服数量暂不可用，查看名单" : `${g.memberCount} 人`} aria-label={`查看${g.name}的客服名单，${g.memberCount == null ? "数量暂不可用" : `${g.memberCount} 人`}`} onClick={() => { closeDraft(); setSelectedId(g.id); setPage(1); }}>{g.memberCount == null ? "—" : g.memberCount.toLocaleString("en-US")}</Button></Td>
@@ -358,7 +358,7 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
       if (!active() || !original) return;
       if (!original.current || !qualificationRecovery.settleFromQuery(saved, original.conclusion)) {
         setError(qualificationRecovery.state(saved).expired ? RETRY_EXPIRED_TEXT
-          : original.conclusion === "not-found" ? "" : "原操作结果未知，请稍后再查询原结果。");
+          : original.conclusion === "not-found" ? "" : "原操作结果未知，请稍后再查询原操作。");
         return;
       }
       setPending(undefined);
@@ -432,9 +432,9 @@ export function SupportQualificationEditor({ adminId, kind, onClose, onChanged, 
       : !reasonOk ? `操作理由不能超过 ${reasonPolicy.maxChars} 字` : undefined;
   const blockedReason = writeBlockedReason ?? (!allowed ? "只有超级管理员（并有账号查看和修改权限）能管理资格" : !data ? "当前资格还没读到" : !fact || fact.observationState === "UNKNOWN" ? "当前资格信息不完整，不能保存" : stale ? "版本已变化，先点「重读当前资格」" : state === fact.state ? "选一个和现在不同的资格状态" : state === "ENABLED" && data.accountStatus !== 1 ? "账号已停用，不能启用资格" : reasonBlock);
   const resultTone = /^(资格已更新|原操作已成功)/.test(error) ? "ok" : /失败|无权|不能/.test(error) ? "danger" : "warn";
-  return <Modal title={pending ? "查询原结果" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{readAllowed && pending ? <><Btn disabled={busy} onClick={() => void check()}>查询原结果</Btn>{!recovery?.replayRejection && <Btn variant="primary" disabled={busy} disabledReason={replayBlocked} onClick={() => void submit(true)}>按原请求重试</Btn>}</> : <><Btn disabled={!readAllowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={busy} disabledReason={busy ? undefined : blockedReason} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
+  return <Modal title={pending ? "查询原操作" : `${KIND_TEXT[kind]}资格`} busy={busy} onClose={() => { if (!busy) onClose(); }} footer={<><Btn disabled={busy} onClick={onClose}>关闭</Btn>{readAllowed && pending ? <><Btn disabled={busy} onClick={() => void check()}>查询原操作</Btn>{!recovery?.replayRejection && <Btn variant="primary" disabled={busy} disabledReason={replayBlocked} onClick={() => void submit(true)}>按原操作重试</Btn>}</> : <><Btn disabled={!readAllowed || busy} onClick={() => setRefresh(n => n + 1)}>重读当前资格</Btn><Btn variant="primary" disabled={busy} disabledReason={busy ? undefined : blockedReason} onClick={() => void submit()}>{busy ? "正在提交…" : "确认并提交"}</Btn></>}</>}>
     <div className="m1-group-form">
-    {!readAllowed ? <Notice tone="warn">只有总管理员（并有账号查看和修改权限）能管理资格。</Notice> : pending ? <Notice tone="warn">上次操作结果未知，请先查询原结果。</Notice> : !data ? <BlockState state={error ? "error" : "loading"} title={error || "正在加载…"} /> : <>
+    {!readAllowed ? <Notice tone="warn">只有总管理员（并有账号查看和修改权限）能管理资格。</Notice> : pending ? <Notice tone="warn">上次操作结果未知，请先查询原操作。</Notice> : !data ? <BlockState state={error ? "error" : "loading"} title={error || "正在加载…"} /> : <>
       <Facts><Fact k="账号">{data.name}</Fact><Fact k="账号状态">{data.accountStatus === 1 ? "启用" : "停用"}</Fact><Fact k={`当前${KIND_TEXT[kind]}资格`}>{fact?.observationState === "UNKNOWN" ? "信息不完整，不能保存" : fact?.observationState === "ABSENT" ? "确证未授予" : fact?.state ? STATUS_TEXT[fact.state] : "未知"}</Fact>{state !== (fact?.state ?? "") && fact?.observationState !== "UNKNOWN" && <Fact k="改成">{STATUS_TEXT[state]}</Fact>}</Facts>
       <p className="m1-field-value">资格不是角色，单独管理；同一账号可以同时有专属客服和主管资格。授予资格不会自动绑定客户，也不改账号角色。<Explain label="资格的说明" content="专属客服资格让这个账号以客服身份接待本人绑定的客户；有全部或管理范围的管理员仍可在权限范围内介入会话。主管资格用于管理客服组，不带账号管理权限。" /></p>
       {kind === "SUPERVISOR" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先将全部负责组（含归档组）移交给有效主管。</Notice>}{kind === "SERVICE" && state !== "ENABLED" && <Notice tone="warn">停用或移除前，须先处理已有绑定客户并退出组；不会自动改派客户。</Notice>}

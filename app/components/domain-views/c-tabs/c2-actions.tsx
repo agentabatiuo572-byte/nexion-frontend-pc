@@ -103,9 +103,9 @@ const MIRROR_PAGES = [
 const K1_BLOCK = "这个账户是随多账户风险排查的账户组冻结的，要在那里解除，这里不能恢复。";
 /** 系统不会自己解冻：要在充值异常处置里单独提交解冻，另一位同事复核（后端 CregisReorgResolutionService 的 UNFREEZE）。 */
 const CREGIS_BLOCK = "这个账户因 USDT 充值异常冻结，这里不能恢复，需要单独解冻处置：异常和欠款处理完后，在「充值与收款对账」提交解冻，另一位同事复核后解除。";
-const LOCKED_USER = "这个账户有一次操作结果未知，先到页面上方查询原结果";
-const LOCKED_LIST = "这个用户的名单有一次操作结果未知，先到页面上方查询原结果";
-const LOCKED_VIEW = "这次查看有一次操作结果未知，先到页面上方查询原结果";
+const LOCKED_USER = "这个账户有一次操作结果未知，先到页面上方查询原操作";
+const LOCKED_LIST = "这个用户的名单有一次操作结果未知，先到页面上方查询原操作";
+const LOCKED_VIEW = "这次查看有一次操作结果未知，先到页面上方查询原操作";
 const SUBMITTING = "正在提交，稍候";
 const REFRESHING = "正在刷新，稍候";
 const STALE = "账户数据没刷新成功，先重试读取";
@@ -115,7 +115,7 @@ const NO_SESSION_TO_REVOKE = "没有在线设备，不用退出";
 const VIEW_NEEDS_ACTIVE = "只有正常账户能打开用户数据只读视图";
 const VIEW_ALREADY_OPEN = "这个用户已有进行中的只读视图，先结束它";
 const STORE_FAILED = "浏览器存不下这次操作，没有提交。换一个窗口再试。";
-const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原结果，或按原请求重试。";
+const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 const PERMISSION_DENIED_CODES = ["无权限访问", "ADMIN_PERMISSION_DENIED", "ACCESS_DENIED"];
 const REASON_CODES = ["RISK_HIT", "AML_REVIEW", "USER_APPEAL", "JUDICIAL_ASSISTANCE", "OTHER"];
@@ -773,7 +773,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     const scope = scopeOf(record.kind, record.target);
     const retained = c2Commands.get(scope);
     if (!retry && (retained || locked.has(scope))) {
-      throw new Error(scope.startsWith("list|") ? LOCKED_LIST : scope.startsWith("view|") ? LOCKED_VIEW : scope.startsWith("deletion|") ? "这张申请有一次操作结果未知，先到页面上方查询原结果" : LOCKED_USER);
+      throw new Error(scope.startsWith("list|") ? LOCKED_LIST : scope.startsWith("view|") ? LOCKED_VIEW : scope.startsWith("deletion|") ? "这张申请有一次操作结果未知，先到页面上方查询原操作" : LOCKED_USER);
     }
     const key = retained ?? newCommandKey(record.kind);
     c2Commands.remember(scope, key, record);
@@ -1039,7 +1039,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         <Fact k="退出范围">批准时在线的全部设备</Fact>
       </Facts>,
       // 没有未决记录时说明和影响是一件事，只写影响（VS-105）。
-      detail: pendingRevoke ? "审批提交结果未知，按原请求重试会用原理由，不会重复提交。" : "批准后这个用户的全部设备立即退出登录，要重新登录才能用。",
+      detail: pendingRevoke ? "审批提交结果未知，按原操作重试会用原理由，不会重复提交。" : "批准后这个用户的全部设备立即退出登录，要重新登录才能用。",
       amplifies: false,
       statedBrief: { impact: "批准后这个用户的全部设备立即退出登录，要重新登录才能用。", check: "核对用户和在线设备数，理由写清工单号和处理依据。" },
       confirmLabel: "提交审批",
@@ -1504,14 +1504,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       return {
         key: record.fingerprint, object: record.label, createdAt: record.createdAt,
         tag: <StatusTag tone={refused ? "danger" : "warn"}>{refused ? "重试被拒绝" : expired ? "已过期" : "结果未知"}</StatusTag>,
-        line: refused ? "重试被明确拒绝；查询原结果核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原结果。" : "可能已经生效，先查询原结果。",
+        line: refused ? "重试被明确拒绝；查询原操作核对后，可以解除。" : expired ? "超过 24 小时不能再重试，先查询原操作。" : "可能已经生效，先查询原操作。",
         note: pendingNotes[record.fingerprint],
         actions: <>
-          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void verifyPending(record)}>查询原结果</Button>
-          <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原请求重试</Button>
+          <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void verifyPending(record)}>查询原操作</Button>
+          <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
         </>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}` : "按原请求重试只发原内容，不会重复执行。"}</p>,
+        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试只发原内容，不会重复执行。"}</p>,
         tech: techRows(record),
       };
     }),
@@ -1522,14 +1522,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         tag: <StatusTag tone="warn">结果未知</StatusTag>,
         line: "审批可能已经提交；重试会先查原审批单，不会重复提交。",
         note: pendingNotes[fingerprint],
-        actions: <Button size="sm" disabled={busy} loading={submitting === `user|${record.userId}`} disabledReason={canRevoke ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryRevocation(record)}>按原请求重试</Button>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批。按原请求重试会先查原审批单，查不到再用原理由提交。</p>,
+        actions: <Button size="sm" disabled={busy} loading={submitting === `user|${record.userId}`} disabledReason={canRevoke ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryRevocation(record)}>按原操作重试</Button>,
+        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批。按原操作重试会先查原审批单，查不到再用原理由提交。</p>,
         tech: techRows(record),
       };
     }),
   ];
   const pendingNotices = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
-    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原结果；按原请求重试只发原内容，不会重复执行。有结果前，相关账户、名单或申请不能再操作。"
+    explain="这些操作发出后没收到明确结果，可能已经生效。先查询原操作；按原操作重试只发原内容，不会重复执行。有结果前，相关账户、名单或申请不能再操作。"
     foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : <span>请有操作记录读权限的同事核对。</span>}
     items={recoveryItems} />;
 
@@ -1976,6 +1976,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     {traceDrawer}
     {mirrorDrawer}
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒证明不了原操作的结果，先查询原结果或到操作记录核对。解除只清掉本页这条记录，不撤销后台的操作。" />}
+      explain="重试被拒证明不了原操作的结果，先查询原操作或到操作记录核对。解除只清掉本页这条记录，不撤销后台的操作。" />}
   </>;
 }

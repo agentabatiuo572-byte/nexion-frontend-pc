@@ -66,20 +66,20 @@ export function i3CapRetryBlockedReason(record: I3CapCommand) {
   if (state.replayRejection) return RETRY_REJECTED_TEXT;
   if (state.expired) return RETRY_EXPIRED_TEXT;
   if (!record.request) return "原操作记录不完整，只能查询核对，不能重试。";
-  return i3CapPermission() ?? (state.replayBlock ? "先查询原结果，明确查不到后才能重试。" : undefined);
+  return i3CapPermission() ?? (state.replayBlock ? "先查询原操作，明确查不到后才能重试。" : undefined);
 }
 
 export async function queryI3CapCommand(original: I3CapCommand): Promise<A2OperationRow | null | undefined> {
   const result = await i3CapRecovery.query(original, async record => {
     const ticket = await fetchA2ProposalByKey(record.commandKey, true);
     if (!ticket) {
-      if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。");
+      if (record.receiptKnown || record.ticketStatus === "pending") throw new Error("申请已提交，当前审批结果还没查到，请保留原记录并查询原操作。");
       return { conclusion: "not-found", ticket } as const;
     }
     if (!ticket.mine || ticket.obj !== record.tier || ticket.action !== `调整通知优先级 CAP · ${record.tier}`
       || ticket.operationCode && ticket.operationCode !== "i3_cap_adjust"
       || ticket.after !== `${Number(record.after)} 条` || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(ticket.status)) {
-      throw new Error("返回的审批单与原操作不符，请保留原记录并查询原结果。");
+      throw new Error("返回的审批单与原操作不符，请保留原记录并查询原操作。");
     }
     return { conclusion: ticket.status === "approved" ? "succeeded" : ticket.status === "pending" ? "unknown" : "not-executed", ticket } as const;
   });
@@ -113,9 +113,9 @@ async function readSubmitted(original: I3CapCommand, onResult?: (record: I3CapCo
     const ticket = await queryI3CapCommand(original);
     if (ticket) { await onResult?.(original, ticket); return ticket; }
   } catch (error) {
-    throw Object.assign(new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原结果"}`), { commandKey: original.commandKey });
+    throw Object.assign(new OutcomeUnknownError(`申请已提交，当前审批结果还没查到：${error instanceof Error ? error.message : "请查询原操作"}`), { commandKey: original.commandKey });
   }
-  throw Object.assign(new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原结果。"), { commandKey: original.commandKey });
+  throw Object.assign(new OutcomeUnknownError("申请已提交，当前审批结果还没查到，请保留原记录并查询原操作。"), { commandKey: original.commandKey });
 }
 
 export async function retryI3CapCommand(saved: I3CapCommand, onResult?: (record: I3CapCommand, ticket: A2OperationRow) => void | Promise<void>): Promise<A2OperationRow> {
@@ -126,7 +126,7 @@ export async function retryI3CapCommand(saved: I3CapCommand, onResult?: (record:
 export async function proposeI3Cap(tier: string, before: string, after: string, reason: string, onResult?: (record: I3CapCommand, ticket: A2OperationRow) => void | Promise<void>): Promise<A2OperationRow> {
   const permission = i3CapPermission();
   if (permission) throw new Error(permission);
-  if (pendingI3CapCommands().some((row) => row.tier === tier)) throw new Error("此对象有原操作尚未核清，请先查询原结果。");
+  if (pendingI3CapCommands().some((row) => row.tier === tier)) throw new Error("此对象有原操作尚未核清，请先查询原操作。");
   const session = useAdminAuth.getState().session!;
   const def = findHighOp("i3_cap_adjust")!;
   const request: Proposal = {

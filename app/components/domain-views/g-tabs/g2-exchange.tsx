@@ -507,8 +507,8 @@ function G2ExchangePage() {
           key: record.commandKey, name: paramName(key), submittedAt: record.createdAt, ticket: record.ticket?.id, tag: recoveryTag(record),
           change: from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
           actions: <>
-            <Button size="sm" disabled={recoverBusy} aria-label={`查询${paramName(key)}的原结果`} onClick={() => void recover(key, false)}>查询原结果</Button>
-            {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原请求重试${paramName(key)}`} onClick={() => void recover(key, true)}>按原请求重试</Button>}
+            <Button size="sm" disabled={recoverBusy} aria-label={`查询${paramName(key)}的原操作`} onClick={() => void recover(key, false)}>查询原操作</Button>
+            {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原操作重试${paramName(key)}`} onClick={() => void recover(key, true)}>按原操作重试</Button>}
           </>,
         };
       }),
@@ -542,8 +542,8 @@ function G2ExchangePage() {
           key: record.commandKey, name, change, submittedAt: record.createdAt, state: "direct-unknown",
           tag: expired ? expiredTag("direct") : unknownTag("direct"),
           actions: <>
-            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原结果`} onClick={query}>查询原结果</Button>
-            {!batch && canRetry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原请求重试${name}`} onClick={retry}>按原请求重试</Button>}
+            <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`查询${name}的原操作`} onClick={query}>查询原操作</Button>
+            {!batch && canRetry && <Button size="sm" disabled={recoverBusy || !!busyKey} aria-label={`按原操作重试${name}`} onClick={retry}>按原操作重试</Button>}
           </>,
         };
       }),
@@ -553,9 +553,9 @@ function G2ExchangePage() {
       title={`兑换的原操作 · ${rows.length} 项`}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
-        : `这些操作先只能查询原结果或在 24 小时内按原请求重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
+        : `这些操作先只能查询原操作或在 24 小时内按原操作重试，不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "；处理排队的原批次确认之前不能开新的一批" : ""}。`}
       explain={<>
-        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。原操作只能查询，或在 24 小时内按原内容重试，不能改值。</p>
+        <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的参数申请，直接生效但没收到结果的参数修改、紧急暂停、取消排队，以及处理排队的原批次。原操作只能查询，或在 24 小时内按原操作重试，不能改值。</p>
         <p>要改成别的值，等原操作有结论后再在「兑换参数」里发起新修改。处理排队的原批次在这里只能查原结果，不会重发。</p>
       </>} />;
   };
@@ -586,7 +586,7 @@ function G2ExchangePage() {
           // POST 的原始错误仍是主证据；回读失败不能改写成确定失败。
         }
         requireBatchActor(batchAdminId);
-        const message = "处理结果未知。在这里重试用的是同一批次编号，不会重复处理；也可以关掉确认框，到页面上方查询原结果。";
+        const message = "处理结果未知。在这里重试用的是同一批次编号，不会重复处理；也可以关掉确认框，到页面上方查询原操作。";
         // 确认框这时一直开着，这句只在框里写一次：不弹提示，页面上方也不再写。
         coveredErrors.current.add(message);
         setError(message);
@@ -749,10 +749,10 @@ function G2ExchangePage() {
           <Facts>
             <Fact k="改的是">{name}</Fact>
             {original && <Fact k="原申请"><Change from={currentText} to={nextText ?? "—"} /></Fact>}
-            <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{originalDirect ? "提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。" : original
+            <Fact k="什么时候生效" tone={loose ? "warn" : undefined}>{originalDirect ? "提交结果未知，可能已经生效。有效期内按原操作重试，不会重复执行；过期后只能查询。" : original
               ? original.ticket?.status === "pending"
                 ? "审批单在等另一位超级管理员批准；批准前参数不变，这一项被锁住"
-                : "原申请结果还没确认：有效期内按原内容重试，不会重复建单"
+                : "原申请结果还没确认：有效期内按原操作重试，不会重复建单"
               : loose === true
                 ? "放宽：提交审批，另一位超级管理员（需有审批批准权限）批准后才生效；批准前参数不变，这一项被锁住"
                 : loose === false
@@ -771,9 +771,9 @@ function G2ExchangePage() {
     openActionConfirm({ briefKind: "config",
       confirmLabelForValue: value => loosens(value) ? "提交审批" : "确认修改",
       action: `调整兑换${isQueueMode ? "超额处理方式" : "参数"} · ${operatorCopyText(cap.name)}`,
-      title: originalDirect ? `${name} · 按原请求重试` : original ? `${name}的原申请` : `调整${name}`,
+      title: originalDirect ? `${name} · 按原操作重试` : original ? `${name}的原申请` : `调整${name}`,
       detail: <>{copy?.what ?? operatorCopyText(cap.sub)}。{copy?.extra}</>,
-      effect: originalDirect ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。">结果未知</StatusTag> : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
+      effect: originalDirect ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经生效。有效期内按原操作重试，不会重复执行；过期后只能查询。">结果未知</StatusTag> : <StatusTag tone="neutral" icon={ArrowLeftRight} explain={<>
         <p>{copy?.loosen ?? "放宽"}是放宽：先提交审批，另一位超级管理员在「操作记录与审批」批准后才生效，你自己不能批。</p>
         <p>{copy?.tighten ?? "收紧"}是收紧：确认后立即生效。</p>
       </>}>{copy ? `${copy.loosen}要批准 · ${copy.tighten}立即生效` : "按方向生效"}</StatusTag>,
@@ -954,7 +954,7 @@ function G2ExchangePage() {
   };
 
 
-  /** 预计处理时长、预计说法：直接保存，确认后立即生效，不走审批；没收到结果时按原请求重试或查询。 */
+  /** 预计处理时长、预计说法：直接保存，确认后立即生效，不走审批；没收到结果时按原操作重试或查询。 */
   const editEta = (key: EtaKey) => {
     const path = `/exchange/params/${key}`;
     const original = pendingG2ExchangeCommand(batchAdminId, path);
@@ -982,15 +982,15 @@ function G2ExchangePage() {
     };
     openActionConfirm({ briefKind: "config",
       action: `调整排队预计 · ${name}`,
-      title: original ? `${name} · 按原请求重试` : `调整${name}`,
+      title: original ? `${name} · 按原操作重试` : `调整${name}`,
       detail: <>{ETA[key].what}。</>,
       effect: original
-        ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。">结果未知</StatusTag>
+        ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经生效。有效期内按原操作重试，不会重复执行；过期后只能查询。">结果未知</StatusTag>
         : <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改",
       facts: <Facts>
         <Fact k="改的是">{name}</Fact>
-        <Fact k="什么时候生效">{original ? "提交结果未知，可能已经生效。有效期内按原内容重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
+        <Fact k="什么时候生效">{original ? "提交结果未知，可能已经生效。有效期内按原操作重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
         {appLanguage
           ? <Fact k="显示在哪">App {appLanguage}界面，兑换进入排队时的提示；H5 不显示</Fact>
           : <><Fact k="排队中的兑换">单上的预计时间马上按新值显示</Fact><Fact k="显示在哪">这页排队单的详情，App 兑换进入排队时的提示；H5 不显示</Fact></>}
@@ -1042,17 +1042,17 @@ function G2ExchangePage() {
       : "排队单上不再显示预计时间，改成「等运营处理」";
     openActionConfirm({ briefKind: "config",
       action: `清空排队预计 · ${name}`,
-      title: original ? `清空${name} · 按原请求重试` : `清空${name}`,
+      title: original ? `清空${name} · 按原操作重试` : `清空${name}`,
       detail: <>{ETA[key].what}。</>,
       effect: original
-        ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经清空。有效期内按原内容重试，不会重复执行；过期后只能查询。">结果未知</StatusTag>
+        ? <StatusTag tone="warn" icon={CircleHelp} explain="提交结果未知，可能已经清空。有效期内按原操作重试，不会重复执行；过期后只能查询。">结果未知</StatusTag>
         : <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认清空",
       facts: <Facts>
         <Fact k="改的是">{name}</Fact>
         <Fact k="现在">{key === "queueEtaHours" ? paramValueText(key, current) : etaHoursValid(hoursNow) ? etaSentence(current, hoursNow) : current}</Fact>
         <Fact k="清空后" tone="danger">{after}</Fact>
-        <Fact k="什么时候生效">{original ? "提交结果未知，可能已经清空。有效期内按原内容重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
+        <Fact k="什么时候生效">{original ? "提交结果未知，可能已经清空。有效期内按原操作重试，不会重复执行；过期后只能查询。" : "确认后立即生效，不用审批"}</Fact>
       </Facts>,
       statedBrief: { impact: "只清空这一项，不改兑换的处理顺序。", check: "理由写清为什么清空，或写工单号。" },
       getPendingReason: () => pendingG2ExchangeCommand(batchAdminId, path)?.input.reason,
@@ -1258,8 +1258,8 @@ function G2ExchangePage() {
           {copy && <span className="g2x-dir">{copy.short}要批准</span>}
         </span>}
         action={canEdit || record || direct ? (describedBy) => (
-          <Button size="sm" aria-describedby={describedBy} aria-label={record || direct ? `查询${name}的原结果` : `调整${name}`}
-            disabledReason={disabledReason} onClick={() => direct ? void readOriginalCommand(direct) : void adjCap(cap)}>{record || direct ? "查询原结果" : "调整"}</Button>
+          <Button size="sm" aria-describedby={describedBy} aria-label={record || direct ? `查询${name}的原操作` : `调整${name}`}
+            disabledReason={disabledReason} onClick={() => direct ? void readOriginalCommand(direct) : void adjCap(cap)}>{record || direct ? "查询原操作" : "调整"}</Button>
         ) : undefined} />
     );
   });
@@ -1297,8 +1297,8 @@ function G2ExchangePage() {
           <span className="rd-row-actions">
             {!direct && raw && allowed(capAuthority(key)) && <Button size="sm" variant="ghost" aria-label={`清空${name}`}
               disabledReason={busyReason ?? newWriteBlockedReason} onClick={() => clearEta(key)}>清空</Button>}
-            <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原结果` : `调整${name}`}
-              disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => direct ? void readOriginalCommand(direct) : editEta(key)}>{direct ? "查询原结果" : "调整"}</Button>
+            <Button size="sm" aria-describedby={describedBy} aria-label={direct ? `查询${name}的原操作` : `调整${name}`}
+              disabledReason={busyReason ?? (!direct ? newWriteBlockedReason : undefined)} onClick={() => direct ? void readOriginalCommand(direct) : editEta(key)}>{direct ? "查询原操作" : "调整"}</Button>
           </span>
         ) : undefined} />
     );

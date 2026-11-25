@@ -49,7 +49,7 @@ const REASON_HINT = "例如：监管来函编号、事件编号、工单号";
 const NO_REAL = <StatusTag tone="neutral" icon={FlaskConical}>不动真实业务</StatusTag>;
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 const APPROVER = "另一位管理员在「操作记录与审批」批准；需有审批权和应急预案执行权，你不能批自己的申请";
-/** 查询原结果查到执行申请已经结束：轻提示写结论（和 F2、J1 同一组说法）。批准回放只有执行完才成功（中途失败回 J4_EXECUTION_PARTIAL，单子留在待审批），执行完也可能有跳过的步骤。 */
+/** 查询原操作查到执行申请已经结束：轻提示写结论（和 F2、J1 同一组说法）。批准回放只有执行完才成功（中途失败回 J4_EXECUTION_PARTIAL，单子留在待审批），执行完也可能有跳过的步骤。 */
 const J4_PROPOSAL_END = {
   approved: "原执行申请已批准：预案已按顺序执行完；每一步是做了还是跳过，到「执行记录」看。",
   rejected: "原执行申请已驳回：预案没有执行；需要时重新发起。",
@@ -153,7 +153,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const [checking, setChecking] = useState<string | null>(null);
   const [closing, setClosing] = useState<{ record: SlotAttemptRecord; label: string; kind: J4CommandContext["kind"]; change: ReactNode } | null>(null);
   const [settled, setSettled] = useState<FundSettled[]>([]);
-  /** 按原请求重试后后端回了「中途失败」的记录：前面的步骤可能已生效，记录保留。 */
+  /** 按原操作重试后后端回了「中途失败」的记录：前面的步骤可能已生效，记录保留。 */
   const [partial, setPartial] = useState<Record<string, true>>({});
   const current = useRef({ data, contentLoading, contentError, authorities });
   current.current = { data, contentLoading, contentError, authorities };
@@ -301,7 +301,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const legacyKind = (fingerprint: string) => fingerprint.endsWith("/drills") ? "drill" as const : fingerprint.endsWith("/cancel") ? "cancel" as const
     : fingerprint.endsWith("/resume") ? "resume" as const : fingerprint.endsWith("/rollback") ? "rollback" as const : fingerprint.startsWith("PUT") ? "update" as const : "create" as const;
   const busy = !!checking;
-  /** 查询原结果、核查结案（共用按钮）；结案框按这类操作后端能给的结论选。 */
+  /** 查询原操作、核查结案（共用按钮）；结案框按这类操作后端能给的结论选。 */
   const checkButtons = (record: SlotAttemptRecord & { sop?: J4PendingCommand["sop"] }, label: string, kind: J4CommandContext["kind"], change: ReactNode) => {
     const outcome = outcomes[record.commandKey];
     const receipt = outcome && "receipt" in outcome ? outcome.receipt : null;
@@ -326,7 +326,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       status: partial[record.commandKey] ? { tone: "warn", label: "部分完成", line: "中途失败，前面的步骤可能已生效；先看执行追溯。" } : replayRejectedStatus(rejected, outcomes[record.commandKey]),
       actions: <>
         {checkButtons(record, label, context.kind, change)}
-        {!expired && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={busy || !!jEmergencyRecovery.state(record).busy} onClick={() => askRelease(record, operationNames[context.kind], contextName(context))} />}
       </>,
       detail: <>
@@ -349,8 +349,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         : expired ? { tone: "warn", label: "结果未知", line: RETRY_EXPIRED_TEXT }
           : missing ? { tone: "warn", label: "结果未知", line: RECOVERY_LINE.absent } : { tone: "warn", label: "结果未知", line: RECOVERY_LINE.unknown },
       actions: <>
-        <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原结果</Button>
-        {!expired && !record.sopProposal.accepted && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(record.sopProposal.context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreProposal(record)}>按原请求重试</Button>}
+        <Button size="sm" disabled={busy} onClick={() => void queryProposal(record)}>查询原操作</Button>
+        {!expired && !record.sopProposal.accepted && !rejected && <Button size="sm" disabled={busy} disabledReason={retryReadReason(record.sopProposal.context) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreProposal(record)}>按原操作重试</Button>}
         {rejected && !record.sopProposal.accepted && <VerifiedReleaseButton disabled={busy || !!jEmergencyRecovery.state(record).busy} onClick={() => askRelease(record, operationNames.execute, contextName(record.sopProposal.context))} />}
       </>,
       detail: <>
@@ -372,7 +372,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       status: processed ? processedStatus({ expired, canRetry: false, canClose: fundInvestigationAccess(investigationRecord(record)).canSubmit, legacy: true, receipt: outcome.receipt })
         : outcome ? undefined : expired
           ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
-          : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原请求，不能重试，先查询原结果。" },
+          : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原请求，不能重试，先查询原操作。" },
       actions: <>
         {checkButtons(record, label, kind, "改版前的旧记录，没存原请求")}
       </>,
@@ -1024,7 +1024,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             </li>
           );
         })}
-        {pendingProposals.map((row) => <li key={row.key} className="j4-live-item"><div className="j4-live-head"><span className="j4-live-name">{row.name}</span><StatusTag tone="warn" icon={Clock3}>等批准</StatusTag><span className="j4-muted">{row.meta}</span>{overviewUnavailable && row.onQuery && <Button size="sm" onClick={row.onQuery}>查询原结果</Button>}</div></li>)}
+        {pendingProposals.map((row) => <li key={row.key} className="j4-live-item"><div className="j4-live-head"><span className="j4-live-name">{row.name}</span><StatusTag tone="warn" icon={Clock3}>等批准</StatusTag><span className="j4-muted">{row.meta}</span>{overviewUnavailable && row.onQuery && <Button size="sm" onClick={row.onQuery}>查询原操作</Button>}</div></li>)}
       </ul>
       <p className="j4-note">时间为{businessZone().label}</p>
     </Panel>

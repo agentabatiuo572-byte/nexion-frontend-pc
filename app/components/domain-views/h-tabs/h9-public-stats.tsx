@@ -492,7 +492,7 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     if (!original) return;
     const display = original.display;
     ctx.openActionConfirm({ briefKind: "config", action: display.action, title: display.title,
-      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "按原请求重试",
+      effect: <StatusTag tone="progress" filled>立即生效</StatusTag>, confirmLabel: "按原操作重试",
       statedBrief: { impact: display.impact, check: "核对改动和对 App 的影响，理由写清调整依据。" },
       detail: "主配置整组保存：任何一项不合法，整组都不保存；页面上其他块没保存的草稿不会带上。",
       getPendingReason: () => pendingH9Command("main")?.commandKey === record.commandKey ? original.reason : undefined,
@@ -524,10 +524,10 @@ export function H9PublicStats({ ctx }: { ctx: HCtx }) {
     status: h9Status(pending, outcomes[pending.commandKey], canWrite),
     tech: <TechInfo commandKey={pending.commandKey} receipt={receiptOf(outcomes[pending.commandKey])} />,
     actions: <>
-      <Button size="sm" disabled={loading} onClick={() => { if (pending.original) setModule(pending.original.display.module); void load(pending.original?.display.module); }}>查询原结果</Button>
+      <Button size="sm" disabled={loading} onClick={() => { if (pending.original) setModule(pending.original.display.module); void load(pending.original?.display.module); }}>查询原操作</Button>
       {canInvestigateECommand("growth_h9_read") && eCommandClosureOffer(outcomes[pending.commandKey], isRetryExpired(pending)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={loading || saving} onClick={() => setClosing(pending)}>核查结案</Button>}
       <Button size="sm" disabledReason={!canRetryH9Command(pending) ? pending.original ? RETRY_EXPIRED_TEXT : formatAdminApiError("H9_ORIGINAL_REQUEST_UNAVAILABLE", "H9_ORIGINAL_REQUEST_UNAVAILABLE") : !canWrite ? formatAdminApiError("ACCESS_DENIED", "ACCESS_DENIED") : undefined}
-        disabled={saving} onClick={() => recover(pending)}>按原请求重试</Button>
+        disabled={saving} onClick={() => recover(pending)}>按原操作重试</Button>
     </>,
   }] : [];
   const recoveryNotice = <><H9RecoveryNotice rows={recoveryRows} explain={RECOVERY_EXPLAIN} />

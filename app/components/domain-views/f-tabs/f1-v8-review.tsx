@@ -60,10 +60,10 @@ export function F1V8Review({ ctx, state, v8, canApprove, onApprove }: {
                   <Td align="right"><Cell num main={v8?.legRank && v8.legRank !== "NONE" ? `${num(row.qualifiedDownlineCount)} 个 ${v8.legRank} 及以上` : num(row.qualifiedDownlineCount)} /></Td>
                   <Td><Cell mono main={row.inviterCode || "—"} sub={row.inviterCode ? <span className="f5-sans">{row.inviterNickname || "—"}</span> : undefined} /></Td>
                   <Td align="right" sticky="end" data-fit="">{unknownOverrides.has(row.userId)
-                    ? <Cell main={<StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原内容重试。">结果未知</StatusTag>}
+                    ? <Cell main={<StatusTag tone="warn" icon={CircleHelp} explain="提交时没收到确定结果，可能已经生效或已建审批单。点「查看原操作」查询或按原操作重试。">结果未知</StatusTag>}
                       sub={unknownOverrides.get(row.userId)?.params.targetV === "V8" && unknownOverrides.get(row.userId)?.params.direction === "promote"
                         ? <Button size="sm" onClick={() => onApprove(row, true)}>查看原操作</Button>
-                        : <Button size="sm" onClick={() => void ctx.recoverF1(`f-vrank-override:${row.userId}`, "query").catch(error => ctx.toast(error instanceof Error ? error.message : "原结果没读到"))}>查询原结果</Button>} />
+                        : <Button size="sm" onClick={() => void ctx.recoverF1(`f-vrank-override:${row.userId}`, "query").catch(error => ctx.toast(error instanceof Error ? error.message : "原结果没读到"))}>查询原操作</Button>} />
                     : row.pendingV8Proposal
                     ? <Cell main={<StatusTag tone="progress" icon={Hourglass}>待审批</StatusTag>}
                       sub={row.pendingV8ProposalCreatedAt ? <span className="f5-sans">已提交 {formatBusinessTimeCompact(row.pendingV8ProposalCreatedAt, "—")}</span> : undefined} />

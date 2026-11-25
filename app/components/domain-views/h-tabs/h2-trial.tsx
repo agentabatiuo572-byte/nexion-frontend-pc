@@ -960,9 +960,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       </Notice>
     ) : <Notice key={record.commandKey} tone="warn" title={`${H2_TRIAL_ACTIONS[record.op]} · ${record.sid} · 结果未知`}
       action={<>
-        {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原结果</Button>}
+        {canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void recoverLegacy(record, "lookup")}>查询原操作</Button>}
         {record.expiresAt > Date.now() && <Button size="sm" disabled={!!recovering}
-          disabledReason={!canRetryH2Cancellation(adminSession?.authorities ?? []) ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除" : !queryMissing.includes(record.commandKey) ? "先查询原结果，查不到才能重试" : undefined}
+          disabledReason={!canRetryH2Cancellation(adminSession?.authorities ?? []) ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除" : !queryMissing.includes(record.commandKey) ? "先查询原操作，查不到才能重试" : undefined}
           onClick={() => void recoverLegacy(record, "retry")}>按原操作重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setLegacyReleaseKey(record.commandKey)}>解除原操作记录</Button>}
       </>}>试用记录 {record.obj}，原理由 {record.reason}。查询和重试都按原操作，不会重复提交；有结果前这条试用不能再操作。{record.expiresAt <= Date.now() && "已超过 24 小时，只能核对原审批单。"}{record.replayRejection && <p>重试没有成功：{displayAdminError(new Error(record.replayRejection))} {APPROVAL_REPLAY_RELEASE}</p>}</Notice>),
@@ -980,17 +980,17 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     const canRetry = record.kind === "cancel" ? canRetryH2Cancellation(adminSession?.authorities ?? []) : canWrite;
     const needQuery = proposal && !queryMissing.includes(record.commandKey);
     const retryBlock = !canRetry ? NO_WRITE : record.replayRejection ? "重试已被拒绝，请核实后解除"
-      : proposal && !canQuery ? "这个账号查不了原审批单" : needQuery ? "先查询原结果，查不到才能重试" : undefined;
+      : proposal && !canQuery ? "这个账号查不了原审批单" : needQuery ? "先查询原操作，查不到才能重试" : undefined;
     return (
       <Notice key={record.fingerprint} tone="warn" title={`${commandTitle(record)} · 结果未知`} action={<>
-        {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原结果</Button>}
+        {proposal && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void checkPending(record)}>查询原操作</Button>}
         {!expired && <Button size="sm" disabled={!!recovering} disabledReason={retryBlock} onClick={() => void retryPending(record)}>按原操作重试</Button>}
         {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
       </>}>
         {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，
         <KeepText text={proposal ? "审批可能已经提交，批准前不会执行；有结果前这条记录不能再操作。" : "可能已经生效，有结果前这项不能再改。"} />
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
-        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原结果，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
+        <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原操作，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
         <Explain label="技术信息" content={`操作编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
         {(!expired || record.replayRejection) && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}

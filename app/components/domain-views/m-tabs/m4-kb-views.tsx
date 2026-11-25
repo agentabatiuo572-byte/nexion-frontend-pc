@@ -166,7 +166,7 @@ export function M4StatusConfirm({ faq, busy, disabled, disabledReason, failure, 
   failure: Error | null;
   disabled?: boolean;
   disabledReason?: ReactNode;
-  /** 从结果未知恢复：确认就是按原请求重试。 */
+  /** 从结果未知恢复：确认就是按原操作重试。 */
   retry?: import("../design-kit").PendingConfirmRecovery;
   /** 恢复原操作时：和行同一份结论。 */
   info?: FaqRecoveryInfo;
@@ -184,9 +184,9 @@ export function M4StatusConfirm({ faq, busy, disabled, disabledReason, failure, 
       sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={busy} onClose={onCancel} returnFocus={returnFocus}
       footer={<>
         <Button disabled={busy} onClick={onCancel}>取消</Button>
-        {retry && <Button variant={retry.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={busy} disabledReason={onQuery ? undefined : "当前账号没有知识库查看权限"} onClick={onQuery}>查询原结果</Button>}
+        {retry && <Button variant={retry.state?.replayBlock && !info?.rejected ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={busy} disabledReason={onQuery ? undefined : "当前账号没有知识库查看权限"} onClick={onQuery}>查询原操作</Button>}
         {info?.rejected ? <Button onClick={info.release}>核实后解除</Button>
-          : <Button variant={retry?.state?.replayBlock ? "secondary" : "primary"} loading={busy && !querying} loadingText="提交中…" disabled={disabled} disabledReason={busy ? undefined : disabledReason} onClick={onConfirm}>{retry || unknown ? "按原请求重试" : `确认${action}`}</Button>}
+          : <Button variant={retry?.state?.replayBlock ? "secondary" : "primary"} loading={busy && !querying} loadingText="提交中…" disabled={disabled} disabledReason={busy ? undefined : disabledReason} onClick={onConfirm}>{retry || unknown ? "按原操作重试" : `确认${action}`}</Button>}
       </>}>
       <Facts>
         <Fact k="问题"><span className="m4-fact-text">{faq.question}</span></Fact>

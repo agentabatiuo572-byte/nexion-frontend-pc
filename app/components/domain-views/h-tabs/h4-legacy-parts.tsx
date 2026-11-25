@@ -180,8 +180,8 @@ export function lifecycleOf(event: LegacyEvent, requiredLanguages: readonly Loca
 
 export function unknownTag(kind: "approval" | "direct") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "approval"
-    ? "没收到确定结果，审批单可能已经建成。先查询原结果，查不到再按原请求重试，不会建第二张单。"
-    : "没收到确定结果，可能已经生效。先查询原结果，明确查不到后才能按原请求重试。"}>结果未知</StatusTag>;
+    ? "没收到确定结果，审批单可能已经建成。先查询原操作，查不到再按原操作重试，不会建第二张单。"
+    : "没收到确定结果，可能已经生效。先查询原操作，明确查不到后才能按原操作重试。"}>结果未知</StatusTag>;
 }
 export function pendingTag(object: string) {
   return <StatusTag tone="warn" icon={Clock3} explain={`等另一位超级管理员在「操作记录与审批」批准。批准、驳回或撤回之前，${object}不能再改，调低和关闭也不行。`}>待审批</StatusTag>;
@@ -199,7 +199,7 @@ export const effectDirect = <StatusTag tone="progress" filled>立即生效</Stat
 /** 只存草稿：用户侧不变，灰底（VS-106）。 */
 export const effectDraft = <StatusTag tone="neutral" filled>保存草稿，线上不变</StatusTag>;
 /** 原操作结果未知时保存按钮的原因：抽屉主按钮和离开框用同一句。 */
-export const H4_UNKNOWN_SAVE = "原操作结果未知，先在本页顶部查询原结果";
+export const H4_UNKNOWN_SAVE = "原操作结果未知，先在本页顶部查询原操作";
 export const effectByDirection = (amplify = "让平台多付钱的修改") => <><StatusTag tone="progress" filled>调低立即生效</StatusTag><StatusTag tone="neutral" explain={`${amplify}要另一位超级管理员（需有审批批准权限）批准，批准前什么都不变；其余确认后立即生效。提交时由系统判断方向。`}>调高要批准</StatusTag></>;
 export const effectApproval = (note: string) => <StatusTag tone="progress" filled explain={`另一位超级管理员（需有审批批准权限）批准后才执行，批准前${note}不变。`}>批准后生效</StatusTag>;
 

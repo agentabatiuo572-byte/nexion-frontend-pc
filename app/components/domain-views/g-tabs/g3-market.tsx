@@ -74,7 +74,7 @@ const FIELD_NAME: Record<G3CurveField, string> = { targetPrice: "目标价", pum
 /** 已停用的三个单独设置（后端 cb7fe037）。七天计划里每天的波动幅度不在内。 */
 const RETIRED_OVERRIDE_NAME = { volatilityPct: "当前波动幅度", oracle: "价格来源", deviationPct: "偏离告警阈值" } as const;
 const CONTROL_ORDER = ["pin", "schedule", "loop"];
-/** 按原请求重试成功后的提示：原操作已完成，页面在重读，读到之前不能发起新修改。 */
+/** 按原操作重试成功后的提示：原操作已完成，页面在重读，读到之前不能发起新修改。 */
 const REREAD_TEXT = "原操作已完成，正在加载最新 UVT 价格";
 const RUNTIME_PRICE_UNAVAILABLE = "现价暂不可用，无法判断是否提价，请刷新后再试。";
 /** 结果未知的那句：原操作提醒里已经有一行，不再用「操作失败」或页面提示条重复。 */
@@ -226,11 +226,11 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       facts: <Facts>
         <Fact k="原操作改的是">D{dayIndex + 1} 的计划波动幅度（2 表示 ±2%）</Fact>
         <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
-        <Fact k="按原请求重试">执行过就给出原结果，没执行过会被拒绝</Fact>
+        <Fact k="按原操作重试">执行过就给出原结果，没执行过会被拒绝</Fact>
       </Facts>,
-      statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
+      statedBrief: { impact: "只核对或按原操作重试，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
       amplifies: false,
-      confirmLabel: "按原请求重试",
+      confirmLabel: "按原操作重试",
       edit: { kind: "number", current, min: 0, max: 20, step: 0.01, disallowCurrent: true, unit: "%", hint: "0–20，最多两位小数" },
       change,
       success: `D${dayIndex + 1} 波动幅度的原操作已有结果`,
@@ -247,7 +247,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       return <Facts>
         {target !== undefined ? <>
           <Fact k="选了之后"><Change from={priceMissing ? "暂不可用" : `${price(overview!.currentPrice)} USDT`} to={`${price(target)} USDT（${value} 目标价）`} /></Fact>
-          <Fact k="什么时候变">{approval ? "批准后发布，之后不再自动切换" : original ? "按原请求重试，以原结果为准"
+          <Fact k="什么时候变">{approval ? "批准后发布，之后不再自动切换" : original ? "按原操作重试，以原结果为准"
             : priceMissing ? RUNTIME_PRICE_UNAVAILABLE : `确认后马上按 ${value} 发布现价，之后不再自动切换`}</Fact>
         </> : value === "未钉住" && overview ? <>
           <Fact k="选了之后">现价不变；之后在排程已配置、没有暂停时，从 D{curDay === 7 ? loopStop ? 7 : 1 : curDay! + 1} 继续推进{curDay === 7 && loopStop ? "（D7 之后选的是停在末值）" : ""}</Fact>
@@ -276,7 +276,7 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       success: `${name}已立即生效`,
     };
   }
-  // 价格来源、当前波动幅度、偏离告警阈值已停用（后端 cb7fe037）：新修改在发请求前被拒，这里只剩原操作的查询和按原请求重试。
+  // 价格来源、当前波动幅度、偏离告警阈值已停用（后端 cb7fe037）：新修改在发请求前被拒，这里只剩原操作的查询和按原操作重试。
   if (change.key === "oracle" || change.key === "volatilityPct" || change.key === "deviationPct") {
     const retiredName = RETIRED_OVERRIDE_NAME[change.key];
     return { briefKind: "config",
@@ -286,10 +286,10 @@ function directConfirmation(change: G3DirectChange, value: string | undefined, o
       effect: <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>,
       facts: <Facts>
         <Fact k="现在用不用">已停用，不影响价格和兑换</Fact>
-        <Fact k="按原请求重试">执行过就给出原结果，没执行过会被拒绝</Fact>
+        <Fact k="按原操作重试">执行过就给出原结果，没执行过会被拒绝</Fact>
       </Facts>,
-      statedBrief: { impact: "只查询或重试原请求，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
-      confirmLabel: "按原请求重试",
+      statedBrief: { impact: "只核对或按原操作重试，不会产生新的修改。", check: "核对原操作的内容和提交时间。" },
+      confirmLabel: "按原操作重试",
       edit: change.key === "oracle"
         ? { kind: "select", current, options: ["内部做市", "外部喂价"], optionLabels: { "内部做市": "内部定价", "外部喂价": "外部价格来源" }, disallowCurrent: true }
         : { kind: "number", current, min: 0, max: change.key === "volatilityPct" ? 20 : 50, step: 0.01, disallowCurrent: true, unit: "%" },
@@ -379,8 +379,8 @@ function G3MarketEditor() {
       ? { kind: "approval", detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。`,
         verification: verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "current", observedAt: verifiedApprovals[row.commandKey] ?? row.createdAt }
       : { kind: "unknown", detail: row.request.kind === "approval"
-        ? "提交时没收到确定结果，可能已提交审批。打开这一项查询原结果，24 小时内也可以按原请求重试。"
-        : "提交时没收到确定结果，可能已经生效。打开这一项查询原结果，24 小时内也可以按原请求重试。", verification: "current", observedAt: row.createdAt };
+        ? "提交时没收到确定结果，可能已提交审批。打开这一项查询原操作，24 小时内也可以按原操作重试。"
+        : "提交时没收到确定结果，可能已经生效。打开这一项读取当前配置核对，24 小时内也可以按原操作重试。", verification: "current", observedAt: row.createdAt };
   }
   for (const state of overview?.objectStates ?? []) {
     const keys = state.target.type === "nex_market_curve"
@@ -610,17 +610,17 @@ function G3MarketEditor() {
         : g3MarketCommandExpired(row) ? expiredTag(row.request.kind === "approval" ? "approval" : "direct")
           : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
       actions: row.ticketId
-        ? <Button size="sm" aria-label={`查询${name}的原结果`} onClick={() => void refreshKnownApprovals()}>查询原结果</Button>
-        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{g3MarketCommandExpired(row) ? "查询原结果" : "查询或重试"}</Button>,
+        ? <Button size="sm" aria-label={`查询${name}的原操作`} onClick={() => void refreshKnownApprovals()}>查询原操作</Button>
+        : <Button size="sm" aria-label={`打开${name}的原操作`} onClick={() => openSavedCommand(row)}>{g3MarketCommandExpired(row) ? row.request.kind === "direct" ? "读取当前配置" : "查询原操作" : "查询或重试"}</Button>,
     };
   });
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
     title={`价格的原操作 · ${recoveryRows.length} 项`}
     lead={commandRows.every((row) => row.ticketId)
-      ? "这些申请在等另一位超级管理员审批：点「查询原结果」看结论；有结论之前不要换个值重新提交。"
-      : "点「查询原结果」或打开那一项核对；没有审批单的原操作 24 小时内也可以按原请求重试。有结论之前不要换个值重新提交。"}
+      ? "这些申请在等另一位超级管理员审批：点「查询原操作」看结论；有结论之前不要换个值重新提交。"
+      : "点「查询原操作」或打开那一项核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}
     explain={<>
-      <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原内容重试，不能改值。</p>
+      <p>这里列你在这台电脑上提交过、还没有结论的原操作：走审批的提高申请，和直接保存但没收到结果的修改。原操作只能查询或按原操作重试，不能改值。</p>
       <p>表里同一项也带着标记。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
     </>} />;
   const pendingDirect = confirm && session ? pendingG3MarketCommand(session.adminId, confirm.change) : undefined;
@@ -728,7 +728,7 @@ function G3MarketEditor() {
                   : approval && session && !canWriteG3MarketChange(session, confirm.change, value, true) ? "你没有修改这一项的权限。" : undefined,
               };
             },
-            recoverLabel: directPastDeadline && !pendingRuntimeApproval ? "读取当前配置" : undefined,
+            recoverLabel: pendingDirect && !pendingRuntimeApproval ? "读取当前配置" : undefined,
             recover: pendingRuntimeApproval ? () => executeConfirmedChange("lookup") : directPastDeadline ? readCurrent : async () => {
               if (session) await executeG3MarketChange(session, confirm.change, "", "", "lookup");
               return false;
@@ -1151,7 +1151,7 @@ function G3MarketEditor() {
           <div className="g3-subhead">七天波动幅度<span className="g3-subnote">已停用 · 不能再改</span><Explain label="七天波动幅度" content={<><p>七天计划里每天的波动幅度已停用，不影响价格和兑换。表里是还留着的旧值，2 表示 ±2%。</p><p>有原操作没结论时，格子里可以查询或重试。</p></>} /></div>
           {weekTable("volatilityPct")}
           {retiredRows.length > 0 && <>
-          <div className="g3-subhead">其他已停用的设置<span className="g3-subnote">不能再改</span><Explain label="其他已停用的设置" content="系统已停用这几项，不影响价格和兑换。只显示还留着的旧值；有没结论的原操作时，可以查询或按原请求重试。" /></div>
+          <div className="g3-subhead">其他已停用的设置<span className="g3-subnote">不能再改</span><Explain label="其他已停用的设置" content="系统已停用这几项，不影响价格和兑换。只显示还留着的旧值；有没结论的原操作时，可以查询或按原操作重试。" /></div>
           <ConfigList label="已停用的设置">
             {retiredRows.map((row) => (
               <ConfigRow key={row.key} name={RETIRED_OVERRIDE_NAME[row.key]} what={row.what} effect="已停用，不影响价格和兑换"

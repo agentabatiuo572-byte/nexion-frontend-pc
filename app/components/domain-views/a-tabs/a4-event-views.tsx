@@ -160,7 +160,7 @@ export function consumerParts(consumers: string, pageName: (code: string) => str
   });
 }
 
-export type A4RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode; /** 查询原结果后的一句结论。 */ line?: string };
+export type A4RecoveryRow = { key: string; name: ReactNode; change: ReactNode; submittedAt?: number; tag: ReactNode; ticket?: string; actions: ReactNode; /** 查询原操作后的一句结论。 */ line?: string };
 
 /** 原操作提醒：逐条写改的是什么、对象是谁、什么时候提交的、现在什么状态，按钮在行尾。 */
 export function A4RecoveryNotice({ title, explain, rows }: { title: ReactNode; explain: ReactNode; rows: A4RecoveryRow[] }) {

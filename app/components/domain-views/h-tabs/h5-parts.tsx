@@ -165,8 +165,8 @@ export type H5RecoveryRow = {
 
 export function unknownTag(kind: "direct" | "approval") {
   return <StatusTag tone="warn" icon={CircleHelp} explain={kind === "direct"
-    ? "提交时没收到确定结果，可能已经生效。可以查询原结果；24 小时内也可以按原请求重试，不会重复执行。"
-    : "提交时没收到确定结果，可能已经建了审批单。可以查询原结果；24 小时内也可以按原请求重试，不会建第二张。"}>结果未知</StatusTag>;
+    ? "提交时没收到确定结果，可能已经生效。可以查询原操作；24 小时内也可以按原操作重试，不会重复执行。"
+    : "提交时没收到确定结果，可能已经建了审批单。可以查询原操作；24 小时内也可以按原操作重试，不会建第二张。"}>结果未知</StatusTag>;
 }
 
 export function pendingTag(approver: string, note = "批准前仍按现在的值；审批结束前这页不能再改这一项。") {
@@ -175,7 +175,7 @@ export function pendingTag(approver: string, note = "批准前仍按现在的值
 
 /** 申请已建单，但这次没查到审批进度：只能查询，不会重发。 */
 export function acknowledgedTag() {
-  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原结果」再查；不会重发。">已建单</StatusTag>;
+  return <StatusTag tone="neutral" icon={Clock3} explain="申请已建单，这次没查到审批进度。点「查询原操作」再查；不会重发。">已建单</StatusTag>;
 }
 
 export function expiredTag(kind: "direct" | "approval") {

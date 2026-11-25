@@ -111,15 +111,15 @@ export function PromotionCard({ item, catalog, onDetail, onEdit, onRewards, more
 
 /** 新建活动、新建政策的原请求对象是集合名（promotions、promotion-policies），不是某个活动编号，不显示。 */
 const COLLECTION_TARGETS = new Set(['promotions', 'promotion-policies']);
-/** 结果未知逐条列：改的是什么、对哪个对象、什么时候提交的；按钮打开原确认框，只查询或按原请求重试。 */
+/** 结果未知逐条列：改的是什么、对哪个对象、什么时候提交的；按钮打开原确认框，只查询或按原操作重试。 */
 export function PendingList({ items, onOpen }: { items: PendingPromotion[]; onOpen: (item: PendingPromotion) => void }) {
     if (!items.length) return null;
     return <Notice tone="warn" title={`有 ${items.length} 个操作结果未知`} actionBelow action={<ul className="h4-pending">{items.map(p => <li key={p.commandKey}>
         <span className="h4-pending-what"><b>{OPERATION_LABELS[p.operation] || '促销操作'}</b>{!COLLECTION_TARGETS.has(p.targetId) && <span className="h4-mono" title={p.targetId}>{p.targetId}</span>}</span>
         <span className="h4-pending-when">提交于 <span className="h4-num">{formatTime(new Date(p.createdAt).toISOString(), 'Asia/Shanghai')}</span>（北京时间）</span>
         <StatusTag tone="warn">{p.receipt ? '已成功，待读回' : '结果未知'}</StatusTag>
-        <Button size="sm" onClick={() => onOpen(p)}>查询原结果</Button>
-    </li>)}</ul>}>关闭或刷新页面不会重新提交。先查询原结果，查不到时才可以按原请求重试。</Notice>;
+        <Button size="sm" onClick={() => onOpen(p)}>查询原操作</Button>
+    </li>)}</ul>}>关闭或刷新页面不会重新提交。先查询原操作，查不到时才可以按原操作重试。</Notice>;
 }
 
 /** 首屏：一句结论 + 四个数 + 等我处理。数都来自列表接口的 summary 和这一页的活动。 */

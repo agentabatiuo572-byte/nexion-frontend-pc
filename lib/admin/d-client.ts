@@ -35,7 +35,7 @@ export class DRequestError extends Error {
  * 原请求编号只留在 commandKey 上，句子里不出现；没有地方按文案判断。
  */
 export class DOutcomeUnknownError extends Error {
-  constructor(public readonly commandKey: string, message = "结果未知，可能已经生效。不要重复操作，到页面上方查询原结果，或按原请求重试。") {
+  constructor(public readonly commandKey: string, message = "结果未知，可能已经生效。不要重复操作，到页面上方查询原操作，或按原操作重试。") {
     super(message);
     this.name = "DOutcomeUnknownError";
   }
@@ -643,7 +643,7 @@ export const d1CommandReplayable = (path: string) => !path.startsWith("/cregis/"
   || D1_RETAINED_CREGIS_WRITES.some((pattern) => pattern.test(path.split("?")[0]));
 
 export const D1_PENDING_OBJECT_TEXT = "这项上次的操作结果还没确认，先在本页上方核对";
-export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原请求重试，请到操作记录与审批核对";
+export const D1_COMMAND_EXPIRED_TEXT = "已超过 24 小时，不能再按原操作重试，请到操作记录与审批核对";
 const D1_IDENTITY_FIELDS = ["network", "cid", "sourceType", "sourceId", "intentNo"] as const;
 
 /**
@@ -704,7 +704,7 @@ export function listD1PendingCommands(): D1PendingCommand[] {
     .sort((left, right) => left.createdAt - right.createdAt);
 }
 
-/** 按原请求重发 USDT 收款和银行卡支付参数的写操作：同命令号、同路径、同内容（OP-94）。 */
+/** 按原操作重发 USDT 收款和银行卡支付参数的写操作：同命令号、同路径、同内容（OP-94）。 */
 export async function retryD1PendingCommand(commandKey: string) {
   const pending = pendingMutations.list().find(value => value.commandKey === commandKey);
   if (!pending || pending.base !== "finance" || pending.method === "GET"
@@ -829,7 +829,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     }
     if (d1Write && init?.idempotencyKey && previous) {
       if (!d1CommandReplayable(previous.path)) {
-        throw new Error("这项操作再发一次可能会再执行一次，所以不能按原请求重试；先读取现在的值核对。");
+        throw new Error("这项操作再发一次可能会再执行一次，所以不能按原操作重试；先读取现在的值核对。");
       }
       const target = needsCregisReplayTarget(previous);
       const authEpoch = adminAuthLifecycleEpoch();
@@ -842,7 +842,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       const restriction = cregisTrc20ReplayBlock(previous, Array.isArray(cases) ? cases : undefined, policy);
       if (restriction) throw new Error(restriction);
     }
-    // 从原入口再交一次（哪怕内容一样）也不发：只能从页面上方的恢复入口按原请求重试。
+    // 从原入口再交一次（哪怕内容一样）也不发：只能从页面上方的恢复入口按原操作重试。
     if (d1Write && !init?.idempotencyKey && !D1_CREGIS_SWITCH_PATH.test(path)) {
       const object = d1CommandObject(path, typeof init?.body === "string" ? init.body : "");
       if (pendingKeyBeforeRequest || pendingMutations.list().some(value => isD1Write(value.base, value.path) && !D1_CREGIS_SWITCH_PATH.test(value.path)

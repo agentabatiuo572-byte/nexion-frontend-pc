@@ -261,7 +261,7 @@ function AccountPhonePanel({ userId, userLabel, userCode, active, owner, rights,
     const blocked = busy || loading || denied || !!confirm || pendingRows.length > 0;
     const usableRequest = !!selection && selection.status === "PENDING" && !!overview && selection.expiresAt > overview.eligibility.serverNow;
     const activeGrant = overview?.eligibility.grant ?? overview?.pendingRequest?.grant;
-    const grantBlock = blocked ? "先完成当前操作或查询原结果" : !usableRequest ? "请选择有效的待处理申请" : verification?.requestId !== selected ? "先核实本申请的关联客服记录" : !(waiveCount || waiveInterval) ? "至少选择一项豁免" : !overview?.eligibility.historyComplete && !waiveCount ? "历史次数未知，须选择次数豁免" : overview.eligibility.binding?.changedAt == null && !waiveInterval ? "绑定时间未知，须选择间隔豁免" : activeGrant?.status === "ACTIVE" ? "已有有效特批，不能叠加" : undefined;
+    const grantBlock = blocked ? "先完成当前操作或查询原操作" : !usableRequest ? "请选择有效的待处理申请" : verification?.requestId !== selected ? "先核实本申请的关联客服记录" : !(waiveCount || waiveInterval) ? "至少选择一项豁免" : !overview?.eligibility.historyComplete && !waiveCount ? "历史次数未知，须选择次数豁免" : overview.eligibility.binding?.changedAt == null && !waiveInterval ? "绑定时间未知，须选择间隔豁免" : activeGrant?.status === "ACTIVE" ? "已有有效特批，不能叠加" : undefined;
     const confirmLabel = confirm?.type === "PHONE_VERIFY" ? "确认核实关联记录" : confirm?.type === "PHONE_REQUEST_CLOSE" ? "不予授予并关闭申请" : confirm?.type === "PHONE_GRANT_REVOKE" ? "确认撤销授权" : "确认一次授权";
     return <div className="c5-phone-workspace" data-proof="c5-phone-replacement" aria-label="手机绑定与一次性特批">
       {error && <Notice tone="warn">{error}</Notice>}

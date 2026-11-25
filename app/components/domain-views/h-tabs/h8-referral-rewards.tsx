@@ -217,7 +217,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   const commands = session ? pendingH8RewardCommands(session.adminId) : [];
   const policyUnknown = session ? unresolvedH8Policy(session.adminId) : undefined;
-  const policyBlocked = policyUnknown ? isRetryExpired(policyUnknown) ? RETRY_EXPIRED_TEXT : "奖励配置有原操作结果待确认，请先查询原结果。" : undefined;
+  const policyBlocked = policyUnknown ? isRetryExpired(policyUnknown) ? RETRY_EXPIRED_TEXT : "奖励配置有原操作结果待确认，请先查询原操作。" : undefined;
   const queue = approvalQueue.current;
   const queueError = queue.owner === session?.adminId ? queue.error : undefined;
   const pendingPolicy = queue.owner === session?.adminId && queue.pending || hasPendingH8Policy(commands);
@@ -225,7 +225,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     : queueError ? "可能存在待批单，读不到审批队列。" : undefined;
   const settlementBlocked = commands.find(record => record.kind === "settlement");
   const settlementPermission = !!session?.authorities.some(code => code === "platform_a2_proposal_create" || code === "platform_a2_write");
-  const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作待确认，请先查询原结果。"
+  const settleWriteBlock = settlementBlocked ? isRetryExpired(settlementBlocked) ? RETRY_EXPIRED_TEXT : "有一笔结算原操作待确认，请先查询原操作。"
     : !settlementPermission ? "当前账号没有提交审批的权限。" : undefined;
   const freshBlocked = !readReady || loading ? displayAdminError(new Error("H8_OVERVIEW_REQUIRED")) : undefined;
 
@@ -625,10 +625,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
         actions: <>
           {isRetryExpired(record) && <span>{RETRY_EXPIRED_TEXT}</span>}
-          <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原结果`}
-            onClick={() => { recover(); }}>查询原结果</Button>
+          <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原操作`}
+            onClick={() => { recover(); }}>查询原操作</Button>
           {canRetryH8RewardCommand(record) && (record.kind === "settlement" ? canSettle : canWrite)
-            && <Button size="sm" onClick={() => recover()}>按原请求重试</Button>}
+            && <Button size="sm" onClick={() => recover()}>按原操作重试</Button>}
           {record.replayRejection && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>核实后解除</Button>}
           {record.kind !== "param-approval" && reach("/platform/audit", "platform_a2_read")
             && <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link>}

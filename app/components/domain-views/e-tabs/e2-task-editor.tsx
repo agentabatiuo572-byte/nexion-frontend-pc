@@ -29,7 +29,7 @@ export type E2TaskOutcome =
   | { kind: "conflict"; message?: string }
   /** 读到最新后回到抽屉：别人改了什么；yours 是自己也改过、保留下来的值。 */
   | { kind: "latest"; changes: { field: E2TaskField; label: string; from: string; to: string; yours?: string }[] }
-  /** 结果未知：内容冻结，只能按原请求重试（OP-93、OP-94）。 */
+  /** 结果未知：内容冻结，只能按原操作重试（OP-93、OP-94）。 */
   | { kind: "unknown"; createdAt: number; expired?: boolean; message?: string };
 export interface E2TaskEditorState {
   mode: "create" | "update";
@@ -266,7 +266,7 @@ export function E2TaskEditor({ state, onChange, onClose, onContinue, reasonRule,
       sub={unknown ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>}
       onClose={() => { if (saving) return; if (unknown) close(); else cancelConfirm(); }}
       footer={unknown ? frozen?.footer ?? <><Button disabled={saving} onClick={close}>收起</Button>
-          {!unknown.expired && <Button variant="primary" disabledReason={writeBlock}>按原请求重试</Button>}</>
+          {!unknown.expired && <Button variant="primary" disabledReason={writeBlock}>按原操作重试</Button>}</>
         : <><Button disabled={saving} onClick={cancelConfirm}>取消</Button>
           <Button variant="primary" loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : confirmBlock}
             onClick={() => { set({ touched: { ...state.touched, reason: true } }); if (!confirmBlock) void onSubmit(state); }}>{mode === "create" ? "确认新增" : "确认修改"}</Button></>}>

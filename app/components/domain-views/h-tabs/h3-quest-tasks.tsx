@@ -112,8 +112,8 @@ const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 function recoveryStatusText(record: H3PendingCommand, expired: boolean, rejected?: string) {
   const status = record.ticketStatus ?? record.ticket?.status;
   if (status === "approved") return "审批单已批准，请重新读取当前值。";
-  if (status === "pending") return "原申请待审批，点「查询原结果」看状态。";
-  if (record.acknowledged) return "审批单已经建了，点「查询原结果」看状态。";
+  if (status === "pending") return "原申请待审批，点「查询原操作」看状态。";
+  if (record.acknowledged) return "审批单已经建了，点「查询原操作」看状态。";
   if (rejected) return expired ? `${RETRY_EXPIRED_TEXT} ${RETRY_REJECTED_NEXT}` : RETRY_REJECTED_NEXT;
   return expired ? RETRY_EXPIRED_TEXT : undefined;
 }
@@ -168,7 +168,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const openActionConfirm = (req: H3ActionConfirmReq | null) => {
     if (!req) { setMc(null); return; }
     if (!fresh.current || req.target && mutations.blocked(req.target)) {
-      toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
+      toast("请先查询原操作并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
     const draftKey = req.target ? recoveryDraftKey(req.target, String(req.action)) : undefined;
@@ -198,7 +198,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
   const openConfirm = (req: ConfirmReq & { target?: string }) => {
     if (!fresh.current || req.target && mutations.blocked(req.target)) {
-      toast("请先查询原结果并成功刷新用户任务数据，再发起新的修改。");
+      toast("请先查询原操作并成功刷新用户任务数据，再发起新的修改。");
       return;
     }
     req = { ...req, ...conflictDraft.confirm(req, () => !!(confirmation.current?.target && mutations.record(confirmation.current.target))) };
@@ -358,7 +358,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const attempt = confirmation.current;
     if (!attempt) throw new Error("请重新打开原操作。");
     const recovering = !!attempt.commandKey;
-    if (!recovering && mutations.blocked(write.target)) throw new Error("这一项有未结束的原操作，请先查询原结果。");
+    if (!recovering && mutations.blocked(write.target)) throw new Error("这一项有未结束的原操作，请先查询原操作。");
     attempt.target = write.target;
     if (recovering) {
       const original = mutations.record(write.target);
@@ -510,7 +510,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       ? creation.ticketId == null ? "这个编号被审批锁定，读不出申请内容。到「操作记录与审批」核对后再建。"
         : "这个编号已有一张新建申请在等批准，审批结束前不能再建。"
       : pendingOf(code) ? "这个编号已有一张新建申请在等批准，审批结束前不能再建。"
-        : mutations.blocked(code) ? "这个编号有结果未知的原操作，先在页面上方查询原结果。" : undefined;
+        : mutations.blocked(code) ? "这个编号有结果未知的原操作，先在页面上方查询原操作。" : undefined;
     openActionConfirm({ briefKind: "config",
       action: `新建任务 · ${subject}`,
       title: `新建${subject}`,
@@ -1045,7 +1045,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const lockReason = (key: string) => {
     const lock = backendLock(key);
     if (lock && lock.ticketId == null) return "审批锁定：读不出申请内容，到「操作记录与审批」核对";
-    return pendingOf(key) ? "已有一张申请在等批准，审批结束前不能再改" : mutations.blocked(key) ? "这一项结果未知，请先查询原结果" : undefined;
+    return pendingOf(key) ? "已有一张申请在等批准，审批结束前不能再改" : mutations.blocked(key) ? "这一项结果未知，请先查询原操作" : undefined;
   };
   const lockTag = (key: string) => {
     const lock = backendLock(key);
@@ -1115,9 +1115,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       submittedAt: original.createdAt,
       tag: approved ? <StatusTag tone="ok">已批准</StatusTag> : pending ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
         : rejected ? rejectedTag() : isRetryExpired(original) ? expiredTag() : unknownTag(approval ? "approval" : "direct"),
-      actions: <><Button size="sm" disabled={approved && (refreshing || mutations.approvedReading(original.commandKey))} onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>{approved ? "重新读取" : "查询原结果"}</Button>
+      actions: <><Button size="sm" disabled={approved && (refreshing || mutations.approvedReading(original.commandKey))} onClick={() => void mutations.query(original).catch(cause => toast(displayAdminError(cause)))}>{approved ? "重新读取" : "查询原操作"}</Button>
         {!original.ticket && !original.acknowledged && !isRetryExpired(original) && !releasable(original)
-          && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原请求重试</Button>}
+          && <Button size="sm" disabledReason={mutations.retryBlocked(original)} onClick={() => openRecovery(original)}>按原操作重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={!!state.busy} onClick={() => release.ask({ operation: original.change.action, target: changeOf(original.change), targetLabel: "改动",
           getSnapshot: mutations.recovery.releaseSnapshot(original), createdAt: original.createdAt, release: () => mutations.releaseRejected(original) })} />}</>,
     };
@@ -1144,9 +1144,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, approvedCount && `${approvedCount} 个申请已批准，待读当前值`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续修改`].filter(Boolean).join("；");
   const recovery = recoveryRows.length > 0 && (
     <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
-      <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原结果，明确查不到才能重试。直接修改的「按原请求重试」会重新发送一次。过了 24 小时只能查询。</p>
+      <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原操作，明确查不到才能重试。直接修改的「按原操作重试」会重新发送一次。过了 24 小时只能查询。</p>
       <p>重试被拒绝：核实原操作的结果后可以解除，只清这个标签页里的记录。</p>
-      <p>待审批、已建单：申请已经建好，点「查询原结果」看审批进度，不会重发。</p>
+      <p>待审批、已建单：申请已经建好，点「查询原操作」看审批进度，不会重发。</p>
       <p>结果确认之前，这页不能再改同一项。</p>
     </>} /></>}>
       <H3RecoveryList rows={recoveryRows} />
@@ -1198,7 +1198,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 setMc(null);
                 shellCtx.openConfirm(hApprovalReconfirm(error, { hasPending: () => !!mutations.record(write.change.target),
                   pendingRecovery: () => { const record = mutations.record(write.change.target); return record && recoveryFor(record); },
-                  retryPending: () => { const record = mutations.record(write.change.target); if (!record) throw new Error("请查询原结果"); return mutations.retry(record); },
+                  retryPending: () => { const record = mutations.record(write.change.target); if (!record) throw new Error("请查询原操作"); return mutations.retry(record); },
                   onUnknown: () => shellCtx.closeConfirm?.(), action: write.change.action, title: write.change.title, reason: kept,
                   change: <Change from={`${shownValue(write.change.before)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} to={`${shownValue(write.change.after)}${mc.edit?.unit ? ` ${mc.edit.unit}` : ""}`} />, approver: FUND_APPROVER, holds: "这一项" }));
                 return;
@@ -1297,7 +1297,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {active.length === 0
         ? "没有启用的新手任务或每周任务"
         : `新手任务 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周任务 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个在启用`}
-      {unknownCount > 0 && `；${unknownCount} 个修改结果未知，先查询原结果`}
+      {unknownCount > 0 && `；${unknownCount} 个修改结果未知，先查询原操作`}
       {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? (unknownCount > 0 ? "" : "，没有要处理的事") : shellCtx.can("platform_a2_read") ? "；审批进度这次没读到，点刷新重试" : ""}
     </Conclusion>
   );

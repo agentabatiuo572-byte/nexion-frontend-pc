@@ -297,7 +297,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       if (canQueryI3Cap()) void Promise.allSettled(pendingI3CapCommands().map(record => readCapOriginal(record))).then(syncPending);
     }
   }, [data, contentLoading, errorText]);
-  const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原结果。" : undefined)
+  const lockReason = (id: string) => newMutationReason || (!canWriteI3 ? "当前账号没有这项操作权限，请查询原操作。" : undefined)
     || (pending.some((row) => !row.original || row.target === id) ? "此对象有结果未知的原操作，请先到页面上方核对。" : undefined);
   const requireNewMutation = (openedData = data) => {
     if (conflictReview.blockedReason()) throw new Error(conflictReview.blockedReason());
@@ -551,7 +551,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     confirmTone: "danger",
     reasonPlaceholder: "例如：重复建了一条、内容作废",
     reason: true,
-    okLabel: restored ? "按原请求重试" : "确认删除",
+    okLabel: restored ? "按原操作重试" : "确认删除",
     run: (reason) => runBackend(actions.deleteI3Campaign(c.id, c.revision, reason, { ...c, status: c.st }), `${c.id} 已删除`),
   }, restored);
 
@@ -581,7 +581,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       check: "预计人数是保存草稿时的估算；实际人数以发出后的送达为准，可能更少。",
     },
     confirmTone: "danger",
-    confirmLabel: restored ? "按原请求重试" : "确认立即发送",
+    confirmLabel: restored ? "按原操作重试" : "确认立即发送",
     reasonPlaceholder: "例如：活动提前开始，需要马上通知",
     amplifies: false,
     run: (reason) => {
@@ -608,7 +608,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     statedBrief: { impact: "这条不会再发出。已经开始发送的取消不了，用户已收到的也撤不回。", check: "取消后不能改回草稿，要再发就新建一条。" },
     reasonPlaceholder: "例如：活动改期，不再按原时间发送",
     reason: true,
-    okLabel: restored ? "按原请求重试" : "确认取消",
+    okLabel: restored ? "按原操作重试" : "确认取消",
     run: (reason) => {
       return runBackend(actions.cancelI3Campaign(c.id, c.revision, reason, { ...c, status: c.st }), `${c.id} 已取消`);
     },
@@ -635,7 +635,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         <Fact k="提交人需有">提交审批权限和通知保留上限调整权限</Fact>
       </Facts>
     ),
-    confirmLabel: restored ? "按原请求重试" : "提交审批",
+    confirmLabel: restored ? "按原操作重试" : "提交审批",
     reasonPlaceholder: "例如：用户反馈普通通知太多，调低保留数量",
     amplifies: false,
     edit: {
@@ -1048,9 +1048,9 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
       submittedAt: row.createdAt, expired: isRetryExpired(row),
       status: i3Status(row, outcomes[row.commandKey]), note: <>{i3Status(row, outcomes[row.commandKey]).line} <TechInfo commandKey={row.commandKey} receipt={receiptOf(outcomes[row.commandKey])} /></>,
       actions: <>
-        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原结果</Button>
+        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canReadI3 ? undefined : "缺少通知活动读取权限"} onClick={() => void query(row)}>查询原操作</Button>
         {canInvestigateECommand("content_i3_read") && eCommandClosureOffer(outcomes[row.commandKey], isRetryExpired(row)).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(row)}>核查结案</Button>}
-        {!isRetryExpired(row) && !i3Recovery.state(row).replayRejection && <Button size="sm" disabledReason={campaignRetryProblem(row)} onClick={() => restore(row)}>按原请求重试</Button>}
+        {!isRetryExpired(row) && !i3Recovery.state(row).replayRejection && <Button size="sm" disabledReason={campaignRetryProblem(row)} onClick={() => restore(row)}>按原操作重试</Button>}
         {i3Recovery.state(row).replayRejection && <VerifiedReleaseButton disabled={!!recovering || !!i3Recovery.state(row).busy} onClick={() => release.ask({ operation: campaignOperation(row), target: <>{row.name}{row.action !== "create" && row.action !== "draft" && row.change && ` · ${row.change}`}</>, getSnapshot: i3Recovery.releaseSnapshot(row), createdAt: row.createdAt, release: () => {
           const released = i3Recovery.releaseRejectedReplay(row);
           if (released && recoveryEditors.current.drawer === row.commandKey) { setNewOpen(false); setEditing(null); setDrawerPendingKey(null); }
@@ -1062,12 +1062,12 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
     ...pendingCaps.filter((row) => row.ticketStatus !== "pending").map((row) => ({ key: row.commandKey, name: "调整通知保留数量", object: `${TIER[row.tier as TierK].label}优先级`,
       change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt, expired: isRetryExpired(row), submitted: !!row.receiptKnown,
       status: capRejected(row) && !row.receiptKnown ? RETRY_REJECTED_STATUS : undefined,
-      note: row.receiptKnown ? ["审批单已经建了，点「查询原结果」看状态。", capQuery.errors[row.commandKey]].filter(Boolean).join(" ")
+      note: row.receiptKnown ? ["审批单已经建了，点「查询原操作」看状态。", capQuery.errors[row.commandKey]].filter(Boolean).join(" ")
         : capQuery.errors[row.commandKey] ?? (capRejected(row) ? RETRY_REJECTED_NEXT : isRetryExpired(row) ? RETRY_EXPIRED_TEXT
-          : i3CapRecovery.state(row).conclusion === "not-found" ? "按原请求查不到这张审批单，24 小时内可以按原请求重试。" : undefined),
+          : i3CapRecovery.state(row).conclusion === "not-found" ? "按原请求查不到这张审批单，24 小时内可以按原操作重试。" : undefined),
       actions: <>
-        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button>
-        {!isRetryExpired(row) && !row.receiptKnown && !capRejected(row) && <Button size="sm" disabledReason={capRetryProblem(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原请求重试</Button>}
+        <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原操作</Button>
+        {!isRetryExpired(row) && !row.receiptKnown && !capRejected(row) && <Button size="sm" disabledReason={capRetryProblem(row)} onClick={() => adjustCap(row.tier as TierK, row.before, row)}>按原操作重试</Button>}
         {capRejected(row) && !row.receiptKnown && <VerifiedReleaseButton disabled={!!recovering || !!i3CapRecovery.state(row).busy} onClick={() => release.ask({ operation: "调整通知保留数量", target: `${TIER[row.tier as TierK].label}优先级 · ${row.before} → ${row.after} 条`, getSnapshot: i3CapRecovery.releaseSnapshot(row), createdAt: row.createdAt,
           release: () => { const released = i3CapRecovery.releaseRejectedReplay(row); syncPending(); return released; } })} />}
       </> })),
@@ -1075,7 +1075,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
   const pendingCapRows = pendingCaps.filter((row) => row.ticketStatus === "pending").map((row) => ({ key: row.commandKey, tier: `${TIER[row.tier as TierK].label}优先级`,
     change: `${row.before} → ${row.after} 条`, submittedAt: row.createdAt,
     note: capQuery.errors[row.commandKey],
-    actions: <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原结果</Button> }));
+    actions: <Button size="sm" loading={recovering === row.commandKey} disabledReason={canQueryI3Cap() ? undefined : "缺少审批单查询权限"} onClick={() => void query(row)}>查询原操作</Button> }));
   const drawerOriginal = pending.find((row) => row.commandKey === drawerPendingKey);
   const draftSaveBlocked = submitting ? "正在保存…" : drawerPendingKey ? drawerOriginal && (replayReadProblem(drawerOriginal) ?? i3DraftRetryBlockedReason(drawerOriginal))
     : lockReason(editing?.id ?? "create") ?? (!AUDIENCE_CATALOG ? "受众目录没读到，不能保存；刷新页面后再试"
@@ -1245,7 +1245,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               return (
                 <CapCard key={tier} tier={tier} cap={row.cap} policy={operatorCopyText(row.policy)} locked={row.locked}
                   pending={(() => { const item = pendingCaps.find((p) => p.tier === tier && p.ticketStatus === "pending"); return item ? `${item.after} 条` : undefined; })()}
-                  action={!row.locked && showCapAdjust ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={capPermission || newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? (pendingCaps.some((item) => item.tier === tier && item.ticketStatus === "pending") ? "这一档有申请等另一位批准，批准或驳回后才能再调。" : pendingCaps.some((item) => item.tier === tier && item.receiptKnown) ? "这一档的申请已提交，审批状态还没查到；先点「查询原结果」。" : "这一档有结果未知的申请，先点「查询原结果」。") : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
+                  action={!row.locked && showCapAdjust ? <Button size="sm" aria-label={`调整${TIER[tier].label}优先级保留上限`} disabledReason={capPermission || newMutationReason || (pendingCaps.some((item) => item.tier === tier) ? (pendingCaps.some((item) => item.tier === tier && item.ticketStatus === "pending") ? "这一档有申请等另一位批准，批准或驳回后才能再调。" : pendingCaps.some((item) => item.tier === tier && item.receiptKnown) ? "这一档的申请已提交，审批状态还没查到；先点「查询原操作」。" : "这一档有结果未知的申请，先点「查询原操作」。") : undefined)} onClick={() => adjustCap(tier, cap)}>调整</Button> : undefined} />
               );
             })}
           </div>}
@@ -1346,7 +1346,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Button disabled={submitting} onClick={() => setScheduleRow(null)}>取消</Button>
             <Button variant="primary" loading={submitting}
               disabledReason={schedulePendingKey ? scheduleRetryReason : lockReason(scheduleRow.id) || (!scheduledAt ? "还没选发送时间" : !scheduleVerified ? "还没勾选已核对" : scheduleReason.trim().length < 8 ? "操作理由至少 8 字" : scheduleReason.trim().length > 200 ? "操作理由最多 200 字" : undefined)}
-              onClick={() => void submitSchedule()}>{schedulePendingKey ? "按原请求重试" : "确认排期"}</Button>
+              onClick={() => void submitSchedule()}>{schedulePendingKey ? "按原操作重试" : "确认排期"}</Button>
           </>}>
           <Facts>
             <Fact k="预计" lead unit="人">{quantityText(scheduleRow.reach)}</Fact>
@@ -1528,11 +1528,11 @@ function CampaignFormDrawer({ editing, form, setForm, lang, setLang, requiredLan
     <Drawer open wide data-i3-form="" busy={submitting} onClose={onClose} title={editing ? "编辑通知草稿" : "新建通知"} sub={editing ? editing.name : "保存为草稿，不会发给任何人"} icon={FilePen} tone="role-3"
       explain="左边填，右边看 App 里的样子。保存后是草稿；之后在卡片上点「排期」或「立即发送」才会发出。"
       footer={<Decision note={missing.length ? `还缺：${missing.join("、")}` : over.length ? `${over.map((l) => LANG_NAME[l]).join("、")}的内容超长，删减后才能保存` : undefined}
-        primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{frozen ? "按原请求重试" : "保存草稿"}</Button>}
+        primary={<Button variant="primary" loading={submitting} disabledReason={blocked} onClick={onSubmit}>{frozen ? "按原操作重试" : "保存草稿"}</Button>}
         others={<Button disabled={submitting} onClick={onClose}>取消</Button>} />}>
       <div className="rd-split i3-form-split" data-detail="" data-preview="">
         <div className="i3-form">
-          {frozen && <Notice tone="warn" title={frozenTitle(blocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(blocked, "先在页面上方查询原结果")}</Notice>}
+          {frozen && <Notice tone="warn" title={frozenTitle(blocked, "结果未知")}>原请求已锁定，不能再改。{frozenNextStep(blocked, "先在页面上方查询原操作")}</Notice>}
           {saveError && <Notice tone="danger" title="草稿没有保存">{saveError}</Notice>}
           <section className="i3-form-section" aria-labelledby="i3-f-base">
             <h3 id="i3-f-base" className="i3-sub-title">基本信息</h3>

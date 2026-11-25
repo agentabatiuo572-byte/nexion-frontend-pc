@@ -228,7 +228,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f4Error, setF4Error] = useState<string | null>(null);
   const [f4Proposals, setF4Proposals] = useState<FDomainAttempt[]>([]);
   const [f4PolicyWrites, setF4PolicyWrites] = useState<FDirectAttempt[]>([]);
-  // 恢复区每一行最近一次「查询原结果」查到了什么（只给还留着的记录；查到结论的记录清掉，改用轻提示）。
+  // 恢复区每一行最近一次「查询原操作」查到了什么（只给还留着的记录；查到结论的记录清掉，改用轻提示）。
   const [f4QueryNotes, setF4QueryNotes] = useState<Record<string, { tone: "warn" | "danger"; text: string }>>({});
   const [f4ApprovalRows, setF4ApprovalRows] = useState<A2OperationRow[]>([]);
   const f4Submission = useRef<F4ConfirmationSnapshot | undefined>(undefined);
@@ -591,7 +591,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const directWrite = pendingF3ConfigWrite(current.adminId, key);
     if (directWrite) throw new F1OutcomeUncertainError(displayAdminError("F1_REQUEST_OUTCOME_UNKNOWN"), directWrite.commandKey);
     const unresolved = listF3Proposals(current.adminId).find(row => row.fingerprint === f3ConfigSlot(key) && !row.ticket);
-    if (unresolved) throw new Error(isRetryExpired(unresolved) ? RETRY_EXPIRED_TEXT : "原申请结果未知，请先查询原结果。");
+    if (unresolved) throw new Error(isRetryExpired(unresolved) ? RETRY_EXPIRED_TEXT : "原申请结果未知，请先查询原操作。");
     const queue = f3Queue.current;
     const knownPending = f3PendingFor(queue.rows, key) ?? pending.approval;
     if (plan.direction === "proposal") {
@@ -930,7 +930,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     const key = slot.startsWith("f-config:") ? slot.slice(9) : slot;
     if (f2Pending(key)) return "等另一位超级管理员批准";
     const layer = key.match(/^F\.unilevel\.(?:nex\.)?(L[1-7])$/)?.[1];
-    if (f2Proposals.some(row => !row.ticket && (row.fingerprint === slot || layer && row.spec.target?.type === "unilevel_rule" && row.spec.target.id === layer))) return "上一次申请结果未知，请先查询原结果";
+    if (f2Proposals.some(row => !row.ticket && (row.fingerprint === slot || layer && row.spec.target?.type === "unilevel_rule" && row.spec.target.id === layer))) return "上一次申请结果未知，请先查询原操作";
     return undefined;
   };
   const markF2Loading = () => {
@@ -1514,7 +1514,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4PolicyWrites,
     f4ExpiredReason: (snapshot) => {
       const record = [...f4Proposals, ...f4PolicyWrites].find(row => matchesF4Confirmation(row, snapshot));
-      return record ? isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "有原操作待确认，请先查询原结果。" : undefined;
+      return record ? isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "有原操作待确认，请先查询原操作。" : undefined;
     },
     f4ApprovalRows,
     recoverF4,

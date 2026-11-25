@@ -39,8 +39,8 @@ const REASON_HINT = "例如：监管通知编号、工单号、事件编号";
 const READING = "正在读取最新状态，读完再操作";
 const FROZEN = "结果未知期间原请求已锁定，不能改";
 /** 断网、连接中断时提交结果未知：全站同一句；页面也刷新不了时说清先等网络。 */
-const UNKNOWN_TEXT = "结果未知，可能已经生效。不要重复操作，到页面上方查询原结果。";
-const UNKNOWN_NO_REFRESH = "结果未知，可能已经生效，页面也刷新不了。不要重复操作，网络恢复后刷新页面，再查询原结果。";
+const UNKNOWN_TEXT = "结果未知，可能已经生效。不要重复操作，到页面上方查询原操作。";
+const UNKNOWN_NO_REFRESH = "结果未知，可能已经生效，页面也刷新不了。不要重复操作，网络恢复后刷新页面，再查询原操作。";
 /** 名单卡上直接摆出的国家数，其余到「名单国家明细」里看。 */
 const WALL = 18;
 const MODE_TEXT: Record<"derived" | "explicit", string> = { derived: "继承全局", explicit: "单独设定" };
@@ -304,7 +304,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     const canClose = fundInvestigationAccess(investigationRecord(record, adminId)).canSubmit
       && eCommandClosureRequests(receipt, isRetryExpired(record)).conclusions.length > 0;
     return <>
-      <Button size="sm" loading={checking === record.commandKey} disabled={!!checking && checking !== record.commandKey} onClick={() => void queryOriginal(record)}>查询原结果</Button>
+      <Button size="sm" loading={checking === record.commandKey} disabled={!!checking && checking !== record.commandKey} onClick={() => void queryOriginal(record)}>查询原操作</Button>
       {canClose && <Button size="sm" variant="danger-outline" disabled={!!checking} onClick={() => setClosing({ record, label, change })}>核查结案</Button>}
     </>;
   };
@@ -344,7 +344,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       status: processedOf(record, expired, retry) ?? replayRejectedStatus(rejected, outcomes[record.commandKey]),
       actions: <>
         {queryButtons(record, slotLabel, change)}
-        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryReadReason(record) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原请求重试</Button>}
+        {!expired && !rejected && <Button size="sm" disabled={!!checking} disabledReason={retryReadReason(record) ?? jEmergencyRetryBlocked(record)} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
         {rejected && <VerifiedReleaseButton disabled={!!checking || !!state.busy} onClick={() => release.ask({ operation: slotLabel, target: change, targetLabel: "改动", getSnapshot: jEmergencyRecovery.releaseSnapshot(record), createdAt: record.createdAt,
           release: () => { const released = jEmergencyRecovery.releaseRejectedReplay(record); if (released) closeOriginalConfirm(record); syncPending(); return released; } })} />}
       </>,
@@ -360,7 +360,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       createdAt: record.createdAt, expired, canRetry: false, canQuery: true,
       status: outcome ? processedOf(record, expired, false, true) : expired
         ? { tone: "neutral", label: "已过期", line: RETRY_EXPIRED_TEXT }
-        : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原修改的内容，不能重试，先查询原结果。" },
+        : { tone: "warn", label: "结果未知", line: "改版前的旧记录没存原修改的内容，不能重试，先查询原操作。" },
       actions: <>
         {queryButtons(record, label, "改版前的旧记录，没存原修改的内容")}
       </>,
@@ -404,8 +404,8 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       entry.configurable && entry.key === decodeURIComponent(record.geo.path.split("/").at(-1)!))) return READING;
     if (record.geo.path.endsWith("/edge-judge")) {
       const input = JSON.parse(record.geo.body) as J2CommandBody;
-      if (!data.edge.source) return "当前识别来源未读到，请刷新后查询原结果。";
-      if (data.edge.source !== input.expectedSource) return "当前识别源已变更，请查询原结果后按最新状态处理。";
+      if (!data.edge.source) return "当前识别来源未读到，请刷新后查询原操作。";
+      if (data.edge.source !== input.expectedSource) return "当前识别源已变更，请查询原操作后按最新状态处理。";
       if (!data.edge.sources.some(source => source.value === input.source && source.healthy)) return "原目标识别源当前未登记或不健康，请刷新核对。";
     }
   }
