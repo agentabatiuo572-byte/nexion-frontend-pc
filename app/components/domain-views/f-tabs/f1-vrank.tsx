@@ -36,6 +36,7 @@ import { F1VrankBootstrap } from "./f1-vrank-bootstrap";
 import { f1PayoutConfirmation, F1PromotionHistory, F1PayoutHistory } from "./f1-history";
 import { F1BenefitConfirm, benefitValue } from "./f1-benefit-confirm";
 import { F1V8Review } from "./f1-v8-review";
+import { V8PromotionFacts } from "./v8-promotion-facts";
 import { F1SalaryClaims } from "./f1-salary";
 import { V8_PERKS, V8_TERMS, ratePct, type F1BenefitField, type F1V8Candidate } from "./f1-rank-types";
 import { amountDisplay } from "@/lib/format";
@@ -224,11 +225,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     const v7 = rows.find((row) => row.v === "V7");
     const v8 = rows.find((row) => row.v === "V8");
     const v8Rewards = rewardsOf("V8");
-    const lead = v8Rewards.length === 1 && (v8Rewards[0].type === "usdt" || v8Rewards[0].type === "uvt") ? rewardText(v8Rewards[0], ctx) : undefined;
     const name = candidate.nickname || candidate.userCode;
-    const rate = (row: F1VRankRow | undefined, key: "purchaseL1Rate" | "purchaseL2Rate") => row ? ratePct(row[key]) : undefined;
-    const l1 = [rate(v7, "purchaseL1Rate"), rate(v8, "purchaseL1Rate")], l2 = [rate(v7, "purchaseL2Rate"), rate(v8, "purchaseL2Rate")];
-    const salary = [v7?.monthlySalaryUsdt?.trim(), v8?.monthlySalaryUsdt?.trim()];
     setConfirm({
       proposalSlot: `f-vrank-override:${candidate.userId}`,
       v8Review: true,
@@ -240,14 +237,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       effect: <StatusTag tone="progress" filled icon={Clock3} explain={`${VRANK_APPROVER}（还要有审批批准权限）在「操作记录与审批」批准后才执行；批准前这位用户的等级不变。`}>批准后生效</StatusTag>,
       statedBrief: { impact: `${VRANK_APPROVER}批准后，${name}升到 V8；批准前还是 V7，名单里这一行显示待审批。`, check: "核对推荐信和官方审核；理由写推荐信来自哪位 V8、官方审核的依据。" },
       facts: <Facts>
-        {lead
-          ? <Fact k="V8 晋级奖励 · 发给本人" lead>{lead.main}{lead.unit && <span className="rd-fact-unit">{lead.unit}</span>}<small className="f1-lead-note">以前领过 V8 晋级奖励的不再发</small></Fact>
-          : <Fact k="V8 晋级奖励 · 发给本人">{v8Rewards.length ? `${v8Rewards.map((item) => rewardLine(item, ctx)).join("、")}；以前领过的不再发` : "没有晋级奖励"}</Fact>}
-        <Fact k="用户">{candidate.nickname || "—"} · <span data-mono="">{candidate.userCode}</span></Fact>
-        <Fact k="等级"><Change from="V7" to="V8" /></Fact>
-        <Fact k="邀请人">{candidate.inviterCode ? <>{candidate.inviterNickname || "—"} · <span data-mono="">{candidate.inviterCode}</span></> : "—"}</Fact>
-        {l1[0] && l1[1] && l2[0] && l2[1] && <Fact k="好友购买奖励">一级 <Change from={`${l1[0]}%`} to={`${l1[1]}%`} /> · 二级 <Change from={`${l2[0]}%`} to={`${l2[1]}%`} /></Fact>}
-        {salary[0] && salary[1] && <Fact k="月薪"><Change from={amountDisplay(salary[0])} to={`${amountDisplay(salary[1])} USDT`} />，批准后次日起；本月已领的不补差</Fact>}
+        <V8PromotionFacts rewards={v8Rewards} v7={v7} v8={v8} labels={ctx}>
+          <Fact k="用户">{candidate.nickname || "—"} · <span data-mono="">{candidate.userCode}</span></Fact>
+          <Fact k="等级"><Change from="V7" to="V8" /></Fact>
+          <Fact k="邀请人">{candidate.inviterCode ? <>{candidate.inviterNickname || "—"} · <span data-mono="">{candidate.inviterCode}</span></> : "—"}</Fact>
+        </V8PromotionFacts>
         <Fact k="能否收回">{canWithdrawV8 && "批准前可在「操作记录与审批」撤回；"}批准后奖励不收回，之后人工降级也不收回</Fact>
       </Facts>,
       reasonPlaceholder: "写推荐信来自哪位 V8、官方审核的依据",
