@@ -18,6 +18,7 @@ import {
   newK1CommandKey,
   type K4Model,
   type K4ModelDraftInput,
+  type K4ScoredUser,
   type K4ScoreHistory,
   type K4ScoreMappingKey,
   type K4User,
@@ -263,7 +264,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       } else if (operation.kind === "batch") {
         if (live.totalUsers > 1000) throw new Error("K4_SCORE_BATCH_TOO_LARGE");
         if (live.model.version !== operation.overview.model.version) throw new Error("K4_MODEL_VERSION_CONFLICT");
-      } else if (current.lookupUser?.userNo !== operation.user.userNo || current.lookupUser?.rowVersion !== operation.user.rowVersion) {
+      } else if (!current.lookupUser?.scored || current.lookupUser.userNo !== operation.user.userNo || current.lookupUser.rowVersion !== operation.user.rowVersion) {
         throw new Error("K4_SCORE_CONCURRENT_UPDATE");
       }
       if (operation.kind === "override" && (!value?.trim() || !/^\d+$/.test(value.trim()) || Number(value) > 100)) throw new Error("SCORE_OVERRIDE_INVALID");
@@ -383,14 +384,15 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     await loadUser(option.userNo);
   };
 
-  const openOverride = (user: K4User) => { if (overview?.model) openOperation({ kind: "override", user, overview: overview as K4Snapshot }); };
-  const openRecompute = (user: K4User) => { if (overview?.model) openOperation({ kind: "recompute", user, overview: overview as K4Snapshot }); };
+  const openOverride = (user: K4ScoredUser) => { if (overview?.model) openOperation({ kind: "override", user, overview: overview as K4Snapshot }); };
+  const openRecompute = (user: K4ScoredUser) => { if (overview?.model) openOperation({ kind: "recompute", user, overview: overview as K4Snapshot }); };
 
   const prepareRecompute = async (userNo: string) => {
     const user = await loadUser(userNo);
-    if (user) openRecompute(user);
+    if (user?.scored) openRecompute(user);
   };
 
+  const lookupModelVersion = lookupUser?.scored ? lookupUser.modelVersion : null;
   useEffect(() => {
     if (!overview?.model || overview.recomputePending <= 0) return;
     let cancelled = false;
@@ -399,7 +401,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       try {
         await ctx.refreshK4Scoring({ overridePageNum: overridePage, overridePageSize });
         if (!cancelled && lookupUser
-            && lookupUser.modelVersion !== `k4-v${overview.model!.version}`) {
+            && lookupModelVersion !== `k4-v${overview.model!.version}`) {
           await loadUser(lookupUser.userNo);
         }
       } catch {
@@ -416,7 +418,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     // Re-arm only when queue or selected-user version changes; ctx methods are stable in KDomainView.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overview?.recomputePending, overview?.model?.version, overridePage, overridePageSize,
-    lookupUser?.userNo, lookupUser?.modelVersion]);
+    lookupUser?.userNo, lookupModelVersion]);
 
   useEffect(() => {
     const key = searchParams?.toString() ?? "";
@@ -843,8 +845,8 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const userHref = (userNo: string) => `/users/search/${encodeURIComponent(userNo)}`;
   const userRef = (userNo: string) => reach(userHref(userNo), "user_c1_read")
     ? <Link className="rd-link" href={{ pathname: `/users/search/${encodeURIComponent(userNo)}` }}>{userNo}</Link> : userNo;
-  const oldModel = lookupUser && lookupUser.modelVersion !== `k4-v${overview.model.version}`;
-  const escalated = lookupUser ? lookupUser.effectiveScore >= overview.model.autoEscalateScore : false;
+  const oldModel = lookupModelVersion !== `k4-v${overview.model.version}`;
+  const escalated = lookupUser?.scored && lookupUser.effectiveScore >= overview.model.autoEscalateScore;
   const scoreTicks = [0, overview.model.bandLowMax, overview.model.bandHighMin, overview.model.autoEscalateScore, 100]
     .filter((value, index, list) => list.indexOf(value) === index).map((value) => ({ value, text: String(value) }));
 
@@ -886,9 +888,15 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       ? <Panel title="用户评分" id="k4-user"><BlockState state="error" title="查询失败" detail={lookupError} onRetry={userSearch.trim() ? () => void loadUser(userSearch) : undefined} /></Panel>
       : !lookupUser
         ? <Panel title="用户评分" id="k4-user"><BlockState state="empty" title="请选择用户，查看风险分怎么来的" /></Panel>
+        : !lookupUser.scored ? (
+          <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo)}</span>}>
+            <p className="k4-quiet">这个账户还没有评分。</p>
+            {lookupUser.effectiveScore !== null && <p className="k4-quiet">人工改分 {lookupUser.effectiveScore} 分</p>}
+          </Panel>
+        )
         : (
           <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo)}<BandTag tone={lookupUser.bandTone}>{lookupUser.bandLabel}</BandTag>{lookupUser.overridden && <StatusTag tone="warn" icon={PenLine}>人工改分</StatusTag>}</span>}
-            sub={`评分时间 ${stamp(lookupUser.asOf)}（${businessZone().label}）`}
+            sub={lookupUser.asOf === null ? "评分时间 —" : `评分时间 ${stamp(lookupUser.asOf)}（${businessZone().label}）`}
             actions={<span className="k4-actions">
               {canOverride && <Button onClick={() => openOverride(lookupUser)}>手动改分</Button>}
               {canRecompute && <Button onClick={() => openRecompute(lookupUser)}>恢复系统评分</Button>}

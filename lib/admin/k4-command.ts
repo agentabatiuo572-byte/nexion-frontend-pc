@@ -1,5 +1,5 @@
 import { currentAdminOperator } from "./current-operator";
-import { K4_DIMENSION_KEYS, normalizeK4, normalizeK4User, type K4CommandRequest, type K4Model, type K4ModelDraftInput, type K4User, type ScoringOverview } from "./k-client";
+import { K4_DIMENSION_KEYS, normalizeK4, normalizeK4User, type K4CommandRequest, type K4Model, type K4ModelDraftInput, type K4ScoredUser, type ScoringOverview } from "./k-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "./pending-mutation-store";
 
 export type K4Snapshot = ScoringOverview & { model: K4Model };
@@ -8,7 +8,7 @@ export type K4Operation = { overview: K4Snapshot } & (
   | { kind: "publish" }
   | { kind: "restore"; model: K4Model }
   | { kind: "batch" }
-  | { kind: "override" | "recompute"; user: K4User }
+  | { kind: "override" | "recompute"; user: K4ScoredUser }
 );
 export type K4SavedOperation = K4Operation & { request: K4CommandRequest; reason: string; successText: string };
 export type K4PendingCommand = PendingMutationRecord & { operation?: K4SavedOperation; inputFingerprint?: string; alertId?: string; alertRequest?: { method: "POST"; path: string; body: null } };
@@ -27,7 +27,10 @@ export const k4Commands = createPendingMutationStore<K4PendingCommand>({
           || !op.request || !["POST", "PUT"].includes(op.request.method) || typeof op.request.body !== "string") return false;
       const overview = normalizeK4(op.overview);
       if (!overview.model) return false;
-      if ((op.kind === "override" || op.kind === "recompute") && normalizeK4User(op.user).userNo !== op.user.userNo) return false;
+      if (op.kind === "override" || op.kind === "recompute") {
+        const user = normalizeK4User(op.user);
+        if (!user.scored || user.userNo !== op.user.userNo) return false;
+      }
       const input = JSON.parse(op.request.body);
       const expectedPath = op.kind === "draft" ? "/scoring/model/draft"
         : op.kind === "publish" ? "/scoring/model/publish"

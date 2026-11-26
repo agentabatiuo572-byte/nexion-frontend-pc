@@ -505,7 +505,8 @@ export type K4ScoreHistory = {
   operator: string;
   createdAt: string;
 };
-export type K4User = {
+export type K4ScoredUser = {
+  scored: true;
   userNo: string;
   modelScore: number;
   effectiveScore: number;
@@ -515,9 +516,14 @@ export type K4User = {
   modelVersion: string;
   updatedText: string;
   rowVersion: number;
-  asOf: string;
+  asOf: string | null;
   contributions: K4Contribution[];
   history: K4ScoreHistory[];
+};
+export type K4User = K4ScoredUser | {
+  scored: false;
+  userNo: string;
+  effectiveScore: number | null;
 };
 export type K4UserOption = {
   userNo: string;
@@ -1669,6 +1675,14 @@ function normalizeK4Contributions(value: unknown, path: string, modelScore: numb
 
 export function normalizeK4User(raw: unknown): K4User {
   const data = requiredK4Record(raw, "scoreUser");
+  const userNo = requiredK4String(data.userNo, "scoreUser.userNo");
+  const scored = data.scored === undefined || requiredK4Boolean(data.scored, "scoreUser.scored");
+  if (!scored) {
+    const effectiveScore = data.overridden === true && data.effectiveScore != null
+      ? requiredK4Integer(data.effectiveScore, "scoreUser.effectiveScore", 0, 100)
+      : null;
+    return { scored: false, userNo, effectiveScore };
+  }
   const modelScore = requiredK4Integer(data.modelScore, "scoreUser.modelScore", 0, 100);
   const effectiveScore = requiredK4Integer(data.effectiveScore, "scoreUser.effectiveScore", 0, 100);
   const contributions = normalizeK4Contributions(data.contributions, "scoreUser.contributions", modelScore);
@@ -1687,7 +1701,8 @@ export function normalizeK4User(raw: unknown): K4User {
     };
   });
   return {
-    userNo: requiredK4String(data.userNo, "scoreUser.userNo"),
+    scored: true,
+    userNo,
     modelScore,
     effectiveScore,
     overridden: requiredK4Boolean(data.overridden, "scoreUser.overridden"),
@@ -1696,7 +1711,7 @@ export function normalizeK4User(raw: unknown): K4User {
     modelVersion: requiredK4String(data.modelVersion, "scoreUser.modelVersion"),
     updatedText: requiredK4String(data.updatedText, "scoreUser.updatedText"),
     rowVersion: requiredK4Integer(data.rowVersion, "scoreUser.rowVersion", 0),
-    asOf: requiredK4String(data.asOf, "scoreUser.asOf"),
+    asOf: data.asOf === null ? null : requiredK4String(data.asOf, "scoreUser.asOf"),
     contributions,
     history,
   };
@@ -1883,7 +1898,7 @@ export async function executeK4Command(request: K4CommandRequest, commandKey: st
       // OpsRiskService.overrideScore/recomputeScore return repository views with history=[].
       const receipt = normalizeK4User(value);
       const userNo = decodeURIComponent(request.path.split("/")[3]);
-      if (receipt.userNo !== userNo || receipt.rowVersion !== Number(input.expectedVersion) + 1
+      if (!receipt.scored || receipt.userNo !== userNo || receipt.rowVersion !== Number(input.expectedVersion) + 1
           || (request.path.endsWith("/override") ? !receipt.overridden || receipt.effectiveScore !== input.score : receipt.overridden)) invalidK4Response("write.user");
     }
   } catch {
