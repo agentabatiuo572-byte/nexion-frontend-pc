@@ -456,7 +456,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
     {/* 升级置换阶梯：旧设备按已赚回比例分 5 档抵扣 */}
     <Panel title="升级置换规则" icon={ArrowLeftRight} tone="role-2" sub={tradeinOn ? "开启中" : "已关闭"} data-proof="e3-tradein-rules"
-      explain={<><p>用户用旧设备抵扣新设备货款：按旧设备已赚回占实付价的比例分档，按那档比例抵扣实付价，不进余额，最多抵到新设备价格。</p><p>规则批准后，用户已拿到、没提交的报价金额变了要重新报价；已完成的置换不变。</p></>}>
+      explain={<><p>累计收益除以旧设备同型号的当前售价，得到抵扣档位。旧设备当前售价乘以档位比例就是抵扣额，最多抵到新设备售价，不进余额。</p><p>商品调价或规则生效后，未提交的置换按最新价格重新报价。已完成的置换保持成交金额。</p></>}>
       <ConfigList label="升级置换开关">
         <ConfigRow name="升级置换" value={<StatusTag tone={tradeinOn ? "ok" : "done"}>{tradeinOn ? "开启" : "关闭"}</StatusTag>} sub={pendingTag(["E.tradein.enabled"])}
           what="App 能不能发起升级置换" when="批准后，之后的报价和提交按新开关判断，已完成的不回溯"
@@ -471,12 +471,12 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
       <div className="e3p-ladder" data-proof="e3-tradein-ladder">
         <div className="e3p-ladder-head">
-          <h3>各档抵扣比例<Explain label="分档怎么算" content={<><p>已赚回 ÷ 旧设备实付价，小于界线 1 是第 1 档；等于某条界线就算下一档；不小于界线 4 是第 5 档。</p><p>折抵 = 实付价 × 档位比例，最多抵到新设备价格。</p></>} /></h3>
+          <h3>各档抵扣比例<Explain label="分档怎么算" content={<><p>累计收益 ÷ 旧设备当前售价。小于界线 1 是第 1 档，等于界线时进入下一档，不小于界线 4 是第 5 档。</p><p>抵扣额为旧设备当前售价 × 档位比例，最多抵到新设备售价。</p></>} /></h3>
           {pendingTag([...cuts.map((_, i) => `E.tradein.ladder.cut${i + 1}`), ...credits.map((_, i) => `E.tradein.ladder.credit${i + 1}`)])}
           {ctx.canWriteE3 && <span className="e3p-ladder-actions">
             {adjust(cuts.map((_, i) => `E.tradein.ladder.cut${i + 1}`), () => multi({
               name: "分档界线", title: "调整分档界线", ascending: true,
-              hint: "已赚回 ÷ 实付价小于界线 1 是第 1 档，等于界线算下一档，不小于界线 4 是第 5 档。四条要从小到大。",
+              hint: "用累计收益 ÷ 旧设备当前售价分档。小于界线 1 是第 1 档，等于界线时进入下一档，不小于界线 4 是第 5 档。四条界线从小到大。",
               detail: "四条界线一起批准。之后的报价和提交按新界线；没提交的报价金额变了要重新报价，已完成的置换不变。",
               impact: "改旧设备按已赚回比例分到哪一档。界线往后挪，高抵扣档持续更久，平台多让利。",
               coverageLead: "这次改动会让某些旧设备落进抵扣更多的档，平台多让利",
@@ -492,7 +492,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
               name: "各档抵扣比例", title: "调整各档抵扣比例", amplify: true,
               hint: "第 1 档抵扣最多，往后逐档减少；不逐档递减会在批准时被拒绝。",
               detail: "五档一起批准。之后的报价和提交按新比例；没提交的报价金额变了要重新报价，已完成的置换不变。超过 75% 只是提醒。",
-              impact: "改每一档抵扣实付价的百分之几。调高任一档，平台多让利。",
+              impact: "改每一档能抵扣旧设备当前售价的比例。调高任一档，平台多让利。",
               coverageLead: "调高抵扣比例，平台多让利",
               facts: <Facts><Fact k="现在">{credits.map((c) => `${c}%`).join("、")}</Fact><Fact k="分档界线">{cuts.map((c) => `${c}%`).join("、")}（这次不改）</Fact></Facts>,
               fields: [
@@ -511,7 +511,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           name: i === 0 ? `赚回不到 ${cuts[0]}%` : i === 4 ? `赚回 ${cuts[3]}% 及以上` : `赚回 ${cuts[i - 1]}%–${cuts[i]}%`,
         }))} />
         <div className="e3p-cuts">
-          <span className="e3p-sub">分档界线（已赚回 ÷ 实付价）</span>
+          <span className="e3p-sub">分档界线（累计收益 ÷ 旧设备当前售价）</span>
           <ScaleBar label="分档界线" valueText={`第 1 档低于 ${cuts[0]}%；第 2 档 ${cuts[0]}% 到 ${cuts[1]}%；第 3 档 ${cuts[1]}% 到 ${cuts[2]}%；第 4 档 ${cuts[2]}% 到 ${cuts[3]}%；第 5 档 ${cuts[3]}% 及以上`}
             max={Math.max(100, num(cuts[3])) * 1.25} bands={{ labels: ["第 1 档", "第 2 档", "第 3 档", "第 4 档", "第 5 档"], openEnd: true, marks: cuts.map((c) => ({ value: num(c), text: `${c}%` })) }} />
         </div>
@@ -526,10 +526,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             coverageLead: "降低等级门槛，能换的人更多，平台多让利",
             facts: <Facts><Fact k="改的是">谁能升级置换</Fact></Facts> }))} />
         <ConfigRow name="只能换更贵的新设备" value={<StatusTag tone={pE("E.tradein.requireHigherPrice") === "开" ? "ok" : "done"}>{pE("E.tradein.requireHigherPrice") === "开" ? "开启" : "关闭"}</StatusTag>} sub={pendingTag(["E.tradein.requireHigherPrice"])}
-          what="新设备价格要高于旧设备实付价" when="批准后，之后的报价和提交按新规则" effect="关闭后可以换同价或更便宜的设备，应付可能是 0，算多付钱。"
+          what="新设备当前售价必须高于旧设备同型号的当前售价" when="批准后，之后的报价和提交按新规则" effect="关闭后可以换同价或更便宜的设备，应付可能是 0，算多付钱。"
           action={adjust(["E.tradein.requireHigherPrice"], () => single({ label: "仅限升级更高价设备", key: "E.tradein.requireHigherPrice", unit: "", editKind: "select", options: ["开", "关"], optionLabels: { 开: "开启", 关: "关闭" },
             title: pE("E.tradein.requireHigherPrice") === "开" ? "关闭「只能换更贵的新设备」" : "开启「只能换更贵的新设备」",
-            detail: "开启时新设备价格要高于旧设备实付价；关闭后不比价格，可以换同价或更便宜的设备，折抵最多抵到新设备价格，应付可能是 0。仍要换成不同的商品。只影响之后的置换。",
+            detail: "开启时新设备当前售价必须高于旧设备同型号的当前售价。关闭后可以换同价或更便宜的设备，抵扣最多抵到新设备售价，应付可能是 0。仍须换成不同商品，并且旧设备同型号有有效售价。规则适用于之后的置换。",
             impact: "改升级置换要不要比价格。关闭后应付可能是 0，平台多让利。",
             coverageLead: "关闭后可以换同价或更便宜的设备，应付可能是 0",
             facts: <Facts><Fact k="改的是">只能换更贵的新设备</Fact></Facts> }))} />

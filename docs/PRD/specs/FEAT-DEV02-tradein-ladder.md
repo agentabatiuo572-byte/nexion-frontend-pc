@@ -8,14 +8,15 @@
 
 - 资格与开关：`tradeinEnabled`、`eligibility`。
 - 开关修改批准后生效：开启后允许显示升级置换入口，仍须满足设备及购买资格；关闭后隐藏入口。调整详情必须同时说明两个方向，不得把“关闭后隐藏”写成所有修改都会隐藏（BUG-148 复核）。
-- 阶梯：4 个严格递增的累计产出/实付比例界点 `tradeinLadderCut1..4`，对应 5 个严格递减折抵率 `tradeinLadderCredit1..5`。
+- 阶梯：累计已结算收益除以旧设备同型号当前售价，按 4 个严格递增的界点 `tradeinLadderCut1..4` 分为 5 档，对应严格递减的折抵率 `tradeinLadderCredit1..5`。
 - 限制：`tradeinRequireHigherPrice`、`tradeinMaxDevicesPerOrder`；当前用户流程一笔只接受一台属于该用户且为 ACTIVE 的旧设备。
-- 报价按服务端累计已结算产出、旧机真实实付价和目标商品当前价计算；submit 必须重新计算，绝不信任 quote 返回值或客户端金额。
+- 新旧机都读取对应 SKU 的当前目录售价。开启 `tradeinRequireHigherPrice` 时，目标现价必须严格高于旧机现价。同价不通过。旧 SKU 查不到有效正价时无法置换，即使高价限制关闭，也无法计算档位和抵扣。
+- 抵扣额为旧机现价乘以档位比例，以目标现价为上限。实付金额继续作为付费设备资格及成交留痕。查询资格、报价和提交共用现价规则，提交时服务端重新计算。
 
 ## 用户接口
 
 - `GET /api/app/trade-in/config`：返回开关、资格、4/5 阶梯、高价限制与单笔上限。
-- `POST /api/app/trade-in/quote`：请求 `{sourceDeviceId, targetProductNo}`，返回旧机实付、累计产出、比例、档位、折抵、目标价、应付、钱包余额和缺口。
+- `POST /api/app/trade-in/quote`：请求 `{sourceDeviceId, targetProductNo}`，返回旧机当前售价 `sourceCurrentPriceUsdt`、历史实付、累计产出、比例、档位、折抵、目标价、应付、钱包余额和缺口。App 和 H5 Lite 在置换确认中用当前售价说明计算依据。
 - `POST /api/app/trade-in/submit`：同请求并强制 `Idempotency-Key`；成功返回置换单、设备订单、新旧设备和钱包扣款结果。
 
 三接口只接受 USER Bearer JWT 的正整数 userId 主体；匿名或 ADMIN 主体不得代替用户下单。
