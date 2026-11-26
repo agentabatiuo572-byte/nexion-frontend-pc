@@ -18,8 +18,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { displayAdminError } from "@/lib/admin/error-messages";
-import { a2ActionText } from "@/lib/admin/operator-copy";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
+import { actionName } from "@/lib/admin/a2-approval-text";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
@@ -252,7 +252,7 @@ function NotificationDrawer({
           return (
             <AlertRow key={a.id} href={canOpenAudit ? "/platform/audit" : undefined} onClose={onClose}>
               <span className="min-w-0 flex-1">
-                <span className="rd-alert-text">{a2ActionText(a.action)}</span>
+                <span className="rd-alert-text">{actionName(a)}</span>
                 <span className="rd-alert-note">{approvalChangeSummary(a)}</span>
               </span>
               {operationRole && <span className="rd-role">{roleLabel(operationRole)}</span>}

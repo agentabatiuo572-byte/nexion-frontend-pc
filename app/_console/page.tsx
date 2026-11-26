@@ -13,8 +13,8 @@ import { ChevronDown, Download, ListChecks, RefreshCw, ShieldAlert, ShieldCheck 
 import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, Notice, PageHeader, RdPage, StatusTag } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import { a2ActionText } from "@/lib/admin/operator-copy";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
+import { actionName } from "@/lib/admin/a2-approval-text";
 import { B0_BANK_REVIEW_PATH, b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
 import { fetchB0Business, fetchB0Devices, fetchB0ExchangeQueue, fetchB0PromotionUnfulfilled, fetchB0ReferralPending } from "@/lib/admin/b0-client";
@@ -64,7 +64,7 @@ function approvalOwner(row: A2OperationRow): PendingRow["owner"] {
 }
 
 function approvalDetail(row: A2OperationRow) {
-  return `${a2ActionText(row.action)} · ${approvalChangeSummary(row)}`;
+  return `${actionName(row)} · ${approvalChangeSummary(row)}`;
 }
 
 export default function CommandCenter() {
@@ -133,7 +133,7 @@ export default function CommandCenter() {
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
-    const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => a.ts.localeCompare(b.ts));
+    const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => Date.parse(a.rawTs ?? "") - Date.parse(b.rawTs ?? "") || a.ts.localeCompare(b.ts));
     rows.push({ key: "a2", title: `待审批操作 ${approvals.data.stats.pendingTickets} 条`, sub: queue[0] && approvalDetail(queue[0]), owner: queue[0] ? approvalOwner(queue[0]) : "其他", href: "/platform/audit" });
   }
   if (reach("/finance/withdrawals")) {
