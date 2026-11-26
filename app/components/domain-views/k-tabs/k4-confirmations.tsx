@@ -75,7 +75,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
       detail: `把这个用户的风险分从 ${user.effectiveScore} 改成指定分数，马上生效，并记入操作记录。`,
       content: userFacts(user),
       statedBrief: {
-        impact: "有效分立即改成新分数，提现审核和提现升级告警按它判断；之后系统评分照常更新，但发布新规则、后台重算都保留这个改分，直到有人点「恢复系统评分」「全部恢复系统评分」，或再次手动改分把它替换。",
+        impact: "有效分立即改成新分数，提现审核和提现升级告警按它判断。系统评分照常更新，但重算和发布新规则都保留这个改分，直到恢复系统评分或再次手动改分。",
         check: "分数是 0–100 的整数；这位用户的评分在你打开后没有被别人改过。",
       },
       reasonPlaceholder: "写清依据，例如：工单号、核实过的关联证据",
