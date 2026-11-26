@@ -3,12 +3,11 @@
 /**
  * 免费试用设置 · 按设备优惠（PLAN 第三节、画板 ①–⑥，B125）：H2 域内组件，不进 rd。
  * 只管呈现和本地草稿：两组优惠（试用期折扣＝比例＋上限、专享立减）各自「跟随默认／单独设置」。
- * 提交新格式、按回执逐款核对由接线项实现，见 h2-trial-buy.tsx 的 BuyPricingSubmit。
  */
 import { useEffect, useRef } from "react";
 import { ChevronUp, Info } from "lucide-react";
 import { Button, Explain, Field, NumberInput, Segments } from "@/app/components/rd";
-import type { BuyDevice, BuyPricing } from "@/lib/admin/h2-trial-purchase";
+import { validBuyPricingValue, type BuyDevice, type BuyPricing } from "@/lib/admin/h2-trial-purchase";
 
 /** 三项默认值（常改参数和高级设置里的值），读不到的是 undefined。 */
 export type PricingDefaults = { rate?: string; cap?: string; early?: string };
@@ -17,7 +16,6 @@ export type PricingMode = "follow" | "custom";
 export type PricingEdit = { discount: PricingMode; rate: string; cap: string; early: PricingMode; amount: string };
 export type PricingField = "rate" | "cap" | "amount";
 
-export const FOLLOW_ALL: BuyPricing = { discountRate: null, discountCapUSD: null, earlyPurchaseDiscountUSD: null };
 
 /** 去掉末尾的 0，整数部分加千分位，不舍入（TX-20）。 */
 export function plain(value: string | undefined) {
@@ -79,13 +77,6 @@ export function groupAfter(pricing: BuyPricing, key: Group["key"], defaults: Pri
 }
 export const GROUP_NAME = { discount: "试用期折扣", early: "专享立减" } as const;
 
-const same = (left: string | null, right: string | null) => left === null || right === null ? left === right : Number(left) === Number(right);
-export function changedGroups(before: BuyPricing, after: BuyPricing) {
-  return ([
-    !same(before.discountRate, after.discountRate) || !same(before.discountCapUSD, after.discountCapUSD) ? "discount" : undefined,
-    !same(before.earlyPurchaseDiscountUSD, after.earlyPurchaseDiscountUSD) ? "early" : undefined,
-  ] as const).filter((key): key is Group["key"] => !!key);
-}
 
 /** 单独设的组，移除时一起删除（D8）：「折扣 25%，最高 1,000 USDT 和立减 30 USDT」。 */
 export function customText(pricing: BuyPricing) {
@@ -105,22 +96,21 @@ export const pricingOf = (edit: PricingEdit): BuyPricing => ({
   earlyPurchaseDiscountUSD: edit.early === "custom" ? edit.amount.trim() : null,
 });
 
-const number = /^\d+(\.\d+)?$/;
 /** 范围和 H2 默认参数一致（D5）：比例 0–100，上限 0–1,000,000 USDT，立减 0–100 USDT 最多两位小数。填错时错误顶替范围，所以写全（VS-103）。 */
 export function editErrors(edit: PricingEdit): Partial<Record<PricingField, string>> {
   const errors: Partial<Record<PricingField, string>> = {};
   if (edit.discount === "custom") {
     const rate = edit.rate.trim(), cap = edit.cap.trim();
     if (!rate) errors.rate = "单独设置时不能留空，要填 0–100";
-    else if (!number.test(rate) || Number(rate) > 100) errors.rate = "要填 0–100 的数";
+    else if (!validBuyPricingValue(rate, "discountRate")) errors.rate = "要填 0–100 的数";
     if (!cap) errors.cap = "单独设置时不能留空，要填 0–1,000,000";
-    else if (!number.test(cap) || Number(cap) > 1_000_000) errors.cap = "要填 0–1,000,000 的数";
+    else if (!validBuyPricingValue(cap, "discountCapUSD")) errors.cap = "要填 0–1,000,000 的数";
   }
   if (edit.early === "custom") {
     const amount = edit.amount.trim();
     if (!amount) errors.amount = "单独设置时不能留空，要填 0–100";
-    else if (!number.test(amount) || Number(amount) > 100) errors.amount = "要填 0–100，最多两位小数";
     else if ((amount.split(".")[1] ?? "").length > 2) errors.amount = "最多两位小数，要填 0–100";
+    else if (!validBuyPricingValue(amount, "earlyPurchaseDiscountUSD")) errors.amount = "要填 0–100，最多两位小数";
   }
   return errors;
 }

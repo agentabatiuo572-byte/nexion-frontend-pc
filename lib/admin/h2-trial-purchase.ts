@@ -5,6 +5,8 @@ export type BuyListVersion = number;
  * 试用期折扣的比例和上限同有同空；比例是百分数字符串，"0.5" 即 0.5%。0 原样保存，表示这一项不减。
  */
 export type BuyPricing = { discountRate: string | null; discountCapUSD: string | null; earlyPurchaseDiscountUSD: string | null };
+export type BuyPricingItem = { productNo: string } & BuyPricing;
+export const FOLLOW_ALL: BuyPricing = { discountRate: null, discountCapUSD: null, earlyPurchaseDiscountUSD: null };
 
 export type BuyDevice = {
   productNo: string;
@@ -23,7 +25,7 @@ export type BuyDevice = {
   pricing?: BuyPricing;
 };
 
-export type BuyList = { version: BuyListVersion; items: BuyDevice[]; candidates: BuyDevice[] };
+export type BuyList = { version: BuyListVersion; pricing: boolean; items: BuyDevice[]; candidates: BuyDevice[] };
 export type TrialTarget = Pick<BuyDevice, "productNo" | "name" | "status" | "stock" | "listingAllowed" | "unavailableReason">;
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -57,23 +59,45 @@ function nullableText(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
-const decimalText = (value: unknown): value is string | null => value === null || typeof value === "string" && /^\d+(\.\d+)?$/.test(value);
+function decimalValue(value: string) {
+  const [integer, fraction = ""] = value.split(".");
+  const digits = fraction.replace(/0+$/, "");
+  return `${integer.replace(/^0+(?=\d)/, "")}${digits ? `.${digits}` : ""}`;
+}
 
-/** 三项都在才算读到；比例和上限要同有同空（ST-37：缺字段、自相矛盾按读取失败）。 */
-function readPricing(row: Record<string, unknown>): BuyPricing | "invalid" | undefined {
-  // 读取回包里三项平铺在每款上；本地存的待确认记录（review.before）里是读过一次的 pricing 对象。
-  const { discountRate, discountCapUSD, earlyPurchaseDiscountUSD } = object(row.pricing) ?? row;
-  if ([discountRate, discountCapUSD, earlyPurchaseDiscountUSD].every((value) => value === undefined)) return;
-  if (!decimalText(discountRate) || !decimalText(discountCapUSD) || !decimalText(earlyPurchaseDiscountUSD)
-    || (discountRate === null) !== (discountCapUSD === null)) return "invalid";
+export function validBuyPricingValue(value: unknown, key: keyof BuyPricing): value is string {
+  if (typeof value !== "string" || value.length > 120 || !/^\d+(\.\d+)?$/.test(value)) return false;
+  const decimal = decimalValue(value);
+  // B125 stores at most six decimal places. Reject inputs that would be rounded (OP-17).
+  const scale = key === "earlyPurchaseDiscountUSD" ? 2 : 6;
+  return (decimal.split(".")[1]?.length ?? 0) <= scale
+    && Number(decimal) <= (key === "discountCapUSD" ? 1_000_000 : 100);
+}
+
+function readPricing({ discountRate, discountCapUSD, earlyPurchaseDiscountUSD }: Record<string, unknown>): BuyPricing | undefined {
+  if ((discountRate !== null && !validBuyPricingValue(discountRate, "discountRate"))
+    || (discountCapUSD !== null && !validBuyPricingValue(discountCapUSD, "discountCapUSD"))
+    || (earlyPurchaseDiscountUSD !== null && !validBuyPricingValue(earlyPurchaseDiscountUSD, "earlyPurchaseDiscountUSD"))
+    || (discountRate === null) !== (discountCapUSD === null)) return;
   return { discountRate, discountCapUSD, earlyPurchaseDiscountUSD };
 }
 
-function readDevice(raw: unknown): BuyDevice | undefined {
+const sameAmount = (left: string | null, right: string | null) => left === null || right === null
+  ? left === right : decimalValue(left) === decimalValue(right);
+
+export function changedGroups(before: BuyPricing, after: BuyPricing) {
+  const groups: ("discount" | "early")[] = [];
+  if (!sameAmount(before.discountRate, after.discountRate) || !sameAmount(before.discountCapUSD, after.discountCapUSD)) groups.push("discount");
+  if (!sameAmount(before.earlyPurchaseDiscountUSD, after.earlyPurchaseDiscountUSD)) groups.push("early");
+  return groups;
+}
+
+function readDevice(raw: unknown, pricingSource?: "response" | "journal"): BuyDevice | undefined {
   const row = object(raw);
   if (!row) return;
-  const pricing = readPricing(row);
-  if (pricing === "invalid") return;
+  const pricingRow = pricingSource === "response" ? row : pricingSource === "journal" ? object(row.pricing) : undefined;
+  const pricing = pricingRow && readPricing(pricingRow);
+  if ((pricingSource === "response" || pricingSource === "journal" && row.pricing !== undefined) && !pricing) return;
   const { productNo, name, productType, inventoryMode, priceUsdt, stock, status, listingAllowed,
     visibleToUser, selectable, unavailableReason } = row;
   if (typeof productNo !== "string" || !nullableText(name) || !nullableText(productType) || !nullableText(inventoryMode)
@@ -89,12 +113,12 @@ function readDevice(raw: unknown): BuyDevice | undefined {
   };
 }
 
-export function readH2BuyDevices(raw: unknown): BuyDevice[] | undefined {
+export function readH2BuyDevices(raw: unknown, pricingSource?: "response" | "journal"): BuyDevice[] | undefined {
   if (!Array.isArray(raw)) return;
   const rows: BuyDevice[] = [];
   const ids = new Set<string>();
   for (const value of raw) {
-    const row = readDevice(value);
+    const row = readDevice(value, pricingSource);
     if (!row || !nonBlank(row.productNo) || ids.has(row.productNo)) return;
     ids.add(row.productNo);
     rows.push(row);
@@ -116,24 +140,22 @@ function isBuyType(type: string | null) {
 
 export function readH2TrialPurchase(raw: Record<string, unknown>) {
   const { currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates, purchaseOptionsPricing } = raw;
-  if ([currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates]
+  if ([currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates, purchaseOptionsPricing]
     .every((value) => value === undefined)) return {};
   // 「支持按设备优惠」标识和清单分开读：清单读不到时，改默认值的确认框仍要按新叫法写（画板 ⑥d）。
   const pricing = purchaseOptionsPricing === true;
 
   const target = readDevice(currentTrialProduct);
-  const items = readH2BuyDevices(otherPurchaseProducts);
+  const items = readH2BuyDevices(otherPurchaseProducts, pricing ? "response" : undefined);
   const candidates = readH2BuyDevices(purchaseCandidates);
   const byProductNo = new Map(candidates?.map((candidate) => [candidate.productNo, candidate]));
   const consistent = items?.every((item) => {
     const candidate = byProductNo.get(item.productNo);
     return !candidate || sameDevice(item, candidate);
   });
-  // 有标识时清单每款都要带两组设置（跟随默认为 null）；没有标识时不认这几个字段。
-  const pricedRight = pricing ? items?.every((item) => item.pricing) : true;
   const buyList: BuyList | "invalid" = isBuyListVersion(purchaseOptionsVersion) && nonBlank(writePermissionName)
-    && (target || currentTrialProduct === null) && items && candidates && consistent && pricedRight
-    ? { version: purchaseOptionsVersion, items: pricing ? items : items.map(({ pricing: _ignored, ...item }) => item), candidates: candidates.filter((candidate) => isBuyType(candidate.productType)) }
+    && (target || currentTrialProduct === null) && items && candidates && consistent
+    ? { version: purchaseOptionsVersion, pricing, items, candidates: candidates.filter((candidate) => isBuyType(candidate.productType)) }
     : "invalid";
 
   return {
@@ -165,16 +187,39 @@ export const H2_BUY_LIST_OBJECT = "purchase-options";
 export const H2_BUY_LIST_ACTION = "H2_TRIAL_PURCHASE_OPTIONS_CHANGED";
 
 export type BuyListWrite = {
-  productNos: string[];
   version: BuyListVersion;
   reason: string;
   requestNo: string;
   confirmedActorId: number;
-};
+} & ({ productNos: string[]; items?: never } | { items: BuyPricingItem[]; productNos?: never });
 
-export function isBuyListReceipt(value: unknown, input: BuyListWrite): value is { productNos: string[]; version: BuyListVersion } {
-  const { version, productNos } = object(value) ?? {};
-  return isBuyListVersion(version) && version === input.version + 1
-    && Array.isArray(productNos) && productNos.length === input.productNos.length
-    && input.productNos.every((no, index) => no === productNos[index]);
+export function buyListProductNos(input: BuyListWrite) {
+  return input.items === undefined ? input.productNos : input.items.map(({ productNo }) => productNo);
+}
+
+function readPricingItems(value: unknown, expectedNos: readonly string[]): BuyPricingItem[] | undefined {
+  if (!Array.isArray(value) || value.length !== expectedNos.length) return;
+  const items: BuyPricingItem[] = [];
+  for (const [index, productNo] of expectedNos.entries()) {
+    const row = object(value[index]);
+    const pricing = row && readPricing(row);
+    if (!pricing || row?.productNo !== productNo) return;
+    items.push({ productNo, ...pricing });
+  }
+  return items;
+}
+
+export function validBuyPricingItems(value: unknown, productNos: readonly string[]) {
+  return !!readPricingItems(value, productNos);
+}
+
+export function isBuyListReceipt(value: unknown, input: BuyListWrite): boolean {
+  const { version, productNos, items } = object(value) ?? {};
+  const expectedNos = buyListProductNos(input);
+  if (!isBuyListVersion(version) || version !== input.version + 1
+    || !Array.isArray(productNos) || productNos.length !== expectedNos.length
+    || !expectedNos.every((no, index) => no === productNos[index])) return false;
+  if (!input.items) return true;
+  const received = readPricingItems(items, expectedNos);
+  return !!received && input.items.every((item, index) => changedGroups(item, received[index]).length === 0);
 }

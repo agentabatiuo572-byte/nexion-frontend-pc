@@ -353,6 +353,7 @@ export const AUDIT_ACTION_NAMES: Readonly<Record<string, string>> = {
   "H2_TRIAL_PARAM_CHANGED": "调整试用参数",
   "H2_TRIAL_PRODUCT_CHANGED": "调整试用商品",
   "H2_TRIAL_PURCHASE_OPTIONS_CHANGED": "调整其他可购买设备",
+  "H2_TRIAL_PURCHASE_OPTIONS_ITEM": "调整其他可购买设备（逐款明细）",
   "H2_TRIAL_REFUND_REWARD_MANUAL_REVIEW": "试用转购奖励追回待人工复核",
   "H2_TRIAL_REFUND_REWARD_PENDING": "试用转购奖励待追回",
   "H2_TRIAL_REFUND_REWARD_REVERSED": "追回试用转购奖励",
