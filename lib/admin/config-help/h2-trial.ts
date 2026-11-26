@@ -191,7 +191,7 @@ const PRICING_TRIAL_PARAM_COPY: Record<string, Partial<TrialParamHelp>> = {
     how: "0–100 USDT，最多两位小数。",
     howMore: "默认值只管用户本人的试用设备和立减跟随默认的设备。符合条件的用户在原试用期内提前购买，按原试用天数结算收益。立减在其他优惠之后扣，应付最低为 0。抵扣只用已累计 USDT，结余购后进钱包。",
     where: "App 票据「专享立减」",
-    whatIf: (value) => (Number(value) === 0 ? "改成 0：取消按默认计算的专享立减，提前购买仍按整期结算。" : `改成 ${value}：跟随默认的设备提前购买时最多再减 ${value} USDT。`),
+    whatIf: (value) => (Number(value) === 0 ? "改成 0：取消按默认计算的专享立减，符合条件的提前购买仍按整期结算。" : `改成 ${value}：跟随默认的设备提前购买时最多再减 ${value} USDT。`),
   },
   trialOffsetCapUSD: { howMore: "只管试用收益能抵多少，和试用期折扣、专享立减叠加。" },
 };
