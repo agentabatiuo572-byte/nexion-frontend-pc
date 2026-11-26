@@ -15,7 +15,7 @@
  * - 一张卡四层：名称、主数、对比一行、分项。层高都是定的；分项区按 MetricBoard 的 rows 留高，传这组卡各时段最多几行，
  *   所以同排的卡同高、四层同一条线，切时段不跳版。
  * - 分项是一组名称和值（rows），或一条比例条（bar）：回答「两样比，哪样多」，条下只写图例不写数字，数字在别的卡上（DP-61）。
- *   全是 0 时不画条，写 bar.empty。
+ *   全是 0 时不画条，写 bar.empty。名称和值是两列：名称列按这张卡最长的名称，值紧跟在后面左对齐，卡排宽了也一样（VS-65）。
  * - 卡的颜色按 VS-12，值是 0 或「—」时弱化（字色弱、图标底灰），两套主题都弱；分项里 0 也弱化。对比数不分好坏，不用红绿。
  * - 0、读不到、没权限分开：0 写 0；读不到传 state="failed" 和 onRetry，主数写「—」，对比行写「暂时读不到 · 重试」；没权限不渲染这张卡。
  * - state="loading" 时主数、对比和分项是占位条，高度和有数时一样。刷新时页面保留旧数，不要传 loading。
@@ -119,7 +119,7 @@ export function MetricCard({ label, value, prefix, unit, compare, rows = [], bar
             </div>
           )
           : (
-            <dl className="rd-metric-rows">
+            <dl className="rd-metric-rows rd-metric-pairs">
               {rows.map((row, index) => (
                 <div className="rd-metric-row" key={index}>
                   <dt>{row.k}</dt>

@@ -182,8 +182,6 @@ a.cc-amount:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 
   .cc .rd-metrics-grid > .rd-metric { grid-column: span 6; }
   .cc .rd-metrics-grid > .rd-metric:where(:last-child:nth-child(odd)) { grid-column: span 12; }
 }
-/* 排宽了的卡分项不拉开，名字和数挨着（和两张卡时一样）；正常宽的卡本来就不到这个宽。 */
-.cc .rd-metric-row { max-width: 360px; }
 /* 存量卡对比行开头的「当前」：对比行同高，不撑高这一行。 */
 .cc-now { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: var(--rd-radius-tag); background: var(--rd-panel-inner); color: var(--rd-text-2); }
 :root[data-theme="light"] .cc-now { box-shadow: inset 0 0 0 1px var(--rd-line); }
