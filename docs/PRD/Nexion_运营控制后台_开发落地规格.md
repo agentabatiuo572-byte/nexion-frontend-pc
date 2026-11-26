@@ -231,6 +231,8 @@ A2 工单的权限分类不能代替资金效果：例如暂停用户奖励虽�
 
 I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App「消息通知」的业务推送；Nova 智能问答已下线。路由 `/content/nova`、页面编号 I2、`/api/admin/content/nova/*` 接口、`content_i2_read` / `content_i2_write` 权限码和全部通道 key 均不变。
 
+I2 频道卡底栏显示中文频道名称。没有中文名称时使用内置频道的中文名称，否则提示「中文名称未配置」。频道键继续用于编辑、启停和模板关联。
+
 > 原四卷核心功能规格仍为 **70**；2026-07-25 已验收增量新增 **D6**，因此本索引当前为 **70 个核心模块 + 1 个增量模块**。D 域现为 D1–D6；K6 Janus C2 控制台出处 Janus C2 PRD v1.0。
 
 ## 第 2 章 数据模型总表(建表 / 定义类型)
@@ -1167,6 +1169,7 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 - **约束**:强制扣款退役，只保留历史审批核查，不重发；`chargeFailRate` 系统只读且不公开;shadow active/grace/extended 仅 UI display 不写账本;循环养号联动 K2 阻断。
 
 ### 5.11 H3 Quest / H4 活动 / H5 签到 / H6 里程碑(Ch13)
+- **卡片显示**：H3 任务卡、H4「既有活动」卡和「玩法与抽奖 → 七类玩法」卡保留中文名称与原有卡片间距。任务和活动编号继续用于定位详情和配置。
 - **H3 Day-One**:`active(0–24h·500NEX)→ grace(24–72h·200NEX)→ expired(72h+·0)` / `{active,grace} → claimed`(全 6 任务,creditNex+badge)。Weekly 按 weekKey reset;Monthly 跨月清。
 - **H4 活动**:`upcoming → ongoing → ended`(时窗);下架只停新参与,已形成的结算义务继续;trackable 用户 `(未join)→ joined → done → claimed`。Lucky Spin server RNG+NODE_ENV guard;日上限 `eventId×userId×spinDate` 超额 409;B1 红线自动降级(只发 NEX/积分/券)。
 - **H5 签到**:`signed_today →(次日)pending → signed` / `signed → broken`(>48h 归 0)/ `broken → restored`(耗 1 Saver,恢复 min(longest,30));里程碑 `locked → claimable → claimed`。

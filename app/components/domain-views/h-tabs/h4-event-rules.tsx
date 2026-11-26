@@ -506,7 +506,10 @@ export default function H4EventRules({ ctx, eventContent, requiredLanguages = OP
         const lack = readinessLacks(readiness);
         return <article key={row.eventCode} data-code={row.eventCode} className="h4-card h4l-play" aria-label={`${EVENT_KIND_LABELS[row.kind] ?? "其他活动"} · ${row.eventCode}`} data-dim={!supported || ended(row) ? "" : undefined}>
           <header className="h4-card-head">
-            <div className="h4-card-title"><h3>{EVENT_KIND_LABELS[row.kind] ?? "其他活动（已停用）"}</h3><span className="h4-card-meta"><span className="h4-mono" title={row.eventCode}>{row.eventCode}</span></span></div>
+            <div className="h4-card-title">
+              <h3>{EVENT_KIND_LABELS[row.kind] ?? "其他活动（已停用）"}</h3>
+              <span className="h4-card-meta" aria-hidden="true"><span className="h4-mono">&nbsp;</span></span>
+            </div>
             <span className="h4l-tags">{row.supported === false && <StatusTag tone="warn" explain="App 还不支持这个活动：配置可以保存，开启会被拒绝。">App 暂不支持</StatusTag>}{row.rulesLocked && !ended(row) && <StatusTag tone="neutral" icon={Lock} explain="开过一次：玩法和时间已固定。">已固定</StatusTag>}{stateTag(row)}</span>
           </header>
           <p className="h4l-desc">{supported ? PLAY_SENTENCE[playKey({ kind: row.kind, rules: eventRuleDraftRules(row) })] ?? "—" : "这类玩法已停用，只能查看。"}</p>

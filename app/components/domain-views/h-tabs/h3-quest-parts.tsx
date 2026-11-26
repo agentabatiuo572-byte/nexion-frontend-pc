@@ -333,7 +333,6 @@ export function TaskCard({ task, name, bindings, reward, rewardNote, localeGaps,
   const unbound = taskUnbound(task);
   const warn = status === "active" && unbound;
   const route = text(task.href, "");
-  const code = text(task.taskCode ?? task.missionCode ?? task.id, "");
   return (
     <article className="h3-card" data-selected={selected ? "" : undefined} data-warn={warn ? "" : undefined} data-dim={status === "archived" ? "" : undefined} aria-label={name}>
       <header className="h3-card-head">
@@ -345,7 +344,7 @@ export function TaskCard({ task, name, bindings, reward, rewardNote, localeGaps,
         <h3 className="h3-card-title">
           <button type="button" className="h3-card-open" onClick={onOpen} aria-label={`看任务详情：${name}`}>{name}</button>
         </h3>
-        <span className="h3-card-code" data-mono="">{code || "—"}</span>
+        <span className="h3-card-code" data-mono="" aria-hidden="true">&nbsp;</span>
       </header>
       <dl className="h3-card-facts">
         <div data-warn={warn ? "" : undefined}>

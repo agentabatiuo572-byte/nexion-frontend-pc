@@ -1192,7 +1192,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <MoreMenu label={`${channelName(n.key, n.name)} 的更多操作`} disabled={!!lockReason(`channel:${n.key}`)} items={[{ key: "delete", label: "删除频道", danger: true, onSelect: () => removeNova(n) }]} />
     </> : undefined;
     return (
-      <ChannelCard key={n.key} name={channelName(n.key, n.name)} keyText={n.key} on={n.on}
+      <ChannelCard key={n.key} name={channelName(n.key, n.name)} channelKey={n.key} on={n.on}
         sourceLabel={social ? "取材" : "触发"}
         source={social ? "提现到账等真实事件" : trigger.when} audience={social ? undefined : trigger.audience}
         tick={n.tick} cooldown={n.cd} phase={phase ? <PhaseNote text={n.phaseKeyed} /> : undefined}

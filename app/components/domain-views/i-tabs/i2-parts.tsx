@@ -113,9 +113,9 @@ export function TemplateTag({ state }: { state: TemplateState }) {
 }
 
 /** 一张频道卡。动作由页面传；没有写权限时不传。 */
-export function ChannelCard({ name, keyText, on, sourceLabel = "取材", source, audience, tick, cooldown, phase, template, templateState, warn, stats, ctr, actions, onTemplate }: {
+export function ChannelCard({ name, channelKey, on, sourceLabel = "取材", source, audience, tick, cooldown, phase, template, templateState, warn, stats, ctr, actions, onTemplate }: {
   name: string;
-  keyText: string;
+  channelKey: string;
   on: boolean;
   /** 业务频道写「触发」，按素材抽的写「取材」。 */
   sourceLabel?: string;
@@ -132,6 +132,8 @@ export function ChannelCard({ name, keyText, on, sourceLabel = "取材", source,
   actions?: ReactNode;
   onTemplate?: () => void;
 }) {
+  const knownName = Object.hasOwn(CHANNEL_NAME, channelKey) ? CHANNEL_NAME[channelKey] : "中文名称未配置";
+  const footerName = /[\u3400-\u9fff]/.test(name) ? name : knownName;
   return (
     <article className="i2-channel" data-off={on ? undefined : ""} data-warn={warn ? "" : undefined} aria-label={name}>
       <header className="i2-channel-head">
@@ -160,7 +162,7 @@ export function ChannelCard({ name, keyText, on, sourceLabel = "取材", source,
         </dd></div>
       </dl>
       <footer className="i2-channel-foot">
-        <span className="i2-channel-key" title="频道编号">{keyText}</span>
+        <span className="i2-channel-key" title="频道名称">{footerName}</span>
         {actions && <span className="rd-row-actions">{actions}</span>}
       </footer>
     </article>
