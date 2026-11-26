@@ -11,7 +11,7 @@ import { BarChart3, Users } from "lucide-react";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportPerformanceAnalyticsClient as analytics, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
-import { PERFORMANCE_EXPORT_DETAIL, PERFORMANCE_EXPORT_SUMMARY, sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
+import { PERFORMANCE_EXPORT_APPROVE, PERFORMANCE_EXPORT_DETAIL, PERFORMANCE_EXPORT_SUMMARY, sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
 import { isSupportSessionExpired, SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -800,8 +800,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const canReplyM3 = superOperator || Boolean(authSession?.authorities.includes("service_m3_write"));
   const sessionsReachable = canAccessResolvedPath(visible, "/service/sessions");
   const todoAccess: TodoAccess = sessionsReachable ? canReplyM3 ? "reply" : "read" : "none";
-  // 整页都没有写权时页头右下写一句（PG-18、OP-125、ST-39）；只缺回复权的主管仍能分配、分组，不写。权限名取角色页显示名括号前的部分。
-  const pageReadOnly = scope && !personalHeader && !superOperator && !canReplyM3 && !authSession?.authorities.includes("service_m1_write")
+  // 整页都没有写权时页头右下写一句（PG-18、OP-125、ST-39）；只缺回复权、仍能分配分组或导出审批的主管不写。权限名取角色页显示名括号前的部分。
+  const pageReadOnly = scope && !personalHeader && !superOperator && !canReplyM3 && !authSession?.authorities.some(code => code === "service_m1_write" || code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL || code === PERFORMANCE_EXPORT_APPROVE)
     ? "你只能查看；发起会话需要「即时会话台-常规写」权限，请联系管理员在「角色管理」里开通。" : undefined;
   // 主管和超管：页头次按钮是导出业绩、会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
   // 「更换本人头像」是本人设置，不放页头：右上角账号菜单里都有，主管兼客服在「我的客户」顶部的本人一栏也有（01 PG-15）。
