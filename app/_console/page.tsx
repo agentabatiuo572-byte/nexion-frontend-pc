@@ -131,7 +131,7 @@ export default function CommandCenter() {
     rows.push({ key: "coverage", title: "覆盖率告警待确认", sub: "跌破红线，还没人确认", owner: "财务", href: RESERVE_PAGE, tone: "danger" });
   }
   const backfill = j1.alerts.find((alert) => alert.id === "J1-AUTO-CONFIRM");
-  if (j1.error) rows.push({ key: "j1", name: "紧急开关", onRetry: () => void refreshJ1DutyAlerts() });
+  if (j1.error) rows.push({ key: "j1", name: "紧急开关", reason: j1.error, onRetry: () => void refreshJ1DutyAlerts() });
   else if (backfill) rows.push({ key: "j1", title: `紧急开关待补录 ${backfill.count ?? 0} 项`, sub: backfill.hint, owner: "风控", href: opsAlertHref(backfill), tone: backfill.level === "high" ? "danger" : undefined });
   if (closedBusinesses) rows.push({ key: "j1-closed", title: closedBusinesses.title, sub: closedBusinesses.hint, owner: "风控", href: opsAlertHref(closedBusinesses), tone: "warn" });
   // 风控条目合成一行，点进风险提醒页的「待处理风险 · 按类型」（design-plan 板 1）。
@@ -141,18 +141,18 @@ export default function CommandCenter() {
   // 读取失败的行写一句原因（ST-34），按读取的口吻写，不写「提交类操作请先刷新」（OP-84）。
   if (pendingRisk.error) rows.push({ key: "risk", name: "待处理风险", reason: displayAdminReadError(pendingRisk.error), onRetry: () => void pendingRisk.reload() });
   else if (riskRow) rows.push(riskRow);
-  if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", reason: displayAdminReadError(orphaned.error), onRetry: orphaned.reload });
+  if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", reason: orphaned.error, onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: `/finance/withdrawals?status=${TX_ORPHANED}`, tone: "warn" });
-  if (approvals.error) rows.push({ key: "a2", name: "待审批操作", reason: displayAdminReadError(approvals.error), onRetry: approvals.reload });
+  if (approvals.error) rows.push({ key: "a2", name: "待审批操作", reason: approvals.error, onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
     const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => Date.parse(a.rawTs ?? "") - Date.parse(b.rawTs ?? "") || a.ts.localeCompare(b.ts));
     rows.push({ key: "a2", title: `待审批操作 ${approvals.data.stats.pendingTickets} 条`, sub: queue[0] && approvalDetail(queue[0]), owner: queue[0] ? approvalOwner(queue[0]) : "其他", href: "/platform/audit" });
   }
   if (reach("/finance/withdrawals")) {
-    if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", reason: displayAdminReadError(reviewPending.error), onRetry: reviewPending.reload });
+    if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", reason: reviewPending.error, onRetry: reviewPending.reload });
     else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 笔`, owner: "财务", href: `/finance/withdrawals?status=${REVIEW_PENDING}` });
   }
-  if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", reason: displayAdminReadError(supportTodo.error), onRetry: supportTodo.reload });
+  if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", reason: supportTodo.error, onRetry: supportTodo.reload });
   else if (supportTodo.data) {
     const managesSupport = session?.supportReadModes?.some(mode => mode === "ALL" || mode === "MANAGED");
     rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: managesSupport ? SUPPORT_TODO_HOME : PERSONAL_TODO_HOME });
@@ -167,7 +167,7 @@ export default function CommandCenter() {
     for (const row of deviceRows) if (row.count > 0) rows.push({ key: `device-${row.state}`, title: `${row.title} ${fmtNum(row.count)} 台`, sub: row.sub, owner: "设备", href: reach("/devices/ops") ? `/devices/ops?simState=${row.state}` : undefined, tone: "warn" });
   }
   if (canShowBankReview) {
-    if (topup.error) rows.push({ key: "bank-review", name: BANK_REVIEW_LABEL, reason: displayAdminReadError(topup.error), onRetry: topup.reload });
+    if (topup.error) rows.push({ key: "bank-review", name: BANK_REVIEW_LABEL, reason: topup.error, onRetry: topup.reload });
     else if (topup.data && topup.data.bankManualReviewCount > 0) rows.push({
       key: "bank-review",
       title: `${BANK_REVIEW_LABEL} ${fmtNum(topup.data.bankManualReviewCount)} 笔`,

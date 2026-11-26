@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
 
 type ApiResult<T> = {
@@ -362,7 +362,7 @@ export async function refreshJ1DutyAlerts() {
     if (requestSequence !== j1DutyAlertRequestSequence) return;
     publishJ1DutyAlertSnapshot({
       alerts: [],
-      error: "紧急停用告警加载失败，请稍后重试",
+      error: displayAdminReadError(error),
       settled: true,
     });
   }
@@ -416,8 +416,8 @@ export function useJ2GeoAlerts(enabled: boolean) {
       try {
         const alerts = await fetchJ2GeoAlerts();
         if (alive) setSnapshot({ alerts, error: null });
-      } catch {
-        if (alive) setSnapshot({ alerts: [], error: "地区访问告警加载失败，请稍后重试" });
+      } catch (error) {
+        if (alive) setSnapshot({ alerts: [], error: displayAdminReadError(error) });
       }
     };
     void refresh();
@@ -444,8 +444,8 @@ export function useJ3TamperConfigAlerts(enabled: boolean) {
       try {
         const alerts = await fetchJ3TamperConfigAlerts();
         if (alive) setSnapshot({ alerts, error: null });
-      } catch {
-        if (alive) setSnapshot({ alerts: [], error: "篡改告警加载失败，请稍后重试" });
+      } catch (error) {
+        if (alive) setSnapshot({ alerts: [], error: displayAdminReadError(error) });
       }
     };
     void refresh();
@@ -472,8 +472,8 @@ export function useC2HighRiskAlerts(enabled: boolean) {
       try {
         const alerts = await fetchC2HighRiskAlerts();
         if (alive) setSnapshot({ alerts, error: null });
-      } catch {
-        if (alive) setSnapshot({ alerts: [], error: "高风险账户告警加载失败，请稍后重试" });
+      } catch (error) {
+        if (alive) setSnapshot({ alerts: [], error: displayAdminReadError(error) });
       }
     };
     void refresh();
