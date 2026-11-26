@@ -146,6 +146,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const session = useAdminAuth((s) => s.session);
   const sessionResolution = useAdminAuth((s) => s.sessionResolution);
   const authEpoch = useAdminAuth((s) => s.authEpoch);
+  const [readDenied, setReadDenied] = useState<{ pathname: string; authEpoch: number }>();
   const logoutPending = useAdminAuth((s) => s.logoutPending);
   const logoutUnknown = useAdminAuth((s) => s.logoutUnknown);
   const logoutError = useAdminAuth((s) => s.logoutError);
@@ -302,16 +303,22 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       }
     };
     const onFocus = () => void refreshSession();
+    const onDenied = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === "string") {
+        setReadDenied({ pathname: event.detail, authEpoch });
+      }
+      onFocus();
+    };
     window.addEventListener("focus", onFocus);
-    window.addEventListener(PERMISSION_DENIED_EVENT, onFocus);
+    window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
     const timer = window.setInterval(() => void refreshSession(), SESSION_REFRESH_MS);
     return () => {
       disposed = true;
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener(PERMISSION_DENIED_EVENT, onFocus);
+      window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);
       window.clearInterval(timer);
     };
-  }, [bootstrapState, isAuthenticated, mounted, signIn, signOut]);
+  }, [authEpoch, bootstrapState, isAuthenticated, mounted, signIn, signOut]);
 
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || logoutPending || logoutUnknown || !session) return;
@@ -387,7 +394,8 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   // 落地规则只在登录后用一次（Q-20）。刷新、书签直达、点侧栏都留在 /，一块都看不到的账号除外（PG-22）。
   const canStayHome = !justLoggedIn && b0HasAnyBlock(b0Blocks(authorities));
   const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/" && !canStayHome;
-  const denied = !canAccessResolvedPath(domains, pathname);
+  const denied = !canAccessResolvedPath(domains, pathname)
+    || readDenied?.authEpoch === authEpoch && readDenied.pathname === pathname;
   const redirecting = isAuthenticated && landingPath !== null && shouldRedirectHome;
 
   useEffect(() => {

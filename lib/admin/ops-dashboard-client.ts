@@ -202,7 +202,7 @@ async function readKillSwitchAlerts() {
   const response = await guardedFetch("/api/admin/emergency/kill-switches/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `J1_ALERTS_${response.status}`));
+    throw Object.assign(new Error(payload?.message || `J1_ALERTS_${response.status}`), { status: response.status });
   }
   if (!Array.isArray(payload.data.autoConfirmations)) {
     throw new Error("J1_ALERTS_FIELD_REQUIRED:autoConfirmations");
@@ -302,7 +302,7 @@ export async function fetchJ2GeoAlerts(): Promise<OpsDashboardAlert[]> {
   const response = await guardedFetch("/api/admin/emergency/geo-block/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `J2_ALERTS_${response.status}`));
+    throw Object.assign(new Error(payload?.message || `J2_ALERTS_${response.status}`), { status: response.status });
   }
   if (!Array.isArray(payload.data.alerts)) {
     throw new Error("J2_ALERTS_FIELD_REQUIRED:alerts");

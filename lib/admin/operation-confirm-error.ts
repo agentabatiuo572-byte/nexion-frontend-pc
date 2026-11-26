@@ -19,8 +19,8 @@ export function isPermissionDenied(error: unknown): boolean {
 }
 
 /** 提示条写「这个账号没有这项权限」，外壳重读权限，页面上的按钮随之收起。框由调用方关。 */
-export function announcePermissionDenied() {
-  window.dispatchEvent(new Event(PERMISSION_DENIED_EVENT));
+export function announcePermissionDenied(deniedPage?: string) {
+  window.dispatchEvent(new CustomEvent(PERMISSION_DENIED_EVENT, { detail: deniedPage }));
 }
 
 /** 各域「结果未知」错误族(A2/K1/K6/F1/H8…)统一鸭型:name 以 OutcomeUncertainError 结尾 + 携带命令号。 */

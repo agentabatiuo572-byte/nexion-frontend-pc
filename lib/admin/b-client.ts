@@ -33,7 +33,8 @@ export interface BLedger {
   healthyPct: number;
   thresholdVersion: number | null;
   runRiskPct: number;
-  pressureRatio: number;
+  pressureRatio: number | null;
+  backlogSeverity: "p0" | "p1" | "p2";
   netFlow24hUsd: number;
   queueBacklogCount: number;
   queueBacklogUsd: number;
@@ -145,7 +146,8 @@ const EMPTY_LEDGER: BLedger = {
   thresholdVersion: null,
   healthyPct: 0,
   runRiskPct: 0,
-  pressureRatio: 0,
+  pressureRatio: null,
+  backlogSeverity: "p2",
   netFlow24hUsd: 0,
   queueBacklogCount: 0,
   queueBacklogUsd: 0,
@@ -224,6 +226,26 @@ function requiredNum(value: unknown, field: string) {
   return n;
 }
 
+function preciseNumber(value: unknown, field: string) {
+  const number = requiredNum(value, field);
+  return { number, decimal: typeof value === "string" ? value.trim() : f4Decimal(number)! };
+}
+
+function backlogSeverity(reserve: string, backlog: string, yellow: string, red: string): BLedger["backlogSeverity"] {
+  const [reserveWhole, reserveFraction = ""] = reserve.split(".");
+  const [backlogWhole, backlogFraction = ""] = backlog.split(".");
+  const scale = Math.max(reserveFraction.length, backlogFraction.length);
+  const reserveUnits = BigInt(reserveWhole + reserveFraction.padEnd(scale, "0"));
+  const backlogUnits = BigInt(backlogWhole + backlogFraction.padEnd(scale, "0"));
+  if (reserveUnits === BigInt(0)) return backlogUnits > BigInt(0) ? "p0" : "p2";
+  // B0 5.4 judges the queue balance separately from the backend's 24-hour application severity.
+  const reached = (threshold: string) => {
+    const [whole, fraction = ""] = threshold.split(".");
+    return backlogUnits * BigInt(100) * BigInt(10) ** BigInt(fraction.length) >= reserveUnits * BigInt(whole + fraction);
+  };
+  return reached(red) ? "p0" : reached(yellow) ? "p1" : "p2";
+}
+
 function text(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -290,7 +312,7 @@ function nextId(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-function normalizeLedger(raw: Record<string, unknown>): BLedger {
+function normalizeLedger(raw: Record<string, unknown>, yellow: string, red: string): BLedger {
   const snapshot = requiredRow(raw.snapshot, "dualLedger.snapshot");
   const thresholdVersion = snapshot.thresholdVersion == null
     ? null
@@ -298,9 +320,11 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
   if (thresholdVersion !== null && (!Number.isSafeInteger(thresholdVersion) || thresholdVersion < 0)) {
     throw new Error("B_DOMAIN_FIELD_REQUIRED:dualLedger.snapshot.thresholdVersion");
   }
-  const reserveUsd = requiredNum(snapshot.reserveUsd, "dualLedger.snapshot.reserveUsd");
+  const reserve = preciseNumber(snapshot.reserveUsd, "dualLedger.snapshot.reserveUsd");
+  const reserveUsd = reserve.number;
   const liabilitiesUsd = requiredNum(snapshot.liabilitiesUsd, "dualLedger.snapshot.liabilitiesUsd");
-  const queueBacklogUsd = requiredNum(snapshot.queueBacklogUsd, "dualLedger.snapshot.queueBacklogUsd");
+  const backlog = preciseNumber(snapshot.queueBacklogUsd, "dualLedger.snapshot.queueBacklogUsd");
+  const queueBacklogUsd = backlog.number;
   const accounts = requiredArr<Record<string, unknown>>(raw.accounts, "dualLedger.accounts").map((item, index) => {
     const amount = requiredNum(item.amount, `dualLedger.accounts.${index}.amount`);
     return {
@@ -335,7 +359,8 @@ function normalizeLedger(raw: Record<string, unknown>): BLedger {
     healthyPct: requiredNum(snapshot.healthyPct, "dualLedger.snapshot.healthyPct"),
     thresholdVersion,
     runRiskPct: requiredNum(snapshot.runRiskPct, "dualLedger.snapshot.runRiskPct"),
-    pressureRatio: reserveUsd > 0 ? queueBacklogUsd / reserveUsd : 0,
+    pressureRatio: reserveUsd > 0 ? queueBacklogUsd / reserveUsd : null,
+    backlogSeverity: backlogSeverity(reserve.decimal, backlog.decimal, yellow, red),
     netFlow24hUsd: requiredNum(snapshot.netFlow24hUsd, "dualLedger.snapshot.netFlow24hUsd"),
     queueBacklogCount: requiredNum(snapshot.queueBacklogCount, "dualLedger.snapshot.queueBacklogCount"),
     queueBacklogUsd,
@@ -495,14 +520,16 @@ function normalizeRiskFeed(raw: unknown, index: number): RiskFeedItem {
     ...(item.endAt === undefined ? {} : { endAt: time("endAt") }) };
 }
 
-function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
+function normalizeRisk(raw: Record<string, unknown>) {
   const feed = requiredArr<unknown>(raw.feed, "riskRadar.feed").map(normalizeRiskFeed);
   // OpsTreasuryService.dynamicCoverageFeed supplies the decision for this metric.
   const bankRunSeverity = feed.find(item => item.href === "/overview/dual-ledger")?.sev;
   if (bankRunSeverity !== "p0" && bankRunSeverity !== "p1" && bankRunSeverity !== "p2") {
     throw new Error("B_DOMAIN_FIELD_INVALID:riskRadar.bankRunSeverity");
   }
-  const risk = {
+  const yellow = preciseNumber(raw.bankRunYellowPct, "riskRadar.bankRunYellowPct");
+  const red = preciseNumber(raw.bankRunRedlinePct, "riskRadar.bankRunRedlinePct");
+  const risk: BRiskRadar = {
     gates: requiredArr<Record<string, unknown>>(raw.gates, "riskRadar.gates").map((item, index) => {
       const rawState = text(item.state);
       const state = (["on", "off", "missing"].includes(rawState)
@@ -541,8 +568,8 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
     })),
     bankRunRatio: requiredNum(raw.bankRunRatio, "riskRadar.bankRunRatio"),
     bankRunSeverity,
-    bankRunYellowPct: requiredNum(raw.bankRunYellowPct, "riskRadar.bankRunYellowPct"),
-    bankRunRedlinePct: requiredNum(raw.bankRunRedlinePct, "riskRadar.bankRunRedlinePct"),
+    bankRunYellowPct: yellow.number,
+    bankRunRedlinePct: red.number,
   };
   const expectedGateKeys = ["withdraw", "staking", "genesis", "exchange", "trial"];
   const actualGateKeys = risk.gates.map((gate) => gate.dom);
@@ -563,13 +590,14 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
       || risk.bankRunRedlinePct <= risk.bankRunYellowPct) {
     throw new Error("B_DOMAIN_FIELD_INVALID:riskRadar.bankRunThresholds");
   }
-  return risk;
+  return { risk, yellow: yellow.decimal, red: red.decimal };
 }
 
 export function normalizeBDomainDashboard(raw: Record<string, unknown> | null | undefined): BDomainDashboard {
   const source = requiredRow(raw, "data");
   const dualLedger = requiredRow(source.dualLedger, "dualLedger");
-  const ledger = normalizeLedger(dualLedger);
+  const { risk, yellow, red } = normalizeRisk(requiredRow(source.riskRadar, "riskRadar"));
+  const ledger = normalizeLedger(dualLedger, yellow, red);
   return {
     generatedAt: requiredText(source.generatedAt, "generatedAt"),
     sources: requiredArr<string>(source.sources, "sources"),
@@ -585,7 +613,7 @@ export function normalizeBDomainDashboard(raw: Record<string, unknown> | null | 
     ledger,
     liquidity: normalizeLiquidity(requiredRow(source.liquidity, "liquidity"), ledger),
     rhythm: normalizeRhythm(requiredRow(source.rhythm, "rhythm")),
-    riskRadar: normalizeRisk(requiredRow(source.riskRadar, "riskRadar")),
+    riskRadar: risk,
   };
 }
 
@@ -624,7 +652,7 @@ function publishDashboard(sessionKey: string, dashboard: BDomainDashboard, mode:
 }
 
 function readBDomainResponse(response: Response) {
-  return response.text().then(raw => JSON.parse(raw.replace(/("coverageRatio"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
+  return response.text().then(raw => JSON.parse(raw.replace(/("(?:coverageRatio|reserveUsd|queueBacklogUsd|bankRunYellowPct|bankRunRedlinePct)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g,
     (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`))).catch(() => null) as Promise<ApiResult<Record<string, unknown>> | null>;
 }
 

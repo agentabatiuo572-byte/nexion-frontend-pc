@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeB5Radar, normalizeB5Signal, normalizeB5SignalPage, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { parseB5MoneyJson } from "@/lib/admin/b5-money";
+import { B5_PATH } from "@/lib/admin/risk-feed";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useB5Read } from "./use-b5-read";
 
 export { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar };
@@ -147,23 +150,27 @@ function idempotencyKey(prefix: string) {
 
 async function request<T>(endpoint: string, init?: RequestInit, preserveRejections = false): Promise<T> {
   // 传输层失败归「结果未知」(原来无 try/catch,裸 TypeError 到页面就被当确定失败弃号)。
+  const commandKey = new Headers(init?.headers).get("Idempotency-Key");
+  const authEpoch = useAdminAuth.getState().authEpoch;
   let response: Response;
   try {
     response = await guardedFetch(endpoint, { ...init, cache: "no-store" });
   } catch (error) {
-    const commandKey = new Headers(init?.headers).get("Idempotency-Key");
     if (commandKey) throw new B5OutcomeUnknownError(commandKey);
     throw error;
   }
   const result = await response.text().then(parseB5MoneyJson).catch(() => null) as ApiResult<T> | null;
   const message = typeof result?.message === "string" ? result.message : undefined;
-  const commandKey = new Headers(init?.headers).get("Idempotency-Key");
   if (isAdminAuthFailure(response.status, message) || result && isAdminAuthFailure(result.code, message)) resetAdminSession();
   if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
     || !result || typeof result.code !== "number")) throw new B5OutcomeUnknownError(commandKey);
   if (!response.ok || !result || result.code !== 0 || result.data == null) {
-    const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"),
+    const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`, commandKey ? "write" : "read"),
       response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code ?? response.status, message);
+    // All B5 GETs use the page's read permission. Preview uses the separate threshold write permission.
+    if (!init?.method && isPermissionDenied(error) && useAdminAuth.getState().authEpoch === authEpoch) {
+      announcePermissionDenied(B5_PATH);
+    }
     if (commandKey && !preserveRejections && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);
     throw error;
   }
@@ -283,20 +290,11 @@ export async function updateB5SignalStatus(
 }
 
 export function useB5Radar(key: string, enabled: boolean) {
-  const [deniedKey, setDeniedKey] = useState<string>();
-  const readRadar = useCallback(async () => {
-    try {
-      return await fetchB5Radar();
-    } catch (cause) {
-      if (cause instanceof B5RequestError && cause.status === 403) setDeniedKey(key);
-      throw cause;
-    }
-  }, [key]);
-  const radar = useB5Read(key, readRadar, enabled);
+  const radar = useB5Read(key, fetchB5Radar, enabled);
   const { reload, setData } = radar;
   const [streamStatus, setStreamStatus] = useState<{ warning: string; exhausted?: boolean } | null>(null);
   const [connection, setConnection] = useState(0);
-  const canConnect = enabled && deniedKey !== key;
+  const canConnect = enabled;
 
   useEffect(() => {
     if (!canConnect) return;

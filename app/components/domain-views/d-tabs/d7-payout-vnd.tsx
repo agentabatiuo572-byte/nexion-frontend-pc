@@ -714,7 +714,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
 
   const auditLink = canReachAudit && <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批核对</Link>;
-  const sentAt = (record: PendingMutationRecord) => `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出`;
   const expiredNext = (record: FundCommandRecord) => {
     const access = fundInvestigationAccess(record);
     return access.unavailableReason ? "" : access.canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER;

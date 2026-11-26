@@ -44,7 +44,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, b5Recovery, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
 import { bThresholdRecovery, discardThresholdRecoveryDraft, pendingThresholdConfigApproval, submitB5ThresholdApproval, thresholdRecoveryDrafts } from "@/lib/admin/withdrawal-config-approval";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
@@ -176,7 +176,7 @@ export default function RiskRadarPage() {
   const [yellowInput, setYellowInput] = useState("");
   const [redInput, setRedInput] = useState("");
   const [reason, setReason] = useState("");
-  const [preview, setPreview] = useState<(Awaited<ReturnType<typeof previewB5Thresholds>> & { key: string }) | null>(null);
+  const [preview, setPreview] = useState<(NonNullable<B5ThresholdFacts["preview"]> & { key: string }) | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [thresholdError, setThresholdError] = useState("");
   const [otherThresholdChanges, setOtherThresholdChanges] = useState<string[]>([]);
@@ -409,11 +409,11 @@ export default function RiskRadarPage() {
     setPreviewError("");
     const timer = window.setTimeout(() => {
       previewB5Thresholds(yellowPct, redPct, thresholdVersion)
-        .then((value) => {
-          if (alive) setPreview({ ...value, key: previewKey });
+        .then(({ ratio24h, light }) => {
+          if (alive) setPreview({ ratio24h, light, readAt: new Date().toISOString(), key: previewKey });
         })
         .catch((cause) => {
-          if (alive) setPreviewError(displayAdminError(cause));
+          if (alive) setPreviewError(displayAdminReadError(cause));
         });
     }, 250);
     return () => {
@@ -617,7 +617,11 @@ export default function RiskRadarPage() {
     if (!session || !threshold || !canSubmitThreshold) return;
     setSavingThreshold(true); setThresholdError("");
     let original = thresholdOriginal;
-    const facts = !original && !pendingApproval ? latestThreshold ?? threshold : threshold;
+    const facts: B5ThresholdFacts = !original && !pendingApproval && currentPreview ? {
+      ...(latestThreshold ?? threshold),
+      radarReadAt: radar.at ?? undefined,
+      preview: { ratio24h: currentPreview.ratio24h, light: currentPreview.light, readAt: currentPreview.readAt },
+    } : threshold;
     try {
       if (requiresApproval) {
         const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
@@ -1013,14 +1017,18 @@ export default function RiskRadarPage() {
           onStatus={(alert, target) => openSignalStatus(alert, target, true)} />
 
       {threshold && (() => {
-        const pressure = thresholdOriginal || approvalRecovery ? threshold : latestThreshold ?? threshold;
+        const recovering = !!thresholdOriginal || !!approvalRecovery;
+        const pressure = thresholdOriginal?.facts ?? (approvalRecovery ? threshold : latestThreshold ?? threshold);
+        const radarReadAt = recovering ? (thresholdOriginal?.facts ?? threshold).radarReadAt : radar.at;
+        const outcome = recovering ? (thresholdOriginal?.facts ?? threshold).preview : previewReady ? currentPreview : null;
+        const sameReading = outcome?.ratio24h === pressure.ratio24h;
+        const sameDecision = sameReading && outcome?.light === pressure.light;
         const raising = redPct > threshold.redPct;
         const redDirection = !Number.isFinite(redPct) || redPct === threshold.redPct ? null : raising
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
         const yellowDirection = !Number.isFinite(yellowPct) || yellowPct === threshold.yellowPct ? null : yellowPct > threshold.yellowPct
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
         const orderError = thresholdValid ? undefined : "黄线 5%–50%，红线 10%–80%，红线要高于黄线";
-        const recovering = !!thresholdOriginal || !!approvalRecovery;
         const submitLabel = recovering ? "按原操作重试" : requiresApproval ? "提交审批" : "确认调整";
         const blocked = !canThreshold ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
           : !thresholdValid ? "先把黄线、红线填在范围内"
@@ -1057,9 +1065,14 @@ export default function RiskRadarPage() {
                 {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
               </DiffField>
               <p className="b5-preview" role="status">
-                {recovering ? "提交时" : "现在"}的提现压力 {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，标「{formatB5RiskLight(pressure.light)}」{recovering ? "。" : "；"}
-                {recovering ? null : previewReady && currentPreview ? <>按新的线会标 <StatusTag tone={currentPreview.light === "red" ? "danger" : currentPreview.light === "yellow" ? "warn" : currentPreview.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(currentPreview.light)}</StatusTag></>
-                  : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
+                {radarReadAt ? `${formatBusinessTimeFull(radarReadAt, "—")} 读到` : recovering ? "提交时的提现压力" : "现在的提现压力"} {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，
+                {sameDecision ? "按现在和新的线都标 " : `按${recovering ? "原" : "现在的"}线标「${formatB5RiskLight(pressure.light)}」。`}
+                {outcome ? <>
+                  {!sameDecision && `${formatBusinessTimeFull(outcome.readAt, "—")} ${sameReading ? "预览读数相同" : `按${recovering ? "提交前预览的" : "最新"}数据 ${outcome.ratio24h === null ? "暂无法计算" : ratioPct(outcome.ratio24h)}`}，`}
+                  {!sameDecision && "按新的线会标 "}
+                  <StatusTag tone={outcome.light === "red" ? "danger" : outcome.light === "yellow" ? "warn" : outcome.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(outcome.light)}</StatusTag>
+                </> : recovering ? null : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
+                {radarReadAt && `（${businessZone().label}）`}
               </p>
               <Notice tone="neutral">
                 <p>和「紧急停用开关」共用，那边也跟着变。</p>
