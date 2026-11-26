@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { FileCheck2, FilePen, FileText, History, Scale } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, IrreversibleTag, MoreMenu, Notice, Panel, RecordList, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchLegalTermsAdmin, type LegalTermsSection, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { currentLegalTermsDateTime, normalizeLegalTermsDateTime } from "@/lib/admin/legal-terms-contract";
 import type { TabHead } from "./i5-disclosures";
@@ -80,7 +80,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
       }
       return value;
     } catch (cause) {
-      if (sequence === requestSequence.current) setError(displayAdminError(cause));
+      if (sequence === requestSequence.current) setError(displayAdminReadError(cause));
     } finally {
       if (sequence === requestSequence.current) setBusy(false);
     }
@@ -139,7 +139,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
     try {
       base = await findDraftBase();
     } catch (cause) {
-      toast(`现行条款没读到，这次没有新建：${displayAdminError(cause)}`, "error");
+      toast(`现行条款没读到，这次没有新建：${displayAdminReadError(cause)}`, "error");
       return;
     }
     leaveEditor(() => {

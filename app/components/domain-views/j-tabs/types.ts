@@ -50,4 +50,7 @@ export type JCtx = {
   actions: JEmergencyActions;
   contentLoading: boolean;
   contentError: string | null;
+  retryJ4Playbooks: () => void;
+  reloadJ4NotifyTemplates: () => Promise<void>;
+  notifyTemplatesLoading: boolean;
 };

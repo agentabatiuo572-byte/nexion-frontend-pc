@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchDeveloperDocsAdmin, fetchRankHowPolicyAdmin, fetchPrivacyPolicyAdmin, updateDeveloperDocsAdmin, updateRankHowPolicyAdmin, updatePrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
 import styles from "./published-content-editor.module.css";
@@ -38,7 +38,7 @@ export function PublishedContentEditor({ kind }: { kind: Kind }) {
     try {
       const value = kind === "privacyPolicy" ? await fetchPrivacyPolicyAdmin() : kind === "developerDocs" ? await fetchDeveloperDocsAdmin() : await fetchRankHowPolicyAdmin();
       setDocument(value); setBaseline(value); setLocale(Object.keys(value.locales)[0] ?? "en"); setReason("");
-    } catch (cause) { setDocument(null); setBaseline(null); setError(displayAdminError(cause)); setExpanded(true); }
+    } catch (cause) { setDocument(null); setBaseline(null); setError(displayAdminReadError(cause)); setExpanded(true); }
     finally { setLoading(false); }
   }, [canRead, kind]);
   useEffect(() => { void refresh(); }, [refresh]);

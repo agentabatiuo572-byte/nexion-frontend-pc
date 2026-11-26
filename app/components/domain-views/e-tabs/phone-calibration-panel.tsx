@@ -10,7 +10,7 @@ import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writ
 import { E6PendingNotice, useE6DraftEditor, useE6Mutations } from "./e6-mutations";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchPhoneCalibration, fetchPhoneCalibrationDirection, previewPhoneCalibration, phoneProposalError,
   type PhoneCalibrationOverview, type PhonePolicyProposal, type PhoneHardware, type PhonePreview, type PhoneTrialFacts } from "@/lib/admin/phone-calibration-client";
 import { NO_REMOVALS, diffAndroidRules, type AndroidPresetRemovals, type AndroidSocRule } from "@/lib/admin/android-soc-rules";
@@ -135,7 +135,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
       setSnapshot(result);
       resetDraft(result.policy.scheduled ?? result.policy.current);
     } catch (failure) {
-      if (live.current && request === generation.current) { setSnapshot(null); setError(displayAdminError(failure)); }
+      if (live.current && request === generation.current) { setSnapshot(null); setError(displayAdminReadError(failure)); }
     } finally { if (live.current && request === generation.current) setBusy(false); }
   }
   useEffect(() => { live.current = true; void refresh(); return () => { live.current = false; generation.current++; }; }, []);

@@ -1954,7 +1954,8 @@ export async function markMConversationRead(no:string,lastSeenMessageId:number,s
  * Authoritative M3 reconnect snapshot. The list is fully paged and checked
  * for a stable conversation set; message detail loads when a row is opened.
  */
-export async function fetchMConversationSnapshot(signal?: AbortSignal): Promise<SessionConvo[]> {
+export async function fetchMConversationSnapshot(signal?: AbortSignal, verifySet = true): Promise<SessionConvo[]> {
+  if (!verifySet) return (await fetchAllSupportConversations(signal)).records.map(adaptConversation);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const page = await fetchAllSupportConversations(signal);
     const verification = await fetchAllSupportConversations(signal);

@@ -2,7 +2,7 @@
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminReadError, displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1037,7 +1037,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       setD5(null);
       d5Ref.current = null;
       writesRef.current = false;
-      setError(cause instanceof Error ? displayAdminError(cause) : "加载失败，请重试");
+      setError(cause instanceof Error ? displayAdminReadError(cause) : "加载失败，请重试");
     } finally {
       // 过期响应连 loading 都不许收:新请求仍在飞,收了会假装「加载完成」。
       if (seq === requestSeq.current) setLoading(false);
@@ -1263,7 +1263,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     } catch (cause) {
       if (seq !== detailRequestSeq.current) return;
       // 抽屉开着，失败只写在抽屉里，不再弹一条（VS-107）。
-      setDetailError(cause instanceof Error ? displayAdminError(cause) : "单笔详情读取失败");
+      setDetailError(cause instanceof Error ? displayAdminReadError(cause) : "单笔详情读取失败");
     } finally {
       if (seq === detailRequestSeq.current) setDetailLoading(false);
     }

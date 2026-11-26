@@ -102,7 +102,7 @@ async function a7Request<T>(path: string, init?: RequestInit & { idempotencyPref
         || outcomeStaysUnknown(response.status, result?.code))) {
       throw uncertain();
     }
-    throw new Error(formatAdminApiError(result?.message, `A7_REQUEST_FAILED_${response.status}`));
+    throw new Error(formatAdminApiError(result?.message, `A7_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"));
   }
   return result.data as T;
 }

@@ -236,7 +236,7 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
-      ?? formatAdminApiError(result?.message, `E1_REQUEST_FAILED_${response.status}`, "write", result?.data));
+      ?? formatAdminApiError(result?.message, `E1_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data));
   }
 
   return result.data as T;
