@@ -2,7 +2,7 @@
 
 // Original K4 confirmation markup, supplied with the saved facts during recovery.
 import { Change, Fact, Facts, IrreversibleTag, Notice, StatusTag } from "@/app/components/rd";
-import type { K4User } from "@/lib/admin/k-client";
+import type { K4ScoredUser } from "@/lib/admin/k-client";
 import type { K4Operation } from "@/lib/admin/k4-command";
 import type { ConfirmReq, KCtx } from "./types";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
@@ -24,7 +24,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
   // 重新打开保存的原操作时，事实区写的是提交时存下的值，不是现在读到的。
   const saved = recovery.getPendingReason?.() !== undefined;
   const now = saved ? "提交时" : "现在";
-  const userFacts = (user: K4User) => (
+  const userFacts = (user: K4ScoredUser) => (
     <Facts>
       <Fact k="用户">{user.userNo}</Fact>
       <Fact k={`${now}的有效分`}>{user.effectiveScore} 分 · {user.bandLabel}{user.overridden ? "（人工改分）" : ""}</Fact>
