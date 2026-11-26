@@ -930,7 +930,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // 🔴 2026-08-06 补:这道保护只覆盖「重试链」——**首次**提交撞上结构化 5xx 时
     //   pendingKeyBeforeRequest 为空,照样弃号。5xx 后端可能已落库,必须保号(统一口径见
     //   outcome-classification.ts)。
-    const refusal = new DRequestError(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`), response.status, result?.code, result?.message);
+    const refusal = new DRequestError(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`, method === "GET" ? "read" : "write"), response.status, result?.code, result?.message);
     if (preparationWrite && commandKey && !pendingKeyBeforeRequest && !isExplicitRejection(refusal)) {
       throw new DOutcomeUnknownError(commandKey);
     }

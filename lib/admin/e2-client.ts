@@ -202,7 +202,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
-      ?? formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`, "write", result?.data));
+      ?? formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data));
   }
 
   return result.data as T;
@@ -241,7 +241,7 @@ async function e2ConfigRequest<T>(path: string, init?: RequestInit & { idempoten
   const response = await guardedFetch(`/api/admin/config/${path}`, { ...init, headers, cache: "no-store" });
   const result = (await response.text().then(parseE6DecimalJson).catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `E2_CONFIG_REQUEST_FAILED_${response.status}`));
+    throw new Error(formatAdminApiError(result?.message, `E2_CONFIG_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"));
   }
   return result.data as T;
 }

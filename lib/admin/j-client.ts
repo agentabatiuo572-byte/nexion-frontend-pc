@@ -530,14 +530,15 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
     text = await res.text();
   } catch {
     const message = "应急控制服务连接中断，没收到完整的执行结果";
-    throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试`);
+    throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error("应急控制服务连接中断，没有读到完整数据，请稍后重试");
   }
   let payload: ApiResult<T> = {};
   try {
     payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   } catch {
     const message = `应急控制服务返回了无法确认的内容（HTTP ${res.status}）`;
-    throw isWrite ? new EmergencyOutcomeUncertainError(message) : new Error(`${message}，请稍后重试。`);
+    if (isWrite) throw new EmergencyOutcomeUncertainError(message);
+    throw new Error(path === "/sop/playbooks" ? "J4_RESPONSE_INVALID" : `${message}，请稍后重试。`);
   }
   if ((isJ1AutoRuleWrite || isJ4Write || path === "/sop/playbooks" || path.startsWith("/tamper/")) && (!payload || typeof payload !== "object" || Array.isArray(payload)
     || typeof payload.code !== "number" || payload.message !== undefined && typeof payload.message !== "string")) {
@@ -582,7 +583,7 @@ async function apiRequest<T>(path: string, init?: RequestInit, geoContext?: J2Co
       useAdminAuth.getState().signOut();
     }
     const status = isJ1AutoRuleWrite && res.ok ? payload.code ?? res.status : res.status;
-    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`)), { status, reasonCode: payload.message });
+    throw Object.assign(new Error(formatAdminApiError(payload.message, `EMERGENCY_API_${res.status}`, isWrite ? "write" : "read")), { status, reasonCode: payload.message });
   }
   if (isJ4Write) {
     // A successful J4 response is a complete sopOverview, not an empty acknowledgement.
@@ -606,7 +607,7 @@ async function contentApiRequest<T>(path: string): Promise<T> {
     throw new Error(`读到的内容无法识别（HTTP ${res.status}），请稍后重试。`);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
+    throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`, "read"));
   }
   return payload.data as T;
 }
@@ -1858,7 +1859,7 @@ function normalizeSop(raw: unknown): SopOverview {
 function normalizeNotifyTemplates(raw: unknown): JNotifyTemplateOption[] {
   const data = rec(raw);
   const priority: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
-  return rows<Record<string, unknown>>(data.campaigns)
+  return requiredRecordRows(data.campaigns, "sop.notifyTemplates.campaigns")
     .map((row) => {
       const campaignNo = str(row.id, str(row.campaignNo));
       const name = str(row.name, campaignNo);
@@ -1898,7 +1899,12 @@ export async function fetchJTamperOverview(window: "24h" | "7d" | "30d" = "24h",
 }
 
 export async function fetchJ4NotifyTemplateOptions(): Promise<JNotifyTemplateOption[]> {
-  return contentApiRequest("/campaigns/overview").then(normalizeNotifyTemplates);
+  const data = await contentApiRequest("/campaigns/overview");
+  try {
+    return normalizeNotifyTemplates(data);
+  } catch (error) {
+    throw new Error("收到的通知活动候选数据不完整，已停止显示。请重新读取。", { cause: error });
+  }
 }
 
 export async function fetchJEmergencyOverviews(tab: "J1" | "J2" | "J3" | "J4",
@@ -1914,14 +1920,12 @@ export async function fetchJEmergencyOverviews(tab: "J1" | "J2" | "J3" | "J4",
     case "J3":
       return { tamper: await fetchJTamperOverview(j3Window, j3AccountPage, j3AccountPageSize) };
     case "J4": {
-      const [sop, notifyTemplatesResult] = await Promise.all([
-        apiRequest("/sop/playbooks").then(normalizeSop),
-        fetchJ4NotifyTemplateOptions().then(
-          (value) => ({ value, error: "" }),
-          (error: unknown) => ({ value: [] as JNotifyTemplateOption[], error: error instanceof Error ? error.message : "I3_NOTIFY_TEMPLATE_LOAD_FAILED" }),
-        ),
-      ]);
-      return { sop, notifyTemplates: notifyTemplatesResult.value, notifyTemplatesError: notifyTemplatesResult.error || undefined };
+      const data = await apiRequest("/sop/playbooks");
+      try {
+        return { sop: normalizeSop(data) };
+      } catch (error) {
+        throw new Error("J4_RESPONSE_INVALID", { cause: error });
+      }
     }
   }
 }

@@ -113,7 +113,7 @@ async function request<T>(path: string, parse: (value: unknown) => T, init?: Req
   const backendMessage = typeof envelope?.message === "string" ? envelope.message : undefined;
   if (!response.ok || code !== 0 || envelope?.data == null) {
     if (isAdminAuthFailure(response.status, backendMessage)) resetAdminSession();
-    const message = formatAdminApiError(backendMessage, `DEVELOPER_ACCESS_REQUEST_FAILED_${response.status}`);
+    const message = formatAdminApiError(backendMessage, `DEVELOPER_ACCESS_REQUEST_FAILED_${response.status}`, writing ? "write" : "read");
     if (!writing) throw new Error(displayAdminReadError(message));
     if (outcomeStaysUnknown(response.status, code)
       || backendMessage?.startsWith("DEVELOPER_ACCESS_IDEMPOTENCY_") || backendMessage === "DEVELOPER_ACCESS_RESULT_UNKNOWN") {

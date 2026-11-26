@@ -16,7 +16,7 @@ import { ArrowLeftRight, Ban, CalendarClock, Clock3, Coins, Gem, Landmark, Layer
 import { BatchBar, BlockState, Button, Cell, Change, Checkbox, Conclusion, ConfigList, ConfigRow, ControlCard, ControlGrid, Explain, Fact, Facts, KeepText, Figure, Fold, Notice, PageHeader, Panel, RecordList, Stat, StatBand, StatusTag, Table, Td, Th, ThresholdMeter, Tr } from "@/app/components/rd";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminReadError, displayAdminError } from "@/lib/admin/error-messages";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, type FundRecoveryRow, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandOrigin, fundCommandResult, fundCommandSettled, fundInvestigationAccess, type FundCommandOrigin, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { fProposalEndText } from "../f-tabs/f-release";
@@ -208,7 +208,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       setRestoreApprovals(overview.operationQueue.filter((row) => row.operationCode === "j1_gate_resume" && row.status === "pending"));
       setApprovalsError("");
     }, (error: unknown) => {
-      if (current) setApprovalsError(`恢复审批状态暂时读不到，请到操作记录与审批核对。${displayAdminError(error)}`);
+      if (current) setApprovalsError(`恢复审批状态暂时读不到，请到操作记录与审批核对。${displayAdminReadError(error)}`);
     }).finally(() => { if (current) setApprovalsLoading(false); });
     return () => { current = false; };
   }, [canReadApprovals, session?.adminId, data]);

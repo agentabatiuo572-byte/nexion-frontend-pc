@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchLegacyUnknownCandidate, proposeLegacyUnknownCancellation, type E5Device } from "@/lib/admin/e5-client";
 import { sameLegacyUnknownProof, type LegacyUnknownCandidate } from "@/lib/admin/legacy-unknown-resolution";
 import { OperationConfirmModal } from "../design-kit";
@@ -33,7 +33,7 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
       if (candidate.caseId && (candidate.ownerId !== device.userId || candidate.instanceNo !== device.serial))
         throw new Error("LEGACY_UNKNOWN_DEVICE_IDENTITY_CHANGED");
       if (live) setRead({ key, candidate });
-    }).catch(cause => { if (live) setError(displayAdminError(cause)); });
+    }).catch(cause => { if (live) setError(displayAdminReadError(cause)); });
     return () => { live = false; active.current = false; abort.abort(); };
   }, [key, retry, requested, allowed, adminId, device.deviceId, device.userId, device.serial]);
 
@@ -54,7 +54,7 @@ export function LegacyUnknownResolutionAction({ device, canWrite, toast }: { dev
       setRead({ key, candidate: fresh });
       if (!sameLegacyUnknownProof(candidate, fresh)) throw new Error("退出证据或设备状态已更新，请刷新后重新核对。");
       setSelected(fresh);
-    } catch (cause) { if (currentAdmin()) setError(displayAdminError(cause)); }
+    } catch (cause) { if (currentAdmin()) setError(displayAdminReadError(cause)); }
     finally { if (currentAdmin()) setChecking(false); }
   };
   return <div onClick={event => event.stopPropagation()}>
