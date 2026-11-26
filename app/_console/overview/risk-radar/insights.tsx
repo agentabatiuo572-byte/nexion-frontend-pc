@@ -173,6 +173,16 @@ export const CATEGORY_TARGETS: Partial<Record<SignalCategory, string>> = {
 };
 export const triageTarget = (alert: SignalRow) =>
   alert.category && alert.target === CATEGORY_TARGETS[alert.category] ? alert.target : null;
+
+type SignalTreatmentLink = { target: string; mode: "unreachable" | "read" | "triage" };
+
+export function signalTreatmentLink(target: string | null | undefined, reach: (path: string) => boolean, canTriage: boolean, canTriageTarget: (path: string) => boolean): SignalTreatmentLink | null {
+  if (!target) return null;
+  if (!reach(target)) return { target, mode: "unreachable" };
+  if (!canTriage) return { target, mode: "read" };
+  return canTriageTarget(target) ? { target, mode: "triage" } : null;
+}
+
 const dayTick = (label: string) => (/^\d{4}-/.test(label) ? label.slice(5) : label);
 
 export function PressureTrend({ data }: { data: B5Radar }) {
@@ -250,30 +260,27 @@ export function handlingHint(page: string | null, canFreeze: boolean) {
 }
 
 /** 名单和抽屉里同一个「去处理」：能记分诊的先记再跳；目标页进不了写「{页名} · 无权限」（ST-58）。 */
-function TriageLink({ alert, reach, canTriageTarget, onTriage, triageState, blocked: actionBlocked, button }: {
-  alert: SignalRow;
-  reach: (path: string) => boolean;
-  canTriageTarget: (path: string) => boolean;
+function TriageLink({ link, onTriage, triageState, blocked, button }: {
+  link: SignalTreatmentLink;
   onTriage: (path: string) => boolean;
   triageState: (path: string) => "active" | "blocked" | undefined;
-  /** 名单或详情没读好时不能去处理：去处理自己的一句原因。 */
+  /** 分诊依赖读到的名单或详情。 */
   blocked?: string;
   /** 抽屉底部用按钮的样子。 */
   button?: "primary" | "secondary";
 }) {
-  const target = triageTarget(alert);
-  if (!target) return null;
+  const { target, mode } = link;
   const page = TARGET_NAME[target] ?? "对应页面";
-  if (!reach(target)) return <span className="b5-muted">{page} · 无权限</span>;
-  if (!canTriageTarget(target)) return null;
-  const state = triageState(target);
+  if (mode === "unreachable") return <span className="b5-muted">{page} · 无权限</span>;
+  const actionBlocked = mode === "triage" ? blocked : undefined;
+  const state = mode === "triage" ? triageState(target) : undefined;
   const text = state === "active" ? "正在记录…" : button ? `去${page}` : page;
   return (
     <Link className={button ? "rd-btn" : "rd-link"} data-variant={button} data-size={button ? "md" : undefined} href={target} prefetch={false}
       aria-disabled={!!(actionBlocked || state) || undefined} title={actionBlocked ?? (state === "blocked" ? "正在记录另一条分诊，记完再点" : undefined)}
       onClick={actionBlocked ? event => event.preventDefault() : undefined}
       onAuxClick={actionBlocked ? event => event.preventDefault() : undefined}
-      onNavigate={(event) => { if (onTriage(target)) event.preventDefault(); }}>{button ? <span className="rd-btn-face">{text}</span> : text}</Link>
+      onNavigate={mode === "triage" ? (event) => { if (onTriage(target)) event.preventDefault(); } : undefined}>{button ? <span className="rd-btn-face">{text}</span> : text}</Link>
   );
 }
 
@@ -325,6 +332,7 @@ export function SignalsTable({ alerts, showBlocked = false, singleStatus = false
         <tbody>
           {loadingRows !== undefined ? <TableLoading columns={columns} rows={loadingRows} /> : alerts.length === 0 ? <TableMessage columns={columns}>{empty}</TableMessage> : alerts.map((alert) => {
             const next = alert.handlingStatus === "open" ? "handled" : alert.handlingStatus === "handled" ? "resolved" : null;
+            const treatment = signalTreatmentLink(triageTarget(alert), reach, canTriage, canTriageTarget);
             const { line } = signalFacts(alert);
             const handler = handlerText(alert);
             const level = SEVERITY[alert.level];
@@ -339,7 +347,7 @@ export function SignalsTable({ alerts, showBlocked = false, singleStatus = false
                   sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
                 {showBlocked && <Td><Cell main={isTamper(alert) ? alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span> : <span className="b5-muted">—</span>} /></Td>}
                 <Td><Cell num main={stamp(alert.createdAt)} sub={alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)}` : isTamper(alert) ? "拦截 —" : undefined} /></Td>
-                <Td>{canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} />}</Td>
+                <Td>{treatment && <TriageLink link={treatment} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} />}</Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
                     {next && (
@@ -389,8 +397,8 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actio
   onStatus: (alert: SignalRow, target: "handled" | "resolved") => void;
 }) {
   if (!alert) return <Drawer open={false} onClose={onClose} title="风险信号">{null}</Drawer>;
-  const target = triageTarget(alert);
-  const page = target ? TARGET_NAME[target] ?? "对应页面" : null;
+  const treatment = signalTreatmentLink(triageTarget(alert), reach, canTriage, canTriageTarget);
+  const page = treatment && treatment.mode !== "unreachable" ? TARGET_NAME[treatment.target] ?? "对应页面" : null;
   const next = alert.handlingStatus === "open" ? "handled" : alert.handlingStatus === "handled" ? "resolved" : null;
   const { line, tech } = signalFacts(alert);
   const handler = handlerText(alert);
@@ -406,19 +414,17 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actio
       {handler && <span className="b5-handler"> {handler}{alert.handledAt && <span className="b5-muted"> {stamp(alert.handledAt)}</span>}</span>}</>,
       reason: `最近一次发送：${deliveryStatusText(alert.deliveryStatus)}` },
   ];
-  const triageShown = canTriage && !!target && canTriageTarget(target);
-  // 底部只在有决定时出现：能标记，或「去处理」有一格（链接或「· 无权限」）。已解决且没有排查页、或只读账号，没有要决定的事，不留一个孤零零的问号（OP-150）。
-  const hasDecision = canTriage && (!!next || (!!target && (!reach(target) || canTriageTarget(target))));
+  const hasDecision = canTriage ? !!(next || treatment) : treatment?.mode === "read";
   const unread = !staleNotice && (readLoading || readError);
   return (
     <Drawer open onClose={onClose} title={signalName(alert)} icon={level.icon} tone={levelTone(alert)} nav={nav}
       sub={<><span className="rd-drawer-ref" data-mono>{alert.signalNo}</span><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></>}
       footer={!unread && hasDecision && <Decision explain={<>
-        <p>标记为「{next === "resolved" ? "已解决" : "已处理"}」只记录进度，不会解除风控，也不会放行提现。</p>
-        <p>{handlingHint(triageShown ? page : null, canFreeze)}</p>
+        {canTriage && <p>标记为「{next === "resolved" ? "已解决" : "已处理"}」只记录进度，不会解除风控，也不会放行提现。</p>}
+        <p>{handlingHint(page, canFreeze)}</p>
         {!canAudit && canTriage && <p>你标记后结果未知时，请有「操作记录与审批」查看权限的同事按原操作核对。</p>}
       </>}
-        others={canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} button={next ? "secondary" : "primary"} />}
+        others={treatment && <TriageLink link={treatment} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} button={next ? "secondary" : "primary"} />}
         primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} disabledReason={actionBlocked ?? (pendingWrite ? "请先核对这条的原操作" : undefined)} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
       {staleNotice}
       {unread ? <BlockState compact state={readError ? "error" : "loading"} title={readError ? "风险信号详情加载失败" : "正在加载风险信号详情…"} detail={readError ?? undefined} onRetry={readError ? onRetry : undefined} /> : <>

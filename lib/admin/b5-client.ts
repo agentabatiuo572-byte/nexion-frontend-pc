@@ -290,7 +290,7 @@ export function useB5Radar(key: string, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
     setStreamWarning(null);
-    const stream = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
+    let stream: EventSource | null = null;
     const onRadar = (event: Event) => {
       try {
         const next = normalizeB5Radar(parseB5MoneyJson((event as MessageEvent<string>).data));
@@ -300,16 +300,35 @@ export function useB5Radar(key: string, enabled: boolean) {
         setStreamWarning(displayAdminReadError(cause));
       }
     };
-    stream.addEventListener("radar", onRadar);
-    stream.onerror = () => {
-      const closed = stream.readyState === EventSource.CLOSED;
-      setStreamWarning(closed ? "自动更新断开了；页面每 30 秒刷新一次。" : "自动更新正在重连；页面先显示最近一次的数据，每 30 秒刷新一次。");
-      // EventSource doesn't expose HTTP status. Confirm a closed stream through the guarded read.
-      if (closed) void radar.reload("auto");
+    const connect = () => {
+      const next = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
+      next.addEventListener("radar", onRadar);
+      next.onerror = () => {
+        const closed = next.readyState === EventSource.CLOSED;
+        setStreamWarning(closed ? "自动更新断开了；页面每 30 秒刷新一次。" : "自动更新正在重连；页面先显示最近一次的数据，每 30 秒刷新一次。");
+        // EventSource doesn't expose HTTP status. Confirm a closed stream through the guarded read.
+        if (closed) void radar.reload("auto");
+      };
+      stream = next;
     };
-    return () => {
+    const disconnect = () => {
+      if (!stream) return;
       stream.removeEventListener("radar", onRadar);
+      stream.onerror = null;
       stream.close();
+      stream = null;
+    };
+    const restore = (event: PageTransitionEvent) => {
+      if (event.persisted) connect();
+    };
+    connect();
+    // Full document navigation may skip React cleanup and leave the HTTP connection occupied.
+    window.addEventListener("pagehide", disconnect);
+    window.addEventListener("pageshow", restore);
+    return () => {
+      window.removeEventListener("pagehide", disconnect);
+      window.removeEventListener("pageshow", restore);
+      disconnect();
     };
   }, [enabled, radar.reload, setData]);
 

@@ -50,7 +50,7 @@ import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
-import { AlertDistribution, CATEGORY_TARGETS, HANDLING, InboxTable, PressureTrend, RefText, SEVERITY, STALE_MARK_REASON, SignalDrawer, TARGET_NAME, TabNote, handlingHint, levelTone, signalFacts, signalName, stamp, triageTarget } from "./insights";
+import { AlertDistribution, CATEGORY_TARGETS, HANDLING, InboxTable, PressureTrend, RefText, SEVERITY, STALE_MARK_REASON, SignalDrawer, TARGET_NAME, TabNote, handlingHint, levelTone, signalFacts, signalName, signalTreatmentLink, stamp, triageTarget } from "./insights";
 import { RiskCategoryPanel, StaleNotice, riskCategoryRows, type RiskCategoriesState, type RiskCategoryRow } from "./categories";
 import { SignalList, type SignalListFilters, type SignalListPage, type SignalListState } from "./signal-list";
 import { readSignalQuery, replaceSignalQuery, signalRequestQuery, signalReturnTo, SIGNAL_PAGE_SIZES } from "./signal-query";
@@ -847,7 +847,10 @@ export default function RiskRadarPage() {
     return true;
   };
   // 「真正去哪办」：排查去处只写「去处理」里点得开的页；表头问号是整张名单的，名单筛成一类时才写那一类的页（design-plan 板 2）。
-  const triagePage = (target: string | null | undefined) => target && canTriage && canCross(target) && canTriageTarget(target) ? TARGET_NAME[target] ?? null : null;
+  const triagePage = (target: string | null | undefined) => {
+    const link = signalTreatmentLink(target, canCross, canTriage, canTriageTarget);
+    return link && link.mode !== "unreachable" ? TARGET_NAME[link.target] ?? null : null;
+  };
   const listCategory = query.signalType ? "TAMPER" : query.category.length === 1 ? query.category[0] : null;
   const listHandlingHint = handlingHint(triagePage(listCategory && CATEGORY_TARGETS[listCategory]), canFreeze);
   const triageState = (target: string) => {
