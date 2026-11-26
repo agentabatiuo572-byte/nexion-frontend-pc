@@ -899,8 +899,15 @@
   .e1-phase-table :is(th, td):nth-child(4) { width: 14%; }
   .e1-phase-table :is(th, td):last-child { width: 27%; }
 }
+.e1-catalog-groups { display: grid; gap: var(--rd-section-gap); min-width: 0; }
 .e1-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--rd-space-4); }
 .e1-product { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); color: var(--rd-text); }
+/* 卡片底色跟着商城状态走：在售（已过发布门）浅绿，已下架灰；草稿、上架受阻和待核实照常面板底。
+   有底色的卡里，没选的任务等级格描边换成弱文字色，对底色仍有 3:1（VS-05）；已下架卡的图片底换面板色，不和卡底混在一起。 */
+.e1-product[data-status="on"]:not([data-blocked]) { background: var(--rd-ok-bg); }
+.e1-product[data-status="off"] { background: var(--rd-done-pill); }
+:is(.e1-product[data-status="on"]:not([data-blocked]), .e1-product[data-status="off"]) .rd-levelstrip-cell:not([data-on]) > i { box-shadow: inset 0 0 0 1px var(--rd-text-3); }
+.e1-product[data-status="off"] .e1-product-media { background: var(--rd-panel); }
 .e1-product[data-hit] { border-color: var(--rd-progress); }
 .e1-product-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: var(--rd-space-3); }
 .e1-product-media { position: relative; width: 64px; height: 64px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
@@ -908,14 +915,14 @@
 .e1-media-placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: var(--rd-text-3); }
 .e1-product-title { min-width: 0; }
 .e1-product-name { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; }
-.e1-product-name h2 { min-width: 0; color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; }
+.e1-product-name h3 { min-width: 0; color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; }
 .e1-middle-text { display: flex; min-width: 0; max-width: 100%; white-space: nowrap; }
 .e1-middle-text > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .e1-middle-text > :last-child, .e1-product-name .rd-tag { flex: none; }
 .e1-middle-text > :first-child, .e1-middle-text > :last-child { white-space: pre; }  /* 断点落在空格上时空格不丢（「Pro v2」不读成「Prov2」） */
 .e1-product-id { display: flex; align-items: center; gap: var(--rd-space-2); min-width: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e1-product-id > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.e1-product-id > :not(:first-child) { flex: none; }
+.e1-product-id > :not(:first-child) { flex: none; color: var(--rd-text-2); }
 /* 角标可以盖到缩略图和商品名之间的空隙（离商品名留 4px）：Flagship 一行写完，Cloud Share、Best Seller 两行写完，再长的两行后省略，悬停看全文。 */
 .e1-badge { position: absolute; top: var(--rd-space-1); left: var(--rd-space-1); width: max-content; max-width: calc(100% + var(--rd-space-1)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; padding-inline: var(--rd-space-1); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-tag); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .e1-stage-summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--rd-space-4); padding: var(--rd-space-2) var(--rd-panel-pad-x); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); }
@@ -933,10 +940,17 @@
 .e1-value-line, .e1-range-labels { display: flex; align-items: baseline; justify-content: space-between; gap: var(--rd-space-2); min-width: 0; font-variant-numeric: tabular-nums; }
 .e1-value-line strong { font-weight: 600; color: var(--rd-text); overflow-wrap: anywhere; }
 .e1-range-labels { flex-wrap: wrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.e1-range-labels > :first-child { color: var(--rd-text-2); }
+/* 卡片里的值用正文色、正文字号，值里夹的说明字（累计销量、剩余、原填机房）用弱文字（VS-54 字段名弱、值强）。 */
+.e1-val { color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.e1-val-k { color: var(--rd-text-3); font-size: var(--rd-text-aux); }
+.e1-val > .rd-tag { margin-inline-start: var(--rd-space-2); }
 .e1-product-conditions { min-width: 0; }
 .e1-product-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .e1-product-meta > :not(.e1-meta-room) { flex: none; }
-.e1-meta-room { margin-top: var(--rd-space-1); color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: normal; overflow-wrap: anywhere; }
+.e1-meta-item { color: var(--rd-text); font-weight: 500; }
+.e1-product-meta .e1-gate-trigger { color: var(--rd-text-2); }
+.e1-meta-room { margin-top: var(--rd-space-1); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); white-space: normal; overflow-wrap: anywhere; }
 .e1-card-warning, .e1-card-note { color: var(--rd-warn); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); overflow-wrap: anywhere; }
 .e1-card-note { color: var(--rd-text-3); }
 :is(.e1-card-warning, .e1-card-note) .rd-btn { margin-inline-start: var(--rd-space-2); }
@@ -976,7 +990,7 @@
 .e1-product-conditions > :is(.e1-card-warning, .e1-card-note):empty { display: none; }
 /* 卡片细节：带标签的小标题行和不带的等高；「售罄」和剩余数分开；购买条件图标和字同一行；受阻原因不折出孤字。 */
 .e1-product-levels > .e1-value-line { align-items: center; min-height: var(--rd-lh-body); }
-.e1-product-stock > .e1-value-line > .e1-muted { display: inline-flex; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
+.e1-product-stock > .e1-value-line > .e1-val { white-space: nowrap; }
 .e1-gate-trigger { display: inline-flex; align-items: center; gap: var(--rd-space-1); white-space: nowrap; }
 .e1-gate-trigger > svg { flex: none; }
 /* 审批状态抽屉底栏：两个按钮和链接靠左成一组，留间距。 */
