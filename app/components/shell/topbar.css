@@ -103,6 +103,16 @@
   }
 }
 
+/* 面包屑中间段放不下时，搜索先收成图标给它让地方（breadcrumb.tsx 量，BUG-773）；还放不下才收中间段。 */
+.admin-topbar[data-crumb-room] .admin-topbar-search {
+  width: 44px;
+  justify-content: center;
+  padding-inline: 0;
+}
+.admin-topbar[data-crumb-room] :is(.admin-topbar-search-label, .admin-topbar-search-shortcut) {
+  display: none;
+}
+
 /* 中间段放不下时整组收起，不显示半截的域名和页面名（BUG-643）。 */
 .admin-topbar-breadcrumb[data-compact] .admin-topbar-crumb-ancestor:not(:first-child) {
   display: none;

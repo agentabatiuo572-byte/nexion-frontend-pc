@@ -55,7 +55,6 @@ export function ToastHost({ dialogId }: { dialogId?: string }) {
               style={{
                 background: "var(--v5-surface)",
                 border: "1px solid var(--v5-border-strong)",
-                borderLeft: `3px solid ${c}`,
                 boxShadow: "var(--v5-card-shadow-lift-strong)",
               }}
             >

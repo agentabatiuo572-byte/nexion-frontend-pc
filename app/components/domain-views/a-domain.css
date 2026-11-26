@@ -904,8 +904,6 @@
 .a2-f5-now { display: grid; gap: 2px; }
 .a2-f5-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .a2-f5-list { border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel); overflow: hidden; }
-.a2-f5-list[data-long] { max-height: 272px; overflow-y: auto; }
-.a2-f5-list[data-long] .rd-table th { position: sticky; top: 0; z-index: 1; }
 .a2-f5-table { width: 100%; }
 /* 长编号（K1 收益记录号 ER- 加 32 位）：整串一起换到下一行，比一行还长时才在号里断开；框不出横向滚动。弹窗挂在页面外，不加 .adom 前缀。 */
 .a2-long-code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; vertical-align: top; }

@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Ban, CheckCircle2, Copy, Eye, Inbox, Info, ListChecks, LogOut, RefreshCw, SearchCheck, ShieldCheck, Snowflake, User, UserRound } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle2, Copy, Eye, Inbox, Info, ListChecks, LogOut, RefreshCw, SearchCheck, ShieldCheck, Snowflake, User, UserRound } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton,
   InlineMeter, InlineRetry, Input, JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal,
@@ -1495,7 +1495,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   /* ── 页头、待确认、带入、结论、统计带 ── */
   const header = (
     <PageHeader pageId="C2" title="账户操作" summary={<AutoGloss>冻结或恢复用户账户，管理名单和注销申请。</AutoGloss>}
-      back={back ? <Link className="rd-link" href={back.href} prefetch={false}>{back.label}</Link> : undefined}
+      back={back ? <Link href={back.href} prefetch={false}><ArrowLeft size={14} aria-hidden /> {back.label}</Link> : undefined}
       meta={<span className="rd-toolbar">
         <span>{readAt && `${businessClock(readAt)} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={overview.loading || deletionCounts.loading} onClick={refreshAll}>刷新</Button>

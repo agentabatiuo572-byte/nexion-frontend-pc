@@ -120,8 +120,11 @@ export function F5ReissueOutcome({ ids }: { ids: readonly string[] }) {
   return outcomes.join("；");
 }
 
-/** 补发多笔：按申请单上的顺序逐笔列出，每一笔各读各的；放在折叠里，摘要写读到、查无、读不到各几笔。 */
-export function F5ReissueReadings({ ids, open = false }: { ids: readonly string[]; open?: boolean }) {
+/**
+ * 补发多笔：按申请单上的顺序逐笔列出，每一笔各读各的；摘要写读到、查无、读不到各几笔。
+ * 抽屉里放在折叠里；批准框传 flat，不折叠，每笔金额和异常直接看得到（OP-151）。两处都不在框里再套一层滚动（DT-17）。
+ */
+export function F5ReissueReadings({ ids, open = false, flat = false }: { ids: readonly string[]; open?: boolean; flat?: boolean }) {
   const reads = useF5Current(ids);
   // 每笔金额和异常是做决定要看的：抽屉和批准框里都默认展开（OP-151）；有查无的记录时摘要标红。
   const [expanded, setExpanded] = useState(open);
@@ -131,13 +134,12 @@ export function F5ReissueReadings({ ids, open = false }: { ids: readonly string[
   const summary = loading ? `正在加载 ${ids.length} 笔` : [found && `读到 ${found} 笔`, missing && `查无 ${missing} 笔`, unreadCount && `读不到 ${unreadCount} 笔`].filter(Boolean).join(" · ");
   // 全部因为同一个原因读不到（没有权限、系统还不支持）时只说一次，下面只列记录号。
   const same = !loading && unreadCount === ids.length && reads.every((now) => now.state === reads[0].state) ? reads[0].state as Unread : undefined;
-  return <Fold inset title={`这次补发的 ${ids.length} 笔`} summary={summary} alert={missing > 0} open={expanded} onOpenChange={setExpanded}>
-    {same ? <>
+  const body = same ? <>
       <p className="rd-note"><StatusTag tone="warn">读不到</StatusTag> {UNREAD_TEXT[same]}；{NO_BLOCK}。{same === "failed" && retry(ids)}</p>
       <p className="rd-note" data-mono>{ids.join("、")}</p>
     </> : <>
       <p className="rd-note">{NOW_NOTE}；{NO_BLOCK}。</p>
-      <div className="a2-f5-list" data-long={ids.length > 6 ? "" : undefined}>
+      <div className="a2-f5-list">
         <Table label={`这次补发的 ${ids.length} 笔`} className="a2-f5-table">
           <thead><tr><Th>奖励记录</Th><Th>奖励类型</Th><Th align="right">金额</Th><Th>状态</Th></tr></thead>
           <tbody>
@@ -160,6 +162,10 @@ export function F5ReissueReadings({ ids, open = false }: { ids: readonly string[
           </tbody>
         </Table>
       </div>
-    </>}
-  </Fold>;
+    </>;
+  if (flat) return <section className="a2-change-review" aria-label={`这次补发的 ${ids.length} 笔`}>
+    <div className="a2-change-title">这次补发的 {ids.length} 笔{summary && ` · ${summary}`}</div>
+    {body}
+  </section>;
+  return <Fold inset title={`这次补发的 ${ids.length} 笔`} summary={summary} alert={missing > 0} open={expanded} onOpenChange={setExpanded}>{body}</Fold>;
 }

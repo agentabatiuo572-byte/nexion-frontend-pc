@@ -642,15 +642,16 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
             : readRetryBlock ? { tag: "结果未知", line: readRetryBlock, more: "原记录继续保留。" }
               : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
                 : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
+      // 待确认条常显原操作和提交时间（OP-93 第 1 项、OP-154）：时间写在结论句前面（对象一格放不下会被截掉），展开后不再重复。
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
-        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
+        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: `${sent(record.createdAt)}，${state.line}`, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
         actions: <>
           {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原操作</Button>}
           {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原操作重试</Button>}
           {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>核实后解除</Button>}
         </>,
         detail: <>
-          <p>{sent(record.createdAt)}，理由：{record.spec.reason}</p>
+          <p>理由：{record.spec.reason}</p>
           <p>{state.more}</p>
           {!canOpenAudit && <p>请把操作编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制操作编号")}>复制操作编号</Button></div></Fold> };
     }),

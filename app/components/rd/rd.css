@@ -495,6 +495,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 :root[data-theme="light"] .rd-chip { box-shadow: inset 0 0 0 1px var(--rd-line); }
 .rd-filter-notice { margin: 0; color: var(--rd-warn); }
 .rd-filter-result { margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.rd-filter-unapplied { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }  /* 紧跟「查询」，和按钮同一行（ST-18） */
 .rd-filter-count { margin-left: auto; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }  /* 筛选行右端的结果数（FilterBar end）；L1 的 .rd-filter-end 是另一样东西 */
 .rd-filter-sort + .rd-filter-count { margin-left: var(--rd-space-2); }
 .rd-field { display: grid; gap: 8px; font-size: var(--rd-text-body); color: var(--rd-text-3); }
@@ -818,7 +819,6 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 /* ── 区块状态和页内提示 ── */
 .rd-block-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 20px; color: var(--rd-text-2); text-align: center; }
 .rd-block-state-title { color: var(--rd-text); font-weight: 500; }
-.rd-block-state[data-state="error"] .rd-block-state-title { color: var(--rd-danger); }
 .rd-block-state-detail { max-width: 560px; color: var(--rd-text-2); overflow-wrap: anywhere; }
 .rd-block-state:focus, [data-retry-landing]:focus { outline: none; }  /* 按「重试」后这一块换成加载中时，焦点暂放在这里（不是可操作的元素），读完交回「重试」或标题 */
 .rd-block-state[data-compact] { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 4px 0; text-align: left; }
@@ -1006,6 +1006,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-panel[data-flush] > .rd-pager { padding: 12px var(--rd-panel-pad-x); }
 .rd-pager-range { font-variant-numeric: tabular-nums; }
 .rd-pager-tools { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.rd-pager-size { display: inline-flex; }
 .rd-pager .rd-select { height: var(--rd-control-h-sm); }
 
 /* ── 批量操作条 ── */

@@ -192,11 +192,12 @@ export function NotificationBell() {
         onClick={() => { if (!open) refreshA2(); setOpen(true); }}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`告警和待审批的申请${badge > 0 ? ` · ${badge} 条` : ""}`}
+        aria-label={`告警和待审批的申请${badge > 0 ? ` · ${fmtNum(badge)} 条` : ""}`}
         className="rd-top-item rd-bell"
       >
         <Bell size={16} aria-hidden />
-        {badge > 0 && <span className="rd-top-count font-mono-tabular">{badge > 9 ? "9+" : badge}</span>}
+        {/* 写真实合计，和抽屉副标题对得上（PG-09）；位数多时按钮跟着变宽，不截成「9+」。 */}
+        {badge > 0 && <span className="rd-top-count font-mono-tabular">{fmtNum(badge)}</span>}
       </button>
       <NotificationDrawer open={open} alerts={alerts} alertsLoading={bDomain.loading && !bDomain.hasData} pendingOperations={pendingOperations}
         a2Error={a2Error} a2Loading={a2Loading} onRetryA2={refreshA2} onClose={() => setOpen(false)} />

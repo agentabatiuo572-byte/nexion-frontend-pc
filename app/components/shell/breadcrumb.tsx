@@ -39,24 +39,32 @@ export function Breadcrumb() {
     }
   }
 
-  // 中间段放不下时整组收起（data-compact），不截成半截，和窄宽时四段面包屑的做法一样；首段和末段写全（PG-10、BUG-643）。
+  // 中间段放不下时，先把顶栏搜索收成图标给面包屑让地方（data-crumb-room，和 1280 以下搜索的样子一样）；还放不下才整组收起中间段（data-compact），
+  // 不截成半截，和窄宽时四段面包屑的做法一样；首段和末段写全（PG-10、BUG-643、BUG-773：1440 宽超管多一个客服入口时三级照样写全）。
   // 每次先放开再量，宽了能重新显示；顶栏右边的项变宽、字体加载完都会改可用宽度，所以跟着导航自己的宽度重量。
   const navRef = useRef<HTMLElement>(null);
   const labels = crumbs.map((crumb) => crumb.label).join("\n");
   useLayoutEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
+    const bar = nav.closest<HTMLElement>(".admin-topbar");
+    const cut = () => [...nav.querySelectorAll<HTMLElement>(".admin-topbar-crumb-ancestor:not(:first-child) > .admin-topbar-crumb-label")]
+      .some((label) => label.scrollWidth > label.clientWidth + 1);
     const fit = () => {
       nav.removeAttribute("data-compact");
-      const cut = [...nav.querySelectorAll<HTMLElement>(".admin-topbar-crumb-ancestor:not(:first-child) > .admin-topbar-crumb-label")]
-        .some((label) => label.scrollWidth > label.clientWidth + 1);
-      if (cut) nav.setAttribute("data-compact", "");
+      bar?.removeAttribute("data-crumb-room");
+      if (!cut()) return;
+      bar?.setAttribute("data-crumb-room", "");
+      if (!cut()) return;
+      // 搜索收成图标也放不下：搜索照常写全，只收中间段。
+      bar?.removeAttribute("data-crumb-room");
+      nav.setAttribute("data-compact", "");
     };
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(nav);
     void document.fonts?.ready.then(fit);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); bar?.removeAttribute("data-crumb-room"); };
   }, [labels]);
 
   return (
