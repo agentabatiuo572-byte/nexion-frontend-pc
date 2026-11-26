@@ -232,6 +232,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const [edits, setEdits] = useState<Record<string, PricingEdit>>({});
   const [editing, setEditing] = useState<string[]>([]);
   const [touched, setTouched] = useState<string[]>([]);
+  const focusEditor = useRef<string>(undefined);
   const [lastReason, setLastReason] = useState("");
   const [rejected, setRejected] = useState<string>();
   const [leaving, setLeaving] = useState(false);
@@ -623,16 +624,20 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
                         {reason && <span className="h2-buy-reason">{reason}</span>}
                       </>} />
                     {pricing && on && !unavailable && (editOpen
-                      ? <PricingEditor device={candidate} edit={editOf(candidate.productNo)} defaults={pricing} isTarget={candidate.productNo === trialTargetNo}
+                      ? <PricingEditor device={candidate} edit={editOf(candidate.productNo)} defaults={pricing} isTarget={candidate.productNo === trialTargetNo} focusOnOpen={focusEditor.current === candidate.productNo}
                         shown={(field) => touched.includes(`${candidate.productNo}:${field}`)}
                         onChange={(next) => setEdit(candidate.productNo, next)} onBlur={(field) => touch(candidate.productNo, field)}
-                        onCollapse={() => setEditing((current) => current.filter((no) => no !== candidate.productNo))} />
+                        onCollapse={() => {
+                          setEditing((current) => current.filter((no) => no !== candidate.productNo));
+                          // 「收起」被换掉后焦点回到这一行的「改优惠」（OP-46）。
+                          window.setTimeout(() => document.querySelector<HTMLElement>(`[data-h2-buy-drawer] [aria-label="改优惠 ${name}"]`)?.focus(), 0);
+                        }} />
                       : <div className="h2-price-sum">
                         <span className="h2-price-sum-k">优惠</span>
                         {errors ? <span className="h2-field-warn">有 {errors} 处要改正</span> : <PricingGroups pricing={wantedOf(candidate.productNo)} defaults={pricing} />}
                         {locked
                           ? <span className="h2-price-sum-lock">{hiddenText(candidate).replace(/^商城/, "")}，不能改优惠</span>
-                          : <Button size="sm" aria-label={`改优惠 ${name}`} onClick={() => setEditing((current) => [...current, candidate.productNo])}>改优惠</Button>}
+                          : <Button size="sm" aria-label={`改优惠 ${name}`} onClick={() => { focusEditor.current = candidate.productNo; setEditing((current) => [...current, candidate.productNo]); }}>改优惠</Button>}
                       </div>)}
                   </div>
                 );

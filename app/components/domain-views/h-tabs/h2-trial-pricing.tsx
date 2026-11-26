@@ -5,6 +5,7 @@
  * 只管呈现和本地草稿：两组优惠（试用期折扣＝比例＋上限、专享立减）各自「跟随默认／单独设置」。
  * 提交新格式、按回执逐款核对由接线项实现，见 h2-trial-buy.tsx 的 BuyPricingSubmit。
  */
+import { useEffect, useRef } from "react";
 import { ChevronUp, Info } from "lucide-react";
 import { Button, Explain, Field, NumberInput, Segments } from "@/app/components/rd";
 import type { BuyDevice, BuyPricing } from "@/lib/admin/h2-trial-purchase";
@@ -129,11 +130,13 @@ export const TARGET_PRICE_NOTE = "领它试用的用户买它仍按默认；领�
 /**
  * 一款设备的优惠编辑区（画板 ②a–c）。错误刚切到单独设置时不报，离开输入框后才报（OP-15）。
  */
-export function PricingEditor({ device, edit, defaults, isTarget, shown, onChange, onBlur, onCollapse }: {
+export function PricingEditor({ device, edit, defaults, isTarget, focusOnOpen, shown, onChange, onBlur, onCollapse }: {
   device: BuyDevice;
   edit: PricingEdit;
   defaults: PricingDefaults;
   isTarget: boolean;
+  /** 点「改优惠」打开时，焦点移到第一组的分段（按钮被换掉了，焦点不能落空）。勾选新设备时自动展开，焦点留在勾选框。 */
+  focusOnOpen?: boolean;
   /** 哪些输入框已经离开过，只有这些显示错误。 */
   shown: (field: PricingField) => boolean;
   onChange: (next: PricingEdit) => void;
@@ -144,8 +147,12 @@ export function PricingEditor({ device, edit, defaults, isTarget, shown, onChang
   const errors = editErrors(edit);
   const error = (field: PricingField) => shown(field) ? errors[field] : undefined;
   const modes = [{ value: "follow" as const, label: "跟随默认" }, { value: "custom" as const, label: "单独设置" }];
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusOnOpen) box.current?.querySelector<HTMLElement>('[role="radio"][tabindex="0"]')?.focus();
+  }, []); // Only when the editor first opens.
   return (
-    <div className="h2-price-editor" role="group" aria-label={`${name} 的优惠`}>
+    <div ref={box} className="h2-price-editor" role="group" aria-label={`${name} 的优惠`}>
       <div className="h2-price-editor-head">
         <span>{name} 的优惠</span>
         <Button variant="ghost" size="sm" aria-label={`收起 ${name} 的优惠`} onClick={onCollapse}><ChevronUp size={14} aria-hidden />收起</Button>
