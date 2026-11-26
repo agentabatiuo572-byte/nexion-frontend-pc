@@ -807,11 +807,14 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     });
   }
   const sessionStart: CustomerSessionStart = { checkingId: sessionCheck, start: row => checkReception(row, () => openSessions(row), () => setSessionError(row)) };
-  const startTodoSession = (row: TodoSessionTarget, inDrawer: boolean) => checkReception(row, () => openTodoSessions(row), cause => {
-    if (cause instanceof SupportClientError && (analyticsResponseStatus(cause) === 403 || supportCustomerNotFound(cause))) {
-      ctx.invalidateScope(undefined, row.customerId, { text: "你没有查看这位客户的权限", page: "M1" });
-    } else setTodoHoldError({ row, inDrawer, canRead: !isSupportScopeDenial(cause) });
-  });
+  const startTodoSession = (row: TodoSessionTarget, inDrawer: boolean) => {
+    ctx.scopeNotice?.dismiss();
+    checkReception(row, () => openTodoSessions(row), cause => {
+      if (cause instanceof SupportClientError && (analyticsResponseStatus(cause) === 403 || supportCustomerNotFound(cause))) {
+        ctx.invalidateScope(undefined, row.customerId, { text: "你没有查看这位客户的权限", page: "M1" });
+      } else setTodoHoldError({ row, inDrawer, canRead: !isSupportScopeDenial(cause) });
+    });
+  };
   const customerName = (row: TodoSessionTarget) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   function page(number: number) {
     if (!data) return;
@@ -854,7 +857,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
   const canRequestExports = authSession?.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
   const exportDisabledReason = noScopedContent && canRequestExports ? NO_EXPORT_GROUP_REASON : exportsPorts?.persona.exportBlocked;
-  const exportDialogPorts = !statisticsUnavailable && !exportDisabledReason && exportsPorts?.persona.canExport ? exportsPorts : null;
+  const canOpenExport = !statisticsUnavailable && !exportDisabledReason && exportsPorts?.persona.canExport;
   const exportAccessPending = (noScopedContent || statisticsUnavailable) && exportsPorts === undefined;
   const guideId = exportsOnly ? hasMyExports && hasExportApprovals ? "M1-export-both" : hasMyExports ? "M1-export-mine" : "M1-export-approvals"
     : noScopedContent && !exportAccessPending ? "M1-no-group" : undefined;
@@ -870,12 +873,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   };
   const header = <PageHeader pageId="M1" guideId={todoActive && !noScopedContent ? undefined : guideId} readOnly={pageReadOnly} title="客服工作台" summary={exportsOnly && !todoActive ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {!statisticsUnavailable && exportDisabledReason && <span className="rd-toolbar-note">{exportDisabledReason}</span>}
-    {!statisticsUnavailable && (exportDialogPorts || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
+    {!statisticsUnavailable && (canOpenExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {!noScopedContent && (todoActive || scope && !personalHeader) && sessionsReachable && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(todoActive || exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && !todoActive && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  const exportDialog = exportOpen && exportDialogPorts && <PerfExportDialog ports={exportDialogPorts}
+  const exportDialog = exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts}
     initialMonth={queryState.month} initialScope={scope ? queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL" : undefined}
     onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />;
   const currency = queryState.currency ?? "USDT";
