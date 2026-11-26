@@ -652,10 +652,11 @@ function J3Board({ data, ctx, accountLoading, setAccountLoading, accountsRef, ca
       <ul className="j3-coverage" aria-label="已登记的拦截入口">
         {data.coverage.registeredPaths.map((key) => {
           const active = data.coverage.activePaths.includes(key);
+          const name = pathName(key);
           return (
             <li key={key}>
-              <span className="j3-coverage-name">{pathName(key)}</span>
-              <span data-mono className="j3-coverage-key">{key}</span>
+              <span className="j3-coverage-name">{/\p{Script=Han}/u.test(name) ? name : PATH_NAMES[key] ?? "未命名入口"}</span>
+              <span data-mono className="j3-coverage-key" aria-hidden="true">&nbsp;</span>
               {active ? <StatusTag tone="ok" icon={Check}>在统计里</StatusTag> : <StatusTag tone="warn" icon={CircleSlash}>没接入</StatusTag>}
             </li>
           );

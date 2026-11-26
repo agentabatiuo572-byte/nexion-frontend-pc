@@ -9,6 +9,7 @@ import { TrendingDown } from "lucide-react";
 import { nextTabValue } from "@/app/components/kit/tab-group-keyboard";
 import { Cell, ColumnChart, Explain, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import { formatB3RefOption } from "@/lib/admin/b3-ref-display";
+import { funnelEventText } from "@/lib/admin/funnel-conversion";
 import { INTERFACE_LANGUAGES } from "@/lib/admin/platform-experience-client";
 import { DAU_NOT_COLLECTED_LABEL, retentionReasonLabel, SMALL_SAMPLE_LABEL } from "./l1-l2-live-data";
 
@@ -148,7 +149,7 @@ export function StepFunnel({ funnel, selected, onSelect, disabled, lowest, panel
   );
 }
 
-/** 各步骤明细：人数、上一步人数、转化率、用户阶段和对应事件（技术编号放这里，不上首屏）。 */
+/** 各步骤明细：人数、上一步人数、转化率、用户阶段和对应事件。 */
 export function StageTable({ funnel, events }: { funnel: readonly FunnelRow[]; events: readonly string[] }) {
   return (
     <Table label="各步骤明细" className="l2-stage-table">
@@ -161,22 +162,25 @@ export function StageTable({ funnel, events }: { funnel: readonly FunnelRow[]; e
         </tr>
       </thead>
       <tbody>
-        {funnel.map((row, index) => (
-          <Tr key={row.stage}>
-            <Td><Cell main={row.stage} /></Td>
-            <Td><Cell main={row.lc} /></Td>
-            {row.suppressed ? (
-              <Td colSpan={3} align="right"><Cell main={`${SMALL_SAMPLE_LABEL}，不显示`} /></Td>
-            ) : (
-              <>
-                <Td align="right"><Cell num main={row.users == null ? "—" : people(row.users)} /></Td>
-                <Td align="right"><Cell num main={index === 0 ? "—" : funnel[index - 1].users == null ? "—" : people(funnel[index - 1].users!)} /></Td>
-                <Td align="right"><Cell num main={row.cvr == null ? "—" : pct(row.cvr)} /></Td>
-              </>
-            )}
-            <Td grow><Cell mono title={events[index] ?? row.ev} main={events[index] ?? row.ev ?? "—"} /></Td>
-          </Tr>
-        ))}
+        {funnel.map((row, index) => {
+          const event = funnelEventText(events[index] ?? row.ev);
+          return (
+            <Tr key={row.stage}>
+              <Td><Cell main={row.stage} /></Td>
+              <Td><Cell main={row.lc} /></Td>
+              {row.suppressed ? (
+                <Td colSpan={3} align="right"><Cell main={`${SMALL_SAMPLE_LABEL}，不显示`} /></Td>
+              ) : (
+                <>
+                  <Td align="right"><Cell num main={row.users == null ? "—" : people(row.users)} /></Td>
+                  <Td align="right"><Cell num main={index === 0 ? "—" : funnel[index - 1].users == null ? "—" : people(funnel[index - 1].users!)} /></Td>
+                  <Td align="right"><Cell num main={row.cvr == null ? "—" : pct(row.cvr)} /></Td>
+                </>
+              )}
+              <Td grow><Cell mono title={event} main={event} /></Td>
+            </Tr>
+          );
+        })}
       </tbody>
     </Table>
   );

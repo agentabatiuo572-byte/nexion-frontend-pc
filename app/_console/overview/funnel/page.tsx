@@ -20,6 +20,7 @@ import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { exportB3Cohort, SMALL_SAMPLE_LABEL, useB3Funnel, type B3Dashboard, type B3Filters, type B3Stage } from "@/lib/admin/b3-client";
 import { formatB3RefOption, normalizeB3RefOptions } from "@/lib/admin/b3-ref-display";
 import { businessZone } from "@/lib/admin/business-time";
+import { funnelEventText } from "@/lib/admin/funnel-conversion";
 import { operatorCopyText } from "@/lib/admin/operator-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
@@ -117,23 +118,26 @@ function StageTable({ stages }: { stages: readonly B3Stage[] }) {
         </tr>
       </thead>
       <tbody>
-        {stages.map((item) => (
-          <Tr key={item.key}>
-            <Td><Cell main={item.stage} /></Td>
-            <Td><Cell main={item.lifecycleLabel} /></Td>
-            {item.suppressed ? (
-              <Td colSpan={4} align="right"><Cell main={`${SMALL_SAMPLE_LABEL}，不显示`} /></Td>
-            ) : (
-              <>
-                <Td align="right"><Cell num main={item.distinctUsers == null ? "—" : people(item.distinctUsers)} /></Td>
-                <Td align="right"><Cell num main={item.previousUsers == null ? "—" : people(item.previousUsers)} /></Td>
-                <Td align="right"><Cell num main={item.key === "register" ? "—" : pct(item.cvrFromPrev)} /></Td>
-                <Td align="right"><Cell num main={item.momDelta == null ? "—" : pct(item.momDelta)} /></Td>
-              </>
-            )}
-            <Td grow><Cell mono title={item.event} main={item.event} /></Td>
-          </Tr>
-        ))}
+        {stages.map((item) => {
+          const event = funnelEventText(item.event);
+          return (
+            <Tr key={item.key}>
+              <Td><Cell main={item.stage} /></Td>
+              <Td><Cell main={item.lifecycleLabel} /></Td>
+              {item.suppressed ? (
+                <Td colSpan={4} align="right"><Cell main={`${SMALL_SAMPLE_LABEL}，不显示`} /></Td>
+              ) : (
+                <>
+                  <Td align="right"><Cell num main={item.distinctUsers == null ? "—" : people(item.distinctUsers)} /></Td>
+                  <Td align="right"><Cell num main={item.previousUsers == null ? "—" : people(item.previousUsers)} /></Td>
+                  <Td align="right"><Cell num main={item.key === "register" ? "—" : pct(item.cvrFromPrev)} /></Td>
+                  <Td align="right"><Cell num main={item.momDelta == null ? "—" : pct(item.momDelta)} /></Td>
+                </>
+              )}
+              <Td grow><Cell mono title={event} main={event} /></Td>
+            </Tr>
+          );
+        })}
       </tbody>
     </Table>
   );
