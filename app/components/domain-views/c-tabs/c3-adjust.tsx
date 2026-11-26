@@ -1441,7 +1441,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         actions: <>
           <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>查询原操作</Button>
           {record.kind !== "large" && <Button size="sm" disabled={!!submitting} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>}
-          {refused && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+          {refused && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>核实后解除</Button>}
         </>,
         detail: <p>
           {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。

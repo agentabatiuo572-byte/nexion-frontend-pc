@@ -19,7 +19,7 @@ import { TASK_CLASSES, TASK_CLASS_LABELS } from "@/lib/admin/task-classes";
 import { fetchDisableImpact, fetchPoolTasks, fetchTaskPools, sendTaskPoolCommand, TaskPoolApiError, taskPoolTaskPath, taskWeightMicros, validTaskEditFields,
   type DisableImpact, type PoolTask, type TaskClass, type TaskPool, type TaskPoolEditCommand } from "@/lib/admin/task-pool-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { Select } from "@/app/components/rd";
+import { Select, useReleaseCheck } from "@/app/components/rd";
 import type { EViewCtx } from "./types";
 import { useNavigationLeaveGuard } from "../i-tabs/i5-writes";
 import { FIXED_DEVICE_LEVELS } from "./task-type-policy";
@@ -82,7 +82,7 @@ function FrozenActions({ expired, rejected, outcome, retryBlock, saving, queryin
   const retryable = !expired && !rejected;
   const queryFirst = !(rejected && !expired) && !(retryable && missing);
   const query = <Button variant={queryFirst ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabledReason={saving ? "正在提交" : undefined} onClick={onQuery}>查询原操作</Button>;
-  const next = rejected && !expired ? <Button variant="primary" disabledReason={saving || querying ? "正在处理" : undefined} onClick={onRelease}>解除原操作记录</Button>
+  const next = rejected && !expired ? <Button variant="primary" disabledReason={saving || querying ? "正在处理" : undefined} onClick={onRelease}>核实后解除</Button>
     : retryable && <Button variant={missing ? "primary" : "secondary"} loading={saving} loadingText="提交中…" disabledReason={saving ? undefined : querying ? "正在查询原操作" : retryBlock} onClick={onRetry}>按原操作重试</Button>;
   return <>
     {closure && <Button variant="danger-outline" disabled={saving || querying} onClick={onClosure}>核查结案</Button>}
@@ -148,6 +148,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
   const [dialog, setDialog] = useState<PoolDialog | null>(null);
   const [releasing, setReleasing] = useState<E2Pending | null>(null);
+  const releaseCheck = useReleaseCheck(releasing);
   const [count, setCount] = useState("10");
   const [classes, setClasses] = useState<TaskClass[]>([]);
   const [reason, setReason] = useState("");
@@ -595,7 +596,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         {!rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button size="sm" disabledReason={saving ? "正在提交" : retryBlock(record)} data-e2-editor-leave onClick={() => leaveEditorThen(() => { viewOriginal(record); void send(record, true); })}>按原操作重试</Button>}
         <Button size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => viewOriginal(record))}>查看原操作</Button>
         {canInvestigate && closureOpen(outcomes[record.commandKey], isRetryExpired(record)) && <Button size="sm" variant="danger-outline" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => setClosing(record))}>核查结案</Button>}
-        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="primary" size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => releaseOriginal(record))}>解除原操作记录</Button>}
+        {rejected.includes(record.commandKey) && !isRetryExpired(record) && <Button variant="ghost" size="sm" disabled={saving} data-e2-editor-leave onClick={() => leaveEditorThen(() => releaseOriginal(record))}>核实后解除</Button>}
         <Explain label="原样重试的说明" content={RETRY_HELP} /></>}>
       <p>首次提交 {businessStamp(record.createdAt)} · {businessZoneText()}</p>
       {rejected.includes(record.commandKey) && rejectReasons[record.commandKey] && <p>按原操作重试被明确拒绝：{rejectReasons[record.commandKey]}</p>}
@@ -685,11 +686,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           onRelease={() => releaseOriginal(editorOriginal)} onClosure={() => { afterEditorLeave.current = null; setEditor(null); setClosing(editorOriginal); }} />,
       }} />}
     {releasing ? <Modal title="解除原操作记录" icon={ShieldCheck} tone="neutral" busy={saving} dirty onClose={close}
-      footer={<><Button onClick={() => setReleasing(null)}>返回</Button><Button variant="primary" onClick={() => {
+      footer={<><Button onClick={() => setReleasing(null)}>返回</Button><Button variant="primary" disabledReason={releaseCheck.reason} onClick={() => {
         if (!rejected.includes(releasing.commandKey) || isRetryExpired(releasing)) return;
         e2Commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); close(); void refresh(query);
       }}>确认解除</Button></>}>
-      <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉本页保存的这条记录，不写入操作记录，也不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts></div>
+      <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉本页保存的这条记录，不写入操作记录，也不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts>{releaseCheck.check}</div>
     </Modal> : dialog && <Modal title={originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
       icon={dialog.kind === "random" ? Plus : ClipboardList} tone={dialog.kind === "status" && !dialog.enabled ? "danger" : "neutral"}
       sub={dialog.original ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>} busy={saving} dirty={!!dialog.original || !!reason || count !== "10" || classes.length > 0} onClose={close}

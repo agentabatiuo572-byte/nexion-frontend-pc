@@ -207,10 +207,12 @@ export const SETTLED_REJECTED = "核查确认是后台拒绝，记录已解除�
 /**
  * 面板标题：结果未知、在等审批、已有结论分开数，只写有的那几种。
  * open：查到了后台拒绝、已处理、记为失败，但记录还留着的（还要重试或核查结案），叫「还没结案」，不算结果未知。
+ * unchecked：审批单上次看到在等批，这次还没读到进度（查询中、查询失败），叫「审批进度待核对」，不算在等审批。
  */
-export function recoveryTitle(unknown: number, waiting = 0, ended = 0, open = 0) {
+export function recoveryTitle(unknown: number, waiting = 0, ended = 0, open = 0, unchecked = 0) {
   return [unknown ? `${unknown} 项操作结果未知` : "", open ? `${open} 项${unknown ? "" : "操作"}还没结案` : "", waiting ? `${waiting} 项${unknown || open ? "" : "操作"}在等审批` : "",
-    ended ? `${ended} 项${unknown || open || waiting ? "" : "操作"}已有结论` : ""].filter(Boolean).join("，");
+    unchecked ? `${unchecked} 项审批进度待核对` : "",
+    ended ? `${ended} 项${unknown || open || waiting || unchecked ? "" : "操作"}已有结论` : ""].filter(Boolean).join("，");
 }
 
 /** 查到已解决的记录：一行轻提示，不占一张卡。 */

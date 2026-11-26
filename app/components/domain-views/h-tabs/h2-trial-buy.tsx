@@ -101,7 +101,7 @@ export function BuyListPendingNotice({ record, canWrite, onRetry, onRelease, ret
   return (
     <Notice tone="warn" title="调整其他可购买设备 · 结果未知"
       action={canWrite && (rejection
-        ? <Button size="sm" onClick={onRelease}>解除原操作记录</Button>
+        ? <Button size="sm" onClick={onRelease}>核实后解除</Button>
         : !expired && <Button size="sm" disabled={retrying} onClick={onRetry}>按原操作重试</Button>)}>
       {op && <span className="h2-pending-op">{op}</span>}
       {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出，

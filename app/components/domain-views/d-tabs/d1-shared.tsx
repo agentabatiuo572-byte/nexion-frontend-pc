@@ -228,7 +228,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
                 onCheck={() => void check(item)} onClose={() => setClosing(item)} />}
               {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读取现在的值</Button>}
               {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
-              {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>解除原操作记录</Button>}
+              {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>核实后解除</Button>}
             </>,
             detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
             tech: <p><Explain label="技术信息" content={`操作编号 ${item.key}`}>技术信息</Explain></p>,

@@ -10,6 +10,7 @@ import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass, RotateCcw } from "lucide-react";
 import { Button, Change, Decision, Fact, Facts, KeepText, Modal, Notice, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { recoveryTitle } from "../recovery-panel";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -21,10 +22,11 @@ import { isF1RankHowInFlight, pendingF1RankHow, queryF1RankHow } from "@/lib/adm
 import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { f1RewardPolicyLabel } from "./f1-policy-confirm";
 import { FReleaseButton } from "./f-release";
+import { SUPER_APPROVER, VRANK_APPROVER } from "./f1-shared";
 import type { FViewCtx } from "./types";
 
 type State = "unknown" | "received" | "pending" | "expired" | "settled";
-type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; canRetryProposal?: boolean; actions: ReactNode };
+type Row = { key: string; name: string; change: ReactNode; submittedAt?: number; state: State; direct?: boolean; canRetryProposal?: boolean; vrank?: boolean; actions: ReactNode };
 
 /** 等级说明所在页签的名字，和 f1-vrank 的页签一致。 */
 /** 恢复面板上的门槛名（新口径）；记进操作记录的名字仍用 f1ConditionLabels。 */
@@ -32,9 +34,10 @@ const CONDITION_NAME: Record<string, string> = { selfBuy: "自购算力点", tea
 const UNIT: Record<string, string> = { purchaseL1Rate: "%", purchaseL2Rate: "%", monthlySalaryUsdt: " USDT", selfBuy: " 点", teamGv: " 点", directRefs: " 人", legCount: " 个", legRank: "" };
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
-function stateTag(state: State, direct: boolean, canRetryProposal: boolean) {
-  if (state === "settled") return <StatusTag tone="neutral">原操作未执行</StatusTag>;
-  if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
+/** 待审批写谁来批（OP-60、OP-67）：人工调整等级由有人工调级权限的管理员批，其余等级申请由另一位超级管理员批。 */
+function stateTag(state: State, direct: boolean, canRetryProposal: boolean, vrank: boolean) {
+  if (state === "settled") return <StatusTag tone="neutral">未执行</StatusTag>;
+  if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain={`等${vrank ? `${VRANK_APPROVER}（还要有审批批准权限）` : SUPER_APPROVER}在「操作记录与审批」批准；批准前不生效。`}>待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原操作，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return <StatusTag tone="warn" icon={CircleHelp} explain={direct
@@ -100,7 +103,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
     const state: State = original.ticket?.status === "pending" ? "pending" : original.received ? "received" : expired ? "expired" : "unknown";
     const canRetry = canRetryF1Proposal(original);
     rows.push({
-      key: original.commandKey, name, change, submittedAt: original.createdAt, state, canRetryProposal: canRetry,
+      key: original.commandKey, name, change, submittedAt: original.createdAt, state, canRetryProposal: canRetry, vrank: original.fingerprint.startsWith("f-vrank-override:"),
       actions: <>
         <Button size="sm" onClick={() => void ctx.recoverF1(original.fingerprint, "query").catch((error) => toast(displayAdminError(error)))}>查询原操作</Button>
         {canRetry && <Button size="sm" onClick={() => { setRetryError(null); setRetrying({ original, name, change }); }}>按原操作重试</Button>}
@@ -202,14 +205,14 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
     finally { setBusy(false); }
   };
   return <>
-    <div className="f1-recovery-wrap"><Notice tone="warn" title={open ? `逐条核对原操作（${rows.length} 项）` : `等批准的申请（${rows.length} 项）`}>
+    <div className="f1-recovery-wrap"><Notice tone="warn" title={recoveryTitle(rows.filter((row) => row.state === "unknown" || row.state === "expired").length, rows.filter((row) => row.state === "pending").length, rows.filter((row) => row.state === "settled").length, 0, rows.filter((row) => row.state === "received").length) || "原操作内容不完整"}>
       {policyBroken && <p>有一条门槛或奖励的原操作内容不完整，请到「操作记录与审批」核对。</p>}
-      {rows.length > 0 && <ul className="f1-recovery" aria-label="还没有结论的原操作">
+      {rows.length > 0 && <ul className="f1-recovery" aria-label="还没处理完的原操作">
         {rows.map((row) => <li key={row.key} data-recovery-state={row.state}>
           <span className="f1-recovery-name">{row.name}</span>
           <span className="f1-recovery-change">{row.change}</span>
           <span className="f1-recovery-time">{row.submittedAt === undefined ? "" : `${businessStamp(row.submittedAt)} 提交`}</span>
-          <span>{stateTag(row.state, !!row.direct, !!row.canRetryProposal)}</span>
+          <span>{stateTag(row.state, !!row.direct, !!row.canRetryProposal, !!row.vrank)}</span>
           <span className="f1-recovery-actions">{row.actions}{row.state === "expired" && <span>{RETRY_EXPIRED_TEXT}</span>}</span>
         </li>)}
       </ul>}

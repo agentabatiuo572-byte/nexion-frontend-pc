@@ -531,7 +531,7 @@ function G4GenesisPage() {
       key: commandKey, name, submittedAt: pendingFirstDividend.createdAt, ticket: firstDividendTicket,
       change: <>{firstDividendTicket ? `拟设比例 ${g4ParamValueText("dividend", proposedRate)}` : change}{rejected && <GReplayRejectionNote record={pendingFirstDividend} />}</>,
       tag: firstDividendTicket
-        ? <StatusTag tone={firstDividendTicket.status === "pending" ? "warn" : "done"} explain="这是最近一次核对的审批状态。点「查询原操作」读取最新结果。">{G4_FIRST_DIVIDEND_TICKET_STATUS[firstDividendTicket.status]}</StatusTag>
+        ? <StatusTag tone={firstDividendTicket.status === "pending" ? "warn" : "done"} explain={`${firstDividendTicket.status === "expired" ? "审批单已过期，没有执行。" : "这是最近一次核对的审批状态。"}点「查询原操作」读取最新结果。`}>{G4_FIRST_DIVIDEND_TICKET_STATUS[firstDividendTicket.status]}</StatusTag>
         : rejected ? rejectedTag() : <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位超级管理员批准。提交原申请时尚未配置。点「查询原操作」核对原审批单。">结果未知</StatusTag>,
       action: <>
         <Button size="sm" disabled={!!busyKey} aria-label="查询原日分红审批" onClick={() => {
@@ -1208,7 +1208,11 @@ function G4GenesisPage() {
 
   // 今天的分红：先看有没有补发原申请，再看发了没有、收益门开没开。后端没有每天自动发放的任务（已提后端），不写成会自动发。
   const dividendState: { text: string; tone: "ok" | "warn" | "neutral" | "done"; sub: string; icon: typeof Coins } = batchRecord
-    ? { text: batchRecord.replayRejection && !batchRecord.ticket ? "补发重试被拒绝" : batchRecord.status === "pending" ? "补发待审批" : batchRecord.status === "unknown" ? "补发结果未知" : { approved: "补发已批准", rejected: "补发已驳回", withdrawn: "补发已撤回", expired: "补发已过期" }[batchRecord.status], tone: "warn", sub: `批次 ${dividend.batchNo}`, icon: Clock3 }
+    // 和「每日分红」里的标签同一判断：有审批单的写审批单号，审批单已有结论的是结束色；没有审批单的才按本地记录写结果未知或已过期。
+    ? batchRecord.ticket
+      ? { text: { pending: "补发待审批", approved: "补发已批准", rejected: "补发已驳回", withdrawn: "补发已撤回", expired: "补发已过期" }[batchRecord.ticket.status],
+        tone: batchRecord.ticket.status === "pending" ? "warn" : "done", sub: `审批单 ${batchRecord.ticket.id}`, icon: batchRecord.ticket.status === "pending" ? Clock3 : CircleDot }
+      : { text: batchRecord.replayRejection ? "补发重试被拒绝" : batchRecord.retryExpired ? "补发已过期" : "补发结果未知", tone: "warn", sub: `批次 ${dividend.batchNo}`, icon: Clock3 }
     : dividend.paidCount > 0
       ? { text: "已发", tone: "ok", sub: `${fmtNumber(dividend.paidCount, 0)} 个节点 · ${g4Amount(dividend.paidAmountUsdt)} USDT`, icon: Coins }
       : !overview.emissionGate.open
@@ -1438,7 +1442,8 @@ function G4GenesisPage() {
                   <span className="g4x-value">
                     <span className="g4x-value-num">{dividendRateText}</span>
                     {dividendRecord && (() => { const row = records.find((item) => item.commandKey === dividendRecord.commandKey); return row && g4RecoveryTag(row, false, "dividend"); })()}
-                    {pendingFirstDividend && <StatusTag tone={firstDividendTicket && firstDividendTicket.status !== "pending" ? "done" : "warn"} icon={Clock3}>
+                    {pendingFirstDividend && <StatusTag tone={firstDividendTicket && firstDividendTicket.status !== "pending" ? "done" : "warn"} icon={firstDividendTicket && firstDividendTicket.status !== "pending" ? undefined : Clock3}
+                      explain={firstDividendTicket?.status === "expired" ? `审批单 ${firstDividendTicket.id} 已过期，没有执行。` : undefined}>
                       {firstDividendTicket ? G4_FIRST_DIVIDEND_TICKET_STATUS[firstDividendTicket.status] : "首次配置待确认"}
                     </StatusTag>}
                   </span>

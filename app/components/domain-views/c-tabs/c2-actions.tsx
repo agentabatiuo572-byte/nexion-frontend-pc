@@ -1517,7 +1517,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         actions: <>
           <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void verifyPending(record)}>查询原操作</Button>
           <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
-          {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+          {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>核实后解除</Button>}
         </>,
         detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试只发原内容，不会重复执行。"}</p>,
         tech: techRows(record),

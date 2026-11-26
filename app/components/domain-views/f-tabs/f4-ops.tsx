@@ -114,8 +114,9 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change,
       submittedAt: original.createdAt,
       pending: record.kind === "proposal" && record.original.ticket?.status === "pending",
+      received: record.kind === "proposal" && record.original.ticket?.status !== "pending" && !!record.original.received,
       expired: isRetryExpired(original),
-      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>
+      tag: record.kind === "proposal" && record.original.ticket?.status === "pending" ? <StatusTag tone="warn" icon={Clock3} explain="等另一位超级管理员在「操作记录与审批」批准；批准前不生效。">待审批</StatusTag>
         : record.kind === "proposal" && record.original.received ? <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原操作，不要重新提交。">已建单，未查到</StatusTag>
           : isRetryExpired(original) ? <StatusTag tone="neutral" icon={Hourglass}>已过期</StatusTag>
             : unknownTag(record.kind === "proposal" ? "approval" : "direct"),
@@ -181,7 +182,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change: proposal ? `${proposal.before} → ${proposal.after}` : "大使申请规则",
       submittedAt: original.createdAt,
       settled: true,
-      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      tag: <StatusTag tone="neutral">未执行</StatusTag>,
       actions: quotaReady || current ? <Button size="sm" onClick={async () => {
         if (quotaReady) { setQuotaDraft(original as FDomainAttempt); return; }
         if (!current || !snapshot || !current.f4Snapshot) return;
@@ -220,7 +221,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change: `材料第 ${original.input.expectedMaterialRevision} 版 · ${original.input.decision === "PASSED" ? "通过" : "需补材料"}`,
       submittedAt: original.createdAt,
       settled: true,
-      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      tag: <StatusTag tone="neutral">未执行</StatusTag>,
       actions: application && <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>,
     });
   }

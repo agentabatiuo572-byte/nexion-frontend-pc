@@ -1136,7 +1136,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           {!expired && !confirmed && <Button size="sm" disabled={!!recovering}
             disabledReason={retryDisabled}
             onClick={() => void recoverLoosen("retry")}>按原操作重试</Button>}
-          {!confirmed && loosenRecord.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: "放宽提现参数", slot: loosenRecord.fingerprint, commandKey: key, loosen: true })}>解除原操作记录</Button>}
+          {!confirmed && loosenRecord.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: "放宽提现参数", slot: loosenRecord.fingerprint, commandKey: key, loosen: true })}>核实后解除</Button>}
         </>,
         detail: <>
           <p>{`改动：${loosenRecord.values ? describeChanges(loosenRecord.values) : "原内容读不到"}。${confirmed ? "审批已提交，查到审批单状态后再提交放宽。" : "审批单可能已经提交，批准前现在的值不变。有结果前不能再提交放宽，收紧照常。"}`}</p>
@@ -1170,7 +1170,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === record.commandKey}
             onCheck={() => void lookupTighten(record)} onClose={() => setDirectClosing(record)} />
           {!expired && <Button size="sm" disabled={!!recovering} disabledReason={processing && !record.replayRejection ? WITHDRAWAL_COMMAND_PROCESSING.line : retryDisabled} onClick={() => void retryTighten(record)}>按原操作重试</Button>}
-          {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>解除原操作记录</Button>}
+          {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ label: record.label, slot: record.fingerprint, commandKey: record.commandKey, loosen: false })}>核实后解除</Button>}
         </>,
         detail: <>
           <p>{`改动：${describeChanges(record.changes)}。${failed ? "" : "可能已经生效，"}有结果前这页不能再修改。`}{expired && !outcome && expiredNext(target)}</p>

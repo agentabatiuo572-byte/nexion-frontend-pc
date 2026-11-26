@@ -382,7 +382,8 @@
 .a3-page .a3-how-preview { display: grid; gap: var(--rd-space-3); max-height: 640px; overflow: auto; min-width: 0; }
 .a3-page .a3-how-page { font-weight: var(--rd-weight-semibold); }
 .a3-page .a3-how-preview section { display: grid; gap: 4px; }
-.a3-page .a3-how-preview section[data-kind="callout"] { padding: var(--rd-space-2) var(--rd-space-3); border-left: 3px solid var(--rd-progress); background: var(--rd-progress-bg); border-radius: var(--rd-radius-tag); }
+/* 提示块：和提示条同一个样子，状态色浅底加同色 1px 边，不用左色条（VS-94 第 4 条、AD-102） */
+.a3-page .a3-how-preview section[data-kind="callout"] { padding: var(--rd-space-2) var(--rd-space-3); background: var(--rd-progress-bg); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rd-progress) 30%, transparent); border-radius: var(--rd-radius-tag); }
 .a3-page .a3-how-preview section[data-kind="ruleRef"] { padding: var(--rd-space-2) var(--rd-space-3); border: 1px dashed var(--rd-warn); border-radius: var(--rd-radius-tag); }
 .a3-page .a3-how-preview h4 { margin: 0; font-size: var(--rd-text-body); font-weight: var(--rd-weight-semibold); }
 .a3-page .a3-how-preview p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--rd-text-2); }

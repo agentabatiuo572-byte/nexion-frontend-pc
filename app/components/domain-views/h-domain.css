@@ -238,6 +238,8 @@
 .h8-rec-name { font-weight: var(--rd-weight-medium); color: var(--rd-text); white-space: nowrap; }
 .h8-rec-change { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-variant-numeric: tabular-nums; color: var(--rd-text); }
 .h8-rec-kind { color: var(--rd-text-2); white-space: nowrap; }
+/* 解除框的原操作一行：行上靠 .h8-rec-change 的间距隔开「申请」，框里没有这层，补同样的 4px。 */
+.h8-rel-change .h8-rec-kind { margin-inline-end: 4px; }
 .h8-rec-time { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .h8-rec-state { display: inline-flex; align-items: center; gap: 8px; }
 .h8-rec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }

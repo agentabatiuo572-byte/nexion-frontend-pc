@@ -941,7 +941,7 @@ export default function H1Phase({ ctx,
           "warn");
       } finally { setBusy(false); }
     }}>按原操作重试</Button>}
-    {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>解除原操作记录</Button>}
+    {row.retryRejected && row.state === "rejected" && checked === row.commandKey && <Button size="sm" onClick={() => setRelease(row)}>核实后解除</Button>}
   </>;
 
   return <>

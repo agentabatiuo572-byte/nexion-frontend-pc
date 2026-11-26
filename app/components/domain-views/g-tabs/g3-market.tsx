@@ -45,7 +45,7 @@ import { OperationConfirmModal, usePendingReplayDeadline, useToast, type EditSpe
 import { G3_EXPIRED_DIRECT_READ, G3_READBACK_NOTE, G3MarketConfirm, G3_TUNING_FORBIDDEN } from "./g3-market-confirm";
 import { G3ScheduleResult } from "./g3-schedule-result";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { TechInfo } from "../recovery-panel";
+import { recoveryTitle, TechInfo } from "../recovery-panel";
 import { rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 
 /** 本页的共用确认框请求：action 照旧是记进操作记录的名字，title 只写动作和对象（VS-101）。 */
@@ -617,7 +617,7 @@ function G3MarketEditor() {
       tag: row.ticketId
         ? verifiedApprovals[row.commandKey] === undefined
           ? <ObjectTag state={{ kind: "approval", verification: "last-observation", observedAt: row.createdAt,
-              detail: `原审批单 ${row.ticketId} 在等另一位超级管理员批准，批准前不生效。` }} />
+              detail: `上次看到时，原审批单 ${row.ticketId} 在等另一位超级管理员批准；现在的进度点「查询原操作」核对。` }} />
           : pendingTag("这次申请批准前不生效。")
         : rejection ? rejectedTag() : g3MarketCommandExpired(row) ? expiredTag(row.request.kind)
           : unknownTag(row.request.kind === "approval" ? "approval" : "direct"),
@@ -637,10 +637,14 @@ function G3MarketEditor() {
         </>,
     };
   });
+  // 这次读回在等批的审批单才算「在等审批」；只剩上次观察（查询中、查询失败）的算「审批进度待核对」。
+  const uncheckedCount = commandRows.filter((row) => row.ticketId && verifiedApprovals[row.commandKey] === undefined).length;
   const recoveryNotice = <GRecoveryNotice label="价格的原操作" rows={recoveryRows}
-    title={`价格的原操作 · ${recoveryRows.length} 项`}
+    title={recoveryTitle(commandRows.filter((row) => !row.ticketId).length, commandRows.filter((row) => row.ticketId).length - uncheckedCount, 0, 0, uncheckedCount)}
     lead={commandRows.every((row) => row.ticketId)
-      ? "这些申请在等另一位超级管理员审批：点「查询原操作」看结论；有结论之前不要换个值重新提交。"
+      ? uncheckedCount
+        ? "审批进度待核对：点「查询原操作」看现在的结论；有结论之前不要换个值重新提交。"
+        : "这些申请在等另一位超级管理员审批：点「查询原操作」看结论；有结论之前不要换个值重新提交。"
       : commandRows.some(row => !row.ticketId && row.replayRejection)
         ? "重试被拒的记录继续保留。核实原操作的结果后，可以解除这条记录。"
         : "点「查询原操作」或「查看原操作」核对；没有审批单的原操作 24 小时内也可以按原操作重试。有结论之前不要换个值重新提交。"}

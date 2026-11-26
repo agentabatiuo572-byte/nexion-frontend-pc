@@ -1549,7 +1549,7 @@ export default function UserDetailPage() {
           <Button size="sm" disabled={!!busyReason || checkingResult} onClick={() => void verifyPending(command)}>查询原操作</Button>
           {closable && <Button size="sm" variant="danger-outline" disabled={!!busyReason} disabledReason={busyReason ? undefined : staleWriteReason} onClick={() => setClosingCommand(command)}>核查结案</Button>}
           {writable && !command.legacy && <Button size="sm" disabledReason={expired ? EXPIRED_TEXT : busyReason ?? retryBlock ?? staleWriteReason} onClick={() => void retryPending(command)}>按原操作重试</Button>}
-          {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>解除原操作记录</Button>}
+          {refused && <Button size="sm" disabled={!!busyReason} onClick={() => setReleasing(command)}>核实后解除</Button>}
           {supportScope && hasWrite && <Link className="rd-link" href={`/users/search/${encodeURIComponent(userNo)}`} prefetch={false}>到用户详情</Link>}
         </>,
         detail: <><p>{shortTime(new Date(command.createdAt).toISOString())}（{businessZone().label}）发出{found === "FAILED" ? "。" : "，可能已经生效，不要重复操作。"}{nextStep}</p>{more && <p>{more}</p>}</>,
