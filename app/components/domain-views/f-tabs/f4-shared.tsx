@@ -7,7 +7,7 @@
 import { useState, type ReactNode } from "react";
 import { CircleHelp } from "lucide-react";
 import { Button, Explain, Notice, StatusTag } from "@/app/components/rd";
-import { useFreshFirst } from "../recovery-panel";
+import { recoveryTitle, useFreshFirst } from "../recovery-panel";
 import { businessOffsetMinutes, businessStamp, businessZone, formatBusinessTimeCompact, parseBusinessTime, type BusinessZone } from "@/lib/admin/business-time";
 import { f4Decimal } from "@/lib/admin/f4-money";
 import { amountDisplay } from "@/lib/format";
@@ -139,6 +139,8 @@ export type F4RecoveryRow = {
   tag: ReactNode;
   /** 在等批准（不是结果未知、也没过期）。标题按这个分开说。 */
   pending?: boolean;
+  /** 原申请建过单、批没批准还没查到（「已建单，未查到」）：标题计为审批进度待核对，和 F1、F2、F3 一样。 */
+  received?: boolean;
   settled?: boolean;
   /** 已过 24 小时：收起时排在前面，不藏进「展开全部」。 */
   expired?: boolean;
@@ -165,8 +167,8 @@ export function F4RecoveryNotice({ rows }: { rows: F4RecoveryRow[] }) {
   const { ordered, box } = useFreshFirst([...rows].sort((a, b) => rank(a) - rank(b)).map((row) => ({ ...row, createdAt: row.submittedAt })));
   if (!rows.length) return null;
   return (
-    <div ref={box}><Notice tone="warn" title={<>{rows.every((row) => row.settled) ? "原操作未执行的草稿" : rows.some((row) => row.settled) ? "原操作与草稿" : rows.every((row) => row.pending) ? `${rows.length} 项申请在等批准` : `有 ${rows.length} 项原操作还没有结论`}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里：关掉标签页就没了，退出或换账号不丢，别人看不到。按原操作重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉。申请过期后仍可查询原操作，查不到审批单时继续保留原记录和对象锁。" /></>}>
-      <ul className="f4-recovery" aria-label="还没有结论的原操作">
+    <div ref={box}><Notice tone="warn" title={<>{recoveryTitle(rows.filter((row) => !row.settled && !row.pending && !row.received).length, rows.filter((row) => !row.settled && row.pending).length, rows.filter((row) => row.settled).length, 0, rows.filter((row) => !row.settled && row.received).length)}<Explain label="原操作怎么处理" content="原请求和理由只存在这个浏览器标签页里：关掉标签页就没了，退出或换账号不丢，别人看不到。按原操作重试只用原内容，不能改。有了结论（成功、被拒或审批结束）会清掉；确认没执行的留在这里，标「未执行」。申请过期后仍可查询原操作，查不到审批单时继续保留原记录和对象锁。" /></>}>
+      <ul className="f4-recovery" aria-label="还没处理完的原操作">
         {(all ? ordered : ordered.slice(0, 3)).map((row) => (
           <li key={row.key}>
             <span className="f4-recovery-name">{row.name}</span>

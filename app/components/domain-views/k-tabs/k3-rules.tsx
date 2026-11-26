@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Archive, Check as CheckIcon, Clock, Coins, FileText, Gauge, History, Pause, Play, Plus, RefreshCw, ShieldAlert, ShieldCheck, SlidersHorizontal, UserCheck, Users } from "lucide-react";
-import { BlockState, Button, Cell, Change, Check, ColumnPicker, Conclusion, ConflictBar, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, JudgmentPoints, KeepText, KeyValues, Modal, MoreMenu, Notice, NumberInput, PageHeader, Pager, Panel, ReleaseBody, Segments, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTableColumns, type StateTone } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Check, ColumnPicker, Conclusion, ConflictBar, Decision, DiffList, Drawer, Explain, Fact, Facts, Field, Fold, JudgmentPoints, KeepText, KeyValues, Modal, MoreMenu, Notice, NumberInput, PageHeader, Pager, Panel, RELEASE_CHECK_LABEL, RELEASE_CHECK_REASON, ReleaseBody, Segments, Select, Stat, StatBand, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr, useTableColumns, type StateTone } from "@/app/components/rd";
 import { TipSide } from "@/app/components/rd/button";
 import { OperationConfirmModal, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -564,7 +564,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           catch (error) { setReadback(`读取失败 · ${errorText(error)}`); } finally { setBusyKey(null); }
         }}>查询原操作</Button>
         <Button size="sm" disabledReason={noRetry} loading={busyKey === record.commandKey} loadingText="提交中…" onClick={() => saved && void execute(saved, true).catch(() => undefined)}>按原操作重试</Button>
-        {saved?.rejected && <Button size="sm" onClick={() => setReleasing(saved)}>解除原操作记录</Button>}
+        {saved?.rejected && <Button size="sm" onClick={() => setReleasing(saved)}>核实后解除</Button>}
         <Button size="sm" variant="ghost" onClick={() => setInspecting(record)}>技术信息</Button>
       </>}>
         <p>{targetLabel(saved?.target ?? legacyTarget(record))} · 提交于 {formatBusinessTimeCompact(new Date(record.createdAt).toISOString())}（{businessZone().label}）</p>
@@ -674,14 +674,14 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       {reach("/platform/audit") ? <p><Link className="rd-link" href="/platform/audit">操作记录与审批</Link></p> : <p>请有权限的风控或超级管理员核对原操作。</p>}
     </Modal>}
     {releasing && <Modal title="解除原操作记录" icon={ShieldCheck} onClose={() => setReleasing(null)} dirty={releaseVerified}
-      footer={<><Button onClick={() => setReleasing(null)}>取消</Button><Button variant="primary" disabledReason={!releaseVerified ? "请先勾选已核实原操作" : undefined} onClick={() => {
+      footer={<><Button onClick={() => setReleasing(null)}>取消</Button><Button variant="primary" disabledReason={!releaseVerified ? RELEASE_CHECK_REASON : undefined} onClick={() => {
         if (!releaseVerified || !releasing.rejected) return;
         commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); setReleasing(null); ctx.toast("已解除本页的原操作记录，请继续到操作记录核对原操作", "info");
       }}>确认解除</Button></>}>
       <ReleaseBody label={releasing.label} />
       <Facts><Fact k="原对象">{targetLabel(releasing.target)}</Fact><Fact k="操作编号"><span data-mono="">{releasing.commandKey}</span></Fact><Fact k="原操作理由">{releasing.reason}</Fact></Facts>
       <Fold title="原请求技术信息" summary="方法、路径、原内容与版本" inset><pre className="k3-request">{JSON.stringify({ request: releasing.request, original: releasing.original }, null, 2)}</pre></Fold>
-      <Check label="我已核实原操作的对象、请求和结果" checked={releaseVerified} onChange={(event) => setReleaseVerified(event.target.checked)} />
+      <Check label={RELEASE_CHECK_LABEL} checked={releaseVerified} onChange={(event) => setReleaseVerified(event.target.checked)} />
     </Modal>}
   </div>;
 }

@@ -18,7 +18,7 @@ import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from 
 
 import { Fragment, useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeftRight, Check, Gift, Hourglass, ListChecks, Power, Route, ShieldAlert, SlidersHorizontal, UserPlus, Users } from "lucide-react";
+import { ArrowLeftRight, Check, Clock3, Gift, Hourglass, ListChecks, Power, Route, ShieldAlert, SlidersHorizontal, UserPlus, Users } from "lucide-react";
 import {
   BlockState, Button, Change, Conclusion, ConfigList, ConfigRow, DiffField, Explain, Fact, Facts, Field, Input,
   IrreversibleTag, KeepText, Notice, NumberInput, PageHeader, Panel, ReleaseModal, Segments, Stat, StatBand, StatusTag, Table, TableMessage, Td, Th, Tr,
@@ -611,14 +611,20 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   if (session && !mc) {
     for (const record of commands) {
       const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey);
+      // 结算的待审批气泡沿用结算确认框的执行规则：批准时再核对资格、名单和兑付覆盖率；提交后奖励设置变了要重新提交；指定新人可能只解冻原礼包。
       const tag = record.ticket?.status === "pending"
-        ? record.kind === "param-approval" ? pendingTag() : <StatusTag tone="warn">待审批</StatusTag>
+        ? record.kind === "param-approval" ? pendingTag() : <StatusTag tone="warn" icon={Clock3} explain={<>
+          <p>等{APPROVER}在「操作记录与审批」批准，批准前什么都不发。</p>
+          <p>{record.invitedUserId !== undefined ? "批准时按那时的资格核对，不符合就不发；兑付覆盖率低于红线时也不发。" : "批准时按那时的资格和名单核对，符合的才发；兑付覆盖率低于红线时整批不发。"}</p>
+          <p>奖励设置、阶段月份或加成在提交后变了，这张申请就批不下来，这条记录也会一直挡着新的结算：请到「操作记录与审批」撤回，或请审批人驳回；再点「查询原操作」清掉这条记录，按现在的设置重新提交。</p>
+          {record.invitedUserId !== undefined && <p>这位新人已结算过、礼包还冻结的，批准后不会再发一份；已有首笔实付订单、账户状态和风控核验也都通过时，只解冻原礼包。</p>}
+        </>}>待审批</StatusTag>
         : isRetryExpired(record) ? expiredTag(record.kind === "direct" ? "direct" : "approval") : unknownTag(record.kind === "direct" ? "direct" : "approval");
       if (param) recoveryByKey[param.key] = tag;
       const recover = () => param ? editParam(param, param.key === "enabled" ? record.value : undefined, record) : settle(undefined, record);
       recoveryRows.push({
         key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
-        submittedAt: record.createdAt, tag,
+        submittedAt: record.createdAt, tag, waiting: record.ticket?.status === "pending",
         change: param ? record.original
             ? <>{record.kind !== "direct" && <span className="h8-rec-kind">申请</span>}<Change from={valueText(param, String(record.original.overview.params[param.key]))} to={valueText(param, record.value)} /></>
             : <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
@@ -630,7 +636,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           {canRetryH8RewardCommand(record) && (record.kind === "settlement" ? canSettle : canWrite)
             && <Button size="sm" onClick={() => recover()}>按原操作重试</Button>}
           {record.replayRejection && <Button size="sm" variant="ghost" onClick={() => setReleasing(record)}>核实后解除</Button>}
-          {record.kind !== "param-approval" && reach("/platform/audit", "platform_a2_read")
+          {/* 已提交审批的不加去审批页的链接（OP-152）：参数申请和在等批的结算都不显示。 */}
+          {record.kind !== "param-approval" && record.ticket?.status !== "pending" && reach("/platform/audit", "platform_a2_read")
             && <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link>}
         </>,
       });
@@ -645,7 +652,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     recoveryRows.push({
       key: record.commandKey, name: param ? paramTitle(param) : record.invitedUserId !== undefined ? "给指定新人结算" : "批量结算",
       submittedAt: record.createdAt, settled: true,
-      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      tag: <StatusTag tone="neutral">未执行</StatusTag>,
       change: param ? <Change from={valueText(param, String(original.overview.params[param.key]))} to={valueText(param, record.value)} />
         : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit} 位`}</span>,
       actions: writable ? <Button size="sm" onClick={async () => {
@@ -662,7 +669,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const releasingRow = releasing && recoveryRows.find(row => row.key === releasing.commandKey);
   const recoveryNotice = <>
     <H8RecoveryNotice rows={recoveryRows} />
-    {releasing && <ReleaseModal label={<>{releasingRow?.name ?? "原申请"}{releasingRow && <> · {releasingRow.change}</>}</>}
+    {releasing && <ReleaseModal label={<>{releasingRow?.name ?? "原申请"}{releasingRow && <> · <span className="h8-rel-change">{releasingRow.change}</span></>}</>}
       explain="先核实原操作结果。解除只清除本标签页的原记录，不发送请求，也不进入操作记录。"
       onCancel={() => setReleasing(null)} onConfirm={() => {
         const record = releasing;
@@ -768,9 +775,17 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const rowInviterDecimals = decimalsOf(...data.recentSettlements.map((row) => row.inviterNex));
   const longAmounts = AMOUNT_PARAMS.some((param) => (amountParts(data.effectiveRewards[param.key])?.int.length ?? 0) > 7 || (amountParts(String(data.params[param.key]))?.int.length ?? 0) > 7);
 
-  const originalCount = recoveryRows.filter(row => !row.settled).length;
-  const conclusion = originalCount > 0
-    ? <Conclusion state="warn" icon={Hourglass} hint="在下面逐条核对，有结论后再改这一项。">有 {originalCount} 项修改或结算申请还没有结论</Conclusion>
+  // 和原操作提醒的标题同一个分法：在等审批的单独算，其余没结论的是结果未知。已有结论的审批单查到时就清掉或留作「未执行」草稿，草稿不挡修改，不进这句。
+  const originalWaiting = recoveryRows.filter(row => row.waiting).length;
+  const originalUnknown = recoveryRows.filter(row => !row.settled && !row.waiting).length;
+  const conclusion = originalWaiting + originalUnknown > 0
+    ? <Conclusion state="warn" icon={Hourglass}
+        hint={!originalUnknown ? `等${APPROVER}在「操作记录与审批」批准，批准前不生效。`
+          : !originalWaiting ? "在下面逐条查询原操作，有结论后再改这一项。"
+            : `结果未知的先查询原操作；在等审批的等${APPROVER}批准。`}>
+        {!originalUnknown ? "有修改或结算申请在等审批"
+          : !originalWaiting ? "有修改或结算申请结果未知"
+            : "修改或结算申请还没处理完"}</Conclusion>
     : !data.enabled
       ? <Conclusion state="neutral" icon={Power}
           hint={canWrite ? "要开启，点「开关和发放方式」里的「启用」提交审批。" : undefined}

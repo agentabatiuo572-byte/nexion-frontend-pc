@@ -3,6 +3,7 @@
 /** H3 requests, approval routing and recovery use the existing redesigned markup.
  * The legacy H3/H4 component stays intact for its remaining callers. */
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { recoveryTitle } from "../recovery-panel";
 import Link from "next/link";
 import {
   ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Pause, Pencil, Play, Plus, RefreshCw,
@@ -1141,9 +1142,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const pendingCount = mutations.records.filter(r => r.ticketStatus === "pending").length;
   const approvedCount = mutations.records.filter(r => r.ticketStatus === "approved").length;
   const builtCount = mutations.records.filter(r => !r.ticketStatus && r.acknowledged).length;
-  const recoveryTitle = [unknownCount && `${unknownCount} 个修改结果未知`, pendingCount && `${pendingCount} 个修改在等批准`, approvedCount && `${approvedCount} 个申请已批准，待读当前值`, builtCount && `${builtCount} 个申请没查到进度`, terminalMissions.length && `${terminalMissions.length} 个草稿可继续修改`].filter(Boolean).join("；");
+  // 已批准待读当前值、可继续修改的草稿算已有结论；建了单还没查到进度的算审批进度待核对。
+  const recoveryHeading = recoveryTitle(unknownCount, pendingCount, approvedCount + terminalMissions.length, 0, builtCount);
   const recovery = recoveryRows.length > 0 && (
-    <Notice tone="warn" title={<>{recoveryTitle}<Explain label="原操作怎么处理" content={<>
+    <Notice tone="warn" title={<>{recoveryHeading}<Explain label="原操作怎么处理" content={<>
       <p>结果未知：提交时没收到确定结果，可能已经生效。审批申请先查询原操作，明确查不到才能重试。直接修改的「按原操作重试」会重新发送一次。过了 24 小时只能查询。</p>
       <p>重试被拒绝：核实原操作的结果后可以解除，只清这个标签页里的记录。</p>
       <p>待审批、已建单：申请已经建好，点「查询原操作」看审批进度，不会重发。</p>
@@ -1297,7 +1299,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       {active.length === 0
         ? "没有启用的新手任务或每周任务"
         : `新手任务 ${dayOne.filter((task) => taskStatusOf(task) === "active").length} 个、每周任务 ${[...t1, ...t2].filter((task) => taskStatusOf(task) === "active").length} 个在启用`}
-      {unknownCount > 0 && `；${unknownCount} 个修改结果未知，先查询原操作`}
+      {unknownCount > 0 && "；有修改结果未知，先查询原操作"}
       {attention.length > 0 ? `；${attention.length} 件要处理` : mutations.auditKnown ? (unknownCount > 0 ? "" : "，没有要处理的事") : shellCtx.can("platform_a2_read") ? "；审批进度这次没读到，点刷新重试" : ""}
     </Conclusion>
   );

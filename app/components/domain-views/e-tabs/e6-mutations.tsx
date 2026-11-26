@@ -544,7 +544,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
               void m.rereadApprovedPhone(r);
             } else { m.forget(r); onRead?.(); }
           }}>准备新变更</Button>}
-          {(refused && !r.ticketId) && <Button size="sm" disabled={!refused && m.isBusy(r.commandKey)} onClick={() => m.setRelease(r)}>解除原操作记录</Button>}
+          {(refused && !r.ticketId) && <Button size="sm" disabled={!refused && m.isBusy(r.commandKey)} onClick={() => m.setRelease(r)}>核实后解除</Button>}
         </>,
         detail: <><p>{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")} 提交，理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary={r.commandKey}>{technical(r)}</Fold> };
     }),

@@ -13,8 +13,8 @@ import type { FDomainAttempt } from "@/lib/admin/f2-approval";
 import { fConfirmRecovery } from "./f-recovery-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
-/** 审批人叫法照「全站-审批人叫法」：F3 单项配置批准要另一位有这项业务权限和审批批准权限的管理员，不要求超级管理员。 */
-export const CONFIG_APPROVER = "另一位管理员";
+/** 审批人叫法照 02 OP-67：A2 票只有超级管理员有批准权，F3 单项配置也由另一位超级管理员批（还要有这项业务权限和审批批准权限）。 */
+export const CONFIG_APPROVER = "另一位超级管理员";
 /** 人工结算批准要求有效的超级管理员（TeamFundApproval.validateChecker）。 */
 export const SETTLE_APPROVER = "另一位超级管理员";
 

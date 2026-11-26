@@ -5,6 +5,7 @@
  * 只管怎么显示；提交调用 ctx 上和旧页面相同的函数、相同的参数。
  */
 import { fConfirmRecovery } from "./f-recovery-state";
+import { recoveryTitle } from "../recovery-panel";
 import type { ReactNode } from "react";
 import { CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Snowflake, TriangleAlert, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import { Button, Explain, Notice, StatusTag, type StateTone } from "@/app/components/rd";
@@ -136,8 +137,8 @@ export const OPERATION_LABELS: Record<string, string> = {
 export const operationLabel = (type: string) => OPERATION_LABELS[type] ?? "奖励处理";
 export const kindNames = (value: string) => value.split(",").map((kind) => KIND_LABELS[kind.trim()] ?? "未知奖励类型").join("、");
 
-/** 审批人叫法照「全站-审批人叫法」：F5 七个处置要另一位有审批批准权限和对应处置权限的管理员，不要求超级管理员。 */
-export const APPROVER = "另一位管理员";
+/** 审批人叫法照 02 OP-67：A2 票只有超级管理员有批准权，F5 七个处置由另一位超级管理员批（还要有审批批准权限和对应处置权限）。 */
+export const APPROVER = "另一位超级管理员";
 export const approverText = (permission: string) => `${APPROVER}，需有审批批准权限和${permission}`;
 
 export function approvalTag(note = "批准前这笔奖励不变。") {
@@ -303,13 +304,13 @@ export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
       : direct
       ? "提交时没收到结果。先核对原操作回执；明确查无后，才可以在 24 小时内按原操作重试。"
       : "提交时没收到结果，可能已经建了审批单。先查询原操作；24 小时内也可以按原操作重试，系统认得出是同一次提交，不会建第二张。"}>结果未知</StatusTag>
-    : state === "settled" ? <StatusTag tone="neutral">原操作未执行</StatusTag>
+    : state === "settled" ? <StatusTag tone="neutral">未执行</StatusTag>
     : state === "pending"
       ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>
       : <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return (
-    <Notice tone="warn" title={<>{rows.every((row) => row.state === "settled") ? "原操作未执行的草稿" : rows.some((row) => row.state === "settled") ? "奖励处置与草稿" : rows.every((row) => row.state === "pending") ? `${rows.length} 个处置在等批准` : `有 ${rows.length} 个处置还没有结论`}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
-      <ul className="f5-recovery" aria-label="还没有结论的处置">
+    <Notice tone="warn" title={<>{recoveryTitle(rows.filter((row) => row.state === "unknown" || row.state === "expired").length, rows.filter((row) => row.state === "pending").length, rows.filter((row) => row.state === "settled").length)}<Explain label="原操作怎么处理" content="这里列还没处理完的处置：结果未知的、在等审批的、确认没执行的。有结论前不要换个办法重做同一件事。" /></>}>
+      <ul className="f5-recovery" aria-label="还没处理完的处置">
         {rows.map((row) => (
           <li key={row.key} data-recovery-state={row.state}>
             <span className="f5-recovery-name">{row.name}</span>

@@ -9,7 +9,7 @@ export const RELEASE_EXPLAIN = "原请求重试已被拒绝。请先核实原操
 export function FReleaseButton({ label, onRelease, toast }: { label: ReactNode; onRelease: () => Promise<unknown>; toast: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   return <>
-    <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>解除原操作记录</Button>
+    <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>核实后解除</Button>
     {open && <ReleaseModal label={label} explain={RELEASE_EXPLAIN} onCancel={() => setOpen(false)} onConfirm={() => {
       setOpen(false);
       void onRelease().then(() => toast("已解除原操作记录"), (error) => toast(displayAdminError(error)));
