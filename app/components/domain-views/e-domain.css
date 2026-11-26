@@ -902,15 +902,21 @@
 .e1-catalog-groups { display: grid; gap: var(--rd-section-gap); min-width: 0; }
 .e1-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--rd-space-4); }
 .e1-product { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); color: var(--rd-text); }
-/* 卡片底色跟着商城状态走：在售（已过发布门）浅绿，已下架灰；草稿、上架受阻和待核实照常面板底。
-   有底色的卡里，没选的任务等级格描边换成弱文字色，对底色仍有 3:1（VS-05）；已下架卡的图片底换面板色，不和卡底混在一起。 */
-.e1-product[data-status="on"]:not([data-blocked]) { background: var(--rd-ok-bg); }
-.e1-product[data-status="off"] { background: var(--rd-done-pill); }
-:is(.e1-product[data-status="on"]:not([data-blocked]), .e1-product[data-status="off"]) .rd-levelstrip-cell:not([data-on]) > i { box-shadow: inset 0 0 0 1px var(--rd-text-3); }
-.e1-product[data-status="off"] .e1-product-media { background: var(--rd-panel); }
 .e1-product[data-hit] { border-color: var(--rd-progress); }
 .e1-product-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: var(--rd-space-3); }
 .e1-product-media { position: relative; width: 64px; height: 64px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+/* 卡身保持面板底，和页面分得开；卡头（图、名称、售价）跟着商城状态上色：在售（已过发布门）浅绿，已下架灰，草稿、上架受阻和待核实不上色。 */
+:is(.e1-product[data-status="on"]:not([data-blocked]), .e1-product[data-status="off"]) > .e1-product-identity { margin: calc(-1 * var(--rd-space-3)) calc(-1 * var(--rd-space-3)) var(--rd-space-1); padding: var(--rd-space-3); border-radius: calc(var(--rd-radius-panel) - 1px) calc(var(--rd-radius-panel) - 1px) 0 0; }
+/* 在售卡（用户要求）：不画实线边，边缘是一圈柔和的绿光，卡面半透明加背景模糊（毛玻璃），比其他卡更醒目；定位命中的卡仍用蓝边。 */
+.e1-product[data-status="on"]:not([data-blocked]) {
+  background: color-mix(in srgb, var(--rd-panel) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(150%); backdrop-filter: blur(14px) saturate(150%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--rd-ok) 22%, transparent), 0 0 18px 3px color-mix(in srgb, var(--rd-ok) 30%, transparent), 0 12px 32px -10px color-mix(in srgb, var(--rd-ok) 38%, transparent);
+}
+.e1-product[data-status="on"]:not([data-blocked]):not([data-hit]) { border-color: transparent; }
+.e1-product[data-status="on"]:not([data-blocked]) > .e1-product-identity { background: color-mix(in srgb, var(--rd-ok-bg) 85%, transparent); }
+.e1-product[data-status="off"] > .e1-product-identity { background: var(--rd-done-pill); }
+:is(.e1-product[data-status="on"]:not([data-blocked]), .e1-product[data-status="off"]) .e1-product-media { background: var(--rd-panel); }
 .e1-product-media img, .e1-product-media video { display: block; width: 64px; height: 64px; border-radius: var(--rd-radius-control); object-fit: contain; }
 .e1-media-placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: var(--rd-text-3); }
 .e1-product-title { min-width: 0; }
