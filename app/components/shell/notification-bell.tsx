@@ -22,7 +22,7 @@ import { fmtConfigPct, fmtPct } from "@/lib/format";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
 import { approvalActionName } from "@/lib/admin/a2-approval-text";
-import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
+import { isRiskConclusion, riskBellHref, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
 type AlertLevel = "high" | "mid" | "low";
@@ -138,7 +138,7 @@ export function NotificationBell() {
         id: `b-feed-${index}-${item.sev}`,
         level: severityLevel(item.sev),
         text: riskFeedTitle(item.t),
-        href: item.href || "/overview/risk-radar",
+        href: riskBellHref(item),
       })),
     ];
   })();

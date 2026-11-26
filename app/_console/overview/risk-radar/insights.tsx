@@ -6,21 +6,26 @@
  * 原来的 data-testid 和 data-capability 标识照旧挂在对应的块上。
  */
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { AlertTriangle, CalendarRange, Info, ShieldAlert, TrendingUp, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import { AlertTriangle, CalendarRange, CircleDashed, CircleDot, Clock3, Info, ShieldAlert, TrendingUp, type LucideIcon } from "lucide-react";
 import {
-  BlockState, Button, Cell, ColumnChart, Decision, Drawer, Explain, Fact, Facts, Fold, Panel, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, TrendLines,
-  type DrawerNav,
+  BlockState, Button, Cell, ColumnChart, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Panel, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, TrendLines,
+  type DrawerNav, type JudgmentRow,
 } from "@/app/components/rd";
 import type { StateTone } from "@/app/components/rd";
 import type { B5InboxItem, B5Radar } from "@/lib/admin/b5-client";
+import type { B5Signal } from "@/lib/admin/b5-radar-contract";
+import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { TAMPER_SIGNAL_TYPE, type SignalCategory } from "@/lib/admin/risk-feed";
 import { b5AmountDigits, b5AmountText } from "@/lib/admin/b5-money";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { summarizePressureHistory } from "@/lib/admin/b5-pressure-summary";
 import { fmtConfigPct, fmtNum } from "@/lib/format";
 import { ratioPct } from "./dimensions";
 
-type Alert = B5Radar["recentAlerts"][number];
+type Alert = B5Signal;
+export type SignalRow = B5Signal;
 
 /** 级别不是等待，不用默认的时钟图标。 */
 export const SEVERITY: Record<Alert["level"], { text: string; tone: StateTone; icon: LucideIcon }> = {
@@ -30,11 +35,45 @@ export const SEVERITY: Record<Alert["level"], { text: string; tone: StateTone; i
   P3: { text: "提示", tone: "neutral", icon: Info },
 };
 
-/** 长单号（K2 的 40 位哈希）中间省略，留开头和能区分的结尾，悬停看全号。 */
+/**
+ * 信号号按单号写（TX-28）：放得下全显，放不下由所在格子在末尾省略（ST-04）；
+ * 字一个不少，复制拿到的是全号；格子被切时能用键盘聚焦，悬停和聚焦都看全号（Cell 的 title）。
+ */
 export function SignalNo({ value }: { value: string }) {
-  return value.length > 24
-    ? <span data-mono title={value}>{value.slice(0, 12)}…{value.slice(-8)}</span>
-    : <span data-mono>{value}</span>;
+  return <span data-mono>{value}</span>;
+}
+
+/** 名单没刷新成功（保留旧值）时，标记按钮禁用的原因（ST-36、OP-128）。 */
+export const STALE_MARK_REASON = "名单没刷新成功，重试成功后再标记";
+
+/**
+ * 确认框里放不下的信号号：末尾省略，被切时能用 Tab 聚焦，聚焦和悬停都看全号（ST-04、TX-28）；
+ * 字一个不少，复制拿到全号。气泡和表格格子（Cell）同一个样子。
+ */
+export function RefText({ value }: { value: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [cut, setCut] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const measure = () => setCut(box.scrollWidth > box.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [value]);
+  return (
+    <Tooltip.Provider>
+      <Tooltip.Root open={cut && focused}>
+        <Tooltip.Trigger asChild>
+          <span ref={ref} className="b5-ref" data-mono title={value} tabIndex={cut ? 0 : undefined}
+            onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>{value}</span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal><Tooltip.Content className="rd-tip rd-cell-tip" sideOffset={6}>{value}</Tooltip.Content></Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  );
 }
 
 export const HANDLING: Record<Alert["handlingStatus"], { text: string; tone: StateTone }> = {
@@ -52,10 +91,8 @@ export const TARGET_NAME: Record<string, string> = {
   "/risk/scoring": "风险评分规则",
 };
 
-/** 存储时间不带时区，原样只换 T（和旧队列一样，不按浏览器时区换算）。 */
-export const stamp = (value: string) => value.replace("T", " ").slice(0, 16);
-/** 近 7 个业务日的信号表里只写月日和时分，年份都一样；悬停看完整时间。 */
-const shortStamp = (value: string) => <span title={stamp(value)}>{stamp(value).slice(5)}</span>;
+/** API 时间按业务时区显示到分钟，历史命令的无偏移时间仍按存储时区解释。 */
+export const stamp = (value: string) => formatBusinessTimeCompact(value, "—");
 
 /** 篡改项的叫法和「篡改防御监控」一致（后端 TamperDetectedEventProjector.pathName）。 */
 const TAMPER_PATH: Record<string, string> = {
@@ -65,63 +102,87 @@ const TAMPER_PATH: Record<string, string> = {
 };
 /** 排查类别和动作的叫法和「异常套利与刷量排查」一致。 */
 const K2_VIEW: Record<string, string> = { trial: "反复领试用", tradein: "置换套利", gift: "批量领新人礼", board: "排行榜刷榜" };
-const K2_ACTION: Record<string, string> = { mark: "标记套利", "block-gift": "拦截新人礼", "board-flag": "标记刷榜", "freeze-cluster": "冻结关联账户" };
+/** 运营动作写成一句：人点的带「已」，系统自动发现的写「系统发现」（K2 同步排查行时发的信号，动作代码 detected）。 */
+const K2_ACTION: Record<string, string> = { mark: "已标记套利", "block-gift": "已拦截新人礼", "board-flag": "已标记刷榜", "freeze-cluster": "已冻结关联账户", detected: "系统发现" };
 const FROZEN_SOURCE: Record<string, { page: string; line: string }> = { C2: { page: "「账户操作」", line: "在「账户操作」冻结" } };
 /** 单个金额：原文本加千分位，去掉末尾的 0、最少两位，不舍入。 */
 const usdt = (value: string) => `${b5AmountText(value, b5AmountDigits([value]))} USDT`;
 
 /** 后端把这两类归在「其他风险信号」里；类型明确时换成运营的叫法，其余照后端给的类别。 */
 const TYPE_NAME: Record<string, string> = { user_frozen: "账户冻结", d1_chargeback_shortfall: "拒付追回有差额" };
-export const signalName = (alert: Alert) => (alert.signalType && TYPE_NAME[alert.signalType.toLowerCase()]) || alert.message;
+/** 篡改大类里，真实拦截记录（精确类型 TAMPER_DETECTED）叫「篡改拦截」，和今日概览、篡改防御监控同名；手工登记的篡改类用后端的类别名。 */
+export const signalName = (alert: SignalRow) => alert.signalType?.toUpperCase() === TAMPER_SIGNAL_TYPE ? "篡改拦截"
+  : alert.categoryName ?? ((alert.signalType && TYPE_NAME[alert.signalType.toLowerCase()]) || alert.message);
 
 type SignalFact = { k: string; v: ReactNode };
 /**
  * 一条信号「具体是什么事」：只用后端给的 facts，没有的不推断（手工登记、来源不明的 facts 为空）。
- * line 是表格里的一句；rows 是详情里的事实；tech 是排查用的原始代码，进折叠的技术信息。
+ * line 是名单第一行和抽屉「是什么事」的一句；tech 是排查用的原文，进折叠的技术信息（只列后端实有的字段）。
+ * 篡改的被拦入口和影响句用后端 B119 原文（blockedAtEndpointName、attackEffectSummary），前端不自写。
  */
-export function signalFacts(alert: Alert): { line: string | null; rows: SignalFact[]; tech: SignalFact[] } {
+export function signalFacts(alert: SignalRow): { line: string | null; tech: SignalFact[] } {
   const f = alert.facts ?? {};
-  const rows: SignalFact[] = [];
   const parts: string[] = [];
   const tech: SignalFact[] = [{ k: "信号号", v: <span data-mono>{alert.signalNo}</span> }];
   if (alert.signalType) tech.push({ k: "类型代码", v: <span data-mono>{alert.signalType}</span> });
-  if (f.tamperPath !== undefined || f.attackEffect !== undefined) {
-    const path = f.tamperPath === undefined ? undefined : TAMPER_PATH[f.tamperPath.toLowerCase()];
-    if (path) { rows.push({ k: "篡改了什么", v: path }); parts.push(path); }
-    if (f.attackEffect !== undefined) { rows.push({ k: "企图", v: f.attackEffect }); parts.push(`企图「${f.attackEffect}」`); }
-    if (f.tamperPath !== undefined) tech.push({ k: "篡改项代码", v: <span data-mono>{f.tamperPath}</span> });
+  if (f.tamperPath !== undefined) {
+    const path = TAMPER_PATH[f.tamperPath.toLowerCase()];
+    if (path) parts.push(path);
+    tech.push({ k: "篡改项代码", v: <span data-mono>{f.tamperPath}</span> });
   }
+  if (f.blockedAtEndpoint !== undefined) tech.push({ k: "被拦入口（原文）", v: <span data-mono>{f.blockedAtEndpoint}</span> });
+  if (f.attackEffect !== undefined) tech.push({ k: "拦截说明（原文）", v: f.attackEffect });
   if (f.cycleCount !== undefined || f.windowDays !== undefined) {
-    rows.push({ k: "排查类别", v: K2_VIEW.trial });
-    if (f.cycleCount !== undefined) rows.push({ k: "开始试用", v: `${f.cycleCount} 次` });
-    if (f.windowDays !== undefined) rows.push({ k: "统计周期", v: `${f.windowDays} 天` });
     parts.push(`${K2_VIEW.trial}：${f.windowDays !== undefined ? `${f.windowDays} 天内` : ""}${f.cycleCount !== undefined ? `开始试用 ${f.cycleCount} 次` : ""}`.replace(/：$/, ""));
   }
   if (f.view !== undefined || f.action !== undefined) {
     const view = f.view === undefined ? undefined : K2_VIEW[f.view];
     const action = f.action === undefined ? undefined : K2_ACTION[f.action];
-    if (view) rows.push({ k: "排查类别", v: view });
-    if (action) rows.push({ k: "运营动作", v: `已${action}` });
-    if (view || action) parts.push([view, action && `已${action}`].filter(Boolean).join("："));
+    if (view || action) parts.push([view, action].filter(Boolean).join("："));
     if (f.view !== undefined) tech.push({ k: "排查类别代码", v: <span data-mono>{f.view}</span> });
     if (f.action !== undefined) tech.push({ k: "动作代码", v: <span data-mono>{f.action}</span> });
   }
   if (f.rowId !== undefined) tech.push({ k: "排查行号", v: <span data-mono>{f.rowId}</span> });
   if (f.source !== undefined) {
     const known = FROZEN_SOURCE[f.source];
-    rows.push({ k: "冻结来源", v: known ? known.page : "其他来源" });
-    if (known) parts.push(known.line);
+    parts.push(known ? known.line : "其他来源冻结");
     tech.push({ k: "来源代码", v: <span data-mono>{f.source}</span> });
   }
-  if (f.caseNo !== undefined || f.walletShortfallUsdt !== undefined || f.feeBufferShortfallUsdt !== undefined) {
-    if (f.caseNo !== undefined) rows.push({ k: "拒付案件", v: <span data-mono>{f.caseNo}</span> });
-    if (f.walletShortfallUsdt !== undefined) rows.push({ k: "钱包少追回", v: usdt(f.walletShortfallUsdt) });
-    if (f.feeBufferShortfallUsdt !== undefined) rows.push({ k: "手续费备用金不足", v: usdt(f.feeBufferShortfallUsdt) });
-    const gaps = [f.walletShortfallUsdt !== undefined && `钱包少追回 ${usdt(f.walletShortfallUsdt)}`, f.feeBufferShortfallUsdt !== undefined && `手续费备用金不足 ${usdt(f.feeBufferShortfallUsdt)}`].filter(Boolean).join("，");
-    parts.push([f.caseNo !== undefined && `案件 ${f.caseNo}`, gaps].filter(Boolean).join("："));
-  }
-  return { line: parts.length ? parts.join("，") : null, rows, tech };
+  // 拒付差额：钱的后果写在一句里，不收进技术信息（DT-10）；案件号是排查用的，进技术信息。
+  if (f.walletShortfallUsdt !== undefined) parts.push(`钱包少追回 ${usdt(f.walletShortfallUsdt)}`);
+  if (f.feeBufferShortfallUsdt !== undefined) parts.push(`手续费备用金少 ${usdt(f.feeBufferShortfallUsdt)}`);
+  if (f.caseNo !== undefined) tech.push({ k: "拒付案件号", v: <span data-mono>{f.caseNo}</span> });
+  return { line: parts.length ? parts.join(" · ") : null, tech };
 }
+
+/** 篡改拦截（精确类型 TAMPER_DETECTED，或带篡改项的旧记录）：有被拦入口和拦截时间，没记下时写「未记录」「拦截 —」。人工登记的篡改类没经过拦截，不写这两项。 */
+export const isTamper = (alert: SignalRow) => alert.signalType?.toUpperCase() === TAMPER_SIGNAL_TYPE || alert.facts?.tamperPath !== undefined;
+
+/** 已解决的行级别标签用灰（VS-24），待处理、已处理照常上色。 */
+export const levelTone = (alert: SignalRow): StateTone => (alert.handlingStatus === "resolved" ? "done" : SEVERITY[alert.level].tone);
+
+/**
+ * 「去处理」只给后端分诊目标和这一类相符的：多账户、套利或刷量、提现、篡改。
+ * 账户冻结、拒付追回有差额、其他风险信号的后端目标是风险评分规则页，和这类事无关，不显示（OpsRiskRadarService.java:318–337）。
+ */
+export const CATEGORY_TARGETS: Partial<Record<SignalCategory, string>> = {
+  MULTI_ACCOUNT: "/risk/multi-account",
+  ABUSE: "/risk/abuse",
+  WITHDRAW: "/finance/withdrawals",
+  TAMPER: "/emergency/tamper",
+};
+export const triageTarget = (alert: SignalRow) =>
+  alert.category && alert.target === CATEGORY_TARGETS[alert.category] ? alert.target : null;
+
+type SignalTreatmentLink = { target: string; mode: "unreachable" | "read" | "triage" };
+
+export function signalTreatmentLink(target: string | null | undefined, reach: (path: string) => boolean, canTriage: boolean, canTriageTarget: (path: string) => boolean): SignalTreatmentLink | null {
+  if (!target) return null;
+  if (!reach(target)) return { target, mode: "unreachable" };
+  if (!canTriage) return { target, mode: "read" };
+  return canTriageTarget(target) ? { target, mode: "triage" } : null;
+}
+
 const dayTick = (label: string) => (/^\d{4}-/.test(label) ? label.slice(5) : label);
 
 export function PressureTrend({ data }: { data: B5Radar }) {
@@ -184,58 +245,113 @@ export function AlertDistribution({ data }: { data: B5Radar }) {
 }
 
 /** 处理人和处理时间：只有标过进度的信号才有；没标过的不占位。 */
-const handlerText = (alert: Alert) => alert.handledBy ? maskAuditActor(alert.handledBy) : null;
+const handlerText = (alert: SignalRow) => alert.handledBy ? maskAuditActor(alert.handledBy) : null;
 
-export function SignalsTable({ alerts, canTriage, updating, reach, selected, onOpen, onTriage, triageState, onStatus }: {
-  alerts: B5Radar["recentAlerts"];
+/** 进度图标写明，名单筛成一种进度、颜色换成灰时图标不变（VS-21）。 */
+const HANDLING_ICON: Record<Alert["handlingStatus"], LucideIcon> = { open: Clock3, handled: CircleDashed, resolved: CircleDot };
+
+/**
+ * 「真正去哪办」（design-plan 板 2「单条怎么处置」）：排查去处只写这个账号在「去处理」里点得开的页（ST-58、ST-62），
+ * 冻结、解冻按「账户操作」的权限写；两件事各自判断。结果核对按「操作记录与审批」的权限另写一句。
+ */
+export function handlingHint(page: string | null, canFreeze: boolean) {
+  const freeze = canFreeze ? "冻结、解冻到「账户操作」办。" : "冻结、解冻要由有「账户操作」权限的同事办。";
+  return page ? `排查到「${page}」，${freeze}` : freeze;
+}
+
+/** 名单和抽屉里同一个「去处理」：能记分诊的先记再跳；目标页进不了写「{页名} · 无权限」（ST-58）。 */
+function TriageLink({ link, onTriage, triageState, blocked, button }: {
+  link: SignalTreatmentLink;
+  onTriage: (path: string) => boolean;
+  triageState: (path: string) => "active" | "blocked" | undefined;
+  /** 分诊依赖读到的名单或详情。 */
+  blocked?: string;
+  /** 抽屉底部用按钮的样子。 */
+  button?: "primary" | "secondary";
+}) {
+  const { target, mode } = link;
+  const page = TARGET_NAME[target] ?? "对应页面";
+  if (mode === "unreachable") return <span className="b5-muted">{page} · 无权限</span>;
+  const actionBlocked = mode === "triage" ? blocked : undefined;
+  const state = mode === "triage" ? triageState(target) : undefined;
+  const text = state === "active" ? "正在记录…" : button ? `去${page}` : page;
+  return (
+    <Link className={button ? "rd-btn" : "rd-link"} data-variant={button} data-size={button ? "md" : undefined} href={target} prefetch={false}
+      aria-disabled={!!(actionBlocked || state) || undefined} title={actionBlocked ?? (state === "blocked" ? "正在记录另一条分诊，记完再点" : undefined)}
+      // 读取中或旧数据时只拦会记分诊的普通点击；Ctrl/Cmd、Shift 和中键照旧在新标签打开，不记分诊（BR2-01）。
+      onClick={actionBlocked ? event => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey) event.preventDefault(); } : undefined}
+      onNavigate={mode === "triage" ? (event) => { if (onTriage(target)) event.preventDefault(); } : undefined}>{button ? <span className="rd-btn-face">{text}</span> : text}</Link>
+  );
+}
+
+export function SignalsTable({ alerts, showBlocked = false, singleStatus = false, loadingRows, empty, canTriage, handlingHint, actionBlocked, triageBlocked, pendingSignalNos, updating, reach, canTriageTarget, selected, onOpen, onTriage, triageState, onStatus }: {
+  alerts: readonly SignalRow[];
+  /** 名单筛成篡改风险时多一列被拦入口。 */
+  showBlocked?: boolean;
+  /** 名单已按一种进度筛：进度是这张表的默认状态，灰字加图标，颜色留给级别（VS-21）。 */
+  singleStatus?: boolean;
+  /** 换条件或翻页读取中：留表头，按上次的行数占位（ST-32）。 */
+  loadingRows?: number;
+  /** 没有行时写什么：为什么空、下一步去哪（ST-33）。 */
+  empty: ReactNode;
   canTriage: boolean;
+  /** 进度表头问号里真正去哪办，按账号权限写（design-plan 板 2）。 */
+  handlingHint: string;
+  actionBlocked?: string;
+  triageBlocked?: string;
+  pendingSignalNos: ReadonlySet<string>;
   updating: string;
   reach: (path: string) => boolean;
+  canTriageTarget: (path: string) => boolean;
   selected: string | null;
-  onOpen: (alert: Alert) => void;
+  onOpen: (alert: SignalRow) => void;
   onTriage: (path: string) => boolean;
   /** 分诊记录中：active 是正在记的这条，blocked 是其余能记分诊的链接（显示成禁用，点了不动）。 */
   triageState: (path: string) => "active" | "blocked" | undefined;
-  onStatus: (alert: Alert, target: "handled" | "resolved") => void;
+  onStatus: (alert: SignalRow, target: "handled" | "resolved") => void;
 }) {
+  const columns = 4 + (showBlocked ? 1 : 0) + (canTriage ? 1 : 0);
   return (
-      <Table label="最近风险信号" className="b5-signals">
+      <Table label="最近风险信号" className="b5-signals" data-blocked={showBlocked ? "" : undefined}>
         <thead>
           <tr>
             <Th>级别 · 风险信号</Th>
-            <Th>发生时间</Th>
             <Th>处理进度 · 发送 <Explain label="处理进度和发送状态" content={<>
-              <p>待处理 → 已处理 → 已解决，只能按顺序往前推。标记只记录进度，不会解除风控、不会放行提现。</p>
-              <p>标过进度的写最近一次是谁、什么时候标的。第二行是这条信号最近一次的发送状态，不一定是发给你的。</p>
+              <p>待处理 → 已处理 → 已解决，只能按顺序往前推。标记只记录进度，不会解除风控、不会放行提现。{handlingHint}</p>
+              <p>标过进度的写最近一次是谁标的。第二行是这条信号最近一次的发送状态，不一定是发给你的。</p>
             </>} /></Th>
-            <Th>去处理 <Explain label="去处理的说明" content="能记分诊的链接，点一下先记一条分诊记录再打开；没记上就留在这页，重新点一次。按住 Ctrl／Cmd 或用中键点，在新标签打开，不记分诊。不能分诊的链接只打开页面。" /></Th>
+            {showBlocked && <Th>被拦入口 <Explain label="被拦入口的说明" content="系统在哪一步拦下了这次篡改。没记下入口的写「未记录」，人工登记、没经过拦截的写「—」。" /></Th>}
+            <Th>记录时间（{businessZone().label}）</Th>
+            <Th>去处理 <Explain label="去处理的说明" content={<>
+              <p>能记分诊的链接，点一下先记一条分诊记录再打开；没记上就留在这页，重新点一次。按住 Ctrl／Cmd 或用中键点，在新标签打开，不记分诊。</p>
+              <p>账户冻结、拒付追回有差额、其他风险信号没有对应的排查页，这一格留空。</p>
+            </>} /></Th>
             {canTriage && <Th align="right">操作</Th>}
           </tr>
         </thead>
         <tbody>
-          {alerts.length === 0 ? <TableMessage columns={canTriage ? 5 : 4}>近 7 个业务日没有风险信号</TableMessage> : alerts.map((alert) => {
-            const page = TARGET_NAME[alert.target] ?? "对应页面";
+          {loadingRows !== undefined ? <TableLoading columns={columns} rows={loadingRows} /> : alerts.length === 0 ? <TableMessage columns={columns}>{empty}</TableMessage> : alerts.map((alert) => {
             const next = alert.handlingStatus === "open" ? "handled" : alert.handlingStatus === "handled" ? "resolved" : null;
+            const treatment = signalTreatmentLink(triageTarget(alert), reach, canTriage, canTriageTarget);
             const { line } = signalFacts(alert);
             const handler = handlerText(alert);
+            const level = SEVERITY[alert.level];
+            const user = alert.userNo ?? `#${alert.userId}`;
             return (
               <Tr key={alert.signalNo} selected={alert.signalNo === selected} onOpen={() => onOpen(alert)}>
-                <Td grow><Cell title={line ? `${signalName(alert)} · ${line}` : undefined}
-                  main={<><StatusTag tone={SEVERITY[alert.level].tone} icon={SEVERITY[alert.level].icon}>{SEVERITY[alert.level].text}</StatusTag><span className="b5-signal-name">{signalName(alert)}</span>{line && <span className="b5-signal-fact"> · {line}</span>}</>}
-                  sub={<>用户 {alert.userNo ?? `#${alert.userId}`} · <SignalNo value={alert.signalNo} /></>} /></Td>
-                <Td><Cell num main={shortStamp(alert.createdAt)} /></Td>
+                <Td grow><Cell title={`${signalName(alert)}${line ? ` · ${line}` : ""} · 用户 ${user} · ${alert.signalNo}`}
+                  main={<><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag><span className="b5-signal-name">{signalName(alert)}</span>{line && <span className="b5-signal-fact"> · {line}</span>}</>}
+                  sub={<>用户 <span data-mono>{user}</span> · <SignalNo value={alert.signalNo} /></>} /></Td>
                 <Td><Cell title={handler ? `${handler}${alert.handledAt ? ` · ${stamp(alert.handledAt)}` : ""}` : undefined}
-                  main={<><StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag>{handler && <span className="b5-handler">{handler}{alert.handledAt && <span className="b5-muted"> {stamp(alert.handledAt).slice(5)}</span>}</span>}</>}
+                  main={<><StatusTag tone={singleStatus ? "neutral" : HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>{handler && <span className="b5-handler">{handler}</span>}</>}
                   sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
-                <Td>{reach(alert.target)
-                  ? <Link className="rd-link" href={alert.target} prefetch={false} aria-disabled={triageState(alert.target) ? true : undefined}
-                    title={triageState(alert.target) === "blocked" ? "正在记录另一条分诊，记完再点" : undefined}
-                    onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}>{triageState(alert.target) === "active" ? "正在记录…" : page}</Link>
-                  : <span className="b5-muted">没有{page}权限</span>}</Td>
+                {showBlocked && <Td><Cell main={isTamper(alert) ? alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span> : <span className="b5-muted">—</span>} /></Td>}
+                <Td><Cell num main={stamp(alert.createdAt)} sub={alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)}` : isTamper(alert) ? "拦截 —" : undefined} /></Td>
+                <Td>{treatment && <TriageLink link={treatment} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} />}</Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
                     {next && (
-                      <Button size="sm" loading={updating === alert.signalNo} onClick={() => onStatus(alert, next)}>
+                      <Button size="sm" loading={updating === alert.signalNo} disabledReason={actionBlocked ?? (pendingSignalNos.has(alert.signalNo) ? "请先核对这条的原操作" : undefined)} onClick={() => onStatus(alert, next)}>
                         {next === "handled" ? "标记已处理" : "标记已解决"}
                       </Button>
                     )}
@@ -250,68 +366,83 @@ export function SignalsTable({ alerts, canTriage, updating, reach, selected, onO
 }
 
 /**
- * 一条风险信号的详情：是什么事 → 现在谁在跟 → 我能做什么（底栏）。排查用的原始代码收进「技术信息」。
- * 去处理和标记进度用表格里同一套处理：链接先分诊再跳转，标记打开原来的确认框。
+ * 一条风险信号的详情：开头 5 行判断要点（是什么事、被拦入口、哪个账户、什么时候、处理到哪），排查用的原文收进「技术信息」，
+ * 决定按钮固定在底部（OP-149、OP-150）。去处理和标记进度用名单里同一套处理。
  */
-export function SignalDrawer({ alert, nav, canTriage, updating, reach, onClose, onTriage, triageState, onStatus }: {
-  alert: Alert | null;
+export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actionBlocked, triageBlocked, pendingWrite, userHref, actionsHref, updating, reach, canTriageTarget, onClose, onTriage, triageState, onStatus, readLoading, readError, staleNotice, onRetry }: {
+  alert: SignalRow | null;
+  readLoading: boolean;
+  readError: string | null;
+  staleNotice?: ReactNode;
+  canTriageTarget: (path: string) => boolean;
+  onRetry: () => void;
   nav: DrawerNav;
   canTriage: boolean;
+  /** 能在「账户操作」冻结、解冻：问号里写去哪办；不能时写找有权限的同事。 */
+  canFreeze: boolean;
+  /** 能看「操作记录与审批」：不能时问号里写结果未知时找谁核对。 */
+  canAudit: boolean;
+  actionBlocked?: string;
+  triageBlocked?: string;
+  pendingWrite: boolean;
+  /** 用户编号去用户详情、「查看账户操作」去账户操作的地址；目标进不了不传，只显示编号。 */
+  userHref?: string;
+  actionsHref?: string;
   updating: string;
   reach: (path: string) => boolean;
   onClose: () => void;
   onTriage: (path: string) => boolean;
   /** 分诊记录中：active 是正在记的这条，blocked 是其余能记分诊的链接（显示成禁用，点了不动）。 */
   triageState: (path: string) => "active" | "blocked" | undefined;
-  onStatus: (alert: Alert, target: "handled" | "resolved") => void;
+  onStatus: (alert: SignalRow, target: "handled" | "resolved") => void;
 }) {
   if (!alert) return <Drawer open={false} onClose={onClose} title="风险信号">{null}</Drawer>;
-  const page = TARGET_NAME[alert.target] ?? "对应页面";
+  const treatment = signalTreatmentLink(triageTarget(alert), reach, canTriage, canTriageTarget);
+  const page = treatment && treatment.mode !== "unreachable" ? TARGET_NAME[treatment.target] ?? "对应页面" : null;
   const next = alert.handlingStatus === "open" ? "handled" : alert.handlingStatus === "handled" ? "resolved" : null;
-  const { rows, tech } = signalFacts(alert);
+  const { line, tech } = signalFacts(alert);
   const handler = handlerText(alert);
   const level = SEVERITY[alert.level];
+  const user = alert.userNo ?? `#${alert.userId}`;
+  const rows: JudgmentRow[] = [
+    { label: "是什么事", value: `${signalName(alert)}${line ? ` · ${line}` : ""}`, reason: alert.facts?.attackEffectSummary },
+    ...(isTamper(alert) ? [{ label: "被拦入口", value: alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span> }] : []),
+    { label: "哪个账户", value: <>{userHref ? <Link className="rd-link b5-mono" href={userHref} prefetch={false} data-mono="">{user}</Link> : <span className="b5-mono" data-mono>{user}</span>}
+      {actionsHref && <> · <Link className="rd-link" href={actionsHref} prefetch={false}>查看账户操作</Link></>}</> },
+    { label: "什么时候", value: `记录 ${stamp(alert.createdAt)}`, reason: alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)} · ${businessZone().label}` : isTamper(alert) ? `拦截 — · ${businessZone().label}` : businessZone().label },
+    { label: "处理到哪", value: <><StatusTag tone={HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>
+      {handler && <span className="b5-handler"> {handler}{alert.handledAt && <span className="b5-muted"> {stamp(alert.handledAt)}</span>}</span>}</>,
+      reason: `最近一次发送：${deliveryStatusText(alert.deliveryStatus)}` },
+  ];
+  // 底部只在有能做的事时出现：还能标记，或「去处理」点得开（BR2-04）。
+  const hasDecision = canTriage ? !!(next || (treatment && treatment.mode !== "unreachable")) : treatment?.mode === "read";
+  const unread = !staleNotice && (readLoading || readError);
   return (
-    <Drawer open onClose={onClose} title={signalName(alert)} icon={level.icon} tone={level.tone} nav={nav}
-      sub={<><span className="rd-drawer-ref" data-mono>{alert.signalNo}</span><StatusTag tone={level.tone} icon={level.icon}>{level.text}</StatusTag></>}
-      footer={<Decision explain={<>
-        <p>标记只记录进度，不会解除风控、不会放行提现。真正的处置到「{page}」办。</p>
-        {canTriage && <p>能记分诊时，点「去{page}」先记一条分诊记录再打开；没记上就留在这页。按住 Ctrl／Cmd 或用中键点，在新标签打开，不记分诊。</p>}
+    <Drawer open onClose={onClose} title={signalName(alert)} icon={level.icon} tone={levelTone(alert)} nav={nav}
+      sub={<><span className="rd-drawer-ref" data-mono>{alert.signalNo}</span><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></>}
+      footer={!unread && hasDecision && <Decision explain={<>
+        {canTriage && <p>标记为「{next === "resolved" ? "已解决" : "已处理"}」只记录进度，不会解除风控，也不会放行提现。</p>}
+        <p>{handlingHint(page, canFreeze)}</p>
+        {!canAudit && canTriage && <p>你标记后结果未知时，请有「操作记录与审批」查看权限的同事按原操作核对。</p>}
       </>}
-        others={reach(alert.target)
-          ? <Link className="rd-btn" data-variant={next && canTriage ? "secondary" : "primary"} data-size="md" href={alert.target} prefetch={false}
-            aria-disabled={triageState(alert.target) ? true : undefined} title={triageState(alert.target) === "blocked" ? "正在记录另一条分诊，记完再点" : undefined}
-            onNavigate={(event) => { if (onTriage(alert.target)) event.preventDefault(); }}><span className="rd-btn-face">{triageState(alert.target) === "active" ? "正在记录…" : `去${page}`}</span></Link>
-          : <span className="b5-muted">没有{page}权限</span>}
-        primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
-      <Panel plain headingLevel={3} title="是什么事">
-        <Facts>
-          {rows.length ? rows.map((row) => <Fact key={row.k} k={row.k}>{row.v}</Fact>)
-            : <Fact k="具体情况">没有记录，到「{page}」查看</Fact>}
-          <Fact k="用户">{alert.userNo ?? `#${alert.userId}`}</Fact>
-          <Fact k="发生时间">{stamp(alert.createdAt)}（北京时间）</Fact>
-        </Facts>
-      </Panel>
-      <Panel plain headingLevel={3} title="现在谁在跟">
-        <Facts>
-          <Fact k="处理进度"><StatusTag tone={HANDLING[alert.handlingStatus].tone}>{HANDLING[alert.handlingStatus].text}</StatusTag></Fact>
-          {alert.handlingStatus !== "open" && <Fact k="处理人">{handler ?? "—"}</Fact>}
-          {alert.handlingStatus !== "open" && <Fact k="处理时间">{alert.handledAt ? `${stamp(alert.handledAt)}（北京时间）` : "—"}</Fact>}
-          <Fact k="最近一次发送">{deliveryStatusText(alert.deliveryStatus)}</Fact>
-        </Facts>
-      </Panel>
-      <Fold inset title="技术信息" summary="排查时用">
+        others={treatment && <TriageLink link={treatment} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} button={next ? "secondary" : "primary"} />}
+        primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} disabledReason={actionBlocked ?? (pendingWrite ? "请先核对这条的原操作" : undefined)} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
+      {staleNotice}
+      {unread ? <BlockState compact state={readError ? "error" : "loading"} title={readError ? "风险信号详情加载失败" : "正在加载风险信号详情…"} detail={readError ?? undefined} onRetry={readError ? onRetry : undefined} /> : <>
+      <JudgmentPoints rows={rows} />
+      <Fold inset title="技术信息" summary={`${tech.length} 项，排查时用`}>
         <div className="rd-fold-flush">
           <Facts>{tech.map((row) => <Fact key={row.k} k={row.k}>{row.v}</Fact>)}</Facts>
         </div>
       </Fold>
+      </>}
     </Drawer>
   );
 }
 
 /** 后端真实的发送状态（含 SENDING，B5-D09）。认不出的写待核实，不猜。 */
 export const deliveryStatusText = (value: string) => ({
-  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "尚未加入发送队列",
+  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "还没发出",
   FAILED_RETRY: "发送失败，等待重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败",
 } as Record<string, string>)[value.toUpperCase()] ?? "发送状态待核实";
 
@@ -328,12 +459,13 @@ const RECEIPT_SOURCE: Record<string, string> = { "durable-inbox": "站内", "con
  */
 type InboxRow = Omit<B5InboxItem, "deliveredAt" | "receiptSource"> & { deliveredAt: string | null; receiptSource: string | null };
 
-export function InboxTable({ state, items, error, onRetry, canTriage, acknowledging, onAcknowledge }: {
+export function InboxTable({ state, items, error, onRetry, canTriage, acknowledgeBlocked, acknowledging, onAcknowledge }: {
   state: "loading" | "error" | "ready";
   items: readonly InboxRow[];
   error: string;
   onRetry: () => void;
   canTriage: boolean;
+  acknowledgeBlocked?: string;
   acknowledging: number | null;
   onAcknowledge: (item: B5InboxItem) => void;
 }) {
@@ -369,7 +501,7 @@ export function InboxTable({ state, items, error, onRetry, canTriage, acknowledg
                     <Td align="right" data-fit="">
                       {!item.acknowledgedAt && (
                         <Button size="sm" loading={acknowledging === item.id}
-                          disabledReason={delivered ? undefined : "这条还没送达，送达后才能确认"}
+                          disabledReason={acknowledgeBlocked ?? (delivered ? undefined : "这条还没送达，送达后才能确认")}
                           onClick={() => onAcknowledge(item)}>确认已读</Button>
                       )}
                     </Td>

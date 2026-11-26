@@ -495,6 +495,8 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 :root[data-theme="light"] .rd-chip { box-shadow: inset 0 0 0 1px var(--rd-line); }
 .rd-filter-notice { margin: 0; color: var(--rd-warn); }
 .rd-filter-result { margin-left: auto; font-size: var(--rd-text-aux); color: var(--rd-text-3); }
+.rd-filter-count { margin-left: auto; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }  /* 筛选行右端的结果数（FilterBar end）；L1 的 .rd-filter-end 是另一样东西 */
+.rd-filter-sort + .rd-filter-count { margin-left: var(--rd-space-2); }
 .rd-field { display: grid; gap: 8px; font-size: var(--rd-text-body); color: var(--rd-text-3); }
 .rd-input { width: 100%; height: var(--rd-control-h); padding: 0 12px; border: 0; border-radius: var(--rd-radius-control); background: var(--rd-control); color: var(--rd-text); font: inherit; font-size: 14px; }
 .rd-textarea { display: block; height: auto; min-height: 76px; padding: 8px 12px; line-height: var(--rd-lh-body); resize: vertical; field-sizing: content; }  /* 随内容长高，长正文不在外层滚动里再套一层滚动 */

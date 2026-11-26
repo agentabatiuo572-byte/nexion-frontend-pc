@@ -721,10 +721,12 @@ export default function UserDetailPage() {
   const userKey = params?.id?.trim() ?? "";
   const requestedReturnTo = searchParams?.get("returnTo") ?? "";
   const conversationNo = searchParams?.get("conversationNo")?.trim() ?? "";
-  const returnTo = supportScope ? conversationNo ? `/service/sessions?conversationNo=${encodeURIComponent(conversationNo)}` : supportReturnPath(requestedReturnTo) ?? "/service/overview" : requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
-    ? requestedReturnTo
-    : "/users/search";
-  const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : "返回用户列表";
+  const returnPath = requestedReturnTo.split(/[?#]/, 1)[0];
+  const riskReturnLabel = returnPath === "/overview/risk-radar" && reach(returnPath) ? "返回风险提醒"
+    : returnPath === "/risk/scoring" && canReadK4 ? "返回风险评分规则" : null;
+  const returnTo = supportScope ? conversationNo ? `/service/sessions?conversationNo=${encodeURIComponent(conversationNo)}` : supportReturnPath(requestedReturnTo) ?? "/service/overview"
+    : riskReturnLabel || returnPath === "/users/search" || returnPath.startsWith("/users/search/") ? requestedReturnTo : "/users/search";
+  const returnLabel = supportScope ? conversationNo ? "返回原会话" : "返回工作台" : riskReturnLabel ?? "返回用户列表";
   const pageName = supportScope ? "完整客户档案" : "用户详情";
   // 去处理的页面从这里来，要回到这一页（SPM-03）：带上本页地址，本页的返回地址跟着。
   const selfHref = `${pathname ?? ""}?returnTo=${encodeURIComponent(returnTo)}`;

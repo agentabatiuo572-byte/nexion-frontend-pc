@@ -869,6 +869,7 @@ Nexion 运营控制后台
 - 直接打开没有权限的页面：侧栏和顶栏都留着，主区写「没有这个页面的查看权限」，说明账号没有开通哪一页、要用去找超级管理员，按钮「返回有权限的页面」回到这个账号的落地页。不再静默跳走，页面内容不加载。
 - 跨页链接：目标页在这个账号的可见菜单里、并且有目标内容的读权限才显示，不会落到无权限页。读权限和目标页自己接受的一致，几个码有一个就行，比如资金储备认 D3、B2、B1 的读权，可用资金与应付款认 B2、D3 的读权。判断去掉查询串，超管也走同一条件。不满足时只去掉可点的动作，说明文字和数字留着。
 - 铃铛只放要处理的事：正常的覆盖率、风险结论行不进列表。紧急开关的「没有开启的业务」告警只算可用业务，暂不可用项不提醒，和今日概览口径一致。铃铛数字等于告警条数加待审批的申请条数，和抽屉副标题一致。抽屉标题写「告警和待审批的申请」，第二组「待审批的申请」列操作记录里等批准的申请。
+- 铃铛的风险告警沿用 B 聚合默认口径。篡改拦截落风险提醒名单，按精确类型 `TAMPER_DETECTED`、全部进度和条目原有的 `startAt/endAt` 查询。评分条目按对应档进入风险评分规则，默认口径的 `HIGH` 落 `HIGH_BELOW_AUTO`。条目是否可点按新目标的菜单和内容读权判断。
 - 审批队列、消息中心待审批卡片、今日概览「待审批操作」共用同一张审批单的动作、对象和变更。队列首格沿用已有对象位置，悬停提示使用同一个对象名称。卡片标题写动作，说明写对象和变更。今日概览副标题写最早一张的动作、对象和变更。变更有第二行时接在括号里；动作或变更主行已明确同一个业务对象时省略重复对象。运营账号显示名称，汇率和提现参数单以菜单名为对象。有操作码且动作没有中文时，使用登记的中文操作名。原动作及原值随审批单留存，详情中的「技术信息」入口待补齐。没有前后值的旧单显示原发起理由；商品标语、译文和自定义角标保留原文。机器原值换成业务页已有的中文叫法，无法简述时写「请在审批详情核对」。卡片跳转「操作记录与审批」。每次打开消息中心重读待审批单，失败时待审批数量显示「—」，可在错误卡内重试。
 - 页头只有一种：返回入口（有来源时）、标题、「这页怎么用」、一句说明、数据时间，动作放右侧。已写内容的页才显示「这页怎么用」。
 - 顶栏窗口宽度 1280 及以上显示搜索文字、「兑付覆盖率」标签和 UTC 钟，低于 1280 收起。面包屑放不下时先截中间段，再截首段，末段优先写全；四段且顶栏容器不大于 1110px 时收起中间段，只留首末；窗口低于 1280px 时只留末段。兑付覆盖率读取失败或未取得数据时写「—」，用中性色、无状态底，不当作跌破红线。
@@ -1238,7 +1239,8 @@ I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App
 
 | 块 | 读权限 |
 |---|---|
-| 资金结论、风险事项、覆盖率告警、资金明细、风险与开关、运营阶段 | `overview_b1_read` |
+| 资金结论、覆盖率告警、资金明细、风险与开关、运营阶段 | `overview_b1_read` |
+| 风控待处理 | `overview_b1_read` 和 `overview_b5_read`，风险提醒可达 |
 | 可覆盖天数 | `finance_d3_read` 或 `overview_b2_read` |
 | 紧急开关待补录、没有开启的业务 | `emergency_j1_read` |
 | 打款异常、待审核提现、系统处理中笔数 | `finance_d2_read` |
@@ -1259,6 +1261,10 @@ I2 名称同步（2026-11-15）：本页现名「消息推送」，管发到 App
 | 资金进出内的今日充值渠道金额、笔数与合计 | `finance_d1_read` |
 | 用户转化 | `overview_b3_read` |
 | 关键指标 | `bi_l1_read` |
+
+B120 风控待处理读取 `/api/admin/treasury/b-domain?riskFeed=OPEN_BY_CATEGORY`，与风险提醒的类型列表同源。目标可达的非正常条目合成一行，数量按类别行数，按严重度取前三类，同级保持接口顺序。点击从类型列表进入。顶栏铃铛、资金区继续用 B 聚合的默认口径。
+
+B 聚合默认口径的挂载和普通共享读取可合并在途请求。主动刷新重新发起读取，双账本等写后核对等待写入之后发起的快照。
 
 设备卡和设备待处理只给有设备管理读权的账号。只有 E1、E2、E3 或 E6 设备读权，且没有其他今日概览内容资格的账号，登录后进入自己可访问的第一个页面。E4 仍可凭销售额读取资格进入今日概览。
 
@@ -1809,13 +1815,16 @@ B4-BE-01元数据、BE-02快照与写入口范围、BE-03阶段名、BE-04预算
 - 提现积压按submitted/review-passed/processing三组统计（页面叫待放行、已放行、处理中；待放行含已提交、待审核、冷却中、延迟复查、冻结，已放行含已放行和等上链，见B5RiskRadarMapper积压SQL），created_at严格早于48小时为超时，任意超时灯黄。amountUsdt/totalAmountUsdt仅合计USDT并保数据库原精度；笔数和SLA仍含全部匹配币种。前端保留金额文本，千分位、去掉末尾的 0、同列不补零，不舍入；只校验后端合计，不按笔数计算平均值。卡里表头写「单数（全部币种）」「USDT 金额」，问号说明金额只加 USDT、不取整、和单数不是同一批单。
 - 开关固定提现/质押/创世节点/兑换/试用，不含地区。缺设置默认关闭；非空非法设置报错。质押可用性沿J1退役投影，不计入可用业务的关闭统计。
 - 覆盖率来自B1估值快照，coverage.light的红灯采用该次快照的精确redlineBreached，不再按已舍入的ratio和红线重判；非红灯仍核原健康线规则。原应付款0时为null/unavailable，估值不可靠整份读取失败；单位按已定B1/B5口径为USDT，不自行换算。两页各自请求仍分别采样。
-- 一次雷达快照含8个业务日压力、7个业务日P0–P3分布/日量和最新20条信号；分布包含已处理/解决的信号。recentAlerts保留原字段，新增可空signalType/userNo/facts/handledBy/handledAt；缺处置记录仍open/v0，open的处理人/时间一律空。页面现有用户位置优先userNo，旧后端/旧恢复快照缺字段时保留#userId。表格一行写类别和一句具体情况（长的省略、悬停看全句），处理进度后写处理人（展示脱敏同审计主体）和处理时间（月-日 时:分，北京时间），待处理不占位；详情抽屉列出各项事实、处理人、处理时间和最近一次发送。signalType不直接显示，只把user_frozen写作「账户冻结」、d1_chargeback_shortfall写作「拒付追回有差额」，其余照后端message；原值只在技术信息里。
-- facts只接后端投影：篡改tamperPath/attackEffect；K2试用循环rowId/cycleCount/windowDays；K2套利或榜单速度rowId/view/action；C2冻结source；D1拒付caseNo/walletShortfallUsdt/feeBufferShortfallUsdt。均可部分缺失，未知或手工来源为空；不解析原evidence、不推断缺值，D1金额也保十进制文本，不恢复生产者舍入前精度。页面写法：篡改项按J3同一张名称表译名并写「企图「…」」；试用循环「N 天内开始试用 M 次」；K2动作「排查类别：已标记套利」等；C2冻结「在「账户操作」冻结」；D1「案件 号：钱包少追回 X USDT，手续费备用金不足 Y USDT」，金额千分位、不舍入。没有事实的只写类别，详情写「没有记录，到对应页面查看」。
+- 雷达快照含 8 个业务日压力、7 个业务日 P0–P3 分布和日量，分布包含已处理、已解决信号。页面名单独立使用 `GET /api/admin/risk/radar/signals`，默认近 7×24 小时，支持 `category`（多值）、`handlingStatus`、`startAt/endAt`、`pageNum/pageSize`。结果数和去重账户数用服务端的 `total/accountCount`。已应用的页签、条件、页码和每页条数写进网址。
+- 「待处理风险 · 按类型」需 B1、B5 读权。按严重度列出 B120 汇总，同级保留后端顺序。从今日概览首次进入定位页签；点信号类型按这一行的 `category`、`handlingStatus=open` 和起止时间原值查询并定位名单筛选条。评分按 `band` 进风险评分规则的账户名单，评分不可用时进规则页。提现压力定位本页卡，卡片尚未读到时定位雷达的读取状态，失败后可在那里重试。只有 B5 读权时仍可查看名单及单条。
+- 抽屉按信号号读 `GET /api/admin/risk/radar/signals/{signalNo}`，上一条下一条在当前页内。记录时间和可空的拦截时间按业务时区显示。被拦入口、影响和技术原值使用 B119 的 `blockedAtEndpointName/attackEffectSummary/blockedAtEndpoint`。用户详情和账户操作按目标菜单及相应读权提供入口，并用 `returnTo` 保留全部已应用条件。账户操作页只有在对应风险页可达且有读权时才显示返回入口。
 - 本人inApp收件箱最多100条，未送达PENDING/SENDING/FAILED_RETRY/DEAD的来源/送达时间合法可空；空值保持null，不当已送达。仅本人DELIVERED且未确认的行给新确认入口。
 
 **② 读取与刷新**
 
-GET与SSE同源，SSE只给连接初始快照；前端每30秒GET，运输断线保留最近快照并提示，GET/格式失败清掉主体，不显示成正常。订阅和收件箱独立读取/重试，不跟雷达轮询刷新。未知写记录的提示和恢复在主体成功分支之外；雷达503时仍能恢复原请求。
+雷达、类型汇总、分页名单和正在看的单条每 30 秒重读。页头「刷新」也读取本人站内告警和未打开编辑的订阅。每个区块独立处理读取结果和重试：首次失败在原位报错，同条件后续失败保留旧值和自己的成功时间，并锁定依赖的数据写入。原结果未知的恢复入口独立于读取状态。
+
+名单或当前单条正在重读或读失败时，禁用依赖该数据的分诊和标记，已打开的标记确认也锁提交。阈值确认中的提现压力、现行线和拟改线结论用同一份预览样本；雷达重读或阈值基线变化后，新预览成功才可确认。
 
 **③ 六类请求路径**
 
@@ -1824,15 +1833,17 @@ GET与SSE同源，SSE只给连接初始快照；前端每30秒GET，运输断线
 | 黄线/不提高红线 | `PUT /api/admin/risk/bankrun-thresholds`，yellowPct/redPct/expectedVersion/reason/operator，`overview_b5_threshold_write`；服务端同时接受ROLE_SUPER_ADMIN/ROLE_RISK_LEAD，PC仍逐实际写码；version+1、审计后返回完整radar |
 | 提高红线审批 | `POST /api/admin/platform/audit/operations`；sourceDomain=B5、obj=current、command=B/b5_bankrun_thresholds、params.values带原版本及两线、target=B/bankrun_thresholds/current，fund/amplifies=true；另一位有效超级管理员且有platform_a2_operation_approve批准，自己不能批；批准仍复核版本 |
 | 共享订阅 | GET `/api/admin/risk/alert-subscription` 要 `overview_b5_read`，同路径 PUT 要 `overview_b5_subscribe`；全平台与B1共用，保存者成为唯一subscriber；email不开放，webhook须HTTPS/≤500/公网DNS/允许名单/受控代理，保存不试发；队列发送使用当前URL |
-| 主卡及队列分诊 | `POST /api/admin/risk/radar/triage`，dimension/target/operator；triage+目标读权及菜单；FINANCE仅bankrun/withdraw-backlog/coverage。队列K1→abnormal-accounts、D2→withdraw-backlog、K2→abuse、J3→tamper、K4→scoring，均为精确固定目标；回执仅dimension/target，匹配后跳转，失败不导航，按B4-PD02可重新点，不套R1：明确失败提示「没有跳转：分诊记录没记上，请再点一次。」，断网、超时、回执不符提示「没有跳转：分诊记录结果未知，请再点一次。」；后端回`B5_TRIAGE_TARGET_INVALID`（还不认K2、J3、K4三个目标的旧后端）时这三类直接跳转、不提示；403时提示只写没记上和原因、不叫人再点（裸「无权限访问」换成全站无权限说明）；无分诊资格的队列链接仍按useReach只导航 |
+| 主卡及队列分诊 | `POST /api/admin/risk/radar/triage`，dimension/target/operator；triage 权限、目标读权及菜单同时满足，财务只可分诊 bankrun、withdraw-backlog、coverage。队列的多账户、提现、套利或刷量、篡改四类与后端目标匹配时先记录分诊，回执匹配才导航。账户冻结、拒付差额和其他信号没有对应分诊。Ctrl／Cmd 或中键打开新标签沿用原链接行为。 |
 | 确认已读 | `POST /api/admin/risk/radar/inbox/{id}/acknowledge`，Idempotency-Key、无body；`overview_b5_triage`；只更新本人DELIVERED的read_at/acknowledged_at，回deliveryId/acknowledged，不改信号进度 |
 | 处理进度 | `PATCH /api/admin/risk/radar/signals/{signalNo}/status`，targetStatus/expectedStatus/expectedVersion/reason/operator；triage，理由8–200，仅open→handled→resolved；回signalNo/handlingStatus/handlingVersion，不解冻/放款/重发/改已读 |
 
-按业务意图是14个动作（原11个加abuse/tamper/scoring三维分诊），仍是6类请求路径；所有业务写都追到后端idempotency.execute。B5-BE-03由f7fec2da交付，原B5-PD01的后端前置已满足；队列现有Link外观及useReach可见性保持，主卡原五维不变。
+业务写使用现有后端幂等执行。标记前按信号号读取并固定当前状态、版本和动作，理由按已读政策计算可见字符数。标记成功后名单和类型汇总独立读回。
 
 **④ 结果未知与审批当前状态**
 
 首次拒绝按`isDeterministicRejection`结束这次命令（包括首次403），在原确认框保留输入和错误，下一次用新号；未知及幂等未收敛仍保留。已有原命令的重试才用`isExplicitRejection`，401/403等不证明原结果，继续保留。B5提案同此区分。
+
+信号版本冲突时保留确认框，操作者读单条最新值后，如原动作仍适用，清空旧理由并再确认。幂等结果未知时保留原号、原理由和对象锁，单条当前值仅供核对。确认框的原提示显示这次读取的进度及失败原因。24 小时后停止重发，保留记录。
 
 2026-11-15订阅补丁：首次版本冲突明确拒绝后，原基线失效并重新读取接收人、渠道和版本；读取成功前不能新保存，保留已填草稿，下一次提交使用新版本和新命令号。最新渠道/地址与草稿的差异展示交视觉worker。结果未知的原请求仍使用原版本、原内容、原命令号；恢复框的渠道、地址、提交时接收人和代理模式来自保存记录并冻结，当前订阅读取失败单独显示，不遮挡原内容；只有新修改依赖实时读取成功。
 

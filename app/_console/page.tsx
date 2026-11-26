@@ -26,7 +26,8 @@ import { fetchD1TopupOverview, fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
 import { PERSONAL_TODO_HOME, SUPPORT_TODO_HOME } from "@/lib/admin/support-todo-route";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
-import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
+import { B5_FROM_HOME, B5_PATH } from "@/lib/admin/risk-feed";
+import { riskCategoryRows, riskCategoryTitle } from "./overview/risk-radar/categories";
 import { fmtAmount, fmtNum } from "@/lib/format";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -35,7 +36,7 @@ import { downloadB0Snapshot, pendingB0Export } from "@/lib/admin/b0-export-clien
 import { toast } from "@/lib/store/ui";
 import { BusinessPanel, shownBusinessPeriod, usePeriodChoice } from "./command-center/business";
 import { availableGates, FlowFold, FundFold, FunnelFold, KpiFold, pressureLevel, RiskFold, useFoldChoices } from "./command-center/folds";
-import { PendingPanel, type PendingFailure, type PendingRow } from "./command-center/pending";
+import { PendingPanel, riskSummaryRow, type PendingFailure, type PendingRow } from "./command-center/pending";
 import { fundLevel, statusSentence } from "./command-center/status";
 import { useBlock, type Block } from "./command-center/use-block";
 
@@ -81,6 +82,8 @@ export default function CommandCenter() {
 
   const [refreshKey, setRefreshKey] = useState(0);
   const bDomain = useBDomainDashboard(blocks.fund);
+  const canReadRiskFeed = blocks.fund && reach(B5_PATH);
+  const pendingRisk = useBDomainDashboard(canReadRiskFeed, "OPEN_BY_CATEGORY");
   const reserve = useBlock(fetchB2Reserve, blocks.coverDays, refreshKey);
   const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
   const business = useBlock(fetchB0Business, blocks.moneyFlows || blocks.sales || blocks.newUsers || blocks.activeUsers, refreshKey);
@@ -130,8 +133,11 @@ export default function CommandCenter() {
   if (j1.error) rows.push({ key: "j1", name: "紧急开关", onRetry: () => void refreshJ1DutyAlerts() });
   else if (backfill) rows.push({ key: "j1", title: `紧急开关待补录 ${backfill.count ?? 0} 项`, sub: backfill.hint, owner: "风控", href: opsAlertHref(backfill), tone: backfill.level === "high" ? "danger" : undefined });
   if (closedBusinesses) rows.push({ key: "j1-closed", title: closedBusinesses.title, sub: closedBusinesses.hint, owner: "风控", href: opsAlertHref(closedBusinesses), tone: "warn" });
-  const risks = fundReady ? riskRadar.feed.filter((item) => !isRiskConclusion(item) && reach(item.href)) : [];
-  risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: riskFeedTitle(item.t), sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
+  // 风控条目合成一行，点进风险提醒页的「待处理风险 · 按类型」（design-plan 板 1）。
+  const risks = riskCategoryRows(pendingRisk.riskRadar.feed, reach);
+  const riskRow = pendingRisk.error ? null : riskSummaryRow(risks.map((item) => ({ sev: item.sev, title: riskCategoryTitle(item) })), B5_FROM_HOME);
+  if (pendingRisk.error) rows.push({ key: "risk", name: "待处理风险", onRetry: () => void pendingRisk.reload() });
+  else if (riskRow) rows.push(riskRow);
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: `/finance/withdrawals?status=${TX_ORPHANED}`, tone: "warn" });
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
@@ -169,10 +175,10 @@ export default function CommandCenter() {
 
   const pendingFailed = rows.flatMap((row) => ("onRetry" in row ? [row.name] : []));
   const pendingRows = rows.length - pendingFailed.length;
-  const urgentRows = risks.filter((item) => item.sev === "p0").length + (!j1.error && backfill?.level === "high" ? 1 : 0);
+  const urgentRows = (riskRow?.tone === "danger" ? 1 : 0) + (!j1.error && backfill?.level === "high" ? 1 : 0);
   const firstLoad = (block: Block<unknown>) => block.loading && block.data === null;
   const pendingLoading = [approvals, reviewPending, orphaned, supportTodo].some(firstLoad)
-    || (canShowBankReview && firstLoad(topup)) || (canReadJ1 && !j1.settled);
+    || (canShowBankReview && firstLoad(topup)) || (canReadJ1 && !j1.settled) || firstLoad(pendingRisk);
   const hasPendingSource = blocks.fund || blocks.j1 || blocks.withdrawals || blocks.approvals || blocks.support
     || blocks.devices || canShowBankReview;
   const showPending = hasPendingSource && (rows.length > 0 || pendingLoading);
@@ -187,6 +193,7 @@ export default function CommandCenter() {
   const refresh = () => {
     setRefreshKey((key) => key + 1);
     if (blocks.fund) void bDomain.reload();
+    if (canReadRiskFeed) void pendingRisk.reload();
     if (blocks.j1) void refreshJ1DutyAlerts();
   };
 
@@ -248,6 +255,7 @@ export default function CommandCenter() {
   });
   const retryFund = () => {
     if (bDomain.error) void bDomain.reload();
+    if (pendingRisk.error) void pendingRisk.reload();
     if (reserve.error) reserve.reload();
   };
   // 结论句的入口只放一个：资金读取失败给重试，说开关给开关页，说资金给资金总览，说提现压力就展开「风险与开关」。
