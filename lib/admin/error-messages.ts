@@ -1124,7 +1124,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   SUPPORT_BULK_NOT_SUBMITTED: "原批次尚未提交，不能取消或重试。请先核对原批次状态。",
   SUPPORT_BULK_CANCELLED: "原批次已取消，不能再重试失败项。请核对原批次逐客结果。",
   SUPPORT_BULK_PAYLOAD_REVIEW_REQUIRED: "原群发内容需要人工核对，暂不自动重发。请核对原批次和消息结果。",
-  SUPPORT_BULK_PREVIEW_EXPIRED: "原群发名单已过期或已提交，本次未新建批次。请先查询原操作；未提交的名单需返回选人核对。",
+  SUPPORT_BULK_PREVIEW_EXPIRED: "原群发名单已过期或已提交，这次没有新建批次。请返回选人重新核对名单；页面上还留有原操作记录时，先查询原操作。",
   SUPPORT_BULK_SELECTION_EMPTY: "原群发名单没有客户，本次未创建批次。请返回选人重新核对。",
   SUPPORT_BULK_CONTENT_REQUIRED: "缺少群发内容，本次未创建批次。请核对名单和发送内容。",
   SUPPORT_BULK_CONTENT_INVALID: "群发类型、用途和内容不匹配，本次未创建批次。请核对文案、推荐内容及图片。",
