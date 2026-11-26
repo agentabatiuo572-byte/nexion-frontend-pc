@@ -450,7 +450,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {isEnabled && !enabling && <Fact k="已冻结的新人礼">首笔实付订单后照常解冻</Fact>}
         {isEnabled && <Fact k="生效时间">{enabling ? <Change from={gateNow} to="批准那一刻" /> : `不变：${gateNow}`}</Fact>}
         {isEnabled && <Fact k="等结算的注册">{enabling
-          ? `批准后，现在等结算的 ${pendingCount} 位不再进入结算`
+          ? resetFact("批准")
           : `${pendingCount} 位照常统计，停用期间不能结算`}</Fact>}
       </Facts> : undefined,
       statedBrief: isEnabled
@@ -610,7 +610,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           : "批准执行时逐项核对；不符合就不发"}</Fact>}
         {targeted ? null
           : <>
-            <Fact k="提交时待结算">{countText(pendingNow)} 位</Fact>
+            <Fact k="上次读取时待结算">{countText(pendingNow)} 位</Fact>
             <Fact k="批准时结谁">按那时的名单，批准前新符合条件的也算；先结现行生效区间，再结之前各生效区间，三项都是 0 的区间不结；同一区间按注册先后</Fact>
           </>}
         {originalSummary ? <Fact k="原结算说明">{originalSummary}</Fact> : <>
@@ -907,7 +907,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <Stat key={param.key} tone="role-4"
         head={<span className="h8-card-head"><who.icon size={14} aria-hidden />{param.label}<small>{who.per}</small></span>}
         label="实际发放" value={amountText(effective, decimals)} unit={param.unit}
-        explain={`每份奖励按这个数发，不是某位用户已经到账的钱；由下面两项相乘，按 6 位小数四舍五入。调高要批准，调低之后结算的按新额发。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
+        explain={`每份奖励按这个数发，不是某位用户已经到账的钱；由下面两项相乘，按 6 位小数四舍五入。调高要批准；调低后，生效时间起注册的按新额发，之前生效区间里注册、还没结算的仍按原额发。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
         <div className="h8-formula" aria-label={`基础额 ${amountText(base, decimals)} ${param.unit} 乘 ${multiplierName} ${multiplierText(multiplier)}`}>
           <span className="h8-formula-term"><small>基础额</small><Amount value={base} unit={param.unit} decimals={decimals} /></span>
           <span className="h8-formula-term"><small>第 {data.rhythmMonth} 月{multiplierName}</small><b>{multiplierText(multiplier)}</b></span>
@@ -967,7 +967,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
               what="这个时间起（含这一刻）注册的新人按现行金额结算"
-              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，仍按各人生效区间的金额和发放方式结；奖励停用或三项都是 0 时注册的不结。</p></>}
+              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前、在奖励开着且有正额的生效区间里注册、还没结算的新人，仍按那个区间的金额和发放方式结；不在任何这样的区间里注册的不结。</p></>}
               value={<span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
           </ConfigList>
         </Panel>

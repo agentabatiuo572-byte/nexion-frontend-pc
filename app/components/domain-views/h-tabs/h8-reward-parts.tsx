@@ -61,7 +61,7 @@ export function RewardFlow({ pending, blocked, settled, mode }: { pending: React
         <div className="h8-flow-body">
           <span className="h8-flow-title">新人注册
             <Explain label="哪些注册会进入结算" content={<>
-              <p>生效时间起（含这一刻）注册的正式账号按现行金额结；之前注册、还没结算的，按各人生效区间的金额结。</p>
+              <p>生效时间起（含这一刻）注册的正式账号按现行金额结；之前在奖励开着且有正额的生效区间里注册、还没结算的，按那个区间的金额结。</p>
               <p>奖励停用或三项都是 0 时注册的，不进入结算。</p>
               <p>没有邀请人的新人也有新人礼；这时邀请人那一份不发。</p>
             </>} />
