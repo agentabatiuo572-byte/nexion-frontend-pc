@@ -34,7 +34,7 @@ async function request(path: string, body?: unknown, key?: string): Promise<unkn
         const reason = typeof data?.reason === "string" && !/^[A-Z_\d:]+$/.test(data.reason) ? data.reason : null;
         const code = reasonCode;
         throw new PhoneApiError(reason ?? phoneLabels[code] ?? formatAdminApiError(code, response.status === 403 ? "当前权限或账号范围不允许访问，请返回选择其他账号。"
-                : response.status === 401 ? "管理会话已失效，请重新登录。" : "请求未完成，请刷新后核实当前状态。"), response.ok && record(result) && typeof result.code === "number" ? result.code : response.status, false, record(data?.fieldErrors) ? data.fieldErrors as Record<string, string> : {}, code);
+                : response.status === 401 ? "管理会话已失效，请重新登录。" : "请求未完成，请刷新后核实当前状态。", body === undefined ? "read" : "write"), response.ok && record(result) && typeof result.code === "number" ? result.code : response.status, false, record(data?.fieldErrors) ? data.fieldErrors as Record<string, string> : {}, code);
     }
     if (result.data == null)
         throw new PhoneApiError("返回内容不完整，请查询原操作。", 502, body !== undefined);

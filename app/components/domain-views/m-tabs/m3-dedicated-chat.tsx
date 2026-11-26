@@ -2298,12 +2298,14 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
         {(sessionEndRecoveries.length > 0 && !holdEnding || serviceStatus && conversationsAvailable || actionError || actionResult || !requestedCustomerIdValid || readError || paneMessages && messagePages.error || messagePages.gap) && <div className="m3s-notices">
           {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "current").map(record => <Notice key={record.commandKey} tone="warn" action={sessionEndActions(record)}>
             {isRetryExpired(record) ? RETRY_EXPIRED_TEXT : record.rejection ? "这次接待的结束被拒绝了，原记录还在；核对后可以解除原操作记录。" : "这次接待的结束结果未知。请先查询原操作。"}
+            {` 发出时间：${businessStamp(record.createdAt)}（${businessZone().label}）。`}
             {sessionEndReadFailure(record)}
           </Notice>)}
           {!holdEnding && sessionEndRecoveries.filter(record => record.instanceState === "unconfirmed").map(record => <Notice key={record.commandKey} tone="warn" action={sessionEndActions(record)}>
             {record.rejection ? "结束会话的重试被拒绝，原记录还在；核对后可以解除原操作记录。" : record.sessionRef
               ? `还不能确认这条结束记录是哪一次接待的，可以查原结果。${isRetryExpired(record) ? RETRY_EXPIRED_TEXT : ""}`
               : `这条结束记录没记下是哪一次接待，只能查原结果；查清之前，这次接待可能结束不了。${isRetryExpired(record) ? RETRY_EXPIRED_TEXT : ""}`}
+            {` 发出时间：${businessStamp(record.createdAt)}（${businessZone().label}）。`}
             {sessionEndReadFailure(record)}
           </Notice>)}
           {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
