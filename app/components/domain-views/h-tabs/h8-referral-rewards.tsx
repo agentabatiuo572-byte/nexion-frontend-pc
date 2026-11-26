@@ -195,6 +195,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [stale, setStale] = useState<{ param?: H8Param; value?: string } | null>(null);
   const [releasing, setReleasing] = useState<H8RewardCommand | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityRead | null>(null);
+  const [eligibilityRetry, setEligibilityRetry] = useState(0);
   const eligibilityRef = useRef(eligibility);
   eligibilityRef.current = eligibility;
   useEffect(() => {
@@ -208,7 +209,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         .catch((cause) => { if (live) setEligibility({ id, state: "error", message: displayAdminReadError(cause) }); });
     }, 400);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [invitedUserIdInput, canSettle]);
+  }, [invitedUserIdInput, canSettle, eligibilityRetry]);
   const conflictDraft = useHConflictDraft(readReady && !loading && !error);
   const openConfirm = (req: H8ConfirmReq | null) => setMc(req ? conflictDraft.action(req) : null);
   useEffect(() => {
@@ -985,7 +986,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               </Field>
               <Button type="submit" disabledReason={targetBlock}>给这位新人结算</Button>
               {targetUserValid && eligibility?.id === targetUserId && <p className="h8-target-check" aria-live="polite">{eligibility.state === "loading" ? "正在查这位新人能不能结…"
-                : eligibility.state === "error" ? <>读不到他现在能不能结<Explain label="失败原因" content={eligibility.message} /></>
+                : eligibility.state === "error" ? <>读不到他现在能不能结：{eligibility.message}<Button type="button" size="sm" onClick={() => setEligibilityRetry(n => n + 1)}>重试</Button></>
                   : (() => { const view = eligibilityView(data, eligibility.data); return <><StatusTag tone={view.tone}>{view.tag}</StatusTag><span>{view.text}</span><Explain label="这位新人的情况" content={<EligibilityDetail value={eligibility.data} />} /></>; })()}</p>}
             </form>
           ) : <p className="h8-muted">结算要由有邀请奖励结算权限的同事发起。</p>}
