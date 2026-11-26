@@ -16,6 +16,8 @@ export type OpsDashboardAlert = {
   level: "high" | "mid" | "low";
   title: string;
   hint: string;
+  userCode?: string;
+  occurredAt?: string;
   /** 待补录的项数，只有 J1-AUTO-CONFIRM 带。 */
   count?: number;
   /** 没有开启的业务键，只有 J1-KILL-STATE 带。 */
@@ -31,6 +33,119 @@ function requiredText(value: unknown, field: string) {
   return value.trim();
 }
 
+const ACCOUNT_ALERT_TITLES = new Map([
+  ["admin.user_frozen", "冻结账户"],
+  ["admin.user_unfrozen", "恢复账户"],
+  ["admin.user_impersonation_started", "开始查看用户数据"],
+  ["admin.user_impersonation_ended", "结束只读视图"],
+  ["admin.account_list_upserted", "加入账户名单"],
+  ["admin.account_list_removed", "移出名单"],
+  ["admin.2fa_disabled", "关闭两步验证"],
+  ["admin.password_reset_requested", "要求重置登录密码"],
+  ["admin.user_unlocked", "解除登录锁定"],
+  ["admin.session_revoked", "撤销登录"],
+  ["auth.login_locked", "登录失败过多，账户已锁定"],
+  ["auth.refresh_token_reuse_detected", "登录凭证被重复使用，已全部下线"],
+]);
+
+const COUNTRY_CODE = /^[A-Z]{2}$/;
+
+function geoAlertScope(scope: unknown, target: unknown) {
+  switch (scope) {
+    case "country": return typeof target === "string" && COUNTRY_CODE.test(target) ? `地区 ${target}` : "地区";
+    case "country-list":
+      if (target === "blocked") return "封锁名单";
+      if (target === "limited") return "受限名单";
+      return "地区名单";
+    case "endpoint": return "功能入口规则";
+    case "edge-source": return "地区识别源";
+    case "country-batch": {
+      const countries = typeof target === "string" ? target.split(",") : [];
+      return countries.length > 0 && countries.every((country) => COUNTRY_CODE.test(country))
+        ? `应急批量封锁 ${countries.join("、")}`
+        : "应急批量封锁";
+    }
+    default: return undefined;
+  }
+}
+
+function alertOperator(value: unknown) {
+  if (typeof value !== "string" || !value.trim() || /^system$/i.test(value.trim())) return "系统";
+  if (/^(?:admin:)?\d+$/i.test(value.trim())) return "管理员";
+  return value;
+}
+
+function alertReason(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : "未填写原因";
+}
+
+function geoAlertHint(row: Record<string, unknown>, hint: string) {
+  let { scope, target, operator, reason } = row;
+  const fallback = hint.replace(/\bK4\b/g, "风险评分");
+  if (typeof scope !== "string" || !scope.trim()) {
+    const prefix = "J2 地域策略已变更 · ";
+    const parts = /^(.*?) · (.*?) · ([\s\S]*)$/.exec(hint);
+    if (typeof row.title !== "string" || !row.title.startsWith(prefix) || !parts) {
+      return fallback;
+    }
+    scope = row.title.slice(prefix.length);
+    [, target, operator, reason] = parts;
+  }
+  const range = geoAlertScope(scope, target);
+  return range ? [range, alertOperator(operator), alertReason(reason)].join(" · ") : fallback;
+}
+
+function tamperAlertConfig(value: unknown) {
+  if (!value || typeof value !== "object") return {};
+  const config = value as Record<string, unknown>;
+  return {
+    threshold: typeof config.threshold === "number" && Number.isInteger(config.threshold) ? config.threshold : undefined,
+    feedK4: typeof config.feedK4 === "boolean" ? config.feedK4 : undefined,
+  };
+}
+
+function tamperAlertHint(row: Record<string, unknown>, hint: string) {
+  let before = tamperAlertConfig(row.before);
+  let after = tamperAlertConfig(row.after);
+  let { operator, reason } = row;
+  if (row.before === undefined && row.after === undefined) {
+    const parts = /^阈值 (\d+|\?)→(\d+|\?) 次\/24h · K4 (开启|关闭|未知)→(开启|关闭|未知) · (.*?) · ([\s\S]*)$/.exec(hint);
+    if (!parts) return hint.replace(/\bK4\b/g, "风险评分");
+    const [, oldThreshold, newThreshold, oldFeed, newFeed, legacyOperator, legacyReason] = parts;
+    const legacyConfig = (threshold: string, feed: string) => ({
+      threshold: threshold === "?" ? undefined : Number(threshold),
+      feedK4: feed === "未知" ? undefined : feed === "开启",
+    });
+    before = legacyConfig(oldThreshold, oldFeed);
+    after = legacyConfig(newThreshold, newFeed);
+    operator = legacyOperator;
+    reason = legacyReason;
+  }
+
+  const changes: string[] = [];
+  if (after.threshold !== undefined && before.threshold !== after.threshold) {
+    changes.push(before.threshold === undefined
+      ? `告警阈值改为 ${after.threshold} 次 / 24 小时`
+      : `告警阈值 ${before.threshold} → ${after.threshold} 次 / 24 小时`);
+  }
+  if (after.feedK4 !== undefined && before.feedK4 !== after.feedK4) {
+    const next = after.feedK4 ? "开" : "关";
+    changes.push(before.feedK4 === undefined
+      ? `新事件计入风险评分改为${next}`
+      : `新事件计入风险评分 ${before.feedK4 ? "开" : "关"} → ${next}`);
+  }
+  return [...changes, alertOperator(operator), alertReason(reason)].join(" · ");
+}
+
+function accountAlertUserCode(eventType: string, row: Record<string, unknown>) {
+  // The delivery's target is a session number for read-only views, and a user ID for the other known producers.
+  const targetIsUser = ACCOUNT_ALERT_TITLES.has(eventType)
+    && eventType !== "admin.user_impersonation_started" && eventType !== "admin.user_impersonation_ended";
+  const value = row.targetUserId ?? (targetIsUser ? row.target : undefined);
+  const id = typeof value === "string" || typeof value === "number" && Number.isSafeInteger(value) ? String(value) : "";
+  return /^[1-9]\d*$/.test(id) ? `U${id.padStart(8, "0")}` : undefined;
+}
+
 function normalizeAlert(value: unknown, index: number): OpsDashboardAlert {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`OPS_DASHBOARD_FIELD_REQUIRED:alerts.${index}`);
@@ -40,10 +155,43 @@ function normalizeAlert(value: unknown, index: number): OpsDashboardAlert {
   if (level !== "high" && level !== "mid" && level !== "low") {
     throw new Error(`OPS_DASHBOARD_FIELD_INVALID:alerts.${index}.level`);
   }
-  return {
+  const alert = {
     id: requiredText(row.id, `alerts.${index}.id`),
     domain: requiredText(row.domain, `alerts.${index}.domain`),
     level,
+  } satisfies Pick<OpsDashboardAlert, "id" | "domain" | "level">;
+  const hint = typeof row.hint === "string" ? row.hint : "";
+  const occurredAt = typeof row.occurredAt === "string" ? row.occurredAt.trim() || undefined : undefined;
+  if (alert.domain === "J2") {
+    return {
+      ...alert,
+      title: "地区策略已变更",
+      hint: geoAlertHint(row, hint),
+      occurredAt,
+    };
+  }
+  if (alert.domain === "J3") {
+    return {
+      ...alert,
+      title: "篡改告警设置已变更",
+      hint: tamperAlertHint(row, hint),
+      occurredAt,
+    };
+  }
+  if (alert.domain === "C2" || alert.domain === "C5") {
+    const eventType = typeof row.eventType === "string" ? row.eventType : "";
+    const userCode = accountAlertUserCode(eventType, row);
+    return {
+      ...alert,
+      title: ACCOUNT_ALERT_TITLES.get(eventType) ?? "账户安全操作",
+      hint: userCode ?? "",
+      userCode,
+      // The legacy hint embeds delivery time. Only a separately supplied occurrence time belongs here.
+      occurredAt,
+    };
+  }
+  return {
+    ...alert,
     title: requiredText(row.title, `alerts.${index}.title`),
     hint: requiredText(row.hint, `alerts.${index}.hint`),
   };
@@ -340,8 +488,13 @@ export function useC2HighRiskAlerts(enabled: boolean) {
   return snapshot;
 }
 
-export function opsAlertHref(alert: Pick<OpsDashboardAlert, "id" | "domain">) {
-  if (alert.domain === "C2" || alert.id.startsWith("C2-")) return "/users/actions";
+export function opsAlertHref(alert: Pick<OpsDashboardAlert, "id" | "domain" | "userCode">) {
+  if (alert.domain === "C2" || alert.id.startsWith("C2-")) {
+    return alert.userCode ? `/users/actions?userCode=${encodeURIComponent(alert.userCode)}` : "/users/actions";
+  }
+  if (alert.domain === "C5" || alert.id.startsWith("C5-")) {
+    return alert.userCode ? `/users/security?tab=security&userCode=${encodeURIComponent(alert.userCode)}` : "/users/security";
+  }
   if (alert.domain === "J2" || alert.id.startsWith("J2-")) return "/emergency/geo-block";
   if (alert.domain === "J3" || alert.id.startsWith("J3-")) return "/emergency/tamper";
   if (alert.domain === "J") return "/emergency/kill-switch";

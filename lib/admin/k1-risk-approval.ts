@@ -12,12 +12,7 @@ export type K1ApprovalState = {
   ticketBefore?: string;
 };
 
-export function parseK1ReleaseTicketBefore(before: string) {
-  const match = /^收益 (.+?)；用户 (\d+)；(\S+) 净额 (\d+(?:\.\d+)?)；来源 ([^/；]+)\/(.*?)；(bonus_locked|pending_review) → withdrawable；当前覆盖率 (\d+(?:\.\d+)?)% \/ 红线 (\d+(?:\.\d+)?)%$/.exec(before.trim());
-  if (!match) return undefined;
-  const [, entryNo, userId, asset, net, source, sourceRef, bucket, coverage, redline] = match;
-  return { entryNo, userId, asset, net, source, sourceRef, bucket, coverage, redline };
-}
+export { parseK1ReleaseTicketBefore } from "./k1-release-ticket";
 
 export function k1ReleaseParamProposal(key: string, value: string, expectedVersion: number, reason: string, operator: string, operatorRole: string): K1ApprovalRequest {
   return {

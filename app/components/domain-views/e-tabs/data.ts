@@ -13,6 +13,7 @@ import { skuBaseRateText } from "@/lib/admin/operator-copy";
 import { containsHan } from "@/lib/admin/content-language-rules";
 import { skuBadgeKind, skuBadgeValue, skuTaglineTranslationUpdate, type SkuBadgeKind } from "@/lib/admin/e1-product-copy";
 import { amountDisplay } from "@/lib/format";
+import { ORDER_STATES, ORDER_STATE_GROUPS } from "@/lib/admin/e4-order-display";
 
 // 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
@@ -21,18 +22,7 @@ export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: 
 export const ORDER_FLOW = ["placed", "paid", "provisioning", "activated"];
 // 订单状态的颜色：进行中蓝，已交付绿，失败红，已结束灰（VS-20、VS-24）。
 export const ORDER_STATE_TONE: Record<string, StateTone> = { placed: "progress", paid: "progress", provisioning: "progress", activated: "ok", inventory: "ok", refunded: "done", cancelled: "done", expired: "done", payment_failed: "danger", provisioning_failed: "danger", chargeback: "danger" };
-// 终态中文标签。
-const STATE_LABEL: Record<string, string> = { placed: "已下单", paid: "已支付", provisioning: "开通中", activated: "已激活", inventory: "已入库", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败", chargeback: "拒付" };
-export const stateLabel = (s: string): string => STATE_LABEL[s] ?? "状态未知";
-
-// 筛选值是后端订单进度契约，不可改。11 个状态分 4 组（ST-68），分组只管显示和读取，不改枚举。
-export const ORDER_STATE_GROUPS = [
-  { value: "flow", label: "进行中", tone: "progress", allLabel: "全部进行中状态", states: ["placed", "paid", "provisioning"] },
-  { value: "delivered", label: "已交付", tone: "ok", allLabel: "全部已交付状态", states: ["activated", "inventory"] },
-  { value: "failed", label: "失败", tone: "danger", allLabel: "全部失败状态", states: ["payment_failed", "provisioning_failed", "chargeback"] },
-  { value: "closed", label: "已结束", tone: "done", allLabel: "全部已结束状态", states: ["expired", "refunded", "cancelled"] },
-] as const satisfies readonly { value: string; label: string; tone: StateTone; allLabel: string; states: readonly string[] }[];
-export const ORDER_STATES: readonly string[] = ORDER_STATE_GROUPS.flatMap((group) => group.states);
+export { ORDER_STATES, ORDER_STATE_GROUPS, stateLabel } from "@/lib/admin/e4-order-display";
 
 export interface E4Query {
   group: "all" | (typeof ORDER_STATE_GROUPS)[number]["value"];

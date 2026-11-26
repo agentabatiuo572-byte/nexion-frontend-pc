@@ -22,11 +22,11 @@ import { fetchA2Overview } from "@/lib/admin/a2-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { rebaseTerminalDraft, type TerminalDraft } from "@/lib/admin/use-terminal-drafts";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { h3WeeklyZoneLabel as zoneLabel } from "@/lib/admin/h3-weekly-zone-labels";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { HCtx } from "./types";
 
 const DEFAULT_ZONE = "Asia/Ho_Chi_Minh";
-const ZONE_NAMES: Record<string, string> = { "Asia/Ho_Chi_Minh": "越南时间", "Asia/Shanghai": "中国时间", "Asia/Bangkok": "泰国时间", "Asia/Jakarta": "印尼西部时间", "Asia/Manila": "菲律宾时间", "Asia/Singapore": "新加坡时间", "Asia/Tokyo": "日本时间", "Asia/Seoul": "韩国时间" };
 export const REGION_APPROVER = "另一位超级管理员";
 
 /** Read policy/A2 authority and preserve the draft baseline until an explicit submission. */
@@ -187,7 +187,6 @@ function windowText(zone: string, now: number) {
   if (!window) return "—";
   return <Cell main={`${businessStamp(window.start)}（${weekdayText(window.start)}）起`} sub={`到 ${businessStamp(window.end)}（${weekdayText(window.end)}）`} />;
 }
-const zoneLabel = (zone: string) => ZONE_NAMES[zone] ?? "";
 
 // ===== 用户现在实际在的一周（H3-BE-09，后端 5278e138 WeeklyRegionPolicyService.actualAssignments）=====
 // 按分配时记下的区号分组；同一区号可以有几段。和「常规的一周」对不上时标出来，原因只写后端能证明的：时区不同、不是整周、旧规则。

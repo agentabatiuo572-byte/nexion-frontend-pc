@@ -9,5 +9,11 @@ export function isRiskConclusion(item: { sev: string; href: string }) {
 
 /** 后端下发的「挤兑比率」就是页面上的「近 24 小时提现申请占储备」，同一个数用同一个名字。 */
 export function riskFeedTitle(title: string) {
-  return title.replace("挤兑比率", "近 24 小时提现申请占储备");
+  const label = title.replace("挤兑比率", "近 24 小时提现申请占储备")
+    .replace(/\s*·\s*当前评分规则\s*$/, "");
+  if (!/\bk4-v\d+\b/i.test(label)) return label;
+  return label.split("·")
+    .map((part) => part.replace(/(?:当前评分规则\s+)?\bk4-v\d+\b/gi, "").trim())
+    .filter(Boolean)
+    .join(" · ");
 }

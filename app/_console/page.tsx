@@ -13,8 +13,8 @@ import { ChevronDown, Download, ListChecks, RefreshCw, ShieldAlert, ShieldCheck 
 import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, Notice, PageHeader, RdPage, StatusTag } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import { a2ActionText } from "@/lib/admin/operator-copy";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
+import { approvalActionName } from "@/lib/admin/a2-approval-text";
 import { B0_BANK_REVIEW_PATH, b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
 import { fetchB0Business, fetchB0Devices, fetchB0ExchangeQueue, fetchB0PromotionUnfulfilled, fetchB0ReferralPending } from "@/lib/admin/b0-client";
@@ -42,8 +42,10 @@ const RESERVE_PAGE = "/overview/dual-ledger";
 const BANK_REVIEW_PAGE = `${B0_BANK_REVIEW_PATH}?tab=bank&bankSettlementStatus=MANUAL_REVIEW`;
 const BANK_REVIEW_LABEL = "越南盾充值待人工复核";
 
-const countReviewPending = async () => (await fetchD2Withdrawals({ status: "REVIEW_PENDING", pageNum: 1, pageSize: 1 })).total;
-const countOrphaned = async () => (await fetchD2Withdrawals({ status: "TX_ORPHANED", pageNum: 1, pageSize: 1 })).total;
+const REVIEW_PENDING = "REVIEW_PENDING";
+const TX_ORPHANED = "TX_ORPHANED";
+const countReviewPending = async () => (await fetchD2Withdrawals({ status: REVIEW_PENDING, pageNum: 1, pageSize: 1 })).total;
+const countOrphaned = async () => (await fetchD2Withdrawals({ status: TX_ORPHANED, pageNum: 1, pageSize: 1 })).total;
 /** 提现审核页「系统处理中」分组的状态（d2-withdrawals.tsx STATUS_GROUPS），那页也是一个状态一个请求，数一致。 */
 const SYSTEM_PROCESSING = ["SUBMITTED", "EXTENDED_HOLD", "REVIEW_PASSED", "PROCESSING", "SENT"];
 const countSystemProcessing = async () => (await Promise.all(SYSTEM_PROCESSING.map((status) => fetchD2Withdrawals({ status, pageNum: 1, pageSize: 1 })))).reduce((sum, page) => sum + page.total, 0);
@@ -64,7 +66,7 @@ function approvalOwner(row: A2OperationRow): PendingRow["owner"] {
 }
 
 function approvalDetail(row: A2OperationRow) {
-  return `${a2ActionText(row.action)} · ${approvalChangeSummary(row)}`;
+  return `${approvalActionName(row)} · ${approvalChangeSummary(row)}`;
 }
 
 export default function CommandCenter() {
@@ -130,15 +132,15 @@ export default function CommandCenter() {
   const risks = fundReady ? riskRadar.feed.filter((item) => !isRiskConclusion(item) && reach(item.href)) : [];
   risks.forEach((item, index) => rows.push({ key: `risk-${index}`, title: riskFeedTitle(item.t), sub: item.m, owner: "风控", href: item.href, tone: item.sev === "p0" ? "danger" : undefined }));
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
-  else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: "/finance/withdrawals", tone: "warn" });
+  else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: `/finance/withdrawals?status=${TX_ORPHANED}`, tone: "warn" });
   if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
-    const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => a.ts.localeCompare(b.ts));
+    const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => Date.parse(a.rawTs ?? "") - Date.parse(b.rawTs ?? "") || a.ts.localeCompare(b.ts));
     rows.push({ key: "a2", title: `待审批操作 ${approvals.data.stats.pendingTickets} 条`, sub: queue[0] && approvalDetail(queue[0]), owner: queue[0] ? approvalOwner(queue[0]) : "其他", href: "/platform/audit" });
   }
   if (reach("/finance/withdrawals")) {
     if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", onRetry: reviewPending.reload });
-    else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 笔`, owner: "财务", href: "/finance/withdrawals" });
+    else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 笔`, owner: "财务", href: `/finance/withdrawals?status=${REVIEW_PENDING}` });
   }
   if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", onRetry: supportTodo.reload });
   else if (supportTodo.data) rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: "/service/overview" });

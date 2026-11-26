@@ -7,19 +7,21 @@
  * 只放要处理的事(DP-65):覆盖率正常、风险结论行这类正常状态不进列表。铃铛数字 = 列表里的告警 + 待确认,两边一致。
  */
 import { useReach } from "@/lib/nav/use-reach";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, AlertTriangle, ChevronRight } from "lucide-react";
+import { InlineRetry } from "@/app/components/rd/block-state";
 import { Drawer } from "@/app/components/rd/overlay";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { businessZone, formatBusinessTimeCompact, subscribeBusinessZone } from "@/lib/admin/business-time";
 import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
-import { displayAdminError } from "@/lib/admin/error-messages";
-import { a2ActionText } from "@/lib/admin/operator-copy";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
+import { approvalActionName } from "@/lib/admin/a2-approval-text";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
@@ -29,6 +31,7 @@ interface ShellAlert {
   level: AlertLevel;
   text: string;
   href: string;
+  occurredAt?: string;
 }
 
 const LEVEL: Record<AlertLevel, { tone: "danger" | "warn" | "done"; label: string }> = {
@@ -56,8 +59,12 @@ function roleForA2Operation(row: A2OperationRow): AdminRole | null {
   return null;
 }
 
-/** 铃铛的目标里默认读权表没有的两页。其余目标按表判断。 */
-const ALERT_READ: Record<string, string> = { "/emergency/geo-block": "emergency_j2_read", "/users/actions": "user_c2_read" };
+/** 补充铃铛目标的专用读权。其余目标按默认读权表判断。 */
+const ALERT_READ: Record<string, string> = {
+  "/emergency/geo-block": "emergency_j2_read",
+  "/users/actions": "user_c2_read",
+  "/users/security": "user_c5_read",
+};
 
 /** 告警不能隐藏（DP-03）：目标页进不去时这一行照样显示，只是不能点（X03）。 */
 function AlertRow({ href, tone, onClose, children }: { href?: string; tone?: string; onClose: () => void; children: ReactNode }) {
@@ -70,6 +77,9 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [pendingOperations, setPendingOperations] = useState<A2OperationRow[]>([]);
   const [a2Error, setA2Error] = useState<string | null>(null);
+  const [a2Loading, setA2Loading] = useState(false);
+  const [a2ReadRequest, setA2ReadRequest] = useState(0);
+  const refreshA2 = () => setA2ReadRequest((count) => count + 1);
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const hasAdminSession = session != null;
@@ -77,18 +87,21 @@ export function NotificationBell() {
   const canReadA2 = authorities.includes("platform_a2_read");
   const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   const canReadC2Alerts = canReadC2HighRiskAlerts(session);
+  const canReadJ2Alerts = isSuperAdmin && authorities.includes("emergency_j2_read");
   const canReadJ3Alerts = authorities.includes("emergency_j3_alert_config");
   const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(hasAdminSession);
-  const { alerts: j2Alerts, error: j2AlertError } = useJ2GeoAlerts(isSuperAdmin);
+  const { alerts: j2Alerts, error: j2AlertError } = useJ2GeoAlerts(canReadJ2Alerts);
   const { alerts: j3Alerts, error: j3AlertError } = useJ3TamperConfigAlerts(canReadJ3Alerts);
   const { alerts: c2Alerts, error: c2AlertError } = useC2HighRiskAlerts(canReadC2Alerts);
   useEffect(() => {
     if (!canReadA2) {
       setPendingOperations([]);
       setA2Error(null);
+      setA2Loading(false);
       return undefined;
     }
     let alive = true;
+    setA2Loading(true);
     fetchA2Overview()
       .then((overview) => {
         if (!alive) return;
@@ -98,12 +111,15 @@ export function NotificationBell() {
       .catch((error: unknown) => {
         if (!alive) return;
         setPendingOperations([]);
-        setA2Error(displayAdminError(error));
+        setA2Error(displayAdminReadError(error));
+      })
+      .finally(() => {
+        if (alive) setA2Loading(false);
       });
     return () => {
       alive = false;
     };
-  }, [canReadA2]);
+  }, [canReadA2, a2ReadRequest]);
   const bDomain = useBDomainDashboard(canReadBDomain);
   const bAlerts: ShellAlert[] = (() => {
     if (bDomain.error) {
@@ -130,8 +146,9 @@ export function NotificationBell() {
     .map((alert) => ({
       id: `ops-${alert.id}`,
       level: alert.level,
-      text: `${alert.title} · ${alert.hint}`,
+      text: [alert.title, alert.hint].filter(Boolean).join(" · "),
       href: opsAlertHref(alert),
+      occurredAt: alert.occurredAt,
     }));
   if (opsAlertError) {
     j1Alerts.push({
@@ -171,7 +188,7 @@ export function NotificationBell() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { if (!open) refreshA2(); setOpen(true); }}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`告警和待审批的申请${badge > 0 ? ` · ${badge} 条` : ""}`}
@@ -180,7 +197,8 @@ export function NotificationBell() {
         <Bell size={16} aria-hidden />
         {badge > 0 && <span className="rd-top-count font-mono-tabular">{badge > 9 ? "9+" : badge}</span>}
       </button>
-      <NotificationDrawer open={open} alerts={alerts} alertsLoading={bDomain.loading && !bDomain.hasData} pendingOperations={pendingOperations} a2Error={a2Error} onClose={() => setOpen(false)} />
+      <NotificationDrawer open={open} alerts={alerts} alertsLoading={bDomain.loading && !bDomain.hasData} pendingOperations={pendingOperations}
+        a2Error={a2Error} a2Loading={a2Loading} onRetryA2={refreshA2} onClose={() => setOpen(false)} />
     </>
   );
 }
@@ -191,6 +209,8 @@ function NotificationDrawer({
   alertsLoading,
   pendingOperations,
   a2Error,
+  a2Loading,
+  onRetryA2,
   onClose,
 }: {
   open: boolean;
@@ -198,16 +218,20 @@ function NotificationDrawer({
   alertsLoading: boolean;
   pendingOperations: A2OperationRow[];
   a2Error: string | null;
+  a2Loading: boolean;
+  onRetryA2: () => void;
   onClose: () => void;
 }) {
   const reach = useReach();
   const canOpenAudit = reach("/platform/audit", "platform_a2_read");
+  const zone = useSyncExternalStore(subscribeBusinessZone, businessZone, businessZone);
+  const hasOccurrenceTime = alerts.some((alert) => alert.occurredAt);
   return (
     <Drawer
       open={open}
       onClose={onClose}
       title="告警和待审批的申请"
-      sub={`${alerts.length} 条告警 · ${pendingOperations.length} 项待审批`}
+      sub={`${alerts.length} 条告警 · ${a2Error ? "—" : pendingOperations.length} 项待审批`}
       aria-label="告警和待审批的申请"
       footer={canOpenAudit ? (
         <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-btn rd-alert-cta" data-variant="primary">
@@ -216,17 +240,18 @@ function NotificationDrawer({
       ) : undefined}
     >
       {/* 风险与应急告警 */}
-      <h3 className="rd-alert-heading">风险与应急告警</h3>
+      <h3 className="rd-alert-heading">风险与应急告警{hasOccurrenceTime && ` · ${zone.label}`}</h3>
       <div className="rd-alert-list">
         {alerts.length === 0 && <div className="rd-alert-empty">{alertsLoading ? "正在加载告警…" : "现在没有要处理的告警。"}</div>}
         {alerts.map((a) => {
           const lv = LEVEL[a.level];
-          const reachable = reach(a.href, ALERT_READ[a.href]);
+          const reachable = reach(a.href, ALERT_READ[a.href.split(/[?#]/, 1)[0]]);
+          const occurredAt = a.occurredAt ? formatBusinessTimeCompact(a.occurredAt, "时间待核验") : "";
           return (
             <AlertRow key={a.id} href={reachable ? a.href : undefined} tone={lv.tone} onClose={onClose}>
               <AlertTriangle className="rd-alert-icon" size={14} aria-hidden />
               <span className="min-w-0 flex-1">
-                <span className="rd-alert-text">{a.text}</span>
+                <span className="rd-alert-text">{a.text}{occurredAt && ` · ${occurredAt}`}</span>
                 <span className="rd-alert-level">{lv.label}</span>
               </span>
               {reachable && <ChevronRight className="rd-alert-go" size={14} aria-hidden />}
@@ -239,10 +264,10 @@ function NotificationDrawer({
       <h3 className="rd-alert-heading">待审批的申请</h3>
       <div className="rd-alert-list">
         {a2Error && (
-          <AlertRow href={canOpenAudit ? "/platform/audit" : undefined} tone="danger" onClose={onClose}>
+          <AlertRow tone="danger" onClose={onClose}>
             <span className="min-w-0 flex-1">
-              <span className="rd-alert-text">待审批的申请没有读到</span>
-              <span className="rd-alert-note">{a2Error}</span>
+              <span className="rd-alert-text">待审批操作加载失败</span>
+              <span className="rd-alert-note">{a2Error}{" "}<InlineRetry onRetry={onRetryA2} retrying={a2Loading} /></span>
             </span>
           </AlertRow>
         )}
@@ -252,7 +277,7 @@ function NotificationDrawer({
           return (
             <AlertRow key={a.id} href={canOpenAudit ? "/platform/audit" : undefined} onClose={onClose}>
               <span className="min-w-0 flex-1">
-                <span className="rd-alert-text">{a2ActionText(a.action)}</span>
+                <span className="rd-alert-text">{approvalActionName(a)}</span>
                 <span className="rd-alert-note">{approvalChangeSummary(a)}</span>
               </span>
               {operationRole && <span className="rd-role">{roleLabel(operationRole)}</span>}

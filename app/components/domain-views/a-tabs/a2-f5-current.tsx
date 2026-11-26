@@ -120,10 +120,10 @@ export function F5ReissueOutcome({ ids }: { ids: readonly string[] }) {
   return outcomes.join("；");
 }
 
-/** 补发多笔：按申请单上的顺序逐笔列出，每一笔各读各的；收在折叠里，摘要写读到、查无、读不到各几笔。 */
+/** 补发多笔：按申请单上的顺序逐笔列出，每一笔各读各的；放在折叠里，摘要写读到、查无、读不到各几笔。 */
 export function F5ReissueReadings({ ids, open = false }: { ids: readonly string[]; open?: boolean }) {
   const reads = useF5Current(ids);
-  // 有查无的记录时摘要标红，但批准框里默认收起，不把理由框挤到下面；抽屉里默认展开。
+  // 每笔金额和异常是做决定要看的：抽屉和批准框里都默认展开（OP-151）；有查无的记录时摘要标红。
   const [expanded, setExpanded] = useState(open);
   const count = (test: (now: F5Current) => boolean) => reads.filter(test).length;
   const loading = count((now) => now.state === "loading"), found = count((now) => now.state === "found"), missing = count((now) => now.state === "missing");

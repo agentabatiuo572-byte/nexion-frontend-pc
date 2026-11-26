@@ -8,6 +8,7 @@
  * 路径用可读英文 slug(/finance/withdrawals),id(A1–L5)仅作展示 + verify 标签。
  * status: flagship=高保真已建 · scaffold=规格就绪待开发 · planned=规格撰写中。
  */
+import { D5_MENU_NAME, D6_MENU_NAME, D7_MENU_NAME } from "./console-nav-labels";
 import type { LucideIcon } from "lucide-react";
 import {
   Settings,
@@ -41,23 +42,7 @@ export type BuiltinAdminRole =
 /** Custom role codes are database data and must not be coerced to auditor. */
 export type AdminRole = BuiltinAdminRole | (string & {});
 
-export const ROLE_LABEL: Record<BuiltinAdminRole, string> = {
-  superadmin: "超级管理员",
-  config: "配置运营",
-  finance: "财务",
-  risk: "风控",
-  content: "内容运营",
-  growth: "增长运营",
-  support: "客服",
-  auditor: "审计",
-};
-
-/** 后端按岗位给的角色码，不是内置角色，顶栏也要写人话（D2 大额放行按 FINANCE_LEAD 判断）。 */
-const LEAD_ROLE_LABEL: Record<string, string> = { FINANCE_LEAD: "财务主管", RISK_LEAD: "风控主管" };
-
-export function roleLabel(role: AdminRole): string {
-  return ROLE_LABEL[role as BuiltinAdminRole] ?? LEAD_ROLE_LABEL[role] ?? role;
-}
+export { ROLE_LABEL, roleLabel } from "./console-nav-labels";
 
 export const SUPPORT_ADMIN_ROLES: BuiltinAdminRole[] = ["support"];
 
@@ -145,9 +130,9 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "D2", name: "提现审核", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
       { id: "D3", name: "资金储备与应付款", path: "/finance/pool", prdAnchor: "D3", batch: "V1", status: "flagship" },
       { id: "D4", name: "账本与账单核对", path: "/finance/ledger", prdAnchor: "D4", batch: "V1", status: "flagship" },
-      { id: "D5", name: "USDT 提现参数", path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
-      { id: "D6", name: "汇率设置", path: "/finance/fx-rate", prdAnchor: "D6", batch: "V1", status: "flagship" },
-      { id: "D7", name: "越南盾提现参数", path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
+      { id: "D5", name: D5_MENU_NAME, path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
+      { id: "D6", name: D6_MENU_NAME, path: "/finance/fx-rate", prdAnchor: "D6", batch: "V1", status: "flagship" },
+      { id: "D7", name: D7_MENU_NAME, path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
     ],
   },
   {
