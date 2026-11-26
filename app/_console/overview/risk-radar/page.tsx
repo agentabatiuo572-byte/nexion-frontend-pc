@@ -987,7 +987,8 @@ export default function RiskRadarPage() {
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
                 <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
-                  {!inboxReadAt ? inboxError ? "读取失败" : "正在加载…" : `发给你的 ${inbox.length} 条 · ${unacked} 条没确认`}
+                  {/* 读取失败已由下面的失败卡写标题和原因，这里只写范围，不再写一遍「读取失败」（DT-12）。 */}
+                  {!inboxReadAt ? inboxError ? "发给你的站内告警" : "正在加载…" : `发给你的 ${inbox.length} 条 · ${unacked} 条没确认`}
                 </TabNote>
                 {inboxError && inboxReadAt && <StaleNotice stale={{ at: inboxReadAt, auto: false }} onRetry={() => setInboxReload(value => value + 1)} />}
                 <InboxTable state={inboxReadAt ? "ready" : inboxError ? "error" : "loading"} items={inbox} error={inboxError}

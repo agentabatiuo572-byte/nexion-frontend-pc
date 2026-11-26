@@ -45,7 +45,7 @@ import { Archive, ArrowLeft, ClipboardList, CloudOff, Coins, Copy, Download, Fil
 import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BlockState, Button, Cell, Change, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton, Input, InlineRetry,
-  IrreversibleTag, JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading,
+  IrreversibleTag, JudgmentPoints, KeepText, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading,
   TableMessage, Td, Th, Tr, useTabIds, type DiffRow, type JudgmentRow, type SegmentItem, type StateTone,
 } from "@/app/components/rd";
 import {
@@ -163,8 +163,11 @@ const RELOADING = "审批单还在读取，读完再处理";
 const SUBMITTING = "正在提交";
 const NO_WITHDRAW = "你没有撤回申请的权限";
 const NO_DECIDE = "这个账号没有处理这张单的权限";
-/** 页面判断不了这张单要哪项业务权限或附加条件时，入口照常放出，写这一句（协调人第五轮定）。 */
-const BACKEND_CHECKS_NOTE = "批准时系统再核对业务权限，没有权限会被拒绝并写明原因";
+/** 页面判断不了这张单要哪项业务权限或附加条件时，入口照常放出，写这一句（协调人第五轮定）。批准框说明、详情折叠「批准时」、待确认条都用它。 */
+const BACKEND_CHECKS_NOTE = "系统再核对业务权限，没有权限会被拒绝并写明原因";
+/** 末尾一段整段换行，在批准框说明和详情折叠里都不折出孤字（TL-01）。 */
+const backendChecksText = (lead = "", end = "") =>
+  <KeepText text={`${lead}${BACKEND_CHECKS_NOTE}${end}`} phrases={["没有权限会被拒绝并写明原因。", "没有权限会被拒绝并写明原因"]} />;
 const WAIT_OTHERS = "等待有权限的人处理";
 const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
@@ -364,13 +367,12 @@ function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2Aud
 const E1_PRICE_ONLY = "这条只记价格，其他改动没记在这里";
 const fBatchSummary = (items: readonly FBatchItem[]) => { const [before, after] = a2Pair(items[0].key, items[0].before, items[0].after); return `${fBatchLabel(items[0], fBatchPages(items))} ${before} → ${after}${items.length > 1 ? ` 等 ${items.length} 项` : ""}`; };
 
-/** 整批申请的完整变更内容：每项一行「现在 → 改后」；配置键放技术信息（对象原文在「对象」旁）。 */
-function A2BatchReview({ items, tip = true }: { items: readonly FBatchItem[]; tip?: boolean }) {
+/** 整批申请的完整变更内容：每项一行「现在 → 改后」；各项配置键和对象原文放抽屉底部的「技术信息」折叠。 */
+function A2BatchReview({ items }: { items: readonly FBatchItem[] }) {
   const pages = fBatchPages(items);
   return (
     <section className="a2-change-review" aria-label="完整变更内容">
-      <div className="a2-change-title">完整变更内容 · {items.length} 项
-        {tip && <Explain label="技术信息" content={`各项配置键 ${items.map((item) => item.key).join("、")}`} />}</div>
+      <div className="a2-change-title">完整变更内容 · {items.length} 项</div>
       <DiffList rows={items.map((item) => { const [before, after] = a2Pair(item.key, item.before, item.after); return { key: item.key, label: fBatchLabel(item, pages), before, after }; })}
         restTitle="没有改动的项" emptyNote="这些项没有改动" />
     </section>
@@ -593,10 +595,12 @@ function approvalTiming(w: A2OperationRow) {
   const coverageMode = approvalCoverageMode(w);
   const monthlyChange = monthlyTargetChange(w);
   if (monthlyChange) {
+    // 框顶的影响句只写这次改了什么，一行写完；不变的部分进「说明」（OP-48），理由框打开就看得到（D8-reason）。
     const impact = monthlyChange === "close"
-      ? "批准后保存并关闭月收益目标；已有发布历史的型号之后新建的任务恢复按单计价。未首次发布的草稿在首次上架时发布；已建任务和历史到账不变。"
-      : "批准后保存新目标；已有发布历史的型号按新目标建立后续任务。未首次发布的草稿在首次上架时发布；已建任务和历史到账不变。";
-    return { tag: "批准后保存", impact, drawer: `${impact}点「驳回」原操作不执行。` };
+      ? "批准后关闭月收益目标，发布过的型号之后新建的任务按单计价。"
+      : "批准后保存新目标，发布过的型号之后按新目标建任务。";
+    const note = "未首次发布的草稿在首次上架时发布；已建任务和历史到账不变。";
+    return { tag: "批准后保存", impact, note, drawer: `${impact}${note}点「驳回」原操作不执行。` };
   }
   const scheduled = phoneScheduledAt(w);
   if (scheduled) return { tag: `按计划在 ${scheduled} 生效`, impact: "批准后登记排程，到点才生效。", drawer: `点「批准」确认后登记排程，到 ${scheduled} 生效；点「驳回」原操作不执行。` };
@@ -1798,35 +1802,34 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     return `这张单现在${found && found.status !== "pending" ? `是${now}` : now}，这次${DECISION_VERB[kind]}没有执行。关闭后看最新状态。`;
   };
 
-  /** 对象一格：认得出的写运营的话，编号等宽跟在后面；配置键这类只给技术同事看的收进「技术信息」。 */
-  /** tip=false：待审批详情抽屉用，原文统一进抽屉底部的「技术信息」折叠，这里不放气泡。 */
-  const objectNode = (w: A2OperationRow, tip = true): ReactNode => {
+  /** 对象一格：认得出的写运营的话，编号等宽跟在后面。配置键这类原文只在审批单详情底部的「技术信息」折叠里，这里和确认框都不放气泡（DT-22）。 */
+  const objectNode = (w: A2OperationRow): ReactNode => {
     const fund = fundTicket(w);
     if (fund?.kind === "f5Status" && fund.eventId || fund?.kind === "f5Reverse" && fund.eventId) return <>奖励记录 <span data-mono className="a2-code">{fund.eventId}</span></>;
     if (fund?.kind === "f4Settle") return <>本周团队激励池<span className="rd-note">（按批准那一刻所在的周）</span></>;
     if (fund?.kind === "f4Payout" && fund.period) return fund.period;
-    if (fund?.kind === "fConfig") return <>{objectText(w)}{tip && <Explain label="技术信息" content={`配置键 ${fund.key}${fund.spec?.cron || !fund.spec ? ` ｜ 修改前原文 ${w.before || "—"} ｜ 修改后原文 ${w.after || "—"}` : ""}`} />}</>;
+    if (fund?.kind === "fConfig") return objectText(w);
     if (fund?.kind === "f5Suspension") return <>用户 <span data-mono className="a2-code">{fund.userId ? userCode(fund.userId) : "—"}</span> · {fund.kinds.length ? kindNames(fund.kinds) : "所选奖励"}</>;
     if (fund?.kind === "f5Reissue" && fund.ids.length) return fund.ids.length <= REISSUE_INLINE
       ? <>奖励记录 <span data-mono className="a2-code">{fund.ids.join("、")}</span></> : `${fund.ids.length} 笔奖励记录（记录号见下方）`;
-    if (w.operationCode === "f_unilevel_bootstrap") return <>{objectText(w)}{tip && <Explain label="技术信息" content={`对象原文 ${w.obj}`} />}</>;
+    if (w.operationCode === "f_unilevel_bootstrap") return objectText(w);
     // 整组政策单（七层结算、好友奖励政策、首次配置等）后端写的对象是 current，不是运营要对照的编号。
     if (w.obj === "current" && !w.objDisplayName) {
       const object = objectText(w);
       return object === w.obj ? "当前设置" : object;
     }
     // 整批申请的对象是配置键清单或摘要，运营看不懂：写涉及的页面和项数，原文进技术信息。
-    if (fBatchTicket(w)) return <>{objectText(w)}{tip && <Explain label="技术信息" content={`对象原文 ${w.obj}${fBatchTicket(w)?.digest ? "（清单太长，只存了摘要）" : ""}`} />}</>;
+    if (fBatchTicket(w)) return objectText(w);
     const ambassador = !w.objDisplayName && /^F\.ambassador\.(\d+)\.status$/.exec(w.obj);
-    if (ambassador) return <>区域大使申请 <span data-mono className="a2-code">#{ambassador[1]}</span>{tip && <Explain label="技术信息" content={`对象原文 ${w.obj}`} />}</>;
-    if (w.operationCode === "j1_gate_resume") return <>{j1GateName(w.obj)}{tip && <Explain label="技术信息" content={`对象原文 ${w.obj}`} />}</>;
+    if (ambassador) return <>区域大使申请 <span data-mono className="a2-code">#{ambassador[1]}</span></>;
+    if (w.operationCode === "j1_gate_resume") return j1GateName(w.obj);
     if (w.operationCode === "h3_mission_create") return <>任务 <span data-mono className="a2-code">{w.obj}</span></>;
-    if (w.operationCode === "h3_quest_config" && h3ConfigName(w.obj)) return <>{h3ConfigName(w.obj)}{tip && <Explain label="技术信息" content={`配置键 ${w.obj}`} />}</>;
+    if (w.operationCode === "h3_quest_config" && h3ConfigName(w.obj)) return h3ConfigName(w.obj);
     // 收益记录号是 ER- 加 32 位，不能整串不换行：写全、允许在号里换行，框不出横向滚动。
     if (w.operationCode === "k1_earnings_release") return <>收益记录 <span data-mono className="a2-long-code">{w.obj}</span></>;
     // 发放单号带连字符，按正文写，在连字符处换行，不出横向滚动。
     if (w.operationCode === "f_reward_payout_action") return objectText(w);
-    if (isGParamTicket(w)) return <>{objectText(w)}{tip && <Explain label="技术信息" content={`参数键 ${w.obj}${w.obj === "divBase" ? ` ｜ 修改前原文 ${w.before || "—"} ｜ 修改后原文 ${w.after || "—"}` : ""}`} />}</>;
+    if (isGParamTicket(w)) return objectText(w);
     return <span data-mono className="a2-code">{objectText(w)}</span>;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序列出（一笔时写在「这笔奖励」一行）。批准框里不折叠（flat，OP-151），抽屉里收在折叠里。 */
@@ -1853,8 +1856,10 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         {lead}
         <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
         {!objectLead && <Fact k="对象">{objectNode(w)}</Fact>}
-        <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>
-        {kind === "approve" && <Fact k="发起理由">{keepCodes(w.reason)}</Fact>}
+        {/* 批准框和详情的判断要点同一个写法：理由一行，谁发起的写在下面一行（OP-69、DT-22）。 */}
+        {kind === "approve"
+          ? <Fact k="发起理由">{keepCodes(w.reason)}<span className="a2-fact-by">{`${w.operator} · ${roleText(w.operatorRole)}`}</span></Fact>
+          : <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>}
         {kind === "approve" && ticketPermissionText(w) && <>
           <Fact k="谁来批">{approvalExecutorLabel(w)}</Fact>
           <Fact k="需有权限">{ticketPermissionText(w)}{w.ambassadorMaterialProposal?.applicationDecision === "APPROVE" && "。不能核验过这一版材料。"}</Fact>
@@ -1908,7 +1913,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         impact: item?.impact ?? "批准后立即改这项设置，失败不改原值。",
         completion: cover?.check,
         check: "核对修改前后的值和发起理由，理由写清依据或工单号。",
-        detail: item?.detail ? `${item.detail}` : item ? "" : "这一项在团队相关页面上找不到，原配置键在「对象」旁的技术信息里。",
+        detail: item?.detail ? `${item.detail}` : item ? "" : "这一项在团队相关页面上找不到，原配置键在审批单详情底部的「技术信息」里。",
         coverageLead: cover?.lead,
         coverageUnknown: cover?.lead ? `${cover.lead}，兑付覆盖率暂时读不到` : undefined,
         coverageCheck: cover?.check,
@@ -2089,7 +2094,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       effect: <>{subject(name)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
-        : coverageMode === "onApproval" ? <>{approvalCoverageCopy(w)}</> : <>{a1StatusImpact(w)?.detail}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
+        : coverageMode === "onApproval" ? <>{approvalCoverageCopy(w)}</> : <>{a1StatusImpact(w)?.detail}{timing.note}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && backendChecksText("批准时", "。")}</>,
       completionCopy: fund?.completion,
       // 派奖、结算：这一次的结果放在关键信息层（和发起人那边同一块），审批单信息放在后面。
       facts: fund?.lead ?? ticketFacts(w, "approve", fund?.facts),
@@ -2444,18 +2449,20 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         {retryRejected.includes(record.commandKey) && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
       detail: <>
-        <p>{bizTime(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，理由：{record.reason}</p>
+        <p>理由：{record.reason}</p>
         {amount && <p>退款金额 {amount.state === "ok" ? <b className="a2-amount">{refundAmountText(amount)}</b> : <span className="a2-warn-text">{refundAmountText(amount)}</span>}
           {amount.state === "error" && recordOrderNo(record) && <> <InlineRetry onRetry={() => void loadMain()} /></>}</p>}
         {/* 只有批准会再核对业务权限；这类单驳回、撤回时后端不核对（AuditReplayBusinessPermissionGuard.validateDecisionPermission）。 */}
-        {record.kind === "approve" && recordRule(record).backendChecks && <p>{BACKEND_CHECKS_NOTE}。</p>}
+        {record.kind === "approve" && recordRule(record).backendChecks && <p>{backendChecksText("批准时", "。")}</p>}
         <p><Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button></p>
       </>,
-      tech: <p className="rd-note">技术信息：操作编号 <span data-mono>{record.commandKey}</span> ｜ 操作人 {record.operator}</p>,
+      tech: <Fold inset title="技术信息" summary={`操作编号 ${record.commandKey}`}>
+        <Facts><Fact k="操作编号"><span data-mono className="a2-long-code">{record.commandKey}</span></Fact><Fact k="操作人">{record.operator}</Fact></Facts>
+      </Fold>,
     };
   });
   const pendingNotices = <RecoveryPanel title={recoveryTitle(pendingItems.length)} items={pendingItems}
-    explain="有结论前不要重复处理这几张单。点行首的箭头看发出时间、理由和操作编号。" />;
+    explain="有结论前不要重复处理这几张单。点行首的箭头看理由和操作编号。" />;
 
   /* 待审批：行内按钮都是小号次按钮，点了只开确认框（D2 新手测试）。整屏主按钮只有抽屉里的「批准」（DP-40）。
      没有这张单的业务权限时不显示批准、驳回（OP-124）；整页一行都没有可做的事时不画「操作」列（建议 3）。 */
@@ -2767,7 +2774,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
     // 动作名里已带对象（A1「停用账号 · 账号名」）时这里只写动作，对象在下一行写一次（VS-105）。
     { label: "要做什么", value: shownTitle && shownTitle.objectInAction && shownTitle.action.endsWith(` · ${shownTitle.object}`) ? shownTitle.action.slice(0, -` · ${shownTitle.object}`.length) : approvalActionName(shown) },
-    { label: "对象", value: objectNode(shown, false) },
+    { label: "对象", value: objectNode(shown) },
     ...(shownChange ? [shownChange] : []),
     ...(shownK1?.kind === "param" ? [{ label: "改动", value: <Change from={`${shownK1.from} 个账户`} to={`${shownK1.to} 个账户`} /> }]
       : shownK1?.kind === "release" ? [{ label: "这笔收益", value: `${k1Amount(shownK1.net)} ${nexGridBrandText(shownK1.asset)} · ${k1Source(shownK1.source)} · 用户 ${userCode(shownK1.userId)}` }] : []),
@@ -2789,7 +2796,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     backend: !shown.retiredOperation && decisionRule(shown).backendChecks,
   };
   // 技术信息：上面写运营的话，这里给查证用的原文，只列和上面写法不同的（TX-06、TX-34、OP-154）。
-  // 对象一格、K1、七层首次配置的「技术信息」提示里已有的原文，这里不再列（VS-105）。
+  // 对象一格、确认框都不放原文气泡，原文只在这里（DT-22）；和上面写法相同的不再列（VS-105）。
   const shownFundKind = shown ? fundTicket(shown) : undefined;
   const objectRawInTip = !!shown && (shownFundKind?.kind === "fConfig" || shown.operationCode === "f_unilevel_bootstrap" || !!fBatchTicket(shown)
     || !shown.objDisplayName && /^F\.ambassador\.\d+\.status$/.test(shown.obj) || shown.operationCode === "j1_gate_resume"
@@ -2856,6 +2863,16 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const historyV8Ticket = shownHistory && records?.operationQueue.find(w => w.id === shownHistory.id
     && (w.status === "approved" || w.status === "rejected" || w.status === "withdrawn")
     && w.v8PromotionSnapshot && isV8PromotionTicket(w));
+  // 技术信息和待审批详情同一种样子：底部折叠里一项一行（DT-22）。
+  const historyTech = !shownHistory ? [] : [
+    { k: "处理链原文", v: shownHistory.chain },
+    ...(historyV8Ticket && historyV8Ticket.obj !== objectText(historyV8Ticket) ? [{ k: "对象原文", v: historyV8Ticket.obj }] : []),
+    ...(voucherResult?.state === "available" ? [
+      { k: "券处置原文", v: voucherResult.disposition ?? "—" },
+      ...(voucherResult.skippedReason ? [{ k: "未扣回原因原文", v: voucherResult.skippedReason }] : []),
+      ...(voucherResult.amountUsdt ? [{ k: "已扣回原文", v: `${voucherResult.amountUsdt} USDT` }] : []),
+    ] : []),
+  ];
 
   const readOnly = canApprove ? undefined : canPropose ? "你不能批准，只能看进度和撤回自己发起的申请。" : canMakeV8 ? "你不能批准，只能看进度和撤回自己发起的 V8 晋升申请。" : "你不能批准审批单，只能查看。";
 
@@ -2908,7 +2925,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
               <div className="a2-change-title">完整变更内容 · 七层</div>
               <F2BootstrapReview rows={shownBoot} label="要建立的七层规则" ranked={f2BootstrapUsesRank(shownBoot[0].usdtPct, shownBoot[1].usdtPct) ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />
             </section>
-            : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} tip={false} />
+            : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
             : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} {...approvalReviewValues(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
@@ -2925,7 +2942,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           {shownApprover && (shownApprover.permission || shownApprover.backend ? <Fold inset title={shownApprover.label} summary={shownApprover.value}>
             <Facts>
               {shownApprover.permission && <Fact k="需有权限">{shownApprover.permission}</Fact>}
-              {shownApprover.backend && <Fact k="批准时">系统再核对业务权限，没权限会被拒并写明原因</Fact>}
+              {shownApprover.backend && <Fact k="批准时">{backendChecksText()}</Fact>}
             </Facts>
           </Fold> : <Facts><Fact k={shownApprover.label}>{shownApprover.value}</Fact></Facts>)}
           {shownTech.length > 0 && <Fold inset title="技术信息" summary={[...new Set(shownTech.map(({ k }) => k.startsWith("修改") ? "修改前后原文" : k))].join("、")}>
@@ -2959,6 +2976,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
+              {fBatchLogItems(shownLog) && <Fact k="各项配置键"><span data-mono className="a2-long-code">{fBatchLogItems(shownLog)!.map((item) => item.key).join("、")}</span></Fact>}
               {(fBatchLogItems(shownLog) || shownLogE1 || shownLogApproved?.price || shownLogDelta !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
@@ -2990,9 +3008,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
               {voucherResult.skippedReason && <Fact k="没有扣回的原因">{F1_VOUCHER_SKIP_REASON[voucherResult.skippedReason] ?? "系统记下的原因暂时无法显示"}</Fact>}
             </Facts> : <p className="rd-note">没读到这张单的实际结果，可能是较早批准的单没有记下。到{reach("/finance/ledger") ? <Link className="rd-link" href="/finance/ledger" prefetch={false}>「账本与账单核对」</Link> : "「账本与账单核对」"}核对这笔冲正的 USDT 流水。</p>}
           </section>}
-          <Fold inset title="技术信息" summary="处理链原文">
-            <p className="rd-note" data-mono>{shownHistory.chain}</p>
-            {voucherResult?.state === "available" && <p className="rd-note" data-mono>券处置 {voucherResult.disposition ?? "—"}{voucherResult.skippedReason && ` · 未扣回原因 ${voucherResult.skippedReason}`}{voucherResult.amountUsdt && ` · 已扣回 ${voucherResult.amountUsdt} USDT`}</p>}
+          <Fold inset title="技术信息" summary={historyTech.map(({ k }) => k).join("、")}>
+            <Facts>{historyTech.map(({ k, v }) => <Fact key={k} k={k}><span data-mono className="a2-long-code">{v}</span></Fact>)}</Facts>
           </Fold>
         </>}
       </Drawer>

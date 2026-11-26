@@ -22,7 +22,7 @@ import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { fetchAccountDeletion, fetchAccountDeletions, updateAccountDeletion, AccountDeletionRequestError, type AccountDeletionRequest, type AccountDeletionStatus } from "@/lib/admin/account-deletion-client";
 import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { nexGridBrandText, operatorNicknameText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
-import { businessClock, businessDay, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
+import { businessClock, businessDay, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { formatAccountStatus, formatC1DeviceStatus, formatC1RiskBand, formatC1SessionStatus, riskBandFromScore, riskBandTone } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { canReadOwnRecoveryProposal, nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
@@ -1655,7 +1655,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
               {frozenView ? <>
                 <Th>冻结来源 · 原因</Th>
                 <Th>冻结时间 · 操作人</Th>
-                <Th align="right">一起冻结的提现 <Explain label="一起冻结的提现怎么算" content="因为这次账户冻结一起停住的提现单。恢复账户时一起恢复，之后按原来的提现流程处理。" /></Th>
+                <Th align="right"><Explain label="一起冻结的提现怎么算" content="因为这次账户冻结一起停住的提现单。恢复账户时一起恢复，之后按原来的提现流程处理。">一起冻结的提现</Explain></Th>
               </> : <Th>账户状态</Th>}
               <Th>注册时间</Th>
               {accountActions && <Th sticky="end">操作</Th>}
@@ -1894,7 +1894,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Fold inset title="技术信息" summary={`系统编号 ${shownId || "—"}`}>
             <Facts>
               <Fact k="系统编号">{shownId || "—"}</Fact>
-              {shownStatus === "FROZEN" && <Fact k="冻结时间">{formatBusinessTimeFull(fact?.frozenAt, "—")}</Fact>}
             </Facts>
           </Fold>
         </div>}

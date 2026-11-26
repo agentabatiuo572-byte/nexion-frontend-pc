@@ -151,11 +151,13 @@ export function NotificationBell() {
       href: opsAlertHref(alert),
       occurredAt: alert.occurredAt,
     }));
+  // 读取失败一行：来源加原因，中间用「 · 」，原因去掉句尾句号（TX-15），和上面告警的「标题 · 说明」同一个写法。
+  const failedText = (source: string, reason: string) => `${source}加载失败 · ${reason.replace(/。$/, "")}`;
   if (opsAlertError) {
     j1Alerts.push({
       id: "ops-dashboard-sync",
       level: "high",
-      text: `紧急开关告警加载失败：${opsAlertError}`,
+      text: failedText("紧急开关告警", opsAlertError),
       href: "/emergency/kill-switch",
     });
   }
@@ -163,7 +165,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "j2-alert-sync",
       level: "high",
-      text: `地区访问限制告警加载失败：${j2AlertError}`,
+      text: failedText("地区访问限制告警", j2AlertError),
       href: "/emergency/geo-block",
     });
   }
@@ -171,7 +173,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "j3-alert-sync",
       level: "high",
-      text: `篡改监控告警加载失败：${j3AlertError}`,
+      text: failedText("篡改监控告警", j3AlertError),
       href: "/emergency/tamper",
     });
   }
@@ -179,7 +181,7 @@ export function NotificationBell() {
     j1Alerts.push({
       id: "c2-alert-sync",
       level: "high",
-      text: `高风险账户告警加载失败：${c2AlertError}`,
+      text: failedText("高风险账户告警", c2AlertError),
       href: "/users/actions",
     });
   }

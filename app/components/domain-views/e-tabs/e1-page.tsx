@@ -642,9 +642,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
             : readRetryBlock ? { tag: "结果未知", line: readRetryBlock, more: "原记录继续保留。" }
               : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
                 : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
-      // 待确认条常显原操作和提交时间（OP-93 第 1 项、OP-154）：时间写在结论句前面（对象一格放不下会被截掉），展开后不再重复。
+      // 待确认条常显原操作和提交时间（OP-93 第 1 项、OP-154）：提交时间由共用恢复条写在结论句前面，这里和展开后都不再写。
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
-        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: `${sent(record.createdAt)}，${state.line}`, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
+        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
         actions: <>
           {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原操作</Button>}
           {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原操作重试</Button>}
@@ -674,7 +674,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
       actions: e1MediaHasOwner(record) ? <Button size="sm" disabledReason={readBlock({ op: "sku-save", target: record.skuId })} onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
         : canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined,
-      detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),
+      detail: <p>原文件摘要和原请求已保留。</p> })),
   ];
   const unknownCount = recovery.length - waitingReceipts.length - verifiedDrafts.length;
   return <RdPage className="e1-page">

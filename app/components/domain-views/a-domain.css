@@ -907,6 +907,8 @@
 .a2-f5-table { width: 100%; }
 /* 长编号（K1 收益记录号 ER- 加 32 位）：整串一起换到下一行，比一行还长时才在号里断开；框不出横向滚动。弹窗挂在页面外，不加 .adom 前缀。 */
 .a2-long-code { display: inline-block; max-width: 100%; overflow-wrap: anywhere; vertical-align: top; }
+/* 批准框「发起理由」下面一行写谁发起的，和详情判断要点的第二行同一个样子（.rd-point-reason）。弹窗挂在页面外，不加前缀。 */
+.a2-fact-by { display: block; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-2); }
 /* 批准确认框里的 I5 版本对照（BUG-503）：展开后跟着框体滚，框里只有一层滚动（DT-17）；标题不被摘要挤成两行，摘要折行时两行均衡，不剩孤字。I5 自己的发布框不受影响。 */
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-title { flex: none; }
 .a2-change-review [data-business-form="disclosure-publish-review"] .rd-fold-summary { text-wrap: balance; }

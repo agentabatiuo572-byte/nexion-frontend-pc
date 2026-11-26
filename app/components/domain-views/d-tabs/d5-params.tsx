@@ -1264,8 +1264,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       {pendingNotices}
       {queueNoticeOutsideConfig}
       {queueReadNotice}
+      {/* 标题已写「加载失败」，说明只写原因和后果，不重复标题（DT-12）。 */}
       <BlockState state="error" title="提现参数加载失败" detail={error === WITHDRAWAL_CONFIG_READ_FAILED
-        ? error : <>提现参数加载失败，旧值已清空，修改已暂停。{error && <> {error.replace(/^提现参数/, "")}</>}</>} onRetry={refresh} />
+        ? error : <>旧值已清空，修改已暂停。{error && error.replace(/^提现参数/, "")}</>} onRetry={refresh} />
       {releaseModal}
     </>;
   }
