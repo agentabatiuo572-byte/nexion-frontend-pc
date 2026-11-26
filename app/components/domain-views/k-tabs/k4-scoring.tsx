@@ -483,16 +483,19 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   };
 
   const lookupModelVersion = lookupUser?.scored ? lookupUser.modelVersion : null;
+  const recomputeWaiting = (overview?.recomputePending ?? 0) > 0;
   useEffect(() => {
-    if (!overview?.model || overview.recomputePending <= 0) return;
+    if (activeModelVersion === undefined || !recomputeWaiting) return;
     let cancelled = false;
     let timer: number | undefined;
     const poll = async () => {
+      const sequence = lookupSequence.current;
       try {
-        await ctx.refreshK4Scoring({ overridePageNum: overridePage, overridePageSize });
-        if (!cancelled && lookupUser
-            && lookupModelVersion !== `k4-v${overview.model!.version}`) {
-          await loadUser(lookupUser.userNo);
+        const scoring = await ctx.refreshK4Scoring({ overridePageNum: overridePage, overridePageSize });
+        if (!cancelled && scoring?.model && lookupUser && sequence === lookupSequence.current
+            && lookupModelVersion !== `k4-v${scoring.model.version}`) {
+          const user = await ctx.actions.fetchK4User(lookupUser.userNo);
+          if (sequence === lookupSequence.current) setLookupUser(user);
         }
       } catch {
         // Keep the last authoritative snapshot visible; the next poll retries only the read.
@@ -505,9 +508,9 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-    // Re-arm only when queue or selected-user version changes; ctx methods are stable in KDomainView.
+    // Re-arm when the queue starts or stops, or the read conditions change; ctx methods are stable in KDomainView.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overview?.recomputePending, overview?.model?.version, overridePage, overridePageSize,
+  }, [recomputeWaiting, activeModelVersion, overridePage, overridePageSize,
     lookupUser?.userNo, lookupModelVersion]);
 
   useEffect(() => {
