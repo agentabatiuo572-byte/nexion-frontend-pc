@@ -29,7 +29,7 @@ import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
 import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
-import { useServicePendingCount } from "./use-service-badges";
+import { ServicePendingCount, useServicePendingCount } from "./use-service-badges";
 import { Button } from "@/app/components/rd/button";
 import { RdPage } from "@/app/components/rd/surface";
 import { fetchBusinessCalendar } from "@/lib/admin/business-calendar-client";
@@ -465,7 +465,9 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
               <b>平台维护提示已开启</b> · 当前后台可能正在进行维护操作，请谨慎提交高风险变更。
             </div>
           )}
-          <PageTransition><Fragment key={zoneKey}>{denied ? <AdminNoAccessPage pathname={pathname} landingPath={landingPath} /> : children}</Fragment></PageTransition>
+          <ServicePendingCount.Provider value={servicePending}>
+            <PageTransition><Fragment key={zoneKey}>{denied ? <AdminNoAccessPage pathname={pathname} landingPath={landingPath} /> : children}</Fragment></PageTransition>
+          </ServicePendingCount.Provider>
         </div>
       </main>
     </div>

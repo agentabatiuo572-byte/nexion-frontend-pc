@@ -24,6 +24,7 @@ import { fetchB2Reserve } from "@/lib/admin/b2-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchD1TopupOverview, fetchD2Withdrawals } from "@/lib/admin/d-client";
 import { supportClient } from "@/lib/admin/m-support-client";
+import { PERSONAL_TODO_HOME, SUPPORT_TODO_HOME } from "@/lib/admin/support-todo-route";
 import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { fmtAmount, fmtNum } from "@/lib/format";
@@ -143,7 +144,10 @@ export default function CommandCenter() {
     else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 笔`, owner: "财务", href: `/finance/withdrawals?status=${REVIEW_PENDING}` });
   }
   if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", onRetry: supportTodo.reload });
-  else if (supportTodo.data) rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: "/service/overview" });
+  else if (supportTodo.data) {
+    const managesSupport = session?.supportReadModes?.some(mode => mode === "ALL" || mode === "MANAGED");
+    rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: managesSupport ? SUPPORT_TODO_HOME : PERSONAL_TODO_HOME });
+  }
   // 设备读取失败已在结论句和设备卡上写过，这里不再重复；为 0 的状态不占行。
   if (devices.data) {
     const deviceRows = [

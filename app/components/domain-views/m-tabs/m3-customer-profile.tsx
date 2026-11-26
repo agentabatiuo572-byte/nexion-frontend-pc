@@ -127,7 +127,7 @@ function mergeProfileGroups(previous: CustomerProfile, next: SupportProfile, gro
   return updated;
 }
 
-export function M3CustomerProfile({ ctx, customerId, source, transferEntry = true, conversation, scopeVersion, onHistory, messageError, onRetryMessages, openRequest = 0 }: { ctx: MCtx; customerId: string; source: "M1" | "M3"; transferEntry?: boolean; conversation?: SessionConvo; scopeVersion?: number; onHistory: (no: string) => void; messageError?: string; onRetryMessages: () => void; /** 每加一次打开一次全部资料：窄宽时入口在对话头的菜单里。 */ openRequest?: number }) {
+export function M3CustomerProfile({ ctx, customerId, source, transferEntry = true, conversation, scopeVersion, onHistory, messageError, onRetryMessages, openRequest = 0 }: { ctx: MCtx; customerId: string; source: "M1" | "M3"; transferEntry?: boolean; conversation?: SessionConvo; scopeVersion?: number; onHistory?: (no: string) => void; messageError?: string; onRetryMessages: () => void; /** 每加一次打开一次全部资料：窄宽时入口在对话头的菜单里。 */ openRequest?: number }) {
   const pathname = usePathname(), searchParams = useSearchParams();
   const reach = useReach();
   const session = useAdminAuth(s => s.session), epoch = useAdminAuth(s => s.authEpoch);
@@ -639,7 +639,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     </Fold>
     <Fold inset title="历史会话" explain="只显示你有权查看的。总数按这位客户的全部会话算。" {...recordFold("历史会话")} summary={typeof service?.conversationCount === "number" && service.conversationCount !== history.length ? `可看 ${history.length} / 共 ${service.conversationCount}` : `${history.length} 段`}>
       <RecordList label="历史会话" records={history.slice((historyPage-1)*5,historyPage*5).map(c => ({ id: c.id,
-        value: <Button size="sm" onClick={()=>{setView360(false);onHistory(c.id);}}>{c.status === "open" ? "进行中" : "已结束"}</Button>,
+        value: onHistory ? <Button size="sm" onClick={()=>{setView360(false);onHistory(c.id);}}>{c.status === "open" ? "进行中" : "已结束"}</Button> : c.status === "open" ? "进行中" : "已结束",
         object: c.owner, at: Number.isFinite(c.lastTs) && c.lastTs > 0 ? new Date(c.lastTs).toISOString() : undefined, reference: c.id,
       }))} />
       {pager(historyPage,history.length,setHistoryPage,5)}

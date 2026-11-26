@@ -5,15 +5,17 @@ import { operatorNicknameText } from "@/lib/admin/brand-copy";
 
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { BarChart3, Users } from "lucide-react";
 import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportPerformanceAnalyticsClient as analytics, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
-import { PERFORMANCE_EXPORT_DETAIL, PERFORMANCE_EXPORT_SUMMARY, sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
-import { isSupportSessionExpired, SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { PERFORMANCE_EXPORT_APPROVE, PERFORMANCE_EXPORT_DETAIL, PERFORMANCE_EXPORT_SUMMARY, sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
+import { isSupportScopeDenial, isSupportSessionExpired, SupportClientError, supportClient, supportCustomerNotFound, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
+import { todoListHref, todoSessionsHref } from "@/lib/admin/support-todo-route";
+import { ServicePendingCount } from "@/app/components/shell/use-service-badges";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, businessZoneText } from "@/lib/admin/business-time";
@@ -23,8 +25,10 @@ import { HDSelect, type HDOption } from "./hd-ui";
 import { M1PersonalWorkbench, SupportSeatRolesButton, maintenanceCommands, type PersonalWorkbenchView } from "./m1-personal-workbench";
 import { M1StatisticDetails, fundAmount, fundLabels, type FundMetric, type StatisticSource } from "./m1-statistic-details";
 import { M1LiveService } from "./m1-live-service";
+import { M1TodoTab, type TodoHoldError, type TodoSessionTarget } from "./m1-todo-tab";
+import { TodoNoGroups, type TodoAccess, type TodoOptions } from "./m1-todo-list";
 import { CustomerTransferDialog, TransferPendingNotes, transferCommands } from "./m1-customer-transfer";
-import { groupPendingCommands, isInvitePending } from "@/lib/admin/support-group-client";
+import { groupPendingCommands, isInvitePending, supportGroupClient } from "@/lib/admin/support-group-client";
 import { selfAvatarCommands, avatarDrafts } from "@/lib/admin/account-avatar-pending";
 import { pendingPaymentReleases } from "@/lib/admin/payment-password-client";
 import { poolCommands, routeCommands } from "./m1-supervisor-pool";
@@ -53,12 +57,12 @@ const M3CustomerProfile = dynamic(() => import("./m3-customer-profile").then(m =
 
 type Permission = "agent" | "supervisor" | "superadmin";
 /** M-41: one tab row per role. Agents: home / my-customers / my-data; supervisors and the super admin: data / customers / pool / team (+ mine for a supervisor with a seat). */
-type M1Tab = "home" | "my-customers" | "my-data" | "data" | "customers" | "pool" | "team" | "mine" | "exports";
-type Section = "personal" | "stats" | "pool" | "team" | "mine" | "exports";
-const TAB_LABEL: Record<M1Tab, string> = { home: "工作台", "my-customers": "我的客户", "my-data": "我的数据", data: "数据", customers: "客户", pool: "待分配", team: "客服与分组", mine: "我的客户", exports: "导出记录" };
+type M1Tab = "home" | "my-customers" | "my-data" | "data" | "todo" | "customers" | "pool" | "team" | "mine" | "exports";
+type Section = "personal" | "stats" | "todo" | "pool" | "team" | "mine" | "exports";
+const TAB_LABEL: Record<M1Tab, string> = { home: "工作台", "my-customers": "我的客户", "my-data": "我的数据", data: "数据", todo: "待跟进", customers: "客户", pool: "待分配", team: "客服与分组", mine: "我的客户", exports: "导出记录" };
 // 「导出记录」只在服务端允许读取至少一个导出视图时出现。
 function roleTabs(personal: boolean, canMine: boolean, withExports = false): M1Tab[] {
-  const tabs: M1Tab[] = personal ? ["home", "my-customers", "my-data"] : ["data", "pool", "customers", "team", ...(canMine ? ["mine" as const] : [])];
+  const tabs: M1Tab[] = personal ? ["home", "my-customers", "my-data"] : ["data", "todo", "pool", "customers", "team", ...(canMine ? ["mine" as const] : [])];
   return withExports ? [...tabs, "exports"] : tabs;
 }
 function entryTab(personal: boolean, canMine: boolean, withExports = false): M1Tab {
@@ -102,7 +106,9 @@ export function initialAnalyticsQuery(mode: SupportAnalyticsResponse["scopeSumma
 }
 class AnalyticsEntryError extends Error {}
 export function analyticsEntryAgent(search: string): string | undefined {
-  const values = new URLSearchParams(search).getAll("agentId");
+  const params = new URLSearchParams(search);
+  if (params.get("view") === "todo") return undefined;
+  const values = params.getAll("agentId");
   if (!values.length) return undefined;
   const value = values[0];
   // Match the private client's canonical positive decimal and request-safe bound;
@@ -225,7 +231,7 @@ function activityTime(value: string): string {
 function serviceTag(task: SupportAnalyticsCustomer["task"]): [string, "warn" | "neutral"] {
   return task.status === "UNAVAILABLE" ? ["任务资料待加载", "neutral"] : task.waitingReply === true ? ["待回复", "warn"] : task.due === true ? ["待维护", "neutral"] : task.firstContact === true ? ["首次待联系", "neutral"] : task.enabled === false ? ["暂停主动维护", "neutral"] : task.status !== "COMPLETE" ? ["未知", "neutral"] : ["正常跟进", "neutral"];
 }
-export type CustomerSessionStart = { checkingId: string | null; start: (row: SupportAnalyticsCustomer) => void };
+export type CustomerSessionStart = { checkingId: string | null; start: (row: TodoSessionTarget) => void };
 const SESSION_RETURN_KEY = "nexion-m1-customers-return-v1";
 
 // The existing house picker lacks Escape/arrow focus; keep its appearance and supply keyboard behavior here.
@@ -409,12 +415,12 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
 function clockText(value: string | null): string {
   return value === null ? "-" : new Intl.DateTimeFormat("zh-CN", { timeZone: businessZone().zoneId, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(parseBusinessTime(value));
 }
-/** Design ②: someone else holds this customer; the operator can only wait or read the history. */
-function SessionBusyDialog({ customer, hold, onRead, onClose }: { customer: string; hold: SupportSessionHold; onRead: () => void; onClose: () => void }) {
+/** Design ②: someone else holds this customer; the operator can only wait or read the history. 文字照画板 4-ix-2：正文只写下一步，北京时间标一次（TX-25）。 */
+function SessionBusyDialog({ customer, hold, onRead, onClose }: { customer: string; hold: SupportSessionHold; onRead?: () => void; onClose: () => void }) {
   const holder = hold.holder!, role = SUPPORT_SESSION_ROLE_LABEL[holder.role];
-  return <Modal title="暂时不能发起会话" onClose={onClose} footer={<><Button onClick={onRead}>查看会话记录</Button><Button variant="primary" onClick={onClose}>知道了</Button></>}>
-    <Facts><Fact k="客户">{customer}</Fact><Fact k="当前接待人">{holder.name} · {role}</Fact><Fact k="接待人最后发消息">{hold.lastSentAt ? dateText(hold.lastSentAt) : "—"}</Fact><Fact k="预计无人发言结束接待">{hold.autoEndAt ? dateText(hold.autoEndAt) : "—"}</Fact></Facts>
-    <p>当前由 {holder.name} 接待，暂不能同时发起接待。可以查看会话记录，或等接待结束后再联系。</p><Fold inset title="接待规则" summary={hold.endMinutes === null ? "期限未读取" : `无人发言 ${hold.endMinutes} 分钟`}><p>接待人最后发消息后这么久没再发，接待就结束（客户发消息不算）；不结束对话、不改专属客服，也不清除待回复。</p></Fold>
+  return <Modal title="暂时不能发起会话" onClose={onClose} footer={<>{onRead && <Button onClick={onRead}>查看会话记录</Button>}<Button variant="primary" onClick={onClose}>知道了</Button></>}>
+    <Facts><Fact k="客户">{customer}</Fact><Fact k="当前接待人">{holder.name} · {role}</Fact><Fact k="接待人最后发消息">{hold.lastSentAt ? dateText(hold.lastSentAt) : "—"}</Fact><Fact k="预计结束接待">{hold.autoEndAt ? `${dateText(hold.autoEndAt)}（${businessZone().label}）` : "—"}</Fact></Facts>
+    <p>接待结束后才能发起会话，现在可以先看会话记录。</p><Fold inset title="接待规则" summary={hold.endMinutes === null ? "期限未读取" : `接待人 ${hold.endMinutes} 分钟不发消息就结束`}><p>客户发消息不延长接待；接待结束不会结束对话、不换专属客服，也不清除待回复。</p></Fold>
   </Modal>;
 }
 
@@ -439,6 +445,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const openEvents = () => { eventPairRetried.current = false; setEventError(""); setEventPage({ number: 1 }); setEventsOpen(true); };
   useEffect(() => { const update = () => setRecoveryRevision(n => n + 1); window.addEventListener("m1-pending-changed", update); window.addEventListener("nexion-payment-security-updated", update); return () => { window.removeEventListener("m1-pending-changed", update); window.removeEventListener("nexion-payment-security-updated", update); }; }, []);
   const authSession = useAdminAuth(state => state.session);
+  const canManageTodo = permission !== "agent" && Boolean(authSession?.authorities.includes("service_m1_read"));
   const tabIds = useTabIds();
   const pendingTabFocus = useRef<M1Tab | null>(null);
   const [scope, setScope] = useState<SupportAnalyticsResponse | null>(null), [scopeError, setScopeError] = useState(""), [scopeDenied, setScopeDenied] = useState(false);
@@ -453,7 +460,9 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const [loading, setLoading] = useState(false), [retry, setRetry] = useState(0), [cancelled, setCancelled] = useState(false);
   const [requestedExports] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "exports");
   const restoreExports = useRef(requestedExports);
-  const [section, setSection] = useState<Section>("stats"), [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
+  const [section, setSection] = useState<Section>(() => canManageTodo && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "todo" ? "todo" : "stats");
+  const [personalView, setPersonalView] = useState<PersonalWorkbenchView>("dashboard");
+  const todoActive = canManageTodo && section === "todo";
   const lastDataView = useRef<SupportAnalyticsView>("OVERVIEW");
   const [profileId, setProfileId] = useState<string | null>(null);
   const [agentDrawerStatus, setAgentDrawerStatus] = useState<"denied" | "missing" | null>(null);
@@ -470,13 +479,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const operatorName = useAdminAuth(state => state.session?.operator || state.session?.username || "本人账号");
   // 「返回负责组客户」 from M3 brings back the list view, filters and page saved when 发起会话 was clicked.
   const [sessionReturn] = useState<AnalyticsQueryState | null>(() => {
-    if (typeof window === "undefined" || new URLSearchParams(window.location.search).get("restore") !== "customers") return null;
+    if (typeof window === "undefined" || todoActive || new URLSearchParams(window.location.search).get("restore") !== "customers") return null;
     let saved: { adminId?: number; query?: AnalyticsQueryState } | null = null;
     try { saved = JSON.parse(sessionStorage.getItem(SESSION_RETURN_KEY) ?? "null"); } catch { return null; }
     return saved?.adminId === adminId && saved?.query?.view === "CUSTOMERS" ? saved.query : null;
   });
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("restore") !== "customers") return;
+    if (todoActive || new URLSearchParams(window.location.search).get("restore") !== "customers") return;
     const url = new URL(window.location.href); url.searchParams.delete("restore"); window.history.replaceState(null, "", url);
     try { sessionStorage.removeItem(SESSION_RETURN_KEY); } catch { /* nothing left to clear */ }
   }, []);
@@ -484,10 +493,16 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const managementCustomerGroup = useRef<string | null>(null);
   const [keyword, setKeyword] = useState(sessionReturn?.keyword ?? "");
   const [transferCustomer, setTransferCustomer] = useState<string | null>(null), [transferRevision, setTransferRevision] = useState(0), [transferNotice, setTransferNotice] = useState("");
-  const [sessionCheck, setSessionCheck] = useState<string | null>(null), [sessionBusy, setSessionBusy] = useState<{ row: SupportAnalyticsCustomer; hold: SupportSessionHold } | null>(null), [sessionError, setSessionError] = useState<SupportAnalyticsCustomer | null>(null);
+  const [sessionCheck, setSessionCheck] = useState<string | null>(null), [sessionBusy, setSessionBusy] = useState<{ row: TodoSessionTarget; hold: SupportSessionHold; onRead: () => void } | null>(null), [sessionError, setSessionError] = useState<TodoSessionTarget | null>(null);
+  const [todoHoldError, setTodoHoldError] = useState<TodoHoldError | null>(null);
+  const [todoRevision, setTodoRevision] = useState(0);
   const sessionController = useRef<AbortController | null>(null);
+  function clearSessionFeedback() {
+    sessionController.current?.abort();
+    setSessionCheck(null); setSessionBusy(null); setSessionError(null); setTodoHoldError(null);
+  }
   useEffect(() => () => sessionController.current?.abort(), []);
-  useEffect(() => { sessionController.current?.abort(); setSessionCheck(null); setSessionBusy(null); setSessionError(null); }, [queryState, section]);
+  useEffect(() => { if (!todoActive) clearSessionFeedback(); }, [queryState, section, todoActive]);
   // 9) A saved group that is no longer in this operator's scope is not widened silently.
   const [restoreNotice, setRestoreNotice] = useState("");
   useEffect(() => { setRestoreNotice(""); }, [queryState.groupId, section]);
@@ -495,8 +510,21 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const entryStatistics = useRef<{ query: string; data: SupportAnalyticsResponse } | null>(null);
   const isPersonal = scope?.scopeSummary.mode === "PERSONAL";
   const readModes = authSession?.supportReadModes;
-  const canMine = scope?.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL"));
-  const noScopedContent = scope?.scopeSummary.mode === "MANAGED" && scope.scopeSummary.groups.length === 0 && !canMine;
+  const canMine = permission === "supervisor" && Boolean(readModes?.includes("PERSONAL"));
+  const [todoGroups, setTodoGroups] = useState<TodoOptions>({ unavailable: "" });
+  const needsGroupDirectory = canManageTodo && (todoActive || permission === "supervisor");
+  useEffect(() => {
+    if (!needsGroupDirectory) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    void supportGroupClient.groups(signal)
+      .then(groups => { if (!signal.aborted) setTodoGroups(groups.map(group => ({ value: group.id, label: group.name }))); })
+      .catch(cause => { if (!signal.aborted && !isSupportSessionExpired(cause)) setTodoGroups({ unavailable: displayAdminReadError(cause) }); });
+    return () => controller.abort();
+  }, [needsGroupDirectory, scopeRetry, todoRevision]);
+  const noManagedGroups = permission === "supervisor" && Array.isArray(todoGroups) && todoGroups.length === 0;
+  const noScopedContent = noManagedGroups && !canMine;
+  const todoCount = useContext(ServicePendingCount);
   // 只剩导出记录的两种情况（没有统计资格、没有负责组）都只露读成功的视图；没读成的等页头「刷新」重探到了再出现。
   const exportViews = statisticsUnavailable || noScopedContent ? exportsPorts?.persona.verifiedViews : exportsPorts?.persona.views;
   const hasMyExports = exportViews?.includes("MINE");
@@ -514,7 +542,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   }, [periodDetail, personalPeriod, monthCalendar, data, fundMetric, queryState, statisticsCalendar]);
   // A session hint only chooses the requested projection. The response still resolves current authority.
   const entryReadMode = readModes?.includes("ALL") ? "ALL" : readModes?.includes("MANAGED") ? "MANAGED" : readModes?.includes("PERSONAL") ? "PERSONAL" : "ALL";
-  const needsCalendar = Boolean(scope && !noScopedContent && (isPersonal || queryState.basis === "PERIOD_EVENT"));
+  const needsCalendar = Boolean(scope && !noScopedContent && !todoActive && (isPersonal || queryState.basis === "PERIOD_EVENT"));
   useEffect(() => { if (queryState.view !== "CUSTOMERS") lastDataView.current = queryState.view; }, [queryState.view]);
   // The 正式转绑 links from M3 land on the customer's transfer form, whichever tab this role opens on. Personal mode keeps its drawer.
   const scopeMode = scope?.scopeSummary.mode;
@@ -574,13 +602,20 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       managementReturnQuery.current = null;
       const customerGroup = managementCustomerGroup.current;
       managementCustomerGroup.current = null;
+      const params = new URLSearchParams(window.location.search);
+      if (canManageTodo && params.get("view") === "todo") {
+        const nextQuery = initialAnalyticsQuery(next.scopeSummary.mode);
+        if (next.generation !== "LEGACY" && nextQuery.view === "OVERVIEW") nextQuery.basis = "PERIOD_EVENT";
+        setScope(next);
+        setQueryState(nextQuery);
+        return;
+      }
       const groupId = remembered && next.scopeSummary.mode !== "PERSONAL" && next.scopeSummary.groups.some(group => group.groupId === String(remembered.groupId)) ? remembered.groupId : undefined;
       if (remembered && remembered === sessionReturn && remembered.groupId !== undefined && groupId === undefined) setRestoreNotice("原来选的分组已不在你的负责范围，下面显示的是全部负责组。请重新选择分组。");
       if (customerGroup && String(groupId) !== customerGroup) throw new SupportClientError(403, undefined, undefined);
       const restored: AnalyticsQueryState = remembered ? { ...changeAnalyticsQuery(remembered, { groupId, view: next.scopeSummary.mode === "PERSONAL" && ["OVERVIEW", "AGENTS"].includes(remembered.view) ? "CUSTOMERS" : remembered.view }), agentId: groupId === remembered.groupId ? remembered.agentId : undefined } : { ...initialAnalyticsQuery(next.scopeSummary.mode), ...(agentId === undefined ? {} : { view: "CUSTOMERS" as const, category: "BOUND" as const, agentId }) };
       if (!remembered) {
         if (next.generation !== "LEGACY" && restored.view === "OVERVIEW" && agentId === undefined) restored.basis = "PERIOD_EVENT";
-        const params = new URLSearchParams(window.location.search);
         const fields = { dataset: ["OVERVIEW", "AGENTS", "CUSTOMERS", "FINANCE", "DEVICES", "ACTIVITY"], basis: BASIS_OPTIONS.map(x => x.value), currency: ["USDT", "UVT"], category: ["ALL", "BOUND", "PENDING", "ANOMALY"], firstState: FIRST_OPTIONS.map(x => x.value), filter: PERSONAL_FILTER_OPTIONS.map(x => x.value), direction: ["ASC", "DESC"] };
         const changes: Partial<AnalyticsQueryState> = {};
         for (const [key, choices] of Object.entries(fields)) {
@@ -623,12 +658,15 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       else setScopeError(analyticsErrorText(cause));
     });
     return () => controller.abort();
-  }, [scopeRetry, entryReadMode, noStatisticsMode]);
+  }, [scopeRetry, entryReadMode, noStatisticsMode, canManageTodo]);
   useEffect(() => {
-    const invalidate = (event: Event) => refreshScope(true, Boolean((event as CustomEvent<{ customerId?: string }>).detail?.customerId));
+    const invalidate = (event: Event) => {
+      if (todoActive) { clearSessionFeedback(); setTodoRevision(n => n + 1); }
+      else refreshScope(true, Boolean((event as CustomEvent<{ customerId?: string }>).detail?.customerId));
+    };
     window.addEventListener("support-scope-invalidated", invalidate);
     return () => window.removeEventListener("support-scope-invalidated", invalidate);
-  }, [queryState]);
+  }, [queryState, todoActive]);
   useEffect(() => {
     if (!showStatistics) { entryStatistics.current = null; return; }
     if (queryState.basis === "PERIOD_EVENT" && !statisticsCalendar?.some(month => month.month === queryState.month)) return;
@@ -707,7 +745,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     targetedRefresh.current = targeted;
     setFundMetric(null);
     scopeControllerRef.current?.abort(); controllerRef.current?.abort(); generation.current++;
-    sessionController.current?.abort(); setSessionCheck(null); setSessionBusy(null); setSessionError(null);
+    clearSessionFeedback();
     managementReturnQuery.current = invalidated ? changeAnalyticsQuery(queryState, { groupId: undefined, keyword: undefined }) : { ...queryState, pageNum: 1, expectedVersion: undefined };
     if (invalidated) setKeyword("");
     if (!targeted) setScope(null);
@@ -747,21 +785,37 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       setRestoreNotice("查看权限已变化，已关闭资金明细并重新核对范围。");
     }
   }, [queryState]);
-  function openSessions(row: SupportAnalyticsCustomer) {
+  function openSessions(row: TodoSessionTarget) {
     try { sessionStorage.setItem(SESSION_RETURN_KEY, JSON.stringify({ adminId, query: queryState })); } catch { /* without storage the back link opens the default list */ }
     router.push(`/service/sessions?customerId=${encodeURIComponent(row.customerId)}&from=customers`);
   }
-  const sessionStart: CustomerSessionStart = { checkingId: sessionCheck, start: row => {
-    sessionController.current?.abort();
+  function openTodoSessions(row: TodoSessionTarget) {
+    router.push(todoSessionsHref({ customerId: row.customerId }));
+  }
+  function checkReception(row: TodoSessionTarget, onRead: () => void, onError: (cause: unknown) => void) {
+    clearSessionFeedback();
     const controller = new AbortController(); sessionController.current = controller;
-    setSessionCheck(row.customerId); setSessionError(null); setSessionBusy(null);
+    setSessionCheck(row.customerId);
     void supportClient.sessionHold(row.customerId, controller.signal).then(hold => {
       if (controller.signal.aborted) return;
       setSessionCheck(null);
-      if (hold.state === "OTHER") setSessionBusy({ row, hold }); else openSessions(row);
-    }).catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) { setSessionCheck(null); setSessionError(row); } });
-  } };
-  const customerName = (row: SupportAnalyticsCustomer) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
+      if (hold.state === "OTHER") setSessionBusy({ row, hold, onRead }); else onRead();
+    }).catch(cause => {
+      if (controller.signal.aborted || isSupportSessionExpired(cause)) return;
+      setSessionCheck(null);
+      onError(cause);
+    });
+  }
+  const sessionStart: CustomerSessionStart = { checkingId: sessionCheck, start: row => checkReception(row, () => openSessions(row), () => setSessionError(row)) };
+  const startTodoSession = (row: TodoSessionTarget, inDrawer: boolean) => {
+    ctx.scopeNotice?.dismiss();
+    checkReception(row, () => openTodoSessions(row), cause => {
+      if (cause instanceof SupportClientError && (analyticsResponseStatus(cause) === 403 || supportCustomerNotFound(cause))) {
+        ctx.invalidateScope(undefined, row.customerId, { text: "你没有查看这位客户的权限", page: "M1" });
+      } else setTodoHoldError({ row, inDrawer, canRead: !isSupportScopeDenial(cause) });
+    });
+  };
+  const customerName = (row: TodoSessionTarget) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   function page(number: number) {
     if (!data) return;
     const next = nextAnalyticsPage(queryState, data, number);
@@ -771,7 +825,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     setQueryState(next);
   }
   useEffect(() => {
-    if (!scope || noScopedContent) return;
+    if (!scope || noScopedContent || todoActive) return;
     const url = new URL(window.location.href);
     const tab = section === "exports" ? "exports" : isPersonal ? section === "stats" ? "my-data" : personalView === "customers" ? "my-customers" : "home" : section === "stats" ? queryState.view === "CUSTOMERS" ? "customers" : "data" : section;
     if (!restoreExports.current) url.searchParams.set("view", tab);
@@ -779,59 +833,56 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     for (const [key, value] of Object.entries(fields)) { if (key === "filter" && section !== "stats") continue; if (value === undefined) url.searchParams.delete(key); else url.searchParams.set(key, String(value)); }
     window.history.replaceState(null, "", url);
     try { sessionStorage.setItem(`nexion-m1-keyword:${adminId}`, queryState.keyword ?? ""); } catch { /* Search remains usable without memory. */ }
-  }, [scope, noScopedContent, section, personalView, isPersonal, queryState, adminId, exportsPorts]);
+  }, [scope, noScopedContent, section, todoActive, personalView, isPersonal, queryState, adminId, exportsPorts]);
   useLayoutEffect(() => {
-    if (!scope || !pendingTabFocus.current) return;
+    if ((!scope && !canManageTodo) || !pendingTabFocus.current) return;
     document.getElementById(tabIds.tab(pendingTabFocus.current))?.focus();
     pendingTabFocus.current = null;
-  }, [section, personalView, queryState.view, scope, tabIds]);
+  }, [section, personalView, queryState.view, scope, canManageTodo, tabIds]);
   /** 首读失败「重试」读到之后焦点落在页面标题（两种外框里都是同一个 h1），不掉到页面上（BUG-710 N01）。 */
   const workbenchRef = useRef<HTMLElement>(null);
   const workbenchTitle = useMemo(() => ({ get current() { return workbenchRef.current?.querySelector<HTMLElement>("h1") ?? null; } }), []);
   const visible = authSession ? resolveVisibleDomains(authSession) : [];
   const leaderboardReachable = !!authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard");
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
+  const superOperator = authSession?.role === "super" || authSession?.role === "superadmin";
+  const canReplyM3 = superOperator || Boolean(authSession?.authorities.includes("service_m3_write"));
+  const sessionsReachable = Boolean(authSession?.authorities.includes("service_m3_read")) && canAccessResolvedPath(visible, "/service/sessions");
+  const todoAccess: TodoAccess = sessionsReachable ? canReplyM3 ? "reply" : "read" : "none";
+  // 整页都没有写权时页头右下写一句（PG-18、OP-125、ST-39）；只缺回复权、仍能分配分组或导出审批的主管不写。权限名取角色页显示名括号前的部分。
+  const pageReadOnly = (scope || todoActive) && !personalHeader && !superOperator && !canReplyM3 && !authSession?.authorities.some(code => code === "service_m1_write" || code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL || code === PERFORMANCE_EXPORT_APPROVE)
+    ? "你只能查看；发起会话需要「即时会话台-常规写」权限，请联系管理员在「角色管理」里开通。" : undefined;
   // 主管和超管：页头次按钮是导出业绩、会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
   // 「更换本人头像」是本人设置，不放页头：右上角账号菜单里都有，主管兼客服在「我的客户」顶部的本人一栏也有（01 PG-15）。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
   const canRequestExports = authSession?.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
   const exportDisabledReason = noScopedContent && canRequestExports ? NO_EXPORT_GROUP_REASON : exportsPorts?.persona.exportBlocked;
+  const canOpenExport = !statisticsUnavailable && !exportDisabledReason && exportsPorts?.persona.canExport;
   const exportAccessPending = (noScopedContent || statisticsUnavailable) && exportsPorts === undefined;
   const guideId = exportsOnly ? hasMyExports && hasExportApprovals ? "M1-export-both" : hasMyExports ? "M1-export-mine" : "M1-export-approvals"
     : noScopedContent && !exportAccessPending ? "M1-no-group" : undefined;
   const refreshWorkbench = () => {
-    if (exportsOnly) setExportRecordsRefresh(revision => revision + 1);
+    if (todoActive) {
+      clearSessionFeedback();
+      setTodoRevision(revision => revision + 1);
+      window.dispatchEvent(new Event("support-todo-changed"));
+    } else if (exportsOnly) setExportRecordsRefresh(revision => revision + 1);
     else if (exportReadFailed) exportsPorts?.invalidateAccess();
     else if (noStatisticsMode) setExportScopeRevision(revision => revision + 1);
     else refreshScope();
   };
-  const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
+  const header = <PageHeader pageId="M1" guideId={todoActive && !noScopedContent ? undefined : guideId} readOnly={pageReadOnly} title="客服工作台" summary={exportsOnly && !todoActive ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {!statisticsUnavailable && exportDisabledReason && <span className="rd-toolbar-note">{exportDisabledReason}</span>}
-    {!statisticsUnavailable && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
-    {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
-    {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
+    {!statisticsUnavailable && (canOpenExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
+    {!noScopedContent && (todoActive || scope && !personalHeader) && sessionsReachable && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
+    {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(todoActive || exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && !todoActive && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  const exportDialog = exportOpen && exportsPorts && scope && !scopeDenied && <PerfExportDialog ports={exportsPorts}
-    initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"}
+  const exportDialog = exportOpen && exportsPorts && <PerfExportDialog ports={exportsPorts}
+    initialMonth={queryState.month} initialScope={scope ? queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL" : undefined}
     onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />;
-  if (!scope || noScopedContent || statisticsUnavailable) return <section ref={workbenchRef} className="sa-workbench" aria-busy={exportAccessPending || !scope && !statisticsUnavailable && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
-    {header}
-    {exportsOnly && exportsPorts && exportViews ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
-      <PerfExportRecords ports={{ ...exportsPorts, persona: { ...exportsPorts.persona, views: exportViews } }} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
-      : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
-        : statisticsUnavailable && !exportAccessPending && !exportReadFailed ? <AnalyticsReadDenied /> : <BlockState state={scopeError || exportReadFailed ? "error" : "loading"}
-          title={exportReadFailed ? "导出记录加载失败" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
-          onRetry={exportReadFailed ? refreshWorkbench : scopeError ? () => { setScopeError(""); setScopeRetry(n => n + 1); } : undefined} retryLabel="重试" afterRetryFocus={workbenchTitle} />}</Panel>}
-    {noScopedContent && !exportsOnly && exportsPorts && <PerfExportRecords ports={exportsPorts} recoveryOnly />}
-    {scopeDenied && related}
-    {unavailableAgentDrawer}
-    {exportDialog}
-  </section>;
-
-  const mode = scope.scopeSummary.mode, currency = queryState.currency ?? "USDT";
-  const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
-  const tabs = roleTabs(isPersonal, canMine, Boolean(exportsPorts?.persona.views.length));
+  const currency = queryState.currency ?? "USDT";
+  const tabs = roleTabs(isPersonal, canMine, Boolean(exportsPorts?.persona.views.length)).filter(tab => tab !== "todo" || canManageTodo);
   const currentTab: M1Tab = section === "exports" ? "exports" : isPersonal
     ? section === "stats" ? "my-data" : personalView === "customers" ? "my-customers" : "home"
     : section === "stats" ? queryState.view === "CUSTOMERS" ? "customers" : "data" : section === "personal" ? "data" : section;
@@ -841,15 +892,107 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     if (section === "team" && tab !== "team" && teamChanged.current) { teamChanged.current = false; setScope(null); setScopeRetry(n => n + 1); }
     restoreExports.current = false;
     closeEvents();
-    const url = new URL(window.location.href); url.searchParams.set("view", tab); window.history.replaceState(null, "", url);
+    if (tab === "todo" && todoActive) return;
+    if (tab === "todo") window.history.replaceState(null, "", todoListHref());
+    else {
+      const url = new URL(todoActive ? "/service/overview" : window.location.href, window.location.origin);
+      url.searchParams.set("view", tab);
+      window.history.replaceState(null, "", url);
+    }
     if (tab === "exports") { setSection("exports"); return; }
     if (tab === "home" || tab === "my-customers") { setSection("personal"); setPersonalView(tab === "home" ? "dashboard" : "customers"); return; }
     if (tab === "mine") { setSection("mine"); setPersonalView("customers"); return; }
-    if (tab === "pool" || tab === "team") { setSection(tab); return; }
+    if (tab === "todo" || tab === "pool" || tab === "team") { clearSessionFeedback(); setSection(tab); return; }
     setSection("stats");
     if (tab === "customers" && queryState.view !== "CUSTOMERS") change({ view: "CUSTOMERS" });
     if (tab === "data" && queryState.view === "CUSTOMERS") change({ view: lastDataView.current });
   }
+  const navigation = <PageTabs ids={tabIds} label="客服工作台" value={currentTab} items={tabs.map(tab => ({ value: tab, label: TAB_LABEL[tab], count: tab === "pool" ? scope?.scopeSummary.pending ?? "—" : tab === "todo" ? todoCount : undefined }))} onChange={tab => {
+    if (document.activeElement?.closest('[role="tablist"][aria-label="客服工作台"]')) pendingTabFocus.current = tab;
+    openTab(tab);
+  }} />;
+  const unresolvedMaintenance = maintenanceCommands.list().some(r => r.actorId === adminId);
+  // Where the personal workbench is on screen it lists each pending maintenance record with its own query button;
+  // the page bar then only carries the other kinds, so one pending result is not announced twice.
+  const maintenanceInBar = unresolvedMaintenance && !(isPersonal ? section !== "stats" : section === "mine");
+  const unresolvedPool = poolCommands.list().some(r => r.actorId === adminId) || routeCommands.list().some(r => r.actorId === adminId) || randomAssignmentCommands.list().some(r => r.actorId === adminId);
+  const unresolvedGroups = groupPendingCommands.list().some(r => r.actorId === adminId && (!isInvitePending(r) || r.intent.kind === "INVITE_REVOKE"));
+  const inviteReview = readModes?.includes("PERSONAL") ? groupPendingCommands.list().find(r => r.actorId === adminId && isInvitePending(r) && r.intent.kind === "INVITE_ISSUE") : undefined;
+  const avatarEligible = readModes?.some(mode => mode === "PERSONAL" || mode === "MANAGED");
+  const avatarReview = avatarEligible ? selfAvatarCommands.list().find(r => r.actorId === adminId) : undefined;
+  const avatarPreparationUnknown = avatarEligible && avatarDrafts.list().some(r => r.actorId === adminId && r.scope === "self" && (!r.asset || r.cancelKey));
+  const inviteSaved = inviteReview && "acknowledged" in inviteReview && inviteReview.acknowledged;
+  const unresolvedPayments = pendingPaymentReleases(adminId ?? 0).filter(r => r.portKey.startsWith("support:"));
+  const unresolvedBulk = hasBulkPending(adminId ?? 0);
+  const hasUnknown = maintenanceInBar || unresolvedPool || unresolvedGroups || (inviteReview && !inviteSaved)
+    || (avatarReview && !avatarReview.acknowledged) || avatarPreparationUnknown || unresolvedBulk || unresolvedPayments.length > 0;
+  const profileStats = profileId && data && (data.view === "CUSTOMERS" || data.view === "ACTIVITY") ? data.records.find(row => row.customerId === profileId) : undefined;
+  const profileCounts = supportCountsView(profileStats?.invitations);
+  const recoveryNotice = (hasUnknown || inviteSaved || avatarReview?.acknowledged) && <Notice tone="warn" title={hasUnknown ? "有操作结果未知，先查询原操作" : "已保存，请刷新核对最新值"} actionBelow action={<>
+      {maintenanceInBar && <Button size="sm" onClick={() => openTab(isPersonal ? "my-customers" : "mine")}>核对维护原操作</Button>}
+      {unresolvedPool && <Button size="sm" onClick={() => openTab("pool")}>核对分配原操作</Button>}
+      {unresolvedGroups && <Button size="sm" onClick={() => openTab("team")}>核对分组原操作</Button>}
+      {inviteReview && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>{inviteSaved ? "查看邀请码" : "核对邀请码原操作"}</Button>}
+      {(avatarReview || avatarPreparationUnknown) && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
+      {unresolvedBulk && <Button size="sm" onClick={() => setBulkRecovery(true)}>核对群发原操作</Button>}
+      {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>{unresolvedPayments.length > 1 ? `核对支付安全原操作 · 用户 ${row.userId}` : "核对支付安全原操作"}</Button>)}
+    </>}>{hasUnknown && "原内容和理由已保留；超过 24 小时只能查询，不能再重试。"}</Notice>;
+  const transferNotes = <>
+    <TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />
+    {transferNotice && <Notice tone="ok" action={<Button size="sm" type="button" onClick={() => setTransferNotice("")}>知道了</Button>}>{transferNotice}</Notice>}
+  </>;
+  const commonDialogs = <>
+    {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={!todoActive || sessionsReachable ? () => { setSessionBusy(null); sessionBusy.onRead(); } : undefined} />}
+    {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={(scope?.scopeSummary.mode ?? entryReadMode) === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}
+    {bulkRecovery && <SupportBulkComposer ctx={ctx} onClose={() => setBulkRecovery(false)} />}
+    {related}
+    {profileId && <Drawer open title="客户资料" sub={profileStats ? `${customerName(profileStats)} · ${profileStats.customerNo ?? m1CustomerCode(profileStats.customerId)}` : undefined} onClose={() => setProfileId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setProfileId(null)}>{isPersonal ? "关闭" : "返回统计列表"}</Button></div>}><p className="sa-disclosure">按你的客户资料查看权限显示；能看到统计不代表能操作资金或回复客户。</p>{profileStats && ["CUSTOMERS", "ACTIVITY"].includes(data?.view || "") && <Fold title="统计依据" summary={`${m1CustomerCode(profileStats.customerId)} · ${currency}`}><Facts>
+      <Fact k="直接邀请"><CustomerValue kind="count" value={profileCounts.kind === "ready" ? String(profileCounts.direct) : null} status={profileStats.invitations.direct.status} label="直接邀请" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
+      <Fact k="全部团队成员"><CustomerValue kind="count" value={profileCounts.kind === "ready" ? String(profileCounts.total) : null} status={profileStats.invitations.descendants.status} label="全部团队成员" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
+      <Fact k={`本人累充 / ${currency}`}><MoneyValue money={profileStats.lifetime.find(x => x.currency === currency)?.deposits} label="本人累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
+      <Fact k={`邀请累充 / ${currency}`}><MoneyValue money={profileStats.invitations.deposits.find(x => x.currency === currency)?.deposits} label="邀请累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
+    </Facts></Fold>}<M3CustomerProfile key={profileId} ctx={ctx} customerId={profileId} source="M1" onHistory={no => router.push(`/service/sessions?conversationNo=${encodeURIComponent(no)}`)} onRetryMessages={() => void ctx.refreshConversations()} /></Drawer>}
+  </>;
+  const ownWorkbench = <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />;
+  if (todoActive && adminId !== undefined) return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel("todo")}>
+    {header}
+    <M1LiveService ctx={ctx} sessionsReachable={sessionsReachable} />
+    {recoveryNotice}
+    {navigation}
+    {transferNotes}
+    <M1TodoTab adminId={adminId} mode={permission === "superadmin" ? "ALL" : "MANAGED"} groups={todoGroups} revision={todoRevision} conversationSnapshot={ctx.pget("I.session.convos")}
+      access={todoAccess} configLink={canAccessResolvedPath(visible, "/service/scripts") ? { href: "/service/scripts", verb: permission === "superadmin" && authSession?.authorities.includes("service_m1_write") ? "配置" : "查看" } : undefined}
+      checkingId={sessionCheck} holdError={todoHoldError} scopeNotice={ctx.scopeNotice} onStart={startTodoSession} onOpenSessions={openTodoSessions} onDismissHold={() => setTodoHoldError(null)} onQueryChanged={clearSessionFeedback}
+      renderProfile={customerId => <M3CustomerProfile key={customerId} ctx={ctx} customerId={customerId} source="M1"
+        onHistory={sessionsReachable ? no => router.push(todoSessionsHref({ conversationNo: no })) : undefined} onRetryMessages={() => void ctx.refreshConversations()} />} />
+    {exportDialog}
+    {commonDialogs}
+  </section>;
+  if (section === "mine" && canMine && (!scope || statisticsUnavailable)) return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel("mine")}>
+    {header}
+    <M1LiveService ctx={ctx} sessionsReachable={sessionsReachable} />
+    {recoveryNotice}
+    {navigation}
+    {transferNotes}
+    {ownWorkbench}
+    {commonDialogs}
+  </section>;
+  if (!scope || noScopedContent || statisticsUnavailable) return <section ref={workbenchRef} className="sa-workbench" aria-busy={exportAccessPending || !scope && !statisticsUnavailable && !scopeError} {...(exportsOnly ? tabIds.panel("exports") : {})}>
+    {header}
+    {exportsOnly && exportsPorts && exportViews ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
+      <PerfExportRecords ports={{ ...exportsPorts, persona: { ...exportsPorts.persona, views: exportViews } }} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
+      : <>{canManageTodo && !noScopedContent && (scopeError || scopeDenied || noManagedGroups) && navigation}<Panel>{noScopedContent && !exportAccessPending ? <TodoNoGroups />
+        : statisticsUnavailable && !exportAccessPending && !exportReadFailed ? <AnalyticsReadDenied /> : <BlockState state={scopeError || exportReadFailed ? "error" : "loading"}
+          title={exportReadFailed ? "导出记录加载失败" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
+          onRetry={exportReadFailed ? refreshWorkbench : scopeError ? () => { setScopeError(""); setScopeRetry(n => n + 1); } : undefined} retryLabel="重试" afterRetryFocus={workbenchTitle} />}</Panel></>}
+    {noScopedContent && !exportsOnly && exportsPorts && <PerfExportRecords ports={exportsPorts} recoveryOnly />}
+    {scopeDenied && related}
+    {unavailableAgentDrawer}
+    {exportDialog}
+  </section>;
+
+  const mode = scope.scopeSummary.mode;
+  const leadPermission: Permission = mode === "ALL" ? "superadmin" : "supervisor";
   const personalFinancial = personalPeriod?.scopeSummary.financial;
   const selectedGroup = queryState.groupId === undefined ? undefined : scope.scopeSummary.groups.find(g => g.groupId === String(queryState.groupId));
   const groups = scope.scopeSummary.groups;
@@ -893,43 +1036,12 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const sortField = queryState.view !== "OVERVIEW" && <FilterField label="排序"><Select aria-label="排序" value={sortValue} options={[...(queryState.view === "AGENTS" ? [] : [{ value: "", label: "默认顺序" }]), ...(perfSortShown ? [{ value: "PERFORMANCE_AMOUNT:DESC", label: "累计业绩额 · 从高到低" }] : []), ...sortChoices]}
     onChange={value => { if (value === "PERFORMANCE_AMOUNT:DESC") { change({ sortKey: "PERFORMANCE_AMOUNT", direction: "DESC" }); return; } if (!value) { change({ sortKey: undefined, direction: undefined }); return; } const [key, direction] = value.split(":"); const found = SORT_OPTIONS[queryState.view].find(x => x.value === key); if (found) change({ sortKey: found.value, direction: direction === "ASC" ? "ASC" : "DESC" }); }} /></FilterField>;
   const caption = queryState.basis === "PERIOD_EVENT" ? `统计 ${queryState.month} 当月发生的业务（${businessZone().label}）；绑定和设备按当前状态` : queryState.basis === "CURRENT_ASSET" ? "按当前设备和活跃状态统计；不含首充和累计资金" : "按客户注册以来的累计数据统计，不是本月新增";
-  const navigation = <PageTabs ids={tabIds} label="客服工作台" value={currentTab} items={tabs.map(tab => ({ value: tab, label: TAB_LABEL[tab], count: tab === "pool" ? scope.scopeSummary.pending ?? "—" : undefined }))} onChange={tab => {
-    if (document.activeElement?.closest('[role="tablist"][aria-label="客服工作台"]')) pendingTabFocus.current = tab;
-    openTab(tab);
-  }} />;
-  const unresolvedMaintenance = maintenanceCommands.list().some(r => r.actorId === adminId);
-  // Where the personal workbench is on screen it lists each pending maintenance record with its own query button;
-  // the page bar then only carries the other kinds, so one pending result is not announced twice.
-  const maintenanceInBar = unresolvedMaintenance && !(isPersonal ? section !== "stats" : section === "mine");
-  const unresolvedPool = poolCommands.list().some(r => r.actorId === adminId) || routeCommands.list().some(r => r.actorId === adminId) || randomAssignmentCommands.list().some(r => r.actorId === adminId);
-  const unresolvedGroups = groupPendingCommands.list().some(r => r.actorId === adminId && (!isInvitePending(r) || r.intent.kind === "INVITE_REVOKE"));
-  const inviteReview = readModes?.includes("PERSONAL") ? groupPendingCommands.list().find(r => r.actorId === adminId && isInvitePending(r) && r.intent.kind === "INVITE_ISSUE") : undefined;
-  const avatarEligible = readModes?.some(mode => mode === "PERSONAL" || mode === "MANAGED");
-  const avatarReview = avatarEligible ? selfAvatarCommands.list().find(r => r.actorId === adminId) : undefined;
-  const avatarPreparationUnknown = avatarEligible && avatarDrafts.list().some(r => r.actorId === adminId && r.scope === "self" && (!r.asset || r.cancelKey));
-  const inviteSaved = inviteReview && "acknowledged" in inviteReview && inviteReview.acknowledged;
-  const unresolvedPayments = pendingPaymentReleases(adminId ?? 0).filter(r => r.portKey.startsWith("support:"));
-  const unresolvedBulk = hasBulkPending(adminId ?? 0);
-  const hasUnknown = maintenanceInBar || unresolvedPool || unresolvedGroups || (inviteReview && !inviteSaved)
-    || (avatarReview && !avatarReview.acknowledged) || avatarPreparationUnknown || unresolvedBulk || unresolvedPayments.length > 0;
-  const profileStats = profileId && data && (data.view === "CUSTOMERS" || data.view === "ACTIVITY") ? data.records.find(row => row.customerId === profileId) : undefined;
-  const profileCounts = supportCountsView(profileStats?.invitations);
   return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
-    {!isPersonal && <M1LiveService ctx={ctx} />}
-    {(hasUnknown || inviteSaved || avatarReview?.acknowledged) && <Notice tone="warn" title={hasUnknown ? "有操作结果未知，先查询原操作" : "已保存，请刷新核对最新值"} actionBelow action={<>
-      {maintenanceInBar && <Button size="sm" onClick={() => openTab(isPersonal ? "my-customers" : "mine")}>核对维护原操作</Button>}
-      {unresolvedPool && <Button size="sm" onClick={() => openTab("pool")}>核对分配原操作</Button>}
-      {unresolvedGroups && <Button size="sm" onClick={() => openTab("team")}>核对分组原操作</Button>}
-      {inviteReview && <Button size="sm" onClick={() => openTab(isPersonal ? "home" : "mine")}>{inviteSaved ? "查看邀请码" : "核对邀请码原操作"}</Button>}
-      {(avatarReview || avatarPreparationUnknown) && <SelfAvatarEditor name={operatorName} ctx={ctx} onChanged={() => setRecoveryRevision(n => n + 1)} />}
-      {unresolvedBulk && <Button size="sm" onClick={() => setBulkRecovery(true)}>核对群发原操作</Button>}
-      {unresolvedPayments.map(row => <Button size="sm" key={row.commandKey} onClick={() => setProfileId(row.userId)}>{unresolvedPayments.length > 1 ? `核对支付安全原操作 · 用户 ${row.userId}` : "核对支付安全原操作"}</Button>)}
-    </>}>{hasUnknown && "原内容和理由已保留；超过 24 小时只能查询，不能再重试。"}</Notice>}
-
+    {!isPersonal && <M1LiveService ctx={ctx} sessionsReachable={sessionsReachable} />}
+    {recoveryNotice}
     {!(isPersonal && currentTab === "home") && navigation}
-<TransferPendingNotes key={transferRevision} onOpen={setTransferCustomer} />
-{transferNotice && <Notice tone="ok" action={<Button size="sm" type="button" onClick={() => setTransferNotice("")}>知道了</Button>}>{transferNotice}</Notice>}
+    {transferNotes}
 {isPersonal && <div hidden={section === "stats" || section === "exports"}><M1PersonalWorkbench permission="agent" ctx={ctx} view={personalView} active={section !== "stats" && section !== "exports"} onViewChange={next => { setSection("personal"); setPersonalView(next); }}
   onBrowseCustomers={filter => { if (queryState.view === "CUSTOMERS" && queryState.basis === "CURRENT_CUSTOMER_HISTORY" && queryState.filter === filter) { setSection("stats"); return; } drill({ view: "CUSTOMERS", category: "BOUND", basis: "CURRENT_CUSTOMER_HISTORY", filter, firstState: "ALL", keyword: undefined }); }}
   navigation={currentTab === "home" ? navigation : undefined} primarySummary={<section className="sa-personal-summary" aria-label="本人客户与期间业绩">
@@ -952,7 +1064,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       managementReturnQuery.current = changeAnalyticsQuery(queryState, { groupId, view: "CUSTOMERS", basis: "CURRENT_CUSTOMER_HISTORY", category, agentId: undefined, keyword: undefined, firstState: "ALL", filter: "ALL" });
       setKeyword(""); setSection("stats"); setScope(null); setScopeRetry(n => n + 1);
     }} />}
-    {!isPersonal && section === "mine" && <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />}
+    {!isPersonal && section === "mine" && ownWorkbench}
     {section === "exports" && !!exportsPorts?.persona.views.length && <PerfExportRecords ports={exportsPorts} />}
     {exportDialog}
     {isPersonal && showStatistics && <PeriodPerfPanel perf={perf.period} month={monthCalendar?.length ? queryState.month : ""} asOf={personalPeriod ? `${formatBusinessTimeCompact(personalPeriod.asOf, "—")}（${businessZone().label}）` : undefined}
@@ -1053,7 +1165,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
               <div className="sa-group-key"><span>业绩额 · {queryState.month}</span><strong>{perfText(value)}{value.state === "complete" && <small>USDT</small>}</strong></div>
             </li>)}</ul>
           </section>}
-          {!data.scopeSummary.groups.length && mode === "MANAGED" && <BlockState state="empty" title="当前没有负责组。" />}
+          {noManagedGroups && <BlockState state="empty" title="当前没有负责组。" />}
         </> : <>{queryState.view === "CUSTOMERS" && <div className="sa-legend"><span>金额单位 {nexGridBrandText(currency)}</span><span><span className="sa-dot on" aria-hidden="true" />本统计期活跃</span><span><span className="sa-dot off" aria-hidden="true" />本统计期未活跃</span><span><span className="sa-cell-unknown">-</span> 数据还在同步</span><span>点客户名查看资料与记录</span></div>}
           {sessionError && <Notice tone="danger" action={<><Button size="sm" type="button" onClick={() => { const row = sessionError; setSessionError(null); openSessions(row); }}>查看会话记录</Button><Button size="sm" type="button" onClick={() => setSessionError(null)}>知道了</Button></>}>{customerName(sessionError)}：暂时无法核对接待状态，请稍后重试。</Notice>}
           <AnalyticsTable data={data} currency={currency} drill={change} openProfile={setProfileId} session={!isPersonal && queryState.view === "CUSTOMERS" ? sessionStart : undefined} perf={perf} query={queryState} onSourceRefreshed={setData} onSourceDenied={invalidateAgentScope} onAgentMissing={reloadAfterMissingAgent} /><footer className="sa-pager"><p>{data.total === null ? `第 ${queryState.pageNum} 页 · 共 — 条（已数到 ${data.observedTotal ?? "—"} 条）` : `第 ${queryState.pageNum} / ${Math.max(1, Math.ceil(data.total / data.pageSize))} 页 · 共 ${data.total} 条`}</p><div><Button type="button" disabled={queryState.pageNum <= 1 || data.versionState !== "READY"} onClick={() => page(queryState.pageNum - 1)}>上一页</Button><Button type="button" disabled={!data.canContinue || data.versionState !== "READY"} onClick={() => page(queryState.pageNum + 1)}>下一页</Button></div></footer>{data.versionState === "UNKNOWN" && <p className="sa-disclosure">这份数据还在变，暂时不能翻页；请刷新后重试。</p>}</>}
@@ -1061,15 +1173,6 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     </Panel>}
     {unavailableAgentDrawer}
     {(showStatistics || periodDetail) && fundSource && <M1StatisticDetails key={`${periodDetail ?? fundMetric}:${fundSource.kind === "fund" ? fundSource.origin.asOf : ""}`} source={fundSource} onClose={() => { setFundMetric(null); setPeriodDetail(null); }} onInvalid={invalidateFund} />}
-    {sessionBusy && <SessionBusyDialog customer={customerName(sessionBusy.row)} hold={sessionBusy.hold} onClose={() => setSessionBusy(null)} onRead={() => { const row = sessionBusy.row; setSessionBusy(null); openSessions(row); }} />}
-    {transferCustomer && <CustomerTransferDialog key={transferCustomer} customerId={transferCustomer} mode={mode === "ALL" ? "ALL" : "MANAGED"} onClose={() => closeTransfer()} onDone={notice => { closeTransfer(); setTransferNotice(notice); setTransferRevision(n => n + 1); setRetry(n => n + 1); }} onOpenOwn={canMine ? () => { closeTransfer(true); openTab("mine"); } : undefined} />}
-    {bulkRecovery && <SupportBulkComposer ctx={ctx} onClose={() => setBulkRecovery(false)} />}
-    {related}
-    {profileId && <Drawer open title="客户资料" sub={profileStats ? `${customerName(profileStats)} · ${profileStats.customerNo ?? m1CustomerCode(profileStats.customerId)}` : undefined} onClose={() => setProfileId(null)} footer={<div className="m1-drawer-actions"><Button type="button" onClick={() => setProfileId(null)}>{isPersonal ? "关闭" : "返回统计列表"}</Button></div>}><p className="sa-disclosure">按你的客户资料查看权限显示；能看到统计不代表能操作资金或回复客户。</p>{profileStats && ["CUSTOMERS", "ACTIVITY"].includes(data?.view || "") && <Fold title="统计依据" summary={`${m1CustomerCode(profileStats.customerId)} · ${currency}`}><Facts>
-      <Fact k="直接邀请"><CustomerValue kind="count" value={profileCounts.kind === "ready" ? String(profileCounts.direct) : null} status={profileStats.invitations.direct.status} label="直接邀请" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
-      <Fact k="全部团队成员"><CustomerValue kind="count" value={profileCounts.kind === "ready" ? String(profileCounts.total) : null} status={profileStats.invitations.descendants.status} label="全部团队成员" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
-      <Fact k={`本人累充 / ${currency}`}><MoneyValue money={profileStats.lifetime.find(x => x.currency === currency)?.deposits} label="本人累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
-      <Fact k={`邀请累充 / ${currency}`}><MoneyValue money={profileStats.invitations.deposits.find(x => x.currency === currency)?.deposits} label="邀请累充" onClick={() => setProfileId(profileStats.customerId)} /></Fact>
-    </Facts></Fold>}<M3CustomerProfile key={profileId} ctx={ctx} customerId={profileId} source="M1" onHistory={no => router.push(`/service/sessions?conversationNo=${encodeURIComponent(no)}`)} onRetryMessages={() => void ctx.refreshConversations()} /></Drawer>}
+    {commonDialogs}
   </section>;
 }

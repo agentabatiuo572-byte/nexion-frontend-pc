@@ -12,9 +12,9 @@
 .m1-recent-list>li{display:grid;grid-template-columns:minmax(100px,1fr) minmax(100px,2fr) auto;align-items:center;gap:12px;padding-block:12px;border-bottom:1px solid var(--rd-line)}
 .m1-recent-list>li>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m1-personal-table{table-layout:fixed;width:100%}
-/* 客户、邀请人、上次活动、账户 / 维护、待办、操作（PRD §4.3，画布 05）。 */
+/* 客户、邀请人、上次登录、账户 / 维护、待办、操作（PRD §4.3，画布 05）。 */
 .m1-personal-table col:nth-child(1){width:22%}.m1-personal-table col:nth-child(2){width:16%}.m1-personal-table col:nth-child(3){width:19%}.m1-personal-table col:nth-child(4){width:13%}.m1-personal-table col:nth-child(5){width:15%}.m1-personal-table col:nth-child(6){width:15%}
-/* 1024：上次活动（2026-11-17 19:24）一行放下，头像收起后客户列让出宽度。 */
+/* 1024：上次登录（2026-11-17 19:24）一行放下，头像收起后客户列让出宽度。 */
 @media(max-width:1100px){.m1-personal-table col:nth-child(1){width:19%}.m1-personal-table col:nth-child(2){width:15%}.m1-personal-table col:nth-child(3){width:21%}.m1-personal-table col:nth-child(4){width:13%}.m1-personal-table col:nth-child(5){width:16%}.m1-personal-table col:nth-child(6){width:16%}}
 .m1-personal-table :is(th,td){white-space:normal;overflow:hidden}
 .m1-personal-table .rd-note{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}

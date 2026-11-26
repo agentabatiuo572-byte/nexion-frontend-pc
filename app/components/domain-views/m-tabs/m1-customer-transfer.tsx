@@ -89,7 +89,7 @@ function TransferRelease({ record, onCancel, onReleased, returnFocus }: { record
     }} />;
 }
 
-async function allAgents(groupId: number | undefined, signal?: AbortSignal): Promise<SupportAgentCandidate[]> {
+export async function allAgents(groupId: number | undefined, signal?: AbortSignal): Promise<SupportAgentCandidate[]> {
   const first = await supportClient.agents({ pageNum: 1, pageSize: 100, groupId, signal });
   const pages = [first];
   for (let pageNum = 2; (pageNum - 1) * 100 < first.total; pageNum++) pages.push(await supportClient.agents({ pageNum, pageSize: 100, groupId, signal }));
