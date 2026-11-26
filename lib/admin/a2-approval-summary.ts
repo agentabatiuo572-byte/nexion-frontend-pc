@@ -4,9 +4,10 @@ import { a2ObjectText } from "./operator-copy";
 import { D5_APPROVAL_OP } from "./trc20-closed";
 import { withdrawalProposalChanges } from "./withdrawal-proposal-changes";
 
+import { a2AccountStatusText } from "./a2-approval-text";
+export { a2AccountStatusText } from "./a2-approval-text";
+
 const SEE_APPROVAL_DETAIL = "请在审批详情核对";
-const ACCOUNT_STATUS: Record<string, string> = { enabled: "启用", disabled: "停用" };
-export const a2AccountStatusText = (value: string) => Object.hasOwn(ACCOUNT_STATUS, value) ? ACCOUNT_STATUS[value] : undefined;
 const E1_APPROVAL_LABELS = new Map<string, string>(E1_SKU_FIELDS.map(({ key, label }) => [key, label]));
 E1_APPROVAL_LABELS.set("dailyEarnNex", "日产 UVT");
 E1_APPROVAL_LABELS.set("phoneDailyEarnNex", "手机每日收益 UVT");

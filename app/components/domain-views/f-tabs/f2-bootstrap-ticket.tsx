@@ -4,32 +4,12 @@
  * F2 待审批和 A2 列表、详情、批准框都从这里拆成七行，不在前端重算；格式对不上返回 undefined，页面照原文显示。
  */
 import { Cell, Notice, Table, Td, Th } from "@/app/components/rd";
-import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
+import { f2PctSum, type F2BootstrapRow } from "@/lib/admin/f2-bootstrap-summary";
+export { f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter, type F2BootstrapRow } from "@/lib/admin/f2-bootstrap-summary";
 import { LAYERS, LAYER_WHO, SAMPLE_ORDER, num, pctAdd, pctSample, rangeText } from "./f2-shared";
 
 /** 第 1、2 层按受益人等级时传九级最低、最高（百分数字符串）；读不到传 null；不传就按单一比例显示（A2 审批页照旧）。 */
 export type F2RankedRange = { l1: { min: string; max: string }; l2: { min: string; max: string } } | null;
-
-export type F2BootstrapRow = { layer: string; usdtPct: string; nexPerUsd: string };
-
-const ROW = /^L([1-7]): usdtPct=(\d+(?:\.\d+)?), nexPerUsd=(\d+(?:\.\d+)?)$/;
-
-export function parseF2BootstrapAfter(after: string | undefined): F2BootstrapRow[] | undefined {
-  const parts = (after ?? "").split(";").map((part) => part.trim());
-  if (parts.length !== 7) return undefined;
-  const rows: F2BootstrapRow[] = [];
-  for (const [index, part] of parts.entries()) {
-    const match = ROW.exec(part);
-    if (!match || Number(match[1]) !== index + 1) return undefined;
-    rows.push({ layer: `L${match[1]}`, usdtPct: match[2], nexPerUsd: match[3] });
-  }
-  return rows;
-}
-
-/** The retained PC request writes zero placeholders for L1/L2. Fixed-rate requests require L1=10. */
-export function f2BootstrapUsesRank(first: string | null | undefined, second: string | null | undefined) {
-  return !!first && !!second && compareDecimal(first, "0") === 0 && compareDecimal(second, "0") === 0;
-}
 
 /** 两个不带符号的小数相乘，按整数算，不经浮点；去掉末尾 0。 */
 export function f2DecimalTimes(a: string, b: string) {
@@ -39,16 +19,6 @@ export function f2DecimalTimes(a: string, b: string) {
   const digits = (BigInt(aWhole + aFraction) * BigInt(bWhole + bFraction)).toString().padStart(scale + 1, "0");
   const fraction = digits.slice(digits.length - scale).replace(/0+$/, "");
   return `${digits.slice(0, digits.length - scale)}${fraction ? `.${fraction}` : ""}`;
-}
-
-/** 七层 USDT 比例相加（最多 4 位小数，按整数单位算）。 */
-export function f2PctSum(values: readonly string[]) {
-  const units = values.reduce((sum, value) => {
-    const [whole, fraction = ""] = value.split(".");
-    return sum + Number(whole) * 10000 + Number(fraction.padEnd(4, "0").slice(0, 4));
-  }, 0);
-  const fraction = String(units % 10000).padStart(4, "0").replace(/0+$/, "");
-  return `${Math.floor(units / 10000)}${fraction ? `.${fraction}` : ""}`;
 }
 
 /** 示例订单里这一层分到的 USDT（订单 × 比例 ÷ 100）。 */

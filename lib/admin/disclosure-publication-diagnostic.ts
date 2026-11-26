@@ -34,3 +34,7 @@ export function disclosurePublicationIssue(
   });
   return complete ? null : "这个生效版本的七章正文不全或语言范围不对，App 读不到。请核对这个版本的七章正文。";
 }
+
+export function isFirstA2DisclosurePublish(review: { draft?: DisclosureVersionItemView; previousVersion?: string | null; previousVersionSummary?: DisclosureVersionItemView | null }): boolean {
+  return !!review.draft && review.previousVersion === null && review.previousVersionSummary === null;
+}

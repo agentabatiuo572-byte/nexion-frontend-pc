@@ -1,5 +1,6 @@
 import { ADMIN_ERROR_MESSAGES, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { auditActionFieldLabel } from "./audit-action-names";
+import { isFirstA2DisclosurePublish } from "./disclosure-publication-diagnostic";
 import { H2_BUY_LIST_ACTION } from "./h2-trial-purchase";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
@@ -24,17 +25,8 @@ import {
   type A2AuditFilter,
 } from "@/lib/admin/a2-policy";
 
+export { isFirstA2DisclosurePublish } from "./disclosure-publication-diagnostic";
 export type { A2AuditDomain, A2AuditFilter } from "@/lib/admin/a2-policy";
-
-/**
- * Backend 111e00cd returns the persisted command op for tickets and history.
- * Retain action-name fallbacks for old records without a command (and E4 refunds without an order number).
- */
-export const REVIEW_OPERATION_BY_ACTION: Record<string, string> = {
-  提高旧活动奖励: "h4_legacy_event_reward_update", 新增转盘奖项: "h4_wheel_tier_create", 放宽转盘奖项配置: "h4_wheel_tier_update",
-  删除转盘奖项并提高安慰奖: "h4_wheel_tier_delete", 提高转盘奖项概率: "h4_wheel_probabilities_update",
-  首次发布奖励课程: "i7_course_first_publish", 发布奖励课程版本: "i7_course_version_publish", 回滚至有奖励的课程版本: "i7_course_version_rollback",
-};
 
 export type A2OperationType = "fund" | "param" | "acct" | "sos";
 
@@ -551,10 +543,6 @@ function readI5DisclosureReview(value: unknown, operation: BackendTicket["operat
     draftMatchesFrozenEvidence: typeof draftMatchesFrozenEvidence === "boolean" || draftMatchesFrozenEvidence === null
       ? draftMatchesFrozenEvidence : undefined,
   };
-}
-
-export function isFirstA2DisclosurePublish(review: Extract<I5DisclosureReview, { kind: "PUBLISH" }>): boolean {
-  return !!review.draft && review.previousVersion === null && review.previousVersionSummary === null;
 }
 
 type A2DisclosureSide =
