@@ -437,6 +437,8 @@ export default function RiskRadarPage() {
     setThresholdOriginal(null);
     setStatusOriginal(null);
     setNeedsFreshRadar(true);
+    // 黄线、红线改了，类型列表里「提现压力」那一行跟着重读，不等 30 秒轮询。
+    void loadCategories("mark");
     await radar.reload();
   };
 

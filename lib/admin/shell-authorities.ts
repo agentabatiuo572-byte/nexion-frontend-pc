@@ -18,14 +18,6 @@ export const L_BI_READ_AUTHORITIES = [
   "bi_l6_read",
 ] as const;
 
-export const M_CONTENT_READ_AUTHORITIES = [
-  "service_m1_read",
-  "service_m2_read",
-  "service_m3_read",
-  "service_m4_read",
-  "service_m5_read",
-] as const;
-
 export function canReadC2HighRiskAlerts(session: AdminSession | null): boolean {
   if (!session || !session.authorities.includes("user_c2_read")) return false;
   const role = normalizeSessionRole(session.role);
