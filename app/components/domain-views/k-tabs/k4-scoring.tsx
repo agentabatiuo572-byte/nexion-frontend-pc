@@ -1011,7 +1011,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const accountsTab = (
     <div {...tabIds.panel("accounts")} className="k4-tab">
-      <K4AccountList band={accountsBand} state={accountList} lines={overview.model} version={`v${overview.model.version}`} highlight={accountsHighlight} pageSizes={[10, 20, 50]}
+      <K4AccountList band={accountsBand} state={accountList} lines={overview.model} version={`v${overview.model.version}`} highlight={accountsHighlight} pageSizes={[5, 10, 20, 50]}
         onBand={(band) => { setAccountsBand(band); setAccountsPage(1); setAccountsHighlight(null); }}
         onPage={setAccountsPage}
         onPageSize={(size) => { setAccountsPageSize(size); setAccountsPage(1); }}
