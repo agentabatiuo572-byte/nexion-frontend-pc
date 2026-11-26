@@ -714,7 +714,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         change: param ? record.original
             ? <>{record.kind !== "direct" && <span className="h8-rec-kind">申请</span>}<Change from={valueText(param, String(record.original.overview.params[param.key]))} to={valueText(param, record.value)} /></>
             : <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
-          : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
+          : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交前读取时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
         actions: <>
           {isRetryExpired(record) && <span>{RETRY_EXPIRED_TEXT}</span>}
           <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原操作`}
@@ -907,7 +907,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <Stat key={param.key} tone="role-4"
         head={<span className="h8-card-head"><who.icon size={14} aria-hidden />{param.label}<small>{who.per}</small></span>}
         label="实际发放" value={amountText(effective, decimals)} unit={param.unit}
-        explain={`每份奖励按这个数发，不是某位用户已经到账的钱；由下面两项相乘，按 6 位小数四舍五入。调高要批准；调低后，生效时间起注册的按新额发，之前生效区间里注册、还没结算的仍按原额发。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
+        explain={`现行生效区间的每份奖励按这个数发，不是某位用户已经到账的钱；由下面两项相乘，按 6 位小数四舍五入。调高要批准；调低后，生效时间起注册的按新额发，之前生效区间里注册、还没结算的仍按原额发。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
         <div className="h8-formula" aria-label={`基础额 ${amountText(base, decimals)} ${param.unit} 乘 ${multiplierName} ${multiplierText(multiplier)}`}>
           <span className="h8-formula-term"><small>基础额</small><Amount value={base} unit={param.unit} decimals={decimals} /></span>
           <span className="h8-formula-term"><small>第 {data.rhythmMonth} 月{multiplierName}</small><b>{multiplierText(multiplier)}</b></span>
