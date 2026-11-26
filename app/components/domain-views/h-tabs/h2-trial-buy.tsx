@@ -506,7 +506,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: pricing ? { impact: PRICED.impact, check: PRICED.check } : { impact: "之后发起的购买按新清单，进行中的试用也一样", check: "前后清单记入操作记录；改错了再点「调整」改回。" },
       facts: (
-        <div className="rd-stack h2-confirm-diff" data-h2-nochange={hasChanges ? undefined : ""}>
+        <div className={pricing ? "rd-stack h2-confirm-diff" : "rd-stack"} data-h2-nochange={hasChanges ? undefined : ""}>
           {othersNote}
           <DiffList rows={rows} restTitle="其余设备" named />
           <Facts>
