@@ -53,6 +53,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { AUDIT_ACTION_NAMES } from "@/lib/admin/audit-action-names";
 import { paymentSecurityPorts } from "@/lib/admin/payment-password-client";
 import {
   formatC1DeviceStatus,
@@ -298,6 +299,9 @@ function referralHeading() {
   return document.getElementById("hub-referral")?.querySelector<HTMLElement>(":scope > details > summary");
 }
 
+const ACCOUNT_STATUS_AUDIT_EVENTS = new Set(["C2_USER_STATUS_CHANGED", "C2_USER_STATUS_CHANGED_BY_K1", "C2_USER_STATUS_RESTORED_BY_K1"]);
+const auditEventCode = (row: JsonRecord) => asText(row.action, "").toUpperCase().replace(/^ADMIN\./, "");
+
 function auditDetail(row: JsonRecord) {
   const detail = row.detailJson;
   if (typeof detail === "string" && detail.trim()) {
@@ -306,7 +310,7 @@ function auditDetail(row: JsonRecord) {
       const reason = asText(parsed.reason, "");
       const fromStatus = asText(parsed.fromStatus, "");
       const toStatus = asText(parsed.toStatus, "");
-      const accountStatus = ["C2_USER_STATUS_CHANGED", "C2_USER_STATUS_CHANGED_BY_K1", "C2_USER_STATUS_RESTORED_BY_K1"].includes(asText(row.action, "").toUpperCase().replace(/^ADMIN\./, ""));
+      const accountStatus = ACCOUNT_STATUS_AUDIT_EVENTS.has(auditEventCode(row));
       if (reason && fromStatus && toStatus && accountStatus) return `${statusLabel(fromStatus)} → ${statusLabel(toStatus)} · ${reason}`;
       if (reason) return reason;
     } catch {
@@ -330,7 +334,7 @@ function auditRole(row: JsonRecord): AdminRole | undefined {
   return undefined;
 }
 
-/** 事件是给人读的主文字，原始代码只留在问号里（VS-109）。不在表里的写「后台操作」，不把代码拼上屏。 */
+/** 时间线行沿用页面的事件名称。 */
 const AUDIT_EVENT: Record<string, string> = {
   USER_PROFILE_VIEWED: "查看了用户资料", USER_PROFILE_SEARCHED: "搜索了用户", USER_LIST_EXPORTED: "导出了用户列表", USER_PAYMENT_METHOD_LIST: "查看了支付方式",
   USER_PAYMENT_METHOD_UNBIND: "解绑支付方式", USER_PAYMENT_METHOD_REBIND_NOTICE: "发送换绑通知", USER_NICKNAME_RESET: "重置昵称", USER_NOTIFICATION_TIME_CORRECTED: "校正通知时间",
@@ -340,19 +344,53 @@ const AUDIT_EVENT: Record<string, string> = {
   C3_ASSET_ADJUSTMENT_CREATED: "创建余额调整", C3_ASSET_ADJUSTMENT_EXECUTED: "执行余额调整", C3_ASSET_ADJUSTMENT_REVERSED: "冲正余额调整", C3_ASSET_ADJUSTMENT_WITHDRAWN: "撤回余额调整", C3_LARGE_ADJUSTMENT_REQUESTED: "申请大额余额调整",
   C5_TWO_FACTOR_DISABLED: "关闭两步验证", C5_PASSWORD_RESET_REQUESTED: "发起重置密码", C5_USER_UNLOCKED: "解锁账号", C5_SESSION_REVOKED: "撤销一条登录", C5_ALL_SESSIONS_REVOKED: "撤销全部登录",
 };
-const auditEvent = (row: JsonRecord) => AUDIT_EVENT[asText(row.action, "").toUpperCase().replace(/^ADMIN\./, "")] ?? "后台操作";
+const auditEvent = (row: JsonRecord) => AUDIT_EVENT[auditEventCode(row)] ?? "后台操作";
+
+const AUDIT_RESULT: Record<string, string> = {
+  SUCCESS: "成功", SUCCEEDED: "成功", FAILED: "失败", REJECTED: "已拒绝", DENIED: "已拒绝", BLOCKED: "已拦截",
+  MANUAL_REVIEW: "待人工复核", REVIEW_REQUIRED: "待人工复核",
+};
+
+function auditExplanation(row: JsonRecord) {
+  const code = auditEventCode(row);
+  const event = AUDIT_EVENT[code] ?? AUDIT_ACTION_NAMES[code] ?? "后台操作";
+  const result = AUDIT_RESULT[asText(row.result, "").toUpperCase()] ?? "待核对";
+  let detail: JsonRecord | undefined;
+  if (typeof row.detailJson === "string" && row.detailJson.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(row.detailJson);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) detail = parsed as JsonRecord;
+    } catch { /* 旧记录无法读取时只显示已知的事件与结果。 */ }
+  }
+  const facts: string[] = [];
+  if (code === "H2_TRIAL_STARTED") {
+    const days = /(?:^|,)trialDays=(\d+)(?=,|$)/.exec(asText(detail?.policySnapshot, ""))?.[1];
+    if (days) facts.push(`试用期 ${days} 天`);
+    const claimNo = asText(detail?.claimNo, "");
+    if (/^TRIAL-[A-Z0-9-]+$/i.test(claimNo)) facts.push(`试用单号 ${claimNo}`);
+  }
+  if (ACCOUNT_STATUS_AUDIT_EVENTS.has(code)) {
+    const from = STATUS_LABEL[asText(detail?.fromStatus, "").toUpperCase()];
+    const to = STATUS_LABEL[asText(detail?.toStatus, "").toUpperCase()];
+    if (from && to) facts.push(`账户状态 ${from} → ${to}`);
+  }
+  const reason = asText(detail?.reason, "");
+  if (reason && !/^[{\[]|\b\w+\s*=|^[A-Z0-9]+(?:_[A-Z0-9]+)+$/i.test(reason)) facts.push(`原因 ${reason}`);
+  return { event, details: facts.join("\n") || "暂无可读明细", result };
+}
 
 function toAuditEntries(rowsValue: unknown): TimelineEntry[] {
   return asArray(rowsValue).map((row, index) => {
     const role = auditRole(row);
     const failed = asText(row.result, "").toUpperCase() === "FAILED";
     const note = auditDetail(row);
+    const explanation = auditExplanation(row);
     return {
       id: asText(row.id, `${index}`),
       // 后端只给登录名；系统写的记录写「系统」（TX-32）。
       actor: /^system$/i.test(asText(row.actorUsername, "")) ? "系统" : asText(row.actorUsername, "系统"),
       role: role ? roleLabel(role) : undefined,
-      action: <>{auditEvent(row)}{failed ? " · 失败" : ""} <Explain label="原始操作内容" content={<><p className="rd-pre">{asText(row.action, "UNKNOWN")}</p><p className="rd-pre">{asText(row.detailJson, asText(row.result))}</p><p>结果：{asText(row.result)}</p></>} /></>,
+      action: <>{auditEvent(row)}{failed ? " · 失败" : ""} <Explain label="操作说明" content={<><p className="rd-pre">{explanation.event}</p><p className="rd-pre">{explanation.details}</p><p>结果：{explanation.result}</p></>} /></>,
       // 成功是常态不写，只留理由和前后状态，一条两行（VS-109）。
       detail: /^success$/i.test(note) ? undefined : note || undefined,
       at: asText(row.createdAt, ""),
