@@ -4,8 +4,8 @@ import { G_PARAM_APPROVAL_RECOVERY, G_PARAM_RECOVERY, operatorCopyText } from "@
 
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 /**
  * G7 锁定计划（改版，RdPage）— 数据来自后端 /api/admin/market/nex/repurchase;空库返回空态。
  * 首屏回答：App 入口不开放、还有多少单没结束、一笔锁定到期和提前解锁各拿回多少、每个参数改哪个方向要另一位超级管理员批准。
@@ -253,7 +253,14 @@ function G7RepurchasePage() {
   const isSuperAdmin = session?.role === "superadmin" || session?.role === "super";
   const authorities = session?.authorities ?? [];
   const canPropose = authorities.some((a) => a === "platform_a2_proposal_create" || a === "platform_a2_write");
-  const [overview, setOverview] = useState<G7Overview | null>(null);
+  const [overviewSnapshot, setOverviewSnapshot] = useState<{ data: G7Overview; readAt: number } | null>(null);
+  const overview = overviewSnapshot?.data;
+  const [overviewError, setOverviewError] = useState("");
+  const applyOverview = useCallback((data: G7Overview) => {
+    setOverviewSnapshot({ data, readAt: Date.now() });
+    setOverviewError("");
+    setReadFailed(false);
+  }, []);
   const [orders, setOrders] = useState<G7Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -266,8 +273,12 @@ function G7RepurchasePage() {
     openActionConfirm(null);
     latest.current.readFailed = true;
     setReadFailed(true);
-    setOverview(await fetchG7RepurchaseOverview());
-    setReadFailed(false);
+    try {
+      applyOverview(await fetchG7RepurchaseOverview());
+    } catch (err) {
+      setOverviewError(displayAdminReadError(err));
+      throw err;
+    }
   });
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [recoverBusy, setRecoverBusy] = useState(false);
@@ -309,17 +320,16 @@ function G7RepurchasePage() {
         fetchG7RepurchaseOverview(), fetchG7RepurchaseOrders(),
       ]);
       if (generation !== requestGeneration.current) return;
-      setOverview(nextOverview);
-      setReadFailed(false);
+      applyOverview(nextOverview);
       setOrders(nextOrders.orders);
       setNextCursor(nextOrders.nextCursor);
       setHasMore(nextOrders.hasMore);
     } catch (err) {
-      if (generation === requestGeneration.current) setError(messageOf(err));
+      if (generation === requestGeneration.current) setOverviewError(displayAdminReadError(err));
     } finally {
       if (generation === requestGeneration.current && !silent) setLoading(false);
     }
-  }, []);
+  }, [applyOverview]);
 
   const paramApproval = {
     ...approval,
@@ -350,11 +360,10 @@ function G7RepurchasePage() {
     setReadFailed(true);
     try {
       const result = await queryG7DirectCommand(direct.adminId, direct.commandKey);
-      setOverview(result.overview);
-      setReadFailed(false);
+      applyOverview(result.overview);
       setError(result.message);
     } catch (err) {
-      setError(messageOf(err));
+      setOverviewError(displayAdminReadError(err));
     }
   };
 
@@ -651,7 +660,7 @@ function G7RepurchasePage() {
           const result = await paramApproval.run({ key: param.key, current: currentParam!.value, value: String(value), reason },
             () => updateG7RepurchaseParam(param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? "", currentParam!.value, view.overview!.g4Capacity));
           if ("direct" in result) {
-            setOverview(result.direct);
+            applyOverview(result.direct);
             toast(`${label} 已生效`);
           }
         } catch (err) {
@@ -696,7 +705,7 @@ function G7RepurchasePage() {
         {header}
         {recoveryNotice()}
         <BlockState state="error" title="锁定计划数据加载失败"
-          detail={error || "没有收到数据。"}
+          detail={overviewError || error || "没有收到数据。"}
           onRetry={() => void reload()} />
         {confirmModal}
       </>
@@ -801,6 +810,10 @@ function G7RepurchasePage() {
       {header}
       {confirmModal}
       {error && !mc && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^(提交结果未知|结果未知，可能已经提交)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {overviewError && <Notice tone="warn" title="概览读取失败"
+        action={<Button size="sm" disabled={loading || recoverBusy || busy} onClick={() => void reload()}>重试</Button>}>
+        <p>{overviewError} 下面是 {businessStamp(overviewSnapshot.readAt)}（{businessZone().label}）读到的数据，重新读取成功前暂不能修改。</p>
+      </Notice>}
       {conclusion}
       {recoveryNotice()}
 
