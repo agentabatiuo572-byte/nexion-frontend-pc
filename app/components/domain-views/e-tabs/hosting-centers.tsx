@@ -73,7 +73,7 @@ async function readHostingCenters(): Promise<HostingState> {
   const result = await response.json().catch(() => null) as { code?: number; message?: string; data?: { revision?: unknown; centers?: unknown } } | null;
   if (!response.ok || !result || result.code !== 0) {
     const code = Object.keys(HOSTING_ERRORS).find(key => result?.message?.includes(key));
-    throw new Error(code ?? formatAdminApiError(result?.message, `HOSTING_CENTERS_READ_FAILED_${response.status}`));
+    throw new Error(code ?? formatAdminApiError(result?.message, `HOSTING_CENTERS_READ_FAILED_${response.status}`, "read"));
   }
   const { revision, centers } = result.data ?? {};
   const rows = Array.isArray(centers) ? centers as Record<string, unknown>[] : [];

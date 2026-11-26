@@ -1670,7 +1670,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
   const [convRetrying, setConvRetrying] = useState(false), [convError, setConvError] = useState(""), [convDenied, setConvDenied] = useState(false);
   const retryConversations = async () => {
     setConvRetrying(true); setConvError(""); setConvDenied(false);
-    try { await ctx.refreshConversations(); }
+    try { await ctx.refreshConversations({ manualRetry: true }); }
     catch (cause) { setConvError(displayAdminReadError(cause)); setConvDenied((cause as { status?: number }).status === 403); }
     finally { setConvRetrying(false); }
   };

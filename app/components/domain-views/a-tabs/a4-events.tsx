@@ -49,7 +49,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 
 import { fetchA2ReasonPolicy, type A2OperationRow } from "@/lib/admin/a2-client";
 import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
-import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
+import { ADMIN_ERROR_MESSAGES, displayAdminReadError, displayAdminError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ALL_L2, CONSOLE_NAV } from "@/lib/nav/console-nav";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -187,7 +187,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       overviewReady.current = true;
       return true;
     } catch (error) {
-      setLoadError(displayAdminError(error));
+      setLoadError(displayAdminReadError(error));
       return false;
     } finally {
       if (!quiet) setLoading(false);
@@ -205,7 +205,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       return true;
     } catch (error) {
       setRetentionRun(null);
-      setRetentionRunError(displayAdminError(error));
+      setRetentionRunError(displayAdminReadError(error));
       return false;
     }
   }, []);
@@ -801,7 +801,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       setSchemaLookup(found);
     } catch (error) {
       if (sequence === schemaLookupSequence.current) {
-        setSchemaLookupError(displayAdminError(error));
+        setSchemaLookupError(displayAdminReadError(error));
         setSchemaLookupNotFound(error instanceof Error && "reasonCode" in error && error.reasonCode === "A4_EVENT_SCHEMA_NOT_FOUND");
       }
     } finally {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchHowContentAdmin, updateHowContentAdmin, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
@@ -51,7 +51,7 @@ export function PublishedHowContentEditor() {
       setDocument(next); setBaseline(next); setKey(nextKey);
       setLocale(locales[previous.locale] ? previous.locale : Object.keys(locales)[0] ?? "en");
     }
-    catch (cause) { setError(displayAdminError(cause)); }
+    catch (cause) { setError(displayAdminReadError(cause)); }
     finally { busyRef.current = false; setLoading(false); }
   }, [canRead]);
   useEffect(() => { void refresh(false); }, [refresh]);

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { warrantyMonths } from "@/lib/admin/warranty-months";
 import { Boxes, ImageIcon } from "lucide-react";
 import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Explain, Facts, Fact, Field, Fold, Input, LevelStrip, Modal, Notice, NumberInput, ReleaseModal, SectionNav, Select, Textarea, useSectionNav } from "@/app/components/rd";
+import { keepDraftForLeaveLink, useNavigationLeaveGuard } from "../i-tabs/i5-writes";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import { E1_DISPLAY_SOLD_BASE_MAX } from "@/lib/admin/e1-overview-contract";
@@ -31,6 +32,7 @@ export type E1SkuReview = {
   form: SkuForm;
   acceptRevision: (latest: OpsSku) => boolean;
   setSeriesError: (message: string) => void;
+  afterSubmitted?: () => void;
 };
 type Media = { kind: "image" | "video"; src: string; name: string; size?: number; w?: number; h?: number; duration?: number; assetId?: string; objectKey?: string } | null;
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
@@ -169,6 +171,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const [labels, setLabels] = useState<string[]>([]);
   const [labelError, setLabelError] = useState("");
   const [leave, setLeave] = useState(false);
+  const leaveResume = useRef<(() => void) | undefined>(undefined);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
   const editId = original?.id;
@@ -216,6 +219,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     const m = merge ? merge.mergedMedia : restored ? skuMedia(restored.mediaSku) : originalMedia;
     setOriginal(sku); setForm(merge?.merged ?? restoredForm ?? mediaDraftForm ?? next); setInitialForm(JSON.stringify(sku ? skuToForm(sku) : next));
     setMedia(m); setInitialMedia(imageIdentity(originalMedia)); setErrors({}); setTouched(new Set()); setLeave(false); setMediaError("");
+    leaveResume.current = undefined;
     fileRef.current = null;
     setMediaPending(e1MediaCommands.list().find(r => r.commandKey === request.mediaCommandKey && r.actorId === actor && ownsMedia(r, request)) ?? null);
     if (m?.assetId) void refreshPreview(m.assetId);
@@ -226,12 +230,12 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   // Only an explicit open replaces the draft. Background reads never overwrite it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.nonce, actor, canReadE2, refreshPreview]);
-  useEffect(() => {
-    if (!dirty && !mediaBusy && !mediaPending) return;
-    const prevent = (e: BeforeUnloadEvent) => { e.preventDefault(); };
-    window.addEventListener("beforeunload", prevent);
-    return () => window.removeEventListener("beforeunload", prevent);
-  }, [dirty, mediaBusy, mediaPending]);
+  const guardActive = !!request && (dirty || mediaBusy || !!mediaPending || busy);
+  useNavigationLeaveGuard(guardActive, ({ resume }) => {
+    if (busy || mediaBusy || uploadBusy.current || leave || leaveResume.current) return;
+    leaveResume.current = resume;
+    setLeave(true);
+  });
   useEffect(() => {
     if (!media?.src.startsWith("blob:")) return;
     const src = media.src;
@@ -340,7 +344,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     return { form: merged, media: mergedMedia };
   };
 
-  const reviewDraft = (form: SkuForm, original: OpsSku | undefined, media: Media, acceptedRevision = false): boolean => {
+  const reviewDraft = (form: SkuForm, original: OpsSku | undefined, media: Media, acceptedRevision = false, afterSubmitted?: () => void): boolean => {
     const e: Record<string, string> = {};
     if (!form.name.trim()) e.name = "请填写型号名称";
     if (!form.tier) e.tier = "请选择档位";
@@ -402,18 +406,21 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     }
     if (original && !e1SkuDiff(original, sku, form).some(row => row.before !== row.after)) { toast("没有任何修改，无需提交"); return false; }
     setLeave(false);
+    leaveResume.current = undefined;
     onReview({
-      sku, beforeSku: original, form,
+      sku, beforeSku: original, form, afterSubmitted,
       acceptRevision: latest => {
         if (!original) return false;
         const merged = adoptRevision(latest, form, original, media);
-        return reviewDraft(merged.form, latest, merged.media, true);
+        return reviewDraft(merged.form, latest, merged.media, true, afterSubmitted);
       },
       setSeriesError: message => setErrors(errors => ({ ...errors, seriesCode: message })),
     });
     return true;
   };
   const review = () => { reviewDraft(form, original, media); };
+  const stay = () => { leaveResume.current = undefined; setLeave(false); };
+  const discard = () => { const resume = leaveResume.current; stay(); onClose(); resume?.(); };
   const close = () => { if (busy || mediaBusy) return; if (dirty) setLeave(true); else onClose(); };
   const copyErrors = productCopyErrors(form, draft);
   const displaySoldBaseError = displayControlsSupported ? validateSkuDisplaySoldBase(form.displaySoldBase) : undefined;
@@ -445,7 +452,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const hasTarget = form.monthlyTargetUsdt.trim() !== "";
   const canClear = original?.monthlyTargetUsdt != null && original.status !== "on" && !form.allowedPoolCodes.length;
   return <>
-    <Drawer open={!!request} onClose={close} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onBlockedClick={() => setTouched(new Set([...touched, ...Object.keys(inlineErrors)]))} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
+    <Drawer open={!!request} onClose={close} onInteractOutside={keepDraftForLeaveLink} title={editId ? "编辑商品" : "新增商品"} sub={original?.name ?? "草稿 · 批准后生效"} icon={Boxes} wide busy={busy || mediaBusy} explain="四区可直接定位，不需要依次下一步。上传仅保存媒体，商品内容须提交审批。" footer={<Decision note={original ? `${original.name} · ${changes.length} 项改动 · 批准后生效` : "新增商品草稿 · 批准后生效"} primary={<Button variant="primary" disabledReason={blocked} onBlockedClick={() => setTouched(new Set([...touched, ...Object.keys(inlineErrors)]))} onClick={review}>{editId ? "保存修改" : "提交确认"}</Button>} others={<Button disabled={busy || mediaBusy} onClick={close}>取消</Button>} />}>
       {errors.form && <Notice tone="warn" title={errors.form} />}
       {(latestChanged || othersChanges.length > 0) && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={latestChanged && currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(comparisonAfter?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{comparisonAfter && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={othersChanges} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
@@ -546,7 +553,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
         </EditorSection>
       </div></div></div>
     </Drawer>
-    {leave && <Modal title="商品改动尚未提交" onClose={() => setLeave(false)} footer={<><Button onClick={() => setLeave(false)}>继续编辑</Button><Button variant="danger-outline" onClick={() => { setLeave(false); onClose(); }}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={review}>提交审批后继续</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
+    {leave && <Modal title="商品改动尚未提交" onClose={stay} footer={<><Button onClick={stay}>继续编辑</Button><Button variant="danger-outline" onClick={discard}>放弃改动并返回</Button><Button variant="primary" disabledReason={blocked} onClick={() => reviewDraft(form, original, media, false, leaveResume.current)}>提交审批后继续</Button></>}><p>商品改动还没有提交审批。放弃后关闭本地草稿，已上传的媒体资源不删除。</p></Modal>}
     {mediaRelease && mediaPending && <ReleaseModal label={`${mediaPending.fileName} · 媒体上传`} onCancel={() => setMediaRelease(false)} onConfirm={() => { if (!mediaRecovery.releaseRejectedReplay(mediaPending)) return; setMediaPending(null); fileRef.current = null; setMediaRelease(false); onMediaChange(); }} />}
   </>;
 }

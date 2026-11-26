@@ -177,7 +177,7 @@ async function request(endpoint: string) {
   const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
   if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    throw new Error(formatAdminApiError(result?.message, `B_RESTORATION_LOAD_FAILED_${response.status}`));
+    throw new Error(formatAdminApiError(result?.message, `B_RESTORATION_LOAD_FAILED_${response.status}`, "read"));
   }
   return result.data;
 }

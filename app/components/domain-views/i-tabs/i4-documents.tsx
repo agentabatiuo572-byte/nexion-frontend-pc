@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { ExternalLink, FileBadge2, FileText, RefreshCw, RotateCcw, Upload } from "lucide-react";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, IconTile, Input, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { fetchA2ReasonPolicy, visibleReasonLength } from "@/lib/admin/a2-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessZone } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -83,12 +83,12 @@ export function I4Documents({ onPendingChange, recovery, getDraft, queryOriginal
     if (!canRead) return;
     setLoading(true); setError(null);
     try { const latest = await fetchTrustDocuments(); setDocuments(latest); setFresh(true); return latest; }
-    catch (cause) { setFresh(false); setError(displayAdminError(cause)); }
+    catch (cause) { setFresh(false); setError(displayAdminReadError(cause)); }
     finally { setLoading(false); setRead(true); }
   }, [canRead]);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
-    fetchA2ReasonPolicy().then(policy => { setReasonMin(policy.minChars); setReasonPolicyReady(true); }, cause => { setEditorError(displayAdminError(cause)); });
+    fetchA2ReasonPolicy().then(policy => { setReasonMin(policy.minChars); setReasonPolicyReady(true); }, cause => { setEditorError(displayAdminReadError(cause)); });
   }, []);
   useEffect(() => {
     if (!recovery) return;

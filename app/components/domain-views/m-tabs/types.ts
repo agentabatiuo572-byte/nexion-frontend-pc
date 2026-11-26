@@ -15,7 +15,7 @@ export type MCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, string>;
   setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string; onBackendResult?: (result: unknown) => void; /** 传了就把失败原因交给调用方，写在确认框里，不弹 toast。 */ onFailure?: (message: string) => void }) => Promise<boolean>;
-  refreshConversations: () => Promise<void>;
+  refreshConversations: (options?: { manualRetry?: true }) => Promise<void>;
   refreshConversation: (no: string, receipt?: unknown) => void;
   refreshContent: () => Promise<void>;
   /** M5 recovery needs a fresh authoritative snapshot before another edit. */

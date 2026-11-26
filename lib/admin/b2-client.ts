@@ -141,7 +141,7 @@ async function request<T>(path: string, init?: RequestInit) {
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    throw new B2RequestError(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`), response.status, result?.message);
+    throw new B2RequestError(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"), response.status, result?.message);
   }
   return result.data;
 }

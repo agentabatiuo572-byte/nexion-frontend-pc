@@ -108,7 +108,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       if (id !== generation.current) return false;
       if (focus && ![String(result.selectedUser?.userId), String(result.selectedUser?.userNo)].includes(focus)) throw new Error("读到的用户与当前选择不符，请重新选择。");
       setOverview(result); return true;
-    } catch (failure) { if (id === generation.current) { setError(displayAdminError(failure)); if (failure instanceof Error && "status" in failure && [401, 403].includes(Number(failure.status))) { setProfile(null); announcePermissionDenied(); } } return false; }
+    } catch (failure) { if (id === generation.current) { setError(displayAdminReadError(failure)); if (failure instanceof Error && "status" in failure && [401, 403].includes(Number(failure.status))) { setProfile(null); announcePermissionDenied(); } } return false; }
     finally { if (id === generation.current) setLoading(false); }
   }, [focus, page, pageSize, epoch, canRead]);
   useEffect(() => { void load(); return () => { generation.current++; }; }, [load]);
@@ -118,7 +118,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     setUsersLoading(true); setUsers([]); setUsersError("");
     const timer = window.setTimeout(async () => {
       try { const result = await fetchUserProfilesPage({ ...(lookup.trim() ? await privacySafeUserLookup(lookup.trim()) : {}), pageNum: userPage, pageSize: userSize }); if (!cancelled) { setUsers(result.records); setUserTotal(result.total); } }
-      catch (failure) { if (!cancelled) { setUsersError(displayAdminError(failure)); setUserTotal(0); } }
+      catch (failure) { if (!cancelled) { setUsersError(displayAdminReadError(failure)); setUserTotal(0); } }
       finally { if (!cancelled) setUsersLoading(false); }
     }, 300);
     return () => { cancelled = true; window.clearTimeout(timer); };

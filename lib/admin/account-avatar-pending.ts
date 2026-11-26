@@ -3,6 +3,7 @@ import { avatarGender, avatarKey, parsePreparedAvatar, selfAvatarSaveInput, type
 import { cancelA1Avatar } from "@/lib/admin/a1-client";
 import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
+import { isSupportSelfAccountMismatch } from "@/lib/admin/support-self-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 
@@ -112,7 +113,7 @@ export const selfAvatarSaveRecovery = createPendingRecovery(selfAvatarCommands, 
     return session?.adminId === record.actorId
       && (session.supportReadModes?.some(mode => mode === "PERSONAL" || mode === "MANAGED") ?? false);
   },
-  explicitRejectionCode,
+  explicitRejectionCode: error => isSupportSelfAccountMismatch(error) ? undefined : explicitRejectionCode(error),
 });
 export function rememberAvatarDraft(draft: AvatarDraft, recovering = false): AvatarDraft {
   const { fingerprint, commandKey, createdAt: _createdAt, expiresAt: _expiresAt, ...extra } = draft;

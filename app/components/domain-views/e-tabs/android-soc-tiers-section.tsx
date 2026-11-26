@@ -7,7 +7,7 @@ import { formatRange } from "@/lib/admin/ios-model-rules";
 import { androidRuleIssues, applyAndroidImport, blankAndroidRule, diffAndroidRules, moveChip, planAndroidImport, removeChip, setChipAliases,
   type AndroidImportPlan, type AndroidPresetCatalog, type AndroidPresetRemovals, type AndroidSocChip, type AndroidSocRule } from "@/lib/admin/android-soc-rules";
 import { fetchAndroidSocPresets } from "@/lib/admin/phone-calibration-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 
 const CHANGE_LABELS = { added: "新增", modified: "修改", disabled: "停用", enabled: "启用", removed: "删除" } as const;
 type ChipForm = { tierId: string; chip: AndroidSocChip; aliases: string; isNew: boolean };
@@ -36,7 +36,7 @@ export function AndroidSocTiersSection({ rules, removals, published, iosRuleIds,
     try {
       const catalog = await fetchAndroidSocPresets();
       setPresets({ catalog, plan: planAndroidImport(rules, removals, catalog.tiers), restore: false });
-    } catch (failure) { setError(displayAdminError(failure)); } finally { setLoading(false); }
+    } catch (failure) { setError(displayAdminReadError(failure)); } finally { setLoading(false); }
   }
   function applyPresets() {
     if (!presets || !editable) return;

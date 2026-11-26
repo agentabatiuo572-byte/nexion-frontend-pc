@@ -317,7 +317,7 @@ export function D3Treasury() {
 
   // 配置改了没保存时，离开这页先问（OP-29）。结果未知时设置已锁，草稿等核对完再说，不拦。
   const leaveSwitcher = useRef<EditorSwitch | null>(null);
-  const leave = useLeaveGuard(dirty && !forecastCommand.list().some((record) => record.fingerprint === FORECAST_SLOT), () => { if (baseValues) setDraft(baseValues); }, leaveSwitcher);
+  const leave = useLeaveGuard(dirty && !forecastCommand.list().some((record) => record.fingerprint === FORECAST_SLOT), () => { if (baseValues) setDraft(baseValues); }, leaveSwitcher, undefined, previewLoading || confirm?.action === "调整应付款预测设置");
 
   // 预测保存结果未知时草稿留着，解除待确认后可以接着改了重新提交。
   const reloadAll = () => {

@@ -22,7 +22,7 @@ import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { PAYOUT_VND_HELP, PAYOUT_VND_SOURCE_HELP } from "@/lib/admin/config-help/d7-payout-vnd";
 import { DOutcomeUnknownError, DRequestError, isDOutcomeUnknownError } from "@/lib/admin/d-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { loadPayoutVndConfig, updatePayoutVndConfig } from "@/lib/admin/payout-vnd-client";
@@ -282,7 +282,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
       if (seq !== readSeq.current) return null;
       setConfig(null);
       setReadAt(null);
-      setLoadError({ message: afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : displayAdminError(cause), code: cause instanceof DRequestError ? cause.reasonCode : undefined });
+      setLoadError({ message: afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : displayAdminReadError(cause), code: cause instanceof DRequestError ? cause.reasonCode : undefined });
       return null;
     } finally {
       if (seq === readSeq.current) setLoading(false);

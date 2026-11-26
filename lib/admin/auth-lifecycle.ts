@@ -20,6 +20,15 @@ const serverState: AdminAuthLifecycleState = {
   installed: false,
 };
 
+const ADMIN_WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const ADMIN_SESSION_FAILURE_CODES = new Set([
+  "ADMIN_AUTH_REQUIRED",
+  "ADMIN_SESSION_INVALID",
+  "AUTH_REQUIRED",
+  "LOGIN_REQUIRED",
+  "UNAUTHORIZED",
+]);
+
 export class AdminLogoutAbortError extends Error {
   constructor() {
     super("ADMIN_LOGOUT_IN_PROGRESS");
@@ -52,12 +61,36 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit) {
   return input instanceof Request ? input.method.toUpperCase() : "GET";
 }
 
-function adminReadPath(input: RequestInfo | URL, init?: RequestInit) {
-  const method = requestMethod(input, init);
-  if (method !== "GET" && method !== "HEAD") return undefined;
+function adminApiPath(input: RequestInfo | URL) {
   const value = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
   const url = new URL(value, window.location.href);
   return url.origin === window.location.origin && url.pathname.startsWith("/api/admin/") ? url.pathname : undefined;
+}
+
+function adminReadPath(input: RequestInfo | URL, init?: RequestInit) {
+  const method = requestMethod(input, init);
+  if (method !== "GET" && method !== "HEAD") return undefined;
+  return adminApiPath(input);
+}
+
+async function observeAdminWrite(
+  nativeFetch: AdminFetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  onUnauthorized: () => void,
+) {
+  const epoch = lifecycleState().epoch;
+  const response = await nativeFetch(input, init);
+  if (response.status !== 401) return response;
+
+  // Keep the original envelope available for the caller's command verdict.
+  const rejection = await response.clone().json().catch(() => null) as { code?: unknown; message?: unknown } | null;
+  const code = typeof rejection?.code === "string" ? rejection.code : rejection?.message;
+  if (typeof code === "string" && ADMIN_SESSION_FAILURE_CODES.has(code)
+    && epoch === lifecycleState().epoch && adminAuthActivityAllowed()) {
+    onUnauthorized();
+  }
+  return response;
 }
 
 async function guardedAdminRead(
@@ -111,7 +144,7 @@ export function fetchAdminReadWithLocalAuth(input: RequestInfo | URL, init?: Req
 }
 
 /**
- * Installs one narrow generation guard for same-origin authenticated admin reads.
+ * Guards same-origin admin reads and delegates expired write sessions to the shell.
  * Login/logout mutations still use the native fetch path, so a failed server
  * revocation can be retried with the original credential. Logout never aborts
  * an already-issued network request; its late result loses authority by epoch.
@@ -124,9 +157,15 @@ export function installAdminAuthFetchLifecycle(onUnauthorized: () => void) {
   const nativeFetch = state.nativeFetch;
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const path = adminReadPath(input, init);
-    if (!path) return nativeFetch(input, init);
-    // The shell resolves auth/session (including anonymous bootstrap) itself.
-    return guardedAdminRead(nativeFetch, input, init, path.startsWith("/api/admin/auth/") ? undefined : onUnauthorized);
+    if (path) {
+      // The shell resolves auth/session (including anonymous bootstrap) itself.
+      return guardedAdminRead(nativeFetch, input, init, path.startsWith("/api/admin/auth/") ? undefined : onUnauthorized);
+    }
+    if (ADMIN_WRITE_METHODS.has(requestMethod(input, init))) {
+      const writePath = adminApiPath(input);
+      if (writePath && !writePath.startsWith("/api/admin/auth/")) return observeAdminWrite(nativeFetch, input, init, onUnauthorized);
+    }
+    return nativeFetch(input, init);
   }) as AdminFetch;
   state.installed = true;
 }

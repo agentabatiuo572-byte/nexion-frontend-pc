@@ -6,10 +6,11 @@ import { E6ConfirmModal } from "./e6-confirm-modal";
 import type { EViewCtx } from "./types";
 import { Activity, Cpu, Gauge, Send, Smartphone } from "lucide-react";
 import { BlockState, Button, Conclusion, DiffList, Explain, Decision, Field, Fold, Input, Modal, Notice, NumberInput, Panel, ScaleBar, Segments, Select, Stat, StatBand, Table, Td, Th, Tr, Textarea, Facts, Fact } from "@/app/components/rd";
+import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
 import { E6PendingNotice, useE6DraftEditor, useE6Mutations } from "./e6-mutations";
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchPhoneCalibration, fetchPhoneCalibrationDirection, previewPhoneCalibration, phoneProposalError,
   type PhoneCalibrationOverview, type PhonePolicyProposal, type PhoneHardware, type PhonePreview, type PhoneTrialFacts } from "@/lib/admin/phone-calibration-client";
 import { NO_REMOVALS, diffAndroidRules, type AndroidPresetRemovals, type AndroidSocRule } from "@/lib/admin/android-soc-rules";
@@ -64,9 +65,10 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<{ key: string; result: PhonePreview; amplifies: boolean } | null>(null);
-  const [confirm, setConfirm] = useState<{ proposal: PhonePolicyProposal; commandKey: string; amplifies: boolean; impact: PhonePreview["impact"] } | null>(null);
+  const [confirm, setConfirm] = useState<{ proposal: PhonePolicyProposal; commandKey: string; amplifies: boolean; impact: PhonePreview["impact"]; afterSubmitted?: () => void } | null>(null);
   const generation = useRef(0);
   const live = useRef(true);
+  const leaveSwitcher = useRef<EditorSwitch | null>(null);
   const editing = ctx.canWriteE6 && !!snapshot && !snapshot.policy.scheduled && !busy && !confirm && !mutations.locked("calibration") && mutations.canPropose;
   const proposal: PhonePolicyProposal = { expectedRevision: snapshot?.policy.revision ?? 0,
     effectiveAt: effective ? new Date(effective).getTime() : 0,
@@ -103,10 +105,26 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
   const thresholdError = proposal.thresholds.some((v,i)=>!Number.isFinite(v)||v<=0||i>0&&v<=proposal.thresholds[i-1]);
   const axisMax = Math.max(...[snapshot?.policy.current,snapshot?.policy.scheduled].flatMap(p=>p?[p.thresholds[3]]:[]),!thresholdError?proposal.thresholds[3]:1);
   const axisText = (values:number[])=>`T1 < ${values[0]}；T2 [${values[0]}, ${values[1]})；T3 [${values[1]}, ${values[2]})；T4 [${values[2]}, ${values[3]})；T5 ≥ ${values[3]}。平台算力值`;
-  useEffect(()=>{if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue="";};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[dirty]);
   const validation = phoneProposalError(proposal);
   const previewCurrent = preview?.key === draftKey;
   useEffect(() => { setPreview(null); }, [draftKey]);
+  const leave = useLeaveGuard(dirty, () => {
+    resetDraft(publishedPolicy);
+    setPreview(null);
+  }, leaveSwitcher);
+  const approvalBlocked = !editing ? "规则只读、原操作结果未知或尚未就绪" : validation ?? (!previewCurrent ? "请先完成本次草稿的试算和方向预览" : undefined);
+  const review = (afterSubmitted?: () => void) => {
+    if (!approvalBlocked && preview) setConfirm({ proposal, commandKey: createA2CommandKey("phone-policy"), amplifies: preview.amplifies, impact: preview.result.impact, afterSubmitted });
+  };
+
+  function resetDraft(policy: typeof publishedPolicy) {
+    setThresholds(policy ? policy.thresholds.map(String) : ["", "", "", ""]);
+    setThresholdTouched([false, false, false, false]);
+    setAndroidRules(policy?.androidSocRules ?? []);
+    setRemovals(policy?.androidPresetRemovals ?? NO_REMOVALS);
+    setIosRules(policy?.iosModelRules ?? []);
+    setEffective("");
+  }
 
   async function refresh() {
     const request = ++generation.current;
@@ -115,13 +133,9 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
       const result = await fetchPhoneCalibration();
       if (!live.current || request !== generation.current) return;
       setSnapshot(result);
-      const policy = result.policy.scheduled ?? result.policy.current;
-      setThresholds(policy ? policy.thresholds.map(String) : ["","","",""]);
-      setThresholdTouched([false,false,false,false]);
-      setAndroidRules(policy?.androidSocRules ?? []); setRemovals(policy?.androidPresetRemovals ?? NO_REMOVALS);
-      setIosRules(policy?.iosModelRules ?? []); setEffective("");
+      resetDraft(result.policy.scheduled ?? result.policy.current);
     } catch (failure) {
-      if (live.current && request === generation.current) { setSnapshot(null); setError(displayAdminError(failure)); }
+      if (live.current && request === generation.current) { setSnapshot(null); setError(displayAdminReadError(failure)); }
     } finally { if (live.current && request === generation.current) setBusy(false); }
   }
   useEffect(() => { live.current = true; void refresh(); return () => { live.current = false; generation.current++; }; }, []);
@@ -180,13 +194,14 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
             {ios&&<><Field label="试算系统版本（选填）"><Input value={facts.osVersion} maxLength={8} disabled={!editing} onChange={event=>setFacts(old=>({...old,osVersion:event.target.value}))}/></Field><Field label="试算屏幕倍率（选填）" help="1–3 整数"><NumberInput value={facts.pixelRatio} min={1} max={3} step={1} disabled={!editing} onChange={event=>setFacts(old=>({...old,pixelRatio:event.target.value}))}/></Field><Field label="试算屏幕宽（选填）"><NumberInput aria-label="试算屏幕宽" value={facts.screenWidth} min={1} step={1} unit="点" disabled={!editing} onChange={event=>setFacts(old=>({...old,screenWidth:event.target.value}))}/></Field><Field label="试算屏幕高（选填）"><NumberInput aria-label="试算屏幕高" value={facts.screenHeight} min={1} step={1} unit="点" disabled={!editing} onChange={event=>setFacts(old=>({...old,screenHeight:event.target.value}))}/></Field></>}
             <Field label="生效时间（留空为批准后生效）" help={`浏览器时区：${Intl.DateTimeFormat().resolvedOptions().timeZone}`} explain="预约须先获批准并到达所选时间；批准时已过预约时间则批准后生效。"><Input type="datetime-local" value={effective} disabled={!editing} onChange={event=>setEffective(event.target.value)}/></Field>
           </div>
-          <div className="e6-actions"><Button disabledReason={!editing?"规则只读、原操作结果未知或尚未就绪":validation??undefined} onClick={()=>void runPreview()}>试算并预览影响</Button><Button variant="primary" disabledReason={!editing?"规则只读、原操作结果未知或尚未就绪":validation??(!previewCurrent?"请先完成本次草稿的试算和方向预览":undefined)} onClick={()=>preview&&setConfirm({proposal,commandKey:createA2CommandKey("phone-policy"),amplifies:preview.amplifies,impact:preview.result.impact})}>提交审批</Button></div></div>
+          <div className="e6-actions"><Button disabledReason={!editing?"规则只读、原操作结果未知或尚未就绪":validation??undefined} onClick={()=>void runPreview()}>试算并预览影响</Button><Button variant="primary" disabledReason={approvalBlocked} onClick={()=>review()}>提交审批</Button></div></div>
         </>}
         {previewCurrent&&preview&&<div className="e6-trial-result"><Notice tone={preview.result.match.status==="MATCHED"?"neutral":"warn"}>{trialText(preview.result)}{trialFacts&&preview.result.match.status==="MATCHED"&&<p>{riskText(preview.result)}</p>}</Notice><StatBand fit><Stat label="匹配记录" value={preview.result.impact.matched} icon={Activity} tone="role-other" lead sub={`其中数值或档位变化 ${preview.result.impact.changed} 条`} explain="变化数包含在匹配记录中，两者不能相加。"/><Stat label="待核验记录" value={preview.result.impact.pending} icon={Smartphone} tone={preview.result.impact.pending?"warn":"role-other"}/></StatBand></div>}
         <div className="e6-section-link">{mutations.canAudit?<Link href="/platform/audit?domain=E&object=phone-calibration">查看审批记录</Link>:<p>查看审批记录需要操作记录与审批读取权限。</p>}</div>
       </>}
     </Panel>
     {discard&&<Modal title="刷新会放弃未提交草稿" onClose={()=>setDiscard(false)} footer={<Decision danger={<Button variant="danger-outline" onClick={()=>{setDiscard(false);void refresh();}}>放弃草稿并刷新</Button>} others={<Button onClick={()=>setDiscard(false)}>继续编辑</Button>}/>}><Notice tone="warn">将放弃校准分界、硬件规则及本次试算的普通草稿。已发出、结果未知的原操作会继续保留。</Notice></Modal>}
+    <LeaveDialog guard={leave} saveName="提交审批后继续" saveBlocked={approvalBlocked} onSave={review} />
     {confirm&&<E6ConfirmModal scope="calibration" amplificationBasis={<>{<p>预览判断这次改动会让支出增加：</p>}{thresholdChanges.map(row=><p key={row.key}>{row.label}：{row.before} → {row.after}。</p>)}{hardwareChanges.map((text,index)=><p key={index}>{text}</p>)}</>} briefKind="config" statedBrief={{impact:"整份规则只提交审批，批准后用于后续校准；历史结算不变。",check:"核对同次试算和生效时间，批准时检查兑付覆盖率。"}} action="发布手机校准规则" amplifies={confirm.amplifies} coverageCheck="批准时检查兑付覆盖率。" detail="整份 Android 芯片档、iPhone 机型与四分界一起提交审批，批准后用于后续校准；已派任务和历史结算不变。预约发布还须到所选时间。" completionCopy="另一位有批准权限和手机配置读取权限的管理员批准后生效。" reasonMin={8} reasonMax={200}
       facts={<Facts>{thresholdChanges.map(row=><Fact key={row.key} k={row.label}><DiffList rows={[row]}/></Fact>)}<Fact k="匹配记录">{confirm.impact.matched} 条</Fact><Fact k="其中数值或档位变化">{confirm.impact.changed} 条（包含在匹配记录内）</Fact><Fact k="待核验记录">{confirm.impact.pending} 条</Fact><Fact k="生效时间">{confirm.proposal.effectiveAt?`${time(confirm.proposal.effectiveAt)}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）`:"批准后生效"}</Fact></Facts>}
       content={<Fold title="规则差异与完整草稿" summary="核对硬件改动和同次试算" inset>
@@ -198,7 +213,7 @@ export function PhoneCalibrationPanel({ ctx, thresholdsOnly = false, onPendingCo
       getPendingReason={()=>mutations.pendingReason("calibration")} onClose={()=>setConfirm(null)} onConfirm={async reason=>{
         const original=mutations.pending.find(r=>r.scope==="calibration");
         if(original)await mutations.send(original,true);else {if(!ctx.canWriteE6||!mutations.canPropose)throw new Error("你没有发布手机校准规则的权限");const definition=findHighOp("e6_phone_calibration")!;await mutations.proposal("calibration","calibration",{action:definition.action,obj:"phone-calibration",beforeValue:`修订号 ${confirm.proposal.expectedRevision}`,afterValue:`Android ${confirm.proposal.androidSocRules.length} 档 · iPhone ${confirm.proposal.iosModelRules.length} 个；分界 ${confirm.proposal.thresholds.join(" / ")}`,type:"param",amplifies:confirm.amplifies,reason,sourceDomain:"E6",command:definition.buildCommand({...confirm.proposal}),target:definition.buildTarget({})},{preview:preview?.result,direction:confirm.amplifies,draftKey});}
-        if(live.current){setConfirm(null);setPreview(null);ctx.toast("已提交，等待审批后执行");}
+        if(live.current){setConfirm(null);setPreview(null);ctx.toast("已提交，等待审批后执行");confirm.afterSubmitted?.();}
       }}/>}
   </div>;
 }

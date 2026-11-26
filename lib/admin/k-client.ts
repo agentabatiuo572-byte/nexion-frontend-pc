@@ -113,7 +113,7 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     const status = (isK1ApprovalWrite || path.startsWith("/arbitrage/") || path.startsWith("/scoring/")) && res.ok && payload.code && payload.code >= 400 && payload.code < 500 ? payload.code : res.status;
-    const failure = new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`), status, payload.message);
+    const failure = new K1RequestError(formatAdminApiError(payload.message, `RISK_API_${res.status}`, isWrite ? "write" : "read"), status, payload.message);
     // General 5xx remain unknown; the shared verdict recognises only K3's exact
     // write-before-mutation 503. Upstream unknown signals have already taken precedence.
     if (isWrite && outcomeStaysUnknown(res.status, payload.code) && !isExplicitRejection(failure)) {
