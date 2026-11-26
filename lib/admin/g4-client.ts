@@ -9,7 +9,7 @@ export class G4CatalogApprovalRequiredError extends StableMutationFailure {
   readonly status = 409;
   readonly backendMessage = "G4_CATALOG_APPROVAL_REQUIRED";
   constructor() {
-    super("deterministic", "该档位调整需另一位有权超管批准后生效，请核对原输入后提交审批。");
+    super("deterministic", "该档位调整需另一位超级管理员批准后生效，请核对原输入后提交审批。");
   }
 }
 

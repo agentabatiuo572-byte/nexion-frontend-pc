@@ -232,9 +232,9 @@ function approvalExecutorLabel(w: A2OperationRow) {
   if (["提高旧活动奖励", "放宽转盘奖项配置", "新增转盘奖项", "删除转盘奖项并提高安慰奖", "提高转盘奖项概率",
     "首次发布奖励课程", "发布奖励课程版本", "回滚至有奖励的课程版本"].includes(w.action)) return "另一位有审批批准权限的超级管理员";
   if (w.action === "调整设备型号" || w.action === "发布手机可跑任务") return "另一位超级管理员（需有商品修改权限）";
-  if (w.action === "发布规则任务") return "另一位有审批批准权限和任务池修改权限的管理员";
+  if (w.action === "发布规则任务") return "另一位超级管理员（需有任务池修改权限和审批批准权限）";
   // 后端存的「门槛者」只是占位叫法（A2-BE-02）。
-  return w.roleGate === "超管" ? "另一位超级管理员" : w.roleGate === "门槛者" ? "另一位有审批批准权限和对应业务权限的管理员" : w.roleGate;
+  return w.roleGate === "超管" ? "另一位超级管理员" : w.roleGate === "门槛者" ? "另一位超级管理员（需有对应业务权限和审批批准权限）" : w.roleGate;
 }
 
 /** F1 写入的动作后缀区分晋升和降级（可以选「降级」和 V8），只有晋升才免覆盖率、按发起权限撤回。 */
@@ -3555,7 +3555,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       </Drawer>
 
       <Drawer open={confirmListOpen} onClose={() => setConfirmListOpen(false)} title={`需要确认的操作（${confirmCategories.length} 类）`} icon={ListChecks}
-        explain="清单只是说明，不改变权限和审批规则。走审批的要另一位管理员批准后才生效，直接执行的确认后立即生效。">
+        explain="清单只是说明，不改变权限和审批规则。走审批的要另一位超级管理员批准后才生效，直接执行的确认后立即生效。">
         {confirmCategories.length ? (
           <Table label="需要确认的操作">
             <thead><tr><Th>类别</Th><Th>例子</Th><Th>谁能执行</Th></tr></thead>

@@ -48,7 +48,7 @@ const MATERIAL_BLOCKERS: Record<string, string> = {
   FINANCE_REVIEW_REQUIRED: "费用材料尚未核验通过",
   RECOGNIZED_AMOUNT_INSUFFICIENT: "认可金额低于申请金额，请申请人下调原申请金额后重新提交材料",
   EVENT_NOT_COMPLETED: "活动或服务尚未完成，暂不能批准",
-  SELF_REVIEW_APPROVAL_FORBIDDEN: "核验人与最终批准人必须不同，请由另一位有权限的管理员批准",
+  SELF_REVIEW_APPROVAL_FORBIDDEN: "核验人与最终批准人必须不同，请由另一位超级管理员批准",
   MATERIAL_REVISION_STALE: "材料版本已变化，旧提案不能执行，请刷新后重新发起",
   APPLICATION_BUCKET_REQUIRED: "请申请人明确补齐申请类别",
   APPLICATION_NOT_PENDING: "申请已处理，不能再次批准或修改材料",

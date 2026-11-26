@@ -68,7 +68,7 @@ const REASON_CODE_LABELS: Record<string, string> = {
 const PAGE_SIZES = [5, 10, 20, 50] as const;
 const PENDING_STATUSES = ["PENDING_REVIEW", "PENDING"];
 /** 状态名按审批单一套（OP-58、OP-59），不用后端的 statusLabel；枚举值不改（TX-34）。explain 是悬停的白话：这个状态意味着什么、下一步谁来做（DP-35）。 */
-const PENDING_EXPLAIN = "已提交，等另一位有批准权限的同事批准或驳回；批准前余额不变。";
+const PENDING_EXPLAIN = "已提交，等另一位有批准权限的管理员批准或驳回；批准前余额不变。";
 const STATUS: Record<string, { label: string; tone: StateTone; explain: string }> = {
   PENDING_REVIEW: { label: "待审批", tone: "neutral", explain: PENDING_EXPLAIN },
   PENDING: { label: "待审批", tone: "neutral", explain: PENDING_EXPLAIN },
@@ -81,7 +81,7 @@ const REVERSAL_EXPLAIN = "这笔是为抵消另一笔而生成的反向调整，
 const REVERSED_EXPLAIN = "这笔已被一笔反向调整抵消，原记录保留，不能再冲正。";
 /** 账户状态的叫法和用户详情一致（BANNED 叫「封禁」）。 */
 const ACCOUNT_STATUS: Record<string, string> = { ACTIVE: "正常", FROZEN: "冻结", RESTRICTED: "受限", BANNED: "封禁" };
-const C01_FLOW = "提交后余额不会马上变，需由另一位同事复核批准后才生效。";
+const C01_FLOW = "提交后余额不会马上变，需由另一位管理员复核批准后才生效。";
 const C01_RULE = "余额调整只用于纠错和补偿。调错了用「冲正」抵消，原记录会保留。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请到操作记录与审批核对";
 const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作或按原操作重试。";
@@ -778,7 +778,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       briefKind: "funds",
       action: `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${money(amountInput)} ${nexGridBrandText(asset)}`,
       title: "提交调整申请",
-      effect: <StatusTag tone="progress" filled explain="由另一位有批准权限的同事批准；批准前余额不变。">批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain="由另一位有批准权限的管理员批准；批准前余额不变。">批准后生效</StatusTag>,
       content: <div className="rd-confirm-facts"><Facts>
         <Fact k="调整金额" lead tone="role-1" unit={nexGridBrandText(asset)}>{shownAmount}</Fact>
         <Fact k="用户">{userText(contextAccount)}</Fact>
@@ -787,7 +787,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         <Fact k="原因分类">{reasonCodeLabel(reasonCode)}</Fact>
         <Fact k="凭证">{evidenceTrim}</Fact>
       </Facts></div>,
-      detail: `${userText(contextAccount)}；提交后需由另一位同事复核，批准后余额才会变化。同一次提交重试不会多建单。`,
+      detail: `${userText(contextAccount)}；提交后需由另一位管理员复核，批准后余额才会变化。同一次提交重试不会多建单。`,
       statedBrief: { impact: "进入待审批，批准后余额才变并生成账单。", check: "核对用户、方向、金额和凭证。" },
       remarkHint: "选填，不会保存",
       reasonPlaceholder: "这里写的不会保存",
@@ -1457,7 +1457,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     })} />;
 
   return <>
-    <PageHeader pageId="C3" title="余额与资产调整" summary={<AutoGloss>补偿或纠错时增减用户余额，另一位同事批准后才入账。</AutoGloss>}
+    <PageHeader pageId="C3" title="余额与资产调整" summary={<AutoGloss>补偿或纠错时增减用户余额，另一位管理员批准后才入账。</AutoGloss>}
       back={back ? <Link className="rd-link" href={back.href} prefetch={false}>{back.label}</Link> : undefined}
       meta={<span className="rd-toolbar">
         <span>{readAt ? `${businessClock(readAt)} 读取（${zone}）` : overview.loading || queue.loading || history.loading ? "正在加载" : "这页的数据都没读到"}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>

@@ -133,7 +133,7 @@ const DIALS = [
     unit: "USDT",
     ...H1_DIAL_LIMITS.complianceReviewThresholdUsdt,
     what: "加强合规审查开启后，单笔链上提现本金严格超过这个金额才等待",
-    effect: "调高后需要等待的订单减少，须经另一位超管批准。新提现按提交时的有效金额线判断。"
+    effect: "调高后需要等待的订单减少，须经另一位超级管理员批准。新提现按提交时的有效金额线判断。"
   },
   {
     key: "binaryDailyCap",
@@ -787,7 +787,7 @@ export default function H1Phase({ ctx,
       },
       detail: CONTROL_EFFECT,
       facts: !control.value ? <Facts><Fact k="当前配置">未配置</Fact></Facts> : undefined,
-      completionCopy: "需另一位有审批权限和阶段切换修改权限的管理员批准，不能自己批。",
+      completionCopy: "要另一位超级管理员（需有阶段切换修改权限和审批批准权限）批准，不能自己批。",
       approval: { disabledReason: !canPropose ? "没有发起审批的权限" : undefined },
       effect: <StatusTag tone="progress" filled>提交审批</StatusTag>,
       blockedReason: scopeBlock(scope),
@@ -846,7 +846,7 @@ export default function H1Phase({ ctx,
         <Fact k="用户批次">{row.cohort}</Fact>
         <Fact k="当前状态">未撤销</Fact>
         <Fact k="影响">{row.description || "撤销是为了让这批用户改回按全局规则。"}</Fact>
-        <Fact k="谁能批准">另一位有审批权限和阶段切换修改权限的管理员，不能自己批。</Fact>
+        <Fact k="谁能批准">另一位超级管理员（需有阶段切换修改权限和审批批准权限），不能自己批。</Fact>
       </Facts>,
       approval: { disabledReason: !canPropose ? "没有发起审批的权限" : undefined },
       blockedReason: scopeBlock(scope),

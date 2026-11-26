@@ -25,7 +25,7 @@ function stoppedNote(d: Pick<E5Device, "simState" | "rawStatus" | "ownershipStat
   const raw = d.rawStatus.trim().toUpperCase();
   const again = "可以重新激活";
   if (canActivateE5Device(d)) return { label: "已停用", sub: again, reason: "设备已停用；要再用可以点「激活」，每人最多 6 台，包含手机。" };
-  if (canActivateE5Device(d, true)) return { label: "已停用", sub: again, reason: raw === "UNBOUND" ? "早期解绑的设备，仍归原用户；可以申请强制激活，另一位管理员批准后生效。" : "设备已停用；要再用可以申请强制激活，另一位管理员批准后生效。" };
+  if (canActivateE5Device(d, true)) return { label: "已停用", sub: again, reason: raw === "UNBOUND" ? "早期解绑的设备，仍归原用户；可以申请强制激活，另一位超级管理员批准后生效。" : "设备已停用；要再用可以申请强制激活，另一位超级管理员批准后生效。" };
   if (d.ownershipStatus === "UNBOUND" || d.simState === "UNBOUND" || raw === "UNBOUND") return { label: "已解绑", sub: "不能再激活", reason: E5_STATES.UNBOUND.reason };
   if (d.ownershipStatus === "RECYCLED" || raw === "RECYCLED") return { label: "已停用", sub: "已回收，不能再激活", reason: "设备已在置换中回收，不能再激活。" };
   if (raw === "RETIRED") return { label: "已停用", sub: "已退役，不能再激活", reason: "设备已退役，不能再激活。" };

@@ -90,7 +90,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
               <Cell full main={phone ? "手机 T3 档位" : r.available ? nexGridBrandText(r.label) : r.productNo ? <span data-mono="">{r.productNo}</span> : "未选商品"} sub={!phone && r.available && r.productNo ? <span data-mono="">{r.productNo}</span> : undefined} />
               {pending && (pending.terminal
                 ? <StatusTag tone="done" explain="在上方记录里点「准备新变更」后，才能再次更换。">{`原审批${TERMINAL_NAMES[pending.terminal] ?? "已结束"}`}</StatusTag>
-                : <StatusTag tone={pending.ticketId ? "progress" : "warn"} explain={pending.ticketId ? "另一位管理员批准后才换成新商品。" : "原操作已保存，到上方记录里查询结果。"}>{pending.ticketId ? bindingEffect(r).tag : "更换结果未知"}</StatusTag>)}
+                : <StatusTag tone={pending.ticketId ? "progress" : "warn"} explain={pending.ticketId ? "另一位超级管理员批准后才换成新商品。" : "原操作已保存，到上方记录里查询结果。"}>{pending.ticketId ? bindingEffect(r).tag : "更换结果未知"}</StatusTag>)}
             </div></Td>
             {phone || r.available
               ? <><Td align="right" data-num=""><E6Amount raw={r.dailyUsdtText} precision={usdtPrecision} currency="USDT" /></Td><Td align="right" data-num=""><E6Amount raw={r.dailyNexText} precision={uvtPrecision} currency="UVT" /></Td></>
@@ -127,7 +127,7 @@ export function E6YieldComparisonPanel({ ctx, ready }: { ctx: EViewCtx; ready: b
       return <E6ConfirmModal scope={scope} briefKind="config" action={`更换引导对比商品 · ${slot}`} confirmLabel="提交审批" reasonMin={8} reasonMax={200}
         statedBrief={{ impact: effect.impact, check: "核对新商品名称和两种日收益。" }}
         detail={effect.detail}
-        completionCopy="提交后请另一位有批准权限和手机算力配置查看权限的管理员在「操作记录与审批」中批准。"
+        completionCopy="提交后请另一位超级管理员（需有手机算力配置查看权限和审批批准权限）在「操作记录与审批」中批准。"
         facts={<Facts>
           <Fact k="对比位">{slot}</Fact>
           <Fact k="商品"><Change from={before} to={`${nexGridBrandText(sku.name)} · ${sku.id}`} /></Fact>
