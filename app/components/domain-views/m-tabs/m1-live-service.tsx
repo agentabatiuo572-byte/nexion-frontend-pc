@@ -7,11 +7,12 @@ import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import type { SessionConvo } from "./data";
 import type { MCtx } from "./types";
 
-function durationText(ms: number): string {
+/** 时长（TX-27）：不满 1 小时写分钟，不满 2 天写小时和分钟，其余写天和小时。待跟进名单的等了、已分配、超期也用它。 */
+export function durationText(ms: number): string {
   const minutes = Math.max(1, Math.round(Math.abs(ms) / 60000));
   if (minutes < 60) return `${minutes} 分钟`;
   const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `${hours} 小时${minutes % 60 ? ` ${minutes % 60} 分` : ""}` : `${Math.floor(hours / 24)} 天${hours % 24 ? ` ${hours % 24} 小时` : ""}`;
+  return hours < 48 ? `${hours} 小时${minutes % 60 ? ` ${minutes % 60} 分钟` : ""}` : `${Math.floor(hours / 24)} 天${hours % 24 ? ` ${hours % 24} 小时` : ""}`;
 }
 
 function parse<T>(raw: string | undefined): T[] {

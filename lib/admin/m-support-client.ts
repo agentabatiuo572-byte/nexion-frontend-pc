@@ -64,6 +64,11 @@ export type SupportCustomer = {
   pendingReplyCount: number;
   pendingConversationNo: string | null;
   pendingThroughMessageId: number | null;
+  /** B116：三种待办原因的起点和这一行的判断时刻（UTC）。旧回包没有这几个键。TODO(B-wire)：接入时按契约收紧。 */
+  waitingReplySinceAt?: string | null;
+  firstContactSinceAt?: string | null;
+  maintenanceDueAt?: string | null;
+  evaluatedAt?: string;
 };
 export type SupportCustomerDetail = SupportCustomer & { effectiveLanguage: string; agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number; profile?: Record<string, unknown> };
 export type SupportMaintenanceRecord = { id: string; agentAdminId: string | null; kind: string; occurredAt: string; state?: string };
@@ -351,6 +356,10 @@ function customer(value: unknown): SupportCustomer {
     pendingReplyCount: count(row.pendingReplyCount, "customer.pendingReplyCount"),
     pendingConversationNo: nullableString(row.pendingConversationNo, "customer.pendingConversationNo"),
     pendingThroughMessageId: row.pendingThroughMessageId === null ? null : positive(row.pendingThroughMessageId, "customer.pendingThroughMessageId"),
+    ...(row.waitingReplySinceAt === undefined ? {} : { waitingReplySinceAt: nullableTimestamp(row.waitingReplySinceAt, "customer.waitingReplySinceAt") }),
+    ...(row.firstContactSinceAt === undefined ? {} : { firstContactSinceAt: nullableTimestamp(row.firstContactSinceAt, "customer.firstContactSinceAt") }),
+    ...(row.maintenanceDueAt === undefined ? {} : { maintenanceDueAt: nullableTimestamp(row.maintenanceDueAt, "customer.maintenanceDueAt") }),
+    ...(row.evaluatedAt === undefined ? {} : { evaluatedAt: timestamp(row.evaluatedAt, "customer.evaluatedAt") }),
   };
 }
 const EFFECTIVE_SUPPORT_LANGUAGES = new Set(["en-US", "zh-CN", "vi-VN", "id-ID", "ms-MY", "fil-PH", "ru-RU", "kk-KZ", "uz-UZ"]);

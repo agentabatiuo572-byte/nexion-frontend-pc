@@ -22,7 +22,9 @@ import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-
 import { HDSelect, type HDOption } from "./hd-ui";
 import { M1PersonalWorkbench, SupportSeatRolesButton, maintenanceCommands, type PersonalWorkbenchView } from "./m1-personal-workbench";
 import { M1StatisticDetails, fundAmount, fundLabels, type FundMetric, type StatisticSource } from "./m1-statistic-details";
-import { M1LiveService } from "./m1-live-service";
+import { M1LiveService, availableSupportRoster } from "./m1-live-service";
+import { M1TodoTab, useTodoTabCount, type TodoSessionTarget } from "./m1-todo-tab";
+import type { TodoAccess } from "./m1-todo-list";
 import { CustomerTransferDialog, TransferPendingNotes, transferCommands } from "./m1-customer-transfer";
 import { groupPendingCommands, isInvitePending } from "@/lib/admin/support-group-client";
 import { selfAvatarCommands, avatarDrafts } from "@/lib/admin/account-avatar-pending";
@@ -53,12 +55,12 @@ const M3CustomerProfile = dynamic(() => import("./m3-customer-profile").then(m =
 
 type Permission = "agent" | "supervisor" | "superadmin";
 /** M-41: one tab row per role. Agents: home / my-customers / my-data; supervisors and the super admin: data / customers / pool / team (+ mine for a supervisor with a seat). */
-type M1Tab = "home" | "my-customers" | "my-data" | "data" | "customers" | "pool" | "team" | "mine" | "exports";
-type Section = "personal" | "stats" | "pool" | "team" | "mine" | "exports";
-const TAB_LABEL: Record<M1Tab, string> = { home: "工作台", "my-customers": "我的客户", "my-data": "我的数据", data: "数据", customers: "客户", pool: "待分配", team: "客服与分组", mine: "我的客户", exports: "导出记录" };
+type M1Tab = "home" | "my-customers" | "my-data" | "data" | "todo" | "customers" | "pool" | "team" | "mine" | "exports";
+type Section = "personal" | "stats" | "todo" | "pool" | "team" | "mine" | "exports";
+const TAB_LABEL: Record<M1Tab, string> = { home: "工作台", "my-customers": "我的客户", "my-data": "我的数据", data: "数据", todo: "待跟进", customers: "客户", pool: "待分配", team: "客服与分组", mine: "我的客户", exports: "导出记录" };
 // 「导出记录」只在服务端允许读取至少一个导出视图时出现。
 function roleTabs(personal: boolean, canMine: boolean, withExports = false): M1Tab[] {
-  const tabs: M1Tab[] = personal ? ["home", "my-customers", "my-data"] : ["data", "pool", "customers", "team", ...(canMine ? ["mine" as const] : [])];
+  const tabs: M1Tab[] = personal ? ["home", "my-customers", "my-data"] : ["data", "todo", "pool", "customers", "team", ...(canMine ? ["mine" as const] : [])];
   return withExports ? [...tabs, "exports"] : tabs;
 }
 function entryTab(personal: boolean, canMine: boolean, withExports = false): M1Tab {
@@ -225,7 +227,7 @@ function activityTime(value: string): string {
 function serviceTag(task: SupportAnalyticsCustomer["task"]): [string, "warn" | "neutral"] {
   return task.status === "UNAVAILABLE" ? ["任务资料待加载", "neutral"] : task.waitingReply === true ? ["待回复", "warn"] : task.due === true ? ["待维护", "neutral"] : task.firstContact === true ? ["首次待联系", "neutral"] : task.enabled === false ? ["暂停主动维护", "neutral"] : task.status !== "COMPLETE" ? ["未知", "neutral"] : ["正常跟进", "neutral"];
 }
-export type CustomerSessionStart = { checkingId: string | null; start: (row: SupportAnalyticsCustomer) => void };
+export type CustomerSessionStart = { checkingId: string | null; start: (row: TodoSessionTarget) => void };
 const SESSION_RETURN_KEY = "nexion-m1-customers-return-v1";
 
 // The existing house picker lacks Escape/arrow focus; keep its appearance and supply keyboard behavior here.
@@ -409,12 +411,12 @@ export function AnalyticsTable({ data, currency, drill, openProfile, session, pe
 function clockText(value: string | null): string {
   return value === null ? "-" : new Intl.DateTimeFormat("zh-CN", { timeZone: businessZone().zoneId, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(parseBusinessTime(value));
 }
-/** Design ②: someone else holds this customer; the operator can only wait or read the history. */
+/** Design ②: someone else holds this customer; the operator can only wait or read the history. 文字照画板 4-ix-2：正文只写下一步，北京时间标一次（TX-25）。 */
 function SessionBusyDialog({ customer, hold, onRead, onClose }: { customer: string; hold: SupportSessionHold; onRead: () => void; onClose: () => void }) {
   const holder = hold.holder!, role = SUPPORT_SESSION_ROLE_LABEL[holder.role];
   return <Modal title="暂时不能发起会话" onClose={onClose} footer={<><Button onClick={onRead}>查看会话记录</Button><Button variant="primary" onClick={onClose}>知道了</Button></>}>
-    <Facts><Fact k="客户">{customer}</Fact><Fact k="当前接待人">{holder.name} · {role}</Fact><Fact k="接待人最后发消息">{hold.lastSentAt ? dateText(hold.lastSentAt) : "—"}</Fact><Fact k="预计无人发言结束接待">{hold.autoEndAt ? dateText(hold.autoEndAt) : "—"}</Fact></Facts>
-    <p>当前由 {holder.name} 接待，暂不能同时发起接待。可以查看会话记录，或等接待结束后再联系。</p><Fold inset title="接待规则" summary={hold.endMinutes === null ? "期限未读取" : `无人发言 ${hold.endMinutes} 分钟`}><p>接待人最后发消息后这么久没再发，接待就结束（客户发消息不算）；不结束对话、不改专属客服，也不清除待回复。</p></Fold>
+    <Facts><Fact k="客户">{customer}</Fact><Fact k="当前接待人">{holder.name} · {role}</Fact><Fact k="接待人最后发消息">{hold.lastSentAt ? dateText(hold.lastSentAt) : "—"}</Fact><Fact k="预计结束接待">{hold.autoEndAt ? `${dateText(hold.autoEndAt)}（${businessZone().label}）` : "—"}</Fact></Facts>
+    <p>接待结束后才能发起会话，现在可以先看会话记录。</p><Fold inset title="接待规则" summary={hold.endMinutes === null ? "期限未读取" : `接待人 ${hold.endMinutes} 分钟不发消息就结束`}><p>客户发消息不延长接待；接待结束不会结束对话、不换专属客服，也不清除待回复。</p></Fold>
   </Modal>;
 }
 
@@ -484,7 +486,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const managementCustomerGroup = useRef<string | null>(null);
   const [keyword, setKeyword] = useState(sessionReturn?.keyword ?? "");
   const [transferCustomer, setTransferCustomer] = useState<string | null>(null), [transferRevision, setTransferRevision] = useState(0), [transferNotice, setTransferNotice] = useState("");
-  const [sessionCheck, setSessionCheck] = useState<string | null>(null), [sessionBusy, setSessionBusy] = useState<{ row: SupportAnalyticsCustomer; hold: SupportSessionHold } | null>(null), [sessionError, setSessionError] = useState<SupportAnalyticsCustomer | null>(null);
+  const [sessionCheck, setSessionCheck] = useState<string | null>(null), [sessionBusy, setSessionBusy] = useState<{ row: TodoSessionTarget; hold: SupportSessionHold } | null>(null), [sessionError, setSessionError] = useState<TodoSessionTarget | null>(null);
   const sessionController = useRef<AbortController | null>(null);
   useEffect(() => () => sessionController.current?.abort(), []);
   useEffect(() => { sessionController.current?.abort(); setSessionCheck(null); setSessionBusy(null); setSessionError(null); }, [queryState, section]);
@@ -497,6 +499,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const readModes = authSession?.supportReadModes;
   const canMine = scope?.scopeSummary.mode === "MANAGED" && Boolean(readModes?.includes("PERSONAL"));
   const noScopedContent = scope?.scopeSummary.mode === "MANAGED" && scope.scopeSummary.groups.length === 0 && !canMine;
+  // 「待跟进 N」：默认范围的独立读取，不随名单筛选变。TODO(B-wire)：待跟进要挂在上面整页提前返回之前、不依赖分析接口（design-plan 板 4）。
+  const todoCount = useTodoTabCount(Boolean(scope) && scope?.scopeSummary.mode !== "PERSONAL" && !noScopedContent, scopeRetry);
   // 只剩导出记录的两种情况（没有统计资格、没有负责组）都只露读成功的视图；没读成的等页头「刷新」重探到了再出现。
   const exportViews = statisticsUnavailable || noScopedContent ? exportsPorts?.persona.verifiedViews : exportsPorts?.persona.views;
   const hasMyExports = exportViews?.includes("MINE");
@@ -747,7 +751,8 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       setRestoreNotice("查看权限已变化，已关闭资金明细并重新核对范围。");
     }
   }, [queryState]);
-  function openSessions(row: SupportAnalyticsCustomer) {
+  // TODO(B-wire)：从「待跟进」去会话页要带待跟进来源，页头返回回到同一份名单（design-plan 板 4「返回」）；现在仍按「客户」页签的来源写。
+  function openSessions(row: TodoSessionTarget) {
     try { sessionStorage.setItem(SESSION_RETURN_KEY, JSON.stringify({ adminId, query: queryState })); } catch { /* without storage the back link opens the default list */ }
     router.push(`/service/sessions?customerId=${encodeURIComponent(row.customerId)}&from=customers`);
   }
@@ -761,7 +766,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
       if (hold.state === "OTHER") setSessionBusy({ row, hold }); else openSessions(row);
     }).catch(cause => { if (!controller.signal.aborted && !isSupportSessionExpired(cause)) { setSessionCheck(null); setSessionError(row); } });
   } };
-  const customerName = (row: SupportAnalyticsCustomer) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
+  const customerName = (row: TodoSessionTarget) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   function page(number: number) {
     if (!data) return;
     const next = nextAnalyticsPage(queryState, data, number);
@@ -791,6 +796,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const visible = authSession ? resolveVisibleDomains(authSession) : [];
   const leaderboardReachable = !!authSession && (scope || readModes?.length || authSession.role === "super" || authSession.role === "superadmin") && authSession.authorities.some(code => code === "service_m1_read" || code === "service_m3_read") && canAccessResolvedPath(visible, "/service/leaderboard");
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
+  const superOperator = authSession?.role === "super" || authSession?.role === "superadmin";
+  const canReplyM3 = superOperator || Boolean(authSession?.authorities.includes("service_m3_write"));
+  const sessionsReachable = canAccessResolvedPath(visible, "/service/sessions");
+  const todoAccess: TodoAccess = sessionsReachable ? canReplyM3 ? "reply" : "read" : "none";
+  // 整页都没有写权时页头右下写一句（PG-18、OP-125、ST-39）；只缺回复权的主管仍能分配、分组，不写。权限名取角色页显示名括号前的部分。
+  const pageReadOnly = scope && !personalHeader && !superOperator && !canReplyM3 && !authSession?.authorities.includes("service_m1_write")
+    ? "你只能查看；发起会话需要「即时会话台-常规写」权限，请联系管理员在「角色管理」里开通。" : undefined;
   // 主管和超管：页头次按钮是导出业绩、会话审阅、刷新，「业绩榜」在页底相关页面一行（PG-15、PG-40）；专属客服本人仍在页头。
   // 「更换本人头像」是本人设置，不放页头：右上角账号菜单里都有，主管兼客服在「我的客户」顶部的本人一栏也有（01 PG-15）。
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
@@ -805,7 +817,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     else if (noStatisticsMode) setExportScopeRevision(revision => revision + 1);
     else refreshScope();
   };
-  const header = <PageHeader pageId="M1" guideId={guideId} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
+  const header = <PageHeader pageId="M1" guideId={guideId} readOnly={pageReadOnly} title="客服工作台" summary={exportsOnly ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {!statisticsUnavailable && exportDisabledReason && <span className="rd-toolbar-note">{exportDisabledReason}</span>}
     {!statisticsUnavailable && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {!noScopedContent && scope && scope.scopeSummary.mode !== "PERSONAL" && canAccessResolvedPath(visible, "/service/sessions") && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
@@ -819,7 +831,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {header}
     {exportsOnly && exportsPorts && exportViews ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
       <PerfExportRecords ports={{ ...exportsPorts, persona: { ...exportsPorts.persona, views: exportViews } }} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
-      : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你的账号没有负责的组，也没有本人客户，这页没有可看的内容。" detail="主管负责的组由超级管理员在「客服与分组」里设置。" />
+      : <Panel>{noScopedContent && !exportAccessPending ? <BlockState state="empty" title="你还没有负责的客服组" detail="请超级管理员在「客服与分组」给你设置负责组。" />
         : statisticsUnavailable && !exportAccessPending && !exportReadFailed ? <AnalyticsReadDenied /> : <BlockState state={scopeError || exportReadFailed ? "error" : "loading"}
           title={exportReadFailed ? "导出记录加载失败" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
           onRetry={exportReadFailed ? refreshWorkbench : scopeError ? () => { setScopeError(""); setScopeRetry(n => n + 1); } : undefined} retryLabel="重试" afterRetryFocus={workbenchTitle} />}</Panel>}
@@ -845,7 +857,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     if (tab === "exports") { setSection("exports"); return; }
     if (tab === "home" || tab === "my-customers") { setSection("personal"); setPersonalView(tab === "home" ? "dashboard" : "customers"); return; }
     if (tab === "mine") { setSection("mine"); setPersonalView("customers"); return; }
-    if (tab === "pool" || tab === "team") { setSection(tab); return; }
+    if (tab === "todo" || tab === "pool" || tab === "team") { setSection(tab); return; }
     setSection("stats");
     if (tab === "customers" && queryState.view !== "CUSTOMERS") change({ view: "CUSTOMERS" });
     if (tab === "data" && queryState.view === "CUSTOMERS") change({ view: lastDataView.current });
@@ -893,7 +905,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const sortField = queryState.view !== "OVERVIEW" && <FilterField label="排序"><Select aria-label="排序" value={sortValue} options={[...(queryState.view === "AGENTS" ? [] : [{ value: "", label: "默认顺序" }]), ...(perfSortShown ? [{ value: "PERFORMANCE_AMOUNT:DESC", label: "累计业绩额 · 从高到低" }] : []), ...sortChoices]}
     onChange={value => { if (value === "PERFORMANCE_AMOUNT:DESC") { change({ sortKey: "PERFORMANCE_AMOUNT", direction: "DESC" }); return; } if (!value) { change({ sortKey: undefined, direction: undefined }); return; } const [key, direction] = value.split(":"); const found = SORT_OPTIONS[queryState.view].find(x => x.value === key); if (found) change({ sortKey: found.value, direction: direction === "ASC" ? "ASC" : "DESC" }); }} /></FilterField>;
   const caption = queryState.basis === "PERIOD_EVENT" ? `统计 ${queryState.month} 当月发生的业务（${businessZone().label}）；绑定和设备按当前状态` : queryState.basis === "CURRENT_ASSET" ? "按当前设备和活跃状态统计；不含首充和累计资金" : "按客户注册以来的累计数据统计，不是本月新增";
-  const navigation = <PageTabs ids={tabIds} label="客服工作台" value={currentTab} items={tabs.map(tab => ({ value: tab, label: TAB_LABEL[tab], count: tab === "pool" ? scope.scopeSummary.pending ?? "—" : undefined }))} onChange={tab => {
+  const navigation = <PageTabs ids={tabIds} label="客服工作台" value={currentTab} items={tabs.map(tab => ({ value: tab, label: TAB_LABEL[tab], count: tab === "pool" ? scope.scopeSummary.pending ?? "—" : tab === "todo" ? todoCount : undefined }))} onChange={tab => {
     if (document.activeElement?.closest('[role="tablist"][aria-label="客服工作台"]')) pendingTabFocus.current = tab;
     openTab(tab);
   }} />;
@@ -946,6 +958,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     </div>
     <div className="sa-personal-first-sources" aria-label="期间首充金额来源">{(["deposits", "purchases"] as const).map(source => <div key={source}><span>{source === "deposits" ? "充值首充" : "付费购机首充"} / {nexGridBrandText(currency)}</span><MoneyValue money={personalFinancial?.firstSources.find(row => row.currency === currency)?.[source]} label={source === "deposits" ? `充值首充金额 ${nexGridBrandText(currency)}` : `付费购机首充金额 ${nexGridBrandText(currency)}`} onClick={() => setPeriodDetail(source === "deposits" ? "FIRST_DEPOSITS" : "FIRST_PURCHASES")} /></div>)}</div>
   </section>} /></div>}
+    {!isPersonal && section === "todo" && <M1TodoTab mode={mode === "ALL" ? "ALL" : "MANAGED"} groups={groups.map(group => ({ value: group.groupId, label: group.name || "组名未同步" }))}
+      agents={availableSupportRoster(ctx).state === "ready" ? availableSupportRoster(ctx).rows.map(row => ({ value: String(row.adminId), label: row.name })) : { unavailable: "客服名单暂时读不到，先按负责组筛。" }}
+      access={todoAccess} configLink={canAccessResolvedPath(visible, "/service/scripts") ? { href: "/service/scripts", verb: permission === "superadmin" && authSession?.authorities.includes("service_m1_write") ? "配置" : "查看" } : undefined}
+      checkingId={sessionCheck} holdError={sessionError} onStart={sessionStart.start} onOpenSessions={openSessions} onDismissHold={() => setSessionError(null)}
+      renderProfile={customerId => /* TODO(B-wire)：抽屉里的历史会话也要带待跟进来源（onHistory 只传会话号）。 */ <M3CustomerProfile key={customerId} ctx={ctx} customerId={customerId} source="M1" onHistory={no => router.push(`/service/sessions?conversationNo=${encodeURIComponent(no)}`)} onRetryMessages={() => void ctx.refreshConversations()} />} />}
     {!isPersonal && section === "pool" && <M1SupervisorPool permission={leadPermission} toast={ctx.toast} />}
     {!isPersonal && section === "team" && <M1GroupManagement mode={mode} initialGroupId={queryState.groupId === undefined ? undefined : String(queryState.groupId)} actions={<SupportSeatRolesButton permission={leadPermission} ctx={ctx} />} onChanged={() => { teamChanged.current = true; controllerRef.current?.abort(); generation.current++; setData(null); setProfileId(null); }} onViewCustomers={(groupId, category) => {
       managementCustomerGroup.current = groupId;
