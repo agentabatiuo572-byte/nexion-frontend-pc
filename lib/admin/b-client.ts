@@ -5,6 +5,7 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { f4Decimal } from "@/lib/admin/f4-money";
+import { isOffsetDateTime, isSignalCategory, RISK_SEVERITIES, SCORE_BANDS, type RiskFeedItem, type RiskSev, type ScoreBand } from "./risk-feed";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
@@ -98,7 +99,7 @@ export interface BRhythm {
 export interface BRiskRadar {
   gates: Array<{ nm: string; dom: string; on: boolean; state?: "on" | "off" | "missing"; configKey?: string; unset?: boolean }>;
   trippedGateCount: number;
-  feed: Array<{ sev: "p0" | "p1" | "p2" | "p3"; t: string; m: string; href: string }>;
+  feed: RiskFeedItem[];
   pressureSeries: number[];
   pressureTightPct: number;
   currentPressurePct: number;
@@ -445,6 +446,49 @@ function normalizeRhythm(raw: Record<string, unknown>): BRhythm {
   };
 }
 
+function normalizeRiskFeed(raw: unknown, index: number): RiskFeedItem {
+  const field = `riskRadar.feed.${index}`;
+  const item = requiredRow(raw, field);
+  const sev = item.sev as RiskSev;
+  const invalid = () => { throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`); };
+  if (!RISK_SEVERITIES.includes(sev)) invalid();
+  const base = {
+    sev,
+    t: requiredText(item.t, `${field}.t`),
+    m: requiredText(item.m, `${field}.m`),
+    href: requiredText(item.href, `${field}.href`),
+  };
+  const count = (key: string) => {
+    const value = requiredNum(item[key], `${field}.${key}`);
+    if (!Number.isSafeInteger(value) || value < 0) invalid();
+    return value;
+  };
+  const time = (key: string) => {
+    const value = item[key];
+    if (!isOffsetDateTime(value)) throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}.${key}`);
+    return value;
+  };
+  if (item.category !== undefined) {
+    if (!isSignalCategory(item.category) || item.handlingStatus !== "open" || item.band !== undefined) {
+      throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}.category`);
+    }
+    return { ...base, category: item.category, categoryName: requiredText(item.categoryName, `${field}.categoryName`),
+      count: count("count"), accountCount: count("accountCount"), latestAt: time("latestAt"),
+      startAt: time("startAt"), endAt: time("endAt"), handlingStatus: item.handlingStatus };
+  }
+  if (item.band !== undefined) {
+    const band = item.band as ScoreBand | "HIGH";
+    if (band !== "HIGH" && !SCORE_BANDS.includes(band)) invalid();
+    return { ...base, band, count: count("count") };
+  }
+  return { ...base,
+    ...(item.count === undefined ? {} : { count: count("count") }),
+    ...(item.accountCount === undefined ? {} : { accountCount: count("accountCount") }),
+    ...(item.latestAt === undefined ? {} : { latestAt: time("latestAt") }),
+    ...(item.startAt === undefined ? {} : { startAt: time("startAt") }),
+    ...(item.endAt === undefined ? {} : { endAt: time("endAt") }) };
+}
+
 function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
   const risk = {
     gates: requiredArr<Record<string, unknown>>(raw.gates, "riskRadar.gates").map((item, index) => {
@@ -463,14 +507,7 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
       };
     }),
     trippedGateCount: requiredNum(raw.trippedGateCount, "riskRadar.trippedGateCount"),
-    feed: requiredArr<Record<string, unknown>>(raw.feed, "riskRadar.feed").map((item, index) => ({
-      sev: (["p0", "p1", "p2", "p3"].includes(requiredText(item.sev, `riskRadar.feed.${index}.sev`))
-        ? requiredText(item.sev, `riskRadar.feed.${index}.sev`)
-        : "p2") as "p0" | "p1" | "p2" | "p3",
-      t: requiredText(item.t, `riskRadar.feed.${index}.t`),
-      m: requiredText(item.m, `riskRadar.feed.${index}.m`),
-      href: requiredText(item.href, `riskRadar.feed.${index}.href`),
-    })),
+    feed: requiredArr<unknown>(raw.feed, "riskRadar.feed").map(normalizeRiskFeed),
     pressureSeries: requiredArr<unknown>(raw.pressureSeries, "riskRadar.pressureSeries").map((item, index) => requiredNum(item, `riskRadar.pressureSeries.${index}`)),
     pressureTightPct: requiredNum(raw.pressureTightPct, "riskRadar.pressureTightPct"),
     currentPressurePct: requiredNum(raw.currentPressurePct, "riskRadar.currentPressurePct"),
@@ -539,13 +576,15 @@ export function normalizeBDomainDashboard(raw: Record<string, unknown> | null | 
   };
 }
 
-const cachedDashboards = new Map<string, BDomainDashboard>();
-const inflightDashboards = new Map<string, Promise<BDomainDashboard>>();
-const dashboardSubscribers = new Map<string, Set<(dashboard: BDomainDashboard) => void>>();
+type RiskFeedMode = "default" | "OPEN_BY_CATEGORY";
+type DashboardRead = { data: BDomainDashboard; at: string };
 
-// Logout/relogin is a hard trust boundary. Session-key partitioning prevents reads
-// across identities; clearing retained data also ensures no prior account snapshot
-// survives in this browser process after the boundary is crossed.
+const cachedDashboards = new Map<string, DashboardRead>();
+type InflightDashboard = { task: Promise<DashboardRead>; replacedBy?: Promise<DashboardRead> };
+const inflightDashboards = new Map<string, InflightDashboard>();
+const dashboardSubscribers = new Map<string, Set<(read: DashboardRead) => void>>();
+
+// The retained snapshots must not survive logout/relogin.
 useAdminAuth.subscribe((state, previous) => {
   if (state.authEpoch === previous.authEpoch) return;
   cachedDashboards.clear();
@@ -557,10 +596,18 @@ function currentSessionKey() {
   return adminShellSessionKey(state.session, state.authEpoch);
 }
 
-function publishDashboard(sessionKey: string, dashboard: BDomainDashboard) {
-  if (sessionKey !== currentSessionKey()) return;
-  cachedDashboards.set(sessionKey, dashboard);
-  dashboardSubscribers.get(sessionKey)?.forEach((subscriber) => subscriber(dashboard));
+function dashboardKey(sessionKey: string, mode: RiskFeedMode) {
+  return `${sessionKey}:${mode}`;
+}
+
+function publishDashboard(sessionKey: string, dashboard: BDomainDashboard, mode: RiskFeedMode = "default") {
+  const read = { data: dashboard, at: new Date().toISOString() };
+  if (sessionKey === currentSessionKey()) {
+    const key = dashboardKey(sessionKey, mode);
+    cachedDashboards.set(key, read);
+    dashboardSubscribers.get(key)?.forEach((subscriber) => subscriber(read));
+  }
+  return read;
 }
 
 function readBDomainResponse(response: Response) {
@@ -568,21 +615,37 @@ function readBDomainResponse(response: Response) {
     (_match, key: string, value: string) => `${key}${JSON.stringify(f4Decimal(value) ?? value)}`))).catch(() => null) as Promise<ApiResult<Record<string, unknown>> | null>;
 }
 
-export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {
-  const response = await guardedFetch("/api/admin/treasury/b-domain", { cache: "no-store" });
+async function readBDomainDashboard(mode: RiskFeedMode) {
+  const query = mode === "default" ? "" : `?riskFeed=${mode}`;
+  const response = await guardedFetch(`/api/admin/treasury/b-domain${query}`, { cache: "no-store" });
   const result = await readBDomainResponse(response);
   if (!response.ok || !result || result.code !== 0) {
-    if (isAdminAuthFailure(response.status, result?.message)) {
-      resetAdminSession();
-    }
+    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     throw new Error(formatAdminApiError(result?.message, `B_DOMAIN_${response.status}`, "read"));
   }
-  if (!result.data) {
-    throw new Error("B_DOMAIN_EMPTY_RESPONSE");
-  }
-  const dashboard = normalizeBDomainDashboard(result.data);
-  publishDashboard(sessionKey, dashboard);
-  return dashboard;
+  if (!result.data) throw new Error("B_DOMAIN_EMPTY_RESPONSE");
+  return normalizeBDomainDashboard(result.data);
+}
+
+function loadBDomainDashboard(sessionKey: string, mode: RiskFeedMode, force = false) {
+  const key = dashboardKey(sessionKey, mode);
+  const existing = inflightDashboards.get(key);
+  if (existing && !force) return existing.task;
+  const pending: InflightDashboard = { task: readBDomainDashboard(mode)
+    .then(data => pending.replacedBy ?? publishDashboard(sessionKey, data, mode), cause => {
+      if (pending.replacedBy) return pending.replacedBy;
+      throw cause;
+    })
+    .finally(() => {
+      if (inflightDashboards.get(key) === pending) inflightDashboards.delete(key);
+    }) };
+  if (existing) existing.replacedBy = pending.task;
+  inflightDashboards.set(key, pending);
+  return pending.task;
+}
+
+export async function fetchBDomainDashboard(sessionKey = currentSessionKey(), mode: RiskFeedMode = "default", force = false) {
+  return (await loadBDomainDashboard(sessionKey, mode, force)).data;
 }
 
 export async function acknowledgeBDomainAlert(
@@ -642,95 +705,51 @@ export async function updateB5BankRunThresholds(
   return dashboard;
 }
 
-export function useBDomainDashboard(enabled = true) {
+export function useBDomainDashboard(enabled = true, mode: RiskFeedMode = "default") {
   const session = useAdminAuth((state) => state.session);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const sessionKey = adminShellSessionKey(session, authEpoch);
-  const cachedDashboard = cachedDashboards.get(sessionKey) ?? null;
-  const [snapshot, setSnapshot] = useState<{ sessionKey: string; data: BDomainDashboard | null }>({
-    sessionKey,
-    data: enabled ? cachedDashboard : null,
-  });
-  const [loading, setLoading] = useState(enabled && !cachedDashboard);
-  const [error, setError] = useState<string | null>(null);
+  const key = dashboardKey(sessionKey, mode);
+  const [snapshot, setSnapshot] = useState<{
+    key: string; read: DashboardRead | null; loading: boolean; error: string | null;
+  }>();
 
-  const reload = useCallback(async () => {
-    if (!enabled) {
-      setSnapshot({ sessionKey, data: null });
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
+  const reload = useCallback(async (force = false) => {
+    if (!enabled) return;
+    setSnapshot(current => ({
+      key, read: cachedDashboards.get(key) ?? null, loading: true,
+      error: mode === "OPEN_BY_CATEGORY" && current?.key === key ? current.error : null,
+    }));
     try {
-      const task = fetchBDomainDashboard(sessionKey).finally(() => {
-        inflightDashboards.delete(sessionKey);
-      });
-      inflightDashboards.set(sessionKey, task);
-      const next = await task;
-      setSnapshot({ sessionKey, data: next });
-      return next;
-    } catch (err) {
-      setError(displayAdminError(err));
-    } finally {
-      setLoading(false);
+      return await fetchBDomainDashboard(sessionKey, mode, force);
+    } catch (cause) {
+      setSnapshot(current => current?.key === key && currentSessionKey() === sessionKey
+        ? { ...current, loading: false, error: displayAdminError(cause) } : current);
     }
-  }, [enabled, sessionKey]);
+  }, [enabled, key, mode, sessionKey]);
 
   useEffect(() => {
-    if (!enabled) {
-      setSnapshot({ sessionKey, data: null });
-      setLoading(false);
-      setError(null);
-      return undefined;
-    }
-    let alive = true;
-    const subscriber = (next: BDomainDashboard) => {
-      if (alive) {
-        setSnapshot({ sessionKey, data: next });
-        setError(null);
-        setLoading(false);
-      }
-    };
-    const subscribers = dashboardSubscribers.get(sessionKey) ?? new Set();
+    if (!enabled) return;
+    const subscribers = dashboardSubscribers.get(key) ?? new Set();
+    const subscriber = (read: DashboardRead) => setSnapshot({ key, read, error: null, loading: false });
     subscribers.add(subscriber);
-    dashboardSubscribers.set(sessionKey, subscribers);
-    const currentCachedDashboard = cachedDashboards.get(sessionKey) ?? null;
-    setSnapshot({ sessionKey, data: currentCachedDashboard });
-    setLoading(!currentCachedDashboard);
-    setError(null);
-    const task =
-      inflightDashboards.get(sessionKey) ??
-      fetchBDomainDashboard(sessionKey).finally(() => {
-        inflightDashboards.delete(sessionKey);
-      });
-    inflightDashboards.set(sessionKey, task);
-    task
-      .then((next) => {
-        if (alive) setSnapshot({ sessionKey, data: next });
-      })
-      .catch((err) => {
-        if (alive) setError(displayAdminError(err));
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+    dashboardSubscribers.set(key, subscribers);
+    void reload();
     return () => {
-      alive = false;
-      const currentSubscribers = dashboardSubscribers.get(sessionKey);
-      currentSubscribers?.delete(subscriber);
-      if (currentSubscribers?.size === 0) dashboardSubscribers.delete(sessionKey);
+      subscribers.delete(subscriber);
+      if (!subscribers.size) dashboardSubscribers.delete(key);
     };
-  }, [enabled, sessionKey]);
+  }, [enabled, key, reload]);
 
-  const visibleData = enabled && snapshot.sessionKey === sessionKey ? snapshot.data : null;
+  const current = snapshot?.key === key ? snapshot : undefined;
+  const read = enabled ? current?.read ?? cachedDashboards.get(key) ?? null : null;
   return {
-    ...(visibleData ?? EMPTY_B_DOMAIN),
-    data: visibleData,
-    hasData: !!visibleData,
-    loading: enabled && loading,
-    error: enabled ? error : null,
+    ...(read?.data ?? EMPTY_B_DOMAIN),
+    data: read?.data ?? null,
+    hasData: !!read,
+    readAt: read?.at ?? null,
+    loading: enabled && (current?.loading ?? !read),
+    error: enabled ? current?.error ?? null : null,
     reload,
   };
 }

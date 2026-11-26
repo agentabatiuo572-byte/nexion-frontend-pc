@@ -68,7 +68,7 @@ import { amountDisplay } from "@/lib/format";
 const OPERATOR = currentAdminOperator;
 const K1_PATH = "/risk/multi-account";
 const D1_PATH = "/finance/recon";
-const FOCUS_SOURCES: Record<string, string> = { C1: "用户详情", M1: "客服工作台", M3: "专属会话", J3: "篡改防御监控" };
+const FOCUS_SOURCES: Record<string, string> = { C1: "用户详情", M1: "客服工作台", M3: "专属会话", B5: "风险提醒", K4: "风险评分规则", J3: "篡改防御监控" };
 const PAGE_SIZES = [10, 20, 50] as const;
 /** 账户列表的五种状态，叫法和用户详情一致；冻结排第一，是这里最常处理的。 */
 const ACCOUNT_FILTERS: readonly { value: UserAccountActionStatus; label: string }[] = [
@@ -415,10 +415,13 @@ function writeQuery(entries: Record<string, string | null>) {
 /** 带来源进来的返回入口（PG-17、X08、SPM-03）：只接受后台内部地址。 */
 function backOf(returnTo: string) {
   if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return null;
-  const label = returnTo.startsWith("/users/search/") ? "返回用户详情"
-    : returnTo.startsWith("/service/sessions") ? "返回原会话"
-      : returnTo.startsWith("/service/overview") ? "返回工作台"
-        : "返回上一页";
+  const path = returnTo.split(/[?#]/, 1)[0];
+  const label = path === "/overview/risk-radar" ? "返回风险提醒"
+    : path === "/risk/scoring" ? "返回风险评分规则"
+      : path.startsWith("/users/search/") ? "返回用户详情"
+        : path.startsWith("/service/sessions") ? "返回原会话"
+          : path.startsWith("/service/overview") ? "返回工作台"
+            : "返回上一页";
   return { href: returnTo, label };
 }
 

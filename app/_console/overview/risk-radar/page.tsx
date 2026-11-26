@@ -8,11 +8,11 @@ import { nextRecoveryDeadline, rebaseRecoveryFields, sendRecoveredDraft } from "
  */
 import "./risk-radar.css";
 import Link from "next/link";
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowUpRight, BellRing, Eye, FileText, LockOpen, Lock, Power, RefreshCw, ShieldCheck, ShieldQuestion, SlidersHorizontal } from "lucide-react";
 import {
-  BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
+  BlockState, Button, Change, Check, CheckGroup, Conclusion, ConflictBar, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
   PageHeader, PageTabs, Panel, RdPage, ReleaseModal, StatusTag, Textarea, useTabIds,
 } from "@/app/components/rd";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
@@ -20,6 +20,8 @@ import { useRecoveryDraftDiscard } from "@/app/components/domain-views/recovery-
 import { useToast, usePendingReplayDeadline } from "@/app/components/domain-views/design-kit";
 import {
   fetchB5Radar,
+  fetchB5Signal,
+  fetchB5Signals,
   fetchB5Inbox,
   fetchB5Subscription,
   previewB5Thresholds,
@@ -27,9 +29,15 @@ import {
   useB5Radar,
   B5OutcomeUnknownError,
   B5RequestError,
-  type B5Radar,
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
+import { useBDomainDashboard } from "@/lib/admin/b-client";
+import type { B5Signal } from "@/lib/admin/b5-radar-contract";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
+import { useReasonRule } from "@/lib/admin/use-reason-rule";
+import { useB5Read } from "@/lib/admin/use-b5-read";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { SIGNAL_CATEGORIES, isSignalCategory } from "@/lib/admin/risk-feed";
 import { formatB5RiskLight } from "@/lib/admin/b5-display-labels";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -43,8 +51,9 @@ import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
 import { AlertDistribution, HANDLING, InboxTable, PressureTrend, RefText, SEVERITY, STALE_MARK_REASON, SignalDrawer, TabNote, levelTone, signalFacts, signalName, stamp } from "./insights";
-import { RiskCategoryPanel, type RiskCategoriesState } from "./categories";
+import { RiskCategoryPanel, StaleNotice, riskCategoryRows, type RiskCategoriesState, type RiskCategoryRow } from "./categories";
 import { SignalList, type SignalListFilters, type SignalListPage, type SignalListState } from "./signal-list";
+import { readSignalQuery, replaceSignalQuery, signalRequestQuery, signalReturnTo, SIGNAL_PAGE_SIZES } from "./signal-query";
 
 const THRESHOLD_SLOT = "bankrun-threshold";
 const SUBSCRIPTION_SLOT = "alert-subscription";
@@ -65,7 +74,6 @@ const QUEUE_TRIAGE: Record<string, keyof typeof TRIAGE> = {
   "/finance/withdrawals": "withdraw-backlog",
   "/risk/abuse": "abuse",
   "/emergency/tamper": "tamper",
-  "/risk/scoring": "scoring",
 };
 
 /** 五项分诊的按钮名：写去哪一页。 */
@@ -78,6 +86,11 @@ const TRIAGE_LABEL: Record<DimensionKey, string> = {
 };
 
 const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
+type SignalAction = keyof typeof STATUS_TEXT;
+type StatusDialog = { alert: B5Signal; target: SignalAction };
+type StatusRead = { state: "loading" | "ready" | "conflict" | "changed" } | { state: "error"; error: string };
+const matchesAction = (signal: B5Signal, target: SignalAction) =>
+  signal.handlingStatus === (target === "handled" ? "open" : "handled");
 /** 只读说明点名角色页上显示的权限名，去掉页面编号（协调人定）。 */
 const READ_ONLY = "你只能查看；标记进度需要「风险雷达-分诊跳转」权限";
 
@@ -132,21 +145,32 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
 
 export default function RiskRadarPage() {
   const router = useRouter();
-  const radar = useB5Radar();
+  const params = useSearchParams();
+  const query = readSignalQuery(params);
+  const fromHome = params.get("from") === "home";
+  const { tab } = query;
   const discardRecovery = useRecoveryDraftDiscard();
   const [thresholdDraftKey, setThresholdDraftKey] = useState<string>();
   const session = useAdminAuth((state) => state.session);
+  const authEpoch = useAdminAuth((state) => state.authEpoch);
+  const sessionKey = adminShellSessionKey(session, authEpoch);
   const operator = useAdminAuth((state) => state.operator || state.session?.operator || state.session?.username || "");
   const authorities = session?.authorities ?? [];
   const role = session?.role ?? "auditor";
   const canThreshold = authorities.includes("overview_b5_threshold_write");
   const canReadSubscription = authorities.includes("overview_b5_read");
+  const radar = useB5Radar(sessionKey, canReadSubscription);
+  const canReadCategories = canReadSubscription && authorities.includes("overview_b1_read");
+  const categoryFeed = useBDomainDashboard(canReadCategories, "OPEN_BY_CATEGORY");
+  const [categoryAutoFailures, setCategoryAutoFailures] = useState(0);
   const canSubscribe = authorities.includes("overview_b5_subscribe");
   const canTriage = authorities.includes("overview_b5_triage");
   // 只决定问号和确认框里「冻结、解冻」写去哪办还是找同事（design-plan 板 2「单条怎么处置」）。
-  const canFreeze = authorities.includes("user_c2_account_freeze");
-  const freezeHint = canFreeze ? "冻结、解冻到「账户操作」办。" : "冻结、解冻要由有「账户操作」权限的同事办。";
   const canCross = useReach();
+  const canManageAccount = canCross("/users/actions", "user_c2_read");
+  const canFreeze = canManageAccount && authorities.includes("user_c2_account_freeze") && authorities.includes("user_c2_account_unfreeze");
+  const canAudit = canCross("/platform/audit", "platform_a2_read");
+  const freezeHint = canFreeze ? "冻结、解冻到「账户操作」办。" : "冻结、解冻要由有「账户操作」权限的同事办。";
   const [toastNode, setToast] = useToast();
   const [threshold, setThreshold] = useState<B5ThresholdFacts | null>(null);
   const [yellowInput, setYellowInput] = useState("");
@@ -163,6 +187,7 @@ export default function RiskRadarPage() {
   const [savingSubscription, setSavingSubscription] = useState(false);
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [subscriptionError, setSubscriptionError] = useState("");
+  const [subscriptionReadAt, setSubscriptionReadAt] = useState<string | null>(null);
   const [subscriptionReload, setSubscriptionReload] = useState(0);
   const [subscriptionDraftPreserved, setSubscriptionDraftPreserved] = useState(false);
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
@@ -171,25 +196,43 @@ export default function RiskRadarPage() {
   const [inbox, setInbox] = useState<B5InboxItem[]>([]);
   const [inboxLoading, setInboxLoading] = useState(true);
   const [inboxError, setInboxError] = useState("");
+  const [inboxReadAt, setInboxReadAt] = useState<string | null>(null);
   const [inboxReload, setInboxReload] = useState(0);
   const [acknowledgingDelivery, setAcknowledgingDelivery] = useState<number | null>(null);
   // 以下只管界面：弹窗开关、页签、分诊进行中。
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const [subscriptionSaveError, setSubscriptionSaveError] = useState("");
-  const [statusDialog, setStatusDialog] = useState<{ alert: B5Radar["recentAlerts"][number]; target: "handled" | "resolved" } | null>(null);
+  const [statusDialog, setStatusDialog] = useState<StatusDialog | null>(null);
+  const [statusRead, setStatusRead] = useState<StatusRead>({ state: "loading" });
+  const statusReadSequence = useRef(0);
+  const [statusCurrent, setStatusCurrent] = useState<B5Signal | null>(null);
   const [statusReason, setStatusReason] = useState("");
   const [statusError, setStatusError] = useState("");
   const [statusUnknown, setStatusUnknown] = useState(false);
   const [thresholdUnknown, setThresholdUnknown] = useState(false);
   const [subscriptionUnknown, setSubscriptionUnknown] = useState(false);
-  const [tab, setTab] = useState<"signals" | "inbox">("signals");
-  const [openSignal, setOpenSignal] = useState<string | null>(null);
+  const [openedSignal, setOpenedSignal] = useState<{ listKey: string; alert: B5Signal } | null>(null);
+  const listQuery = signalRequestQuery(query).toString();
+  const listKey = `${sessionKey}|${listQuery}`;
+  const readList = useCallback(() => fetchB5Signals(listQuery), [listQuery]);
+  const list = useB5Read(listKey, readList, canReadSubscription);
+  const selectedSignal = tab === "signals" && openedSignal?.listKey === listKey ? openedSignal.alert : null;
+  const openSignal = selectedSignal?.signalNo ?? null;
+  const readDetail = useCallback(() => fetchB5Signal(openSignal!), [openSignal]);
+  const detail = useB5Read(`${sessionKey}|${openSignal ?? ""}`, readDetail, canReadSubscription && !!openSignal);
+  const signalList = list.data?.records ?? [];
+  const signalIndex = signalList.findIndex(alert => alert.signalNo === openSignal);
+  const signalTabs = useRef<HTMLElement>(null);
+  const homeLandingDone = useRef(false);
+  const scrollToTabs = () => signalTabs.current?.scrollIntoView({ block: "start" });
+  const openDetail = (alert: B5Signal) => setOpenedSignal({ listKey, alert });
   const [triaging, setTriaging] = useState<keyof typeof TRIAGE | null>(null);
   const tabIds = useTabIds();
   const [, syncPending] = useState(0);
   const [thresholdOriginal, setThresholdOriginal] = useState<Extract<B5PendingWrite, { kind: "threshold" }> | null>(null);
   const [subscriptionOriginal, setSubscriptionOriginal] = useState<Extract<B5PendingWrite, { kind: "subscription" }> | null>(null);
   const [statusOriginal, setStatusOriginal] = useState<Extract<B5PendingWrite, { kind: "signal" }> | null>(null);
+  const statusRule = useReasonRule(!!statusDialog && !statusOriginal);
   const [subscriber, setSubscriber] = useState("");
   const [subscriberDisplayName, setSubscriberDisplayName] = useState<string | null>(null);
   const [needsFreshRadar, setNeedsFreshRadar] = useState(false);
@@ -201,33 +244,70 @@ export default function RiskRadarPage() {
   useSyncExternalStore(bThresholdRecovery.subscribe, bThresholdRecovery.getRevision, () => 0);
   useSyncExternalStore(b5Recovery.subscribe, b5Recovery.getRevision, () => 0);
   const pendingWrites = session ? pendingB5Commands(String(session.adminId)) : [];
+  const pendingSignalNos = new Set(pendingWrites.flatMap(record =>
+    isB5Original(record) && record.kind === "signal" ? [record.facts.signalNo] : []));
+  const loadCategories = useCallback(async (cause?: "auto" | "mark") => {
+    if (!canReadCategories) return;
+    const next = await categoryFeed.reload(cause === "mark");
+    setCategoryAutoFailures(count => !next && cause === "auto" ? count + 1 : 0);
+  }, [canReadCategories, categoryFeed.reload]);
+
+  // Wait for the panels above and below the tabs to settle before positioning the first landing.
+  const homeLandingReady = !radar.loading && !list.loading
+    && (!canReadCategories || categoryFeed.hasData || !!categoryFeed.error);
+  useEffect(() => {
+    if (!fromHome || !homeLandingReady || homeLandingDone.current) return;
+    homeLandingDone.current = true;
+    signalTabs.current?.scrollIntoView({ block: "start" });
+  }, [fromHome, homeLandingReady]);
+
+  useEffect(() => {
+    if (!list.data || list.error) return;
+    const lastPage = Math.max(1, Math.ceil(list.data.total / list.data.pageSize));
+    if (query.page > lastPage) replaceSignalQuery({ page: lastPage });
+  }, [list.data, list.error, query.page]);
+
+  useEffect(() => {
+    if (!canReadSubscription) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void radar.reload("auto");
+      void loadCategories("auto");
+      void list.reload("auto");
+      void detail.reload("auto");
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [canReadSubscription, radar.reload, loadCategories, list.reload, detail.reload]);
+
+  useEffect(() => () => { statusReadSequence.current += 1; }, [sessionKey]);
   const newWriteBlocked = needsFreshRadar || !!radar.error || !radar.data;
   useEffect(() => {
     if (!radar.loading && !radar.error && radar.data) setNeedsFreshRadar(false);
   }, [radar.loading, radar.error, radar.data]);
 
   useEffect(() => {
+    if (!canReadSubscription) return;
     let alive = true;
     setInboxLoading(true);
-    setInboxError("");
     fetchB5Inbox()
-      .then((items) => { if (alive) { setInbox(items); setInboxNeedsRead(false); } })
+      .then((items) => { if (alive) { setInbox(items); setInboxError(""); setInboxReadAt(new Date().toISOString()); setInboxNeedsRead(false); } })
       .catch((cause) => { if (alive) setInboxError(displayAdminReadError(cause)); })
       .finally(() => { if (alive) setInboxLoading(false); });
     return () => { alive = false; };
-  }, [inboxReload]);
+  }, [canReadSubscription, inboxReload, sessionKey]);
 
   useEffect(() => {
     if (!canReadSubscription) return;
     let alive = true;
     setSubscriptionLoading(true);
-    setSubscriptionError("");
     fetchB5Subscription()
       .then((next) => {
         if (!alive) return;
         const normalized = { inApp: next.inApp, email: false, webhook: next.webhook, webhookUrl: next.webhookUrl };
         if (!subscriptionDraftPreserved && (!session || !pendingB5Commands(String(session.adminId)).some(record => record.fingerprint === SUBSCRIPTION_SLOT))) setSubscription(normalized);
         setSavedSubscription(normalized);
+        setSubscriptionError("");
+        setSubscriptionReadAt(new Date().toISOString());
         setSubscriptionVersion(next.version);
         setWebhookMode(next.webhookMode);
         setSubscriber(next.subscriber);
@@ -241,7 +321,7 @@ export default function RiskRadarPage() {
     return () => {
       alive = false;
     };
-  }, [canReadSubscription, subscriptionReload, subscriptionDraftPreserved]);
+  }, [canReadSubscription, subscriptionReload, subscriptionDraftPreserved, sessionKey]);
 
   const yellowPct = Number(yellowInput);
   const redPct = Number(redInput);
@@ -300,7 +380,7 @@ export default function RiskRadarPage() {
   }, [pendingApproval?.commandKey, radar.data?.generatedAt, savingThreshold]);
 
   useEffect(() => {
-    if (!canThreshold || thresholdOriginal || approvalRecovery || !previewKey || thresholdVersion === undefined) {
+    if (!canThreshold || newWriteBlocked || thresholdOriginal || approvalRecovery || !previewKey || thresholdVersion === undefined) {
       setPreview(null);
       setPreviewError("");
       return;
@@ -321,7 +401,7 @@ export default function RiskRadarPage() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [canThreshold, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
+  }, [canThreshold, newWriteBlocked, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
 
   const subscriptionChannelsChanged = useMemo(
     () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
@@ -342,46 +422,64 @@ export default function RiskRadarPage() {
     await radar.reload();
   };
 
-  useEffect(() => {
-    if (!statusOriginal && !updatingSignal && radar.data) {
-      setStatusDialog(current => {
-        const latest = current && radar.data!.recentAlerts.find(alert => alert.signalNo === current.alert.signalNo);
-        return current && latest && latest !== current.alert ? { ...current, alert: latest } : current;
-      });
-    }
-  }, [radar.data, statusOriginal, updatingSignal]);
+  const closeStatus = () => {
+    statusReadSequence.current += 1;
+    setStatusDialog(null);
+  };
 
-  const changeSignalStatus = async (alert: B5Radar["recentAlerts"][number], targetStatus: "handled" | "resolved", input: string) => {
-    const reason = input.trim();
-    if (!session || !canTriage || updatingSignal || (!statusOriginal && newWriteBlocked)) return;
-    if (reason.length < 8 || reason.length > 200) { setStatusError("理由要写 8–200 个字"); return; }
+  const loadStatus = async (dialog: StatusDialog, conflict = false) => {
+    const sequence = ++statusReadSequence.current;
+    if (!conflict) setStatusRead({ state: "loading" });
+    try {
+      const alert = await fetchB5Signal(dialog.alert.signalNo);
+      if (sequence !== statusReadSequence.current) return;
+      setStatusDialog({ ...dialog, alert });
+      setStatusRead({ state: matchesAction(alert, dialog.target) ? "ready" : "changed" });
+      if (conflict) setStatusReason("");
+      if (openSignal === alert.signalNo) detail.setData(alert);
+    } catch (cause) {
+      if (sequence !== statusReadSequence.current) return;
+      if (conflict) throw cause;
+      setStatusRead({ state: "error", error: displayAdminReadError(cause) });
+    }
+  };
+
+  const changeSignalStatus = async () => {
+    if (!statusDialog || !session || !canTriage || updatingSignal) return;
+    const { alert, target } = statusDialog;
+    const reason = statusReason.trim();
+    if (!statusOriginal && (statusRead.state !== "ready" || !list.data || list.error
+      || pendingSignalNos.has(alert.signalNo) || !statusRule.ok(reason) || reason.length > 200)) return;
     let original = statusOriginal;
     setUpdatingSignal(alert.signalNo);
     setStatusError("");
     try {
-      if (original && !b5Commands.get(original.fingerprint)) return;
       original ??= rememberB5Command(String(session.adminId), `signal-status:${alert.signalNo}`, "b5-signal-status", {
         kind: "signal", method: "PATCH", path: `/api/admin/risk/radar/signals/${encodeURIComponent(alert.signalNo)}/status`,
-        body: JSON.stringify({ targetStatus, expectedStatus: alert.handlingStatus, expectedVersion: alert.handlingVersion, reason, operator }), facts: alert,
+        body: JSON.stringify({ targetStatus: target, expectedStatus: alert.handlingStatus, expectedVersion: alert.handlingVersion, reason, operator }), facts: alert,
       }) as Extract<B5PendingWrite, { kind: "signal" }>;
-      setStatusOriginal(original);
       await executeB5Command(original, !!statusOriginal);
-      await refreshAfterWrite();
+      closeStatus();
+      setStatusOriginal(null);
       setStatusUnknown(false);
-      setToast(`已标记为${STATUS_TEXT[targetStatus]}`);
+      setToast(`已标记为${STATUS_TEXT[target]}`);
+      void list.reload(target);
+      void loadCategories("mark");
+      void detail.reload();
     } catch (cause) {
-      // 框还开着、红框里已写这句时不再弹；框已关或结果未知才弹。
-      let shownInDialog = false;
-      if (!statusOriginal && isBCommandRejection(cause, false)) {
-        setStatusOriginal(null); setStatusUnknown(false); setNeedsFreshRadar(true);
-        await radar.reload();
-        shownInDialog = true;
+      if (!statusOriginal && cause instanceof B5RequestError && cause.backendMessage === "B5_SIGNAL_VERSION_CONFLICT") {
+        setStatusRead({ state: "conflict" });
+      } else if (!original || !statusOriginal && isBCommandRejection(cause, false)) {
+        setStatusError(displayAdminError(cause));
+      } else {
+        setStatusOriginal(original);
+        setStatusUnknown(true);
+        setStatusError(displayAdminError(cause));
       }
-      else if (isExplicitRejection(cause)) { setStatusUnknown(true); }
-      else setStatusUnknown(!!original);
-      setStatusError(displayAdminError(cause));
-      if (!shownInDialog) setToast(displayAdminError(cause));
-    } finally { setUpdatingSignal(""); syncPending(value => value + 1); }
+    } finally {
+      setUpdatingSignal("");
+      syncPending(value => value + 1);
+    }
   };
 
   const acknowledgeInbox = async (delivery: Pick<B5InboxItem, "id" | "signalNo">, recovered?: Extract<B5PendingWrite, { kind: "ack" }>) => {
@@ -406,8 +504,6 @@ export default function RiskRadarPage() {
   };
 
   const canJ1 = canCross("/emergency/kill-switch");
-  // TODO(B-wire): 从今日概览风控那一行带来源进来时为 true（design-plan 板 2「进入」，ST-60）。
-  const fromHome = false;
   const header = (meta?: ReactNode, actions?: ReactNode, readOnly?: ReactNode) => (
     <PageHeader pageId="B5" title="风险提醒" summary="看五项风险有没有报警，报警的去哪页处理。" meta={meta} actions={actions} readOnly={readOnly}
       back={fromHome ? <Link href="/" prefetch={false}><ArrowLeft size={14} aria-hidden /> 返回今日概览</Link> : undefined} />
@@ -433,11 +529,6 @@ export default function RiskRadarPage() {
       await recordB5Triage(dimension, target, operator, commandKey);
       router.push(target);
     } catch (cause) {
-      // 还没升级的后端不认 K2、J3、K4 这三个分诊目标（回 B5_TRIAGE_TARGET_INVALID）：这三类链接在那里照旧只是导航，不能因此点不动。
-      if (cause instanceof B5RequestError && cause.backendMessage === "B5_TRIAGE_TARGET_INVALID" && (dimension === "abuse" || dimension === "tamper" || dimension === "scoring")) {
-        router.push(TRIAGE[dimension]);
-        return;
-      }
       // 分诊只留一条审计，失败了如实说没成功、重新点一次即可（决定 B4-PD02）；没有权限时再点也一样，不叫人再点。
       const forbidden = cause instanceof B5RequestError && cause.status === 403;
       // 后端统一拒绝页只回「无权限访问」四个字，没有句号、也不说怎么办；换成全站的无权限说明，接在后面读得通。
@@ -595,7 +686,7 @@ export default function RiskRadarPage() {
       setSubscriptionOriginal(record); setSubscription({ inApp: input.inApp, email: input.email, webhook: input.webhook, webhookUrl: input.webhookUrl });
       setSubscriptionUnknown(true); setSubscriptionOpen(true); setSubscriptionSaveError("");
     } else if (record.kind === "signal") {
-      setStatusOriginal(record); setStatusDialog({ alert: record.facts, target: input.targetStatus }); setStatusReason(input.reason); setStatusUnknown(true); setStatusError("");
+      setStatusOriginal(record); setStatusDialog({ alert: record.facts, target: input.targetStatus }); setStatusReason(input.reason); setStatusUnknown(true); setStatusError(""); setStatusCurrent(null);
     } else void acknowledgeInbox(record.facts, record);
   };
   const queryWrite = async (record: ReturnType<typeof pendingB5Commands>[number]) => {
@@ -603,12 +694,18 @@ export default function RiskRadarPage() {
     try {
       const current = await inspectB5Command(record);
       if (current.kind === "radar") { radar.setData(current.data); setNeedsFreshRadar(false); }
-      else if (current.kind === "ack") { setInbox(current.data); setInboxError(""); setInboxLoading(false); setInboxNeedsRead(false); }
+      else if (current.kind === "ack") { setInbox(current.data); setInboxError(""); setInboxLoading(false); setInboxNeedsRead(false); setInboxReadAt(new Date().toISOString()); }
+      else if (current.kind === "signal") {
+        if (openSignal === current.data.signalNo) detail.setData(current.data);
+        if (statusOriginal?.commandKey === record.commandKey) setStatusCurrent(current.data);
+        setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。`, "warn");
+        return;
+      }
       else {
         setSavedSubscription({ inApp: current.data.inApp, email: current.data.email, webhook: current.data.webhook, webhookUrl: current.data.webhookUrl });
         setSubscriber(current.data.subscriber); setSubscriptionVersion(current.data.version); setWebhookMode(current.data.webhookMode);
         setSubscriberDisplayName(current.data.subscriberDisplayName ?? null);
-        setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false);
+        setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false); setSubscriptionReadAt(new Date().toISOString());
       }
       setToast(isRetryExpired(record) ? "已查到现在的值，但说明不了原操作成没成，原记录继续保留。" : "已查到现在的值，但说明不了原操作成没成。可以按原操作重试，不会重复执行。", isRetryExpired(record) ? "warn" : undefined);
     }
@@ -638,11 +735,11 @@ export default function RiskRadarPage() {
   const { issues, quiet } = data ? buildDimensions(data) : { issues: [], quiet: [] };
   const triageButton = (key: DimensionKey, variant: "primary" | "secondary" | "ghost", size: "md" | "sm") => canTriageDimension(key)
     ? <Button key="triage" variant={variant} size={size} loading={triaging === key} loadingText="正在记录…" icon={<ArrowUpRight size={14} aria-hidden />}
-      disabledReason={triaging && triaging !== key ? "正在记录另一条分诊，记完再点" : undefined}
+      disabledReason={radar.error ? "风险数据没刷新成功，请先重试" : triaging && triaging !== key ? "正在记录另一条分诊，记完再点" : undefined}
       onClick={() => void triage(key)}>{TRIAGE_LABEL[key]}</Button>
     : null;
   const thresholdButton = (size: "md" | "sm") => canThreshold
-    ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} onClick={() => openThreshold()}>调整黄线 / 红线</Button>
+    ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} disabledReason={radar.error ? "风险数据没刷新成功，请先重试" : undefined} onClick={() => openThreshold()}>调整黄线 / 红线</Button>
     : null;
   const approvalPending = pendingApproval?.commandKey === approvalVerifiedKey && pendingApproval?.b5Ticket?.status === "pending" ? { redPct: pendingApproval.values.redPct, ticketId: pendingApproval.b5Ticket.id } : null;
   const approvalReleasable = !!approvalRecoveryState?.replayRejection && !pendingApproval?.received && !pendingApproval?.b5Ticket;
@@ -664,8 +761,8 @@ export default function RiskRadarPage() {
   // ---------- 结论 ----------
   const first = issues[0];
   const others = issues.slice(1);
-  const unacked = inboxError || inboxLoading || inboxNeedsRead ? null : inbox.filter((item) => !item.acknowledgedAt).length;
-  const inboxHint = unacked ? `你有 ${unacked} 条站内告警没确认。` : "";
+  const unacked = inboxReadAt ? inbox.filter((item) => !item.acknowledgedAt).length : null;
+  const inboxHint = unacked && !inboxError ? `你有 ${unacked} 条站内告警没确认。` : "";
   const unknownItems = quiet.filter((item) => item.level === "neutral");
   const conclusionExplain = "每一项的颜色都按系统现有的线判断：提现压力看黄线、红线，覆盖率看红线、健康线，积压看有没有超过 48 小时，业务开关看有没有关停，异常账户看有没有。";
   const conclusion = !first ? (unknownItems.length ? (
@@ -693,12 +790,13 @@ export default function RiskRadarPage() {
       {radar.streamWarning && <span className="b5-muted"> · {radar.streamWarning.replace(/。$/, "")}</span>}
     </span>
   );
-  // 页头刷新只重读本页（ST-50）：雷达、站内告警；告警订阅的框开着时不重读，不冲掉正在编辑的内容（ST-54）。
-  // TODO(B-wire): 同时重读类型列表、分页名单和正在看的单条，各按自己的回应更新（design-plan 板 2「刷新和读取失败」）。
   const refreshAll = () => {
     void radar.reload();
-    setInboxReload((value) => value + 1);
-    if (canReadSubscription && !subscriptionOpen) setSubscriptionReload((value) => value + 1);
+    void loadCategories();
+    void list.reload();
+    void detail.reload();
+    setInboxReload(value => value + 1);
+    if (canReadSubscription && !subscriptionOpen) setSubscriptionReload(value => value + 1);
   };
   const headerActions = (
     <>
@@ -708,32 +806,80 @@ export default function RiskRadarPage() {
     </>
   );
   const readOnly = !canThreshold && !canSubscribe && !canTriage ? READ_ONLY : undefined;
-  const openCount = (data?.recentAlerts ?? []).filter((alert) => alert.handlingStatus === "open").length;
-  const queueTriage = (target: string) => { const dimension = QUEUE_TRIAGE[target]; if (!dimension || !canTriageDimension(dimension)) return false; void triage(dimension); return true; };
-  const triageState = (target: string) => { const dimension = QUEUE_TRIAGE[target]; if (!triaging || !dimension || !canTriageDimension(dimension)) return undefined; return triaging === dimension ? "active" as const : "blocked" as const; };
-  const openSignalStatus = (alert: B5Radar["recentAlerts"][number], target: "handled" | "resolved") => { const saved = pendingWrites.find(record => record.fingerprint === `signal-status:${alert.signalNo}`); if (saved) { recoverWrite(saved); return; } if (newWriteBlocked) return; setStatusOriginal(null); setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); };
-  // TODO(B-wire): 名单改读 GET /risk/radar/signals（category、handlingStatus、startAt/endAt、pageNum/pageSize），抽屉的上一条下一条在当前页内走。
-  const signalList = data?.recentAlerts ?? [];
-  const signalIndex = signalList.findIndex((alert) => alert.signalNo === openSignal);
-  const listState: SignalListState = data && !radar.error ? { state: "ready", rows: signalList }
-    : radar.loading && !radar.error ? { state: "loading" } : { state: "error", error: radar.error ?? "" };
-  // TODO(B-wire): 类型、处理进度、时间范围三个筛选和结果数（服务端 accountCount），写进网址（ST-23）；没接上之前不画筛选。
-  const listFilters: SignalListFilters | undefined = undefined;
-  // TODO(B-wire): 服务端分页（total、pageNum、pageSize）；没接上之前不画分页。
-  const listPage: SignalListPage | undefined = undefined;
-  // TODO(B-wire): 读 /treasury/b-domain?riskFeed=OPEN_BY_CATEGORY 的 riskRadar.feed，按 RiskCategoryRow 传进来；
-  // 没有 overview_b1_read 时传 { state: "noperm" }。没接上之前这块不画。
-  const categories: RiskCategoriesState | null = null;
-  // TODO(B-wire): 下方名单正按哪一类筛（网址里的 category）；点信号类一行筛名单并滚到页签条，提现压力定位到上方提现压力卡。
-  const selectedCategory: string | null = null;
-  const selectCategory = () => undefined;
-  const retryCategories = () => undefined;
+  const canTriageTarget = (target: string) => {
+    const dimension = QUEUE_TRIAGE[target];
+    return !!dimension && canTriageDimension(dimension);
+  };
+  const queueTriage = (target: string) => {
+    const dimension = QUEUE_TRIAGE[target];
+    if (dimension && canTriageDimension(dimension)) void triage(dimension);
+    return true;
+  };
+  const triageState = (target: string) => {
+    const dimension = QUEUE_TRIAGE[target];
+    if (!triaging || !dimension || !canTriageDimension(dimension)) return undefined;
+    return triaging === dimension ? "active" as const : "blocked" as const;
+  };
+  const openSignalStatus = (alert: B5Signal, target: SignalAction) => {
+    if (!canTriage || !list.data || list.error || pendingSignalNos.has(alert.signalNo)) return;
+    const dialog = { alert, target };
+    setStatusOriginal(null);
+    setStatusReason("");
+    setStatusError("");
+    setStatusCurrent(null);
+    setStatusUnknown(false);
+    setStatusDialog(dialog);
+    void loadStatus(dialog);
+  };
+  const listState: SignalListState = list.data ? { state: "ready", rows: signalList, stale: list.stale }
+    : list.error ? { state: "error", error: list.error } : { state: "loading" };
+  const clearFilters = () => replaceSignalQuery({ category: null, handlingStatus: null, startAt: null, endAt: null, page: 1 });
+  const listFilters: SignalListFilters = {
+    category: query.category.join(","),
+    categoryLabel: query.category.length > 1 ? SIGNAL_CATEGORIES.filter(option => query.category.includes(option.value)).map(option => option.label).join("、") : undefined,
+    status: query.handlingStatus ?? "",
+    window: query.startAt ? "fixed" : "rolling",
+    windowOptions: [
+      { value: "rolling", label: "近 7 天" },
+      ...(query.startAt && query.endAt ? [{ value: "fixed", label: `${stamp(query.startAt)} — ${stamp(query.endAt)}（${businessZone().label}）` }] : []),
+    ],
+    onCategory: value => replaceSignalQuery({ category: isSignalCategory(value) ? value : null, page: 1 }),
+    onStatus: value => replaceSignalQuery({ handlingStatus: value, page: 1 }),
+    onWindow: value => { if (value === "rolling") replaceSignalQuery({ startAt: null, endAt: null, page: 1 }); },
+    onClear: clearFilters,
+    canClear: !!(query.category.length || query.handlingStatus || query.startAt),
+    accountCount: list.data?.accountCount ?? null,
+  };
+  const listPage: SignalListPage | undefined = list.data ? {
+    total: list.data.total, pageNum: list.data.pageNum, pageSize: list.data.pageSize, sizes: SIGNAL_PAGE_SIZES, loading: list.loading,
+    onPage: page => replaceSignalQuery({ page }),
+    onPageSize: pageSize => replaceSignalQuery({ pageSize, page: 1 }),
+  } : undefined;
+  const categories: RiskCategoriesState = !canReadCategories ? { state: "noperm" } : categoryFeed.data && categoryFeed.readAt ? {
+    state: "ready",
+    rows: riskCategoryRows(categoryFeed.riskRadar.feed, canCross),
+    stale: categoryFeed.error ? { at: categoryFeed.readAt, auto: categoryAutoFailures >= 2 } : undefined,
+  } : categoryFeed.error ? { state: "error", error: categoryFeed.error } : { state: "loading" };
+  const selectedCategory = query.category.length === 1 ? query.category[0] : null;
+  const selectCategory = (row: RiskCategoryRow) => {
+    if (row.kind === "signal") {
+      replaceSignalQuery({ tab: "signals", category: row.key, handlingStatus: row.handlingStatus,
+        startAt: row.startAt, endAt: row.endAt, page: 1, pageSize: query.pageSize });
+      scrollToTabs();
+    } else if (row.kind === "fund") document.getElementById("b5-dim-bankrun")?.scrollIntoView({ block: "start" });
+  };
+  const returnTo = signalReturnTo(query, fromHome);
+  const detailUser = detail.data?.userNo;
+  const userHref = detailUser && canCross("/users/search", "user_c1hub_read")
+    ? `/users/search/${encodeURIComponent(detailUser)}?${new URLSearchParams({ returnTo })}` : undefined;
+  const actionsHref = detailUser && canManageAccount
+    ? `/users/actions?${new URLSearchParams({ userCode: detailUser, source: "B5", returnTo })}` : undefined;
 
   return (
     <RdPage className="radarpage">
-        {header(meta, headerActions, !data || radar.error ? undefined : readOnly)}
+        {header(meta, headerActions, readOnly)}
         {discardRecovery.dialog}
-        <PendingCommands items={pendingItems} auditReachable={canCross("/platform/audit")} />
+        <PendingCommands items={pendingItems} auditReachable={canAudit} />
         {pendingApproval && (
           <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
             action={<span className="b5-row-actions">
@@ -747,12 +893,13 @@ export default function RiskRadarPage() {
                   : "先查原审批单；查不到时 24 小时内可以按原操作重试，不会建第二张单。"}</p>
           </Notice>
         )}
-        {!data || radar.error ? <>
+        {!data ? <>
           <Conclusion state="unknown" icon={ShieldQuestion}>
             {radar.loading && !radar.error ? "风险提醒：正在加载" : "暂无法判断：风险数据没读到"}
           </Conclusion>
           <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在加载五项风险…" : "风险数据加载失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
         </> : <>
+        {radar.stale && <StaleNotice stale={radar.stale} onRetry={() => void radar.reload()} />}
         {conclusion}
 
         {issues.length > 0 && (
@@ -775,42 +922,42 @@ export default function RiskRadarPage() {
 
         </>}
 
-        <section className="b5-lists" aria-label="风险信号和站内告警">
-          <PageTabs label="风险信号和站内告警" ids={tabIds} value={tab} onChange={setTab} items={[
+        <section ref={signalTabs} id="risk-signal-tabs" className="b5-lists" aria-label="风险信号和站内告警">
+          <PageTabs label="风险信号和站内告警" ids={tabIds} value={tab} onChange={tab => replaceSignalQuery({ tab })} items={[
             { value: "signals", label: "最近风险信号" },
-            { value: "inbox", label: "我的站内告警", count: inboxError || inboxLoading || inboxNeedsRead ? "—" : unacked ?? 0 },
+            { value: "inbox", label: "我的站内告警", count: inboxError ? "—" : unacked ?? "—" },
           ]} />
           <div {...tabIds.panel(tab)} className="rd-tab-pane">
             {tab === "signals" ? (
               <div className="b5-signals-pane">
-                {categories && <RiskCategoryPanel data={categories} selectedKey={selectedCategory} onSelect={selectCategory} onRetry={retryCategories} />}
-                <SignalList data={listState} filters={listFilters} page={listPage} onRetry={() => void radar.reload()}
-                  scopeNote={data && (
-                    <TabNote label="最近风险信号的范围" explain="近 7 个业务日按时间倒序的最新 20 条，不分页；不代表这段时间只有这些。">
-                      近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理 · 北京时间
-                    </TabNote>
-                  )}
-                  table={{ canTriage, freezeHint, updating: updatingSignal, reach: canCross, selected: openSignal, onOpen: (alert) => setOpenSignal(alert.signalNo),
+                <RiskCategoryPanel data={categories} selectedKey={selectedCategory} onSelect={selectCategory} onRetry={() => void loadCategories()} />
+                <SignalList data={listState} filters={listFilters} page={listPage} onRetry={() => void list.reload()}
+                  table={{ canTriage, freezeHint, pendingSignalNos, updating: updatingSignal, reach: canCross, canTriageTarget, selected: openSignal, onOpen: openDetail,
                     onTriage: queueTriage, triageState, onStatus: openSignalStatus }} />
               </div>
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
                 <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
-                  {inboxLoading ? "正在加载…" : inboxError ? "读取失败" : `发给你的 ${inbox.length} 条 · ${unacked ?? 0} 条没确认`}
+                  {!inboxReadAt ? inboxError ? "读取失败" : "正在加载…" : `发给你的 ${inbox.length} 条 · ${unacked} 条没确认`}
                 </TabNote>
-                <InboxTable state={inboxError ? "error" : inboxLoading || inboxNeedsRead ? "loading" : "ready"} items={inbox} error={inboxError}
+                {inboxError && inboxReadAt && <StaleNotice stale={{ at: inboxReadAt, auto: false }} onRetry={() => setInboxReload(value => value + 1)} />}
+                <InboxTable state={inboxReadAt ? "ready" : inboxError ? "error" : "loading"} items={inbox} error={inboxError}
+                  acknowledgeBlocked={inboxError ? "站内告警没刷新成功，重试成功后再确认" : inboxLoading || inboxNeedsRead ? "正在读取站内告警" : undefined}
                   onRetry={() => setInboxReload((value) => value + 1)} canTriage={canTriage} acknowledging={acknowledgingDelivery}
                   onAcknowledge={(item) => void acknowledgeInbox(item)} />
               </Panel>
             )}
           </div>
         </section>
-        <SignalDrawer alert={tab === "signals" && signalIndex >= 0 ? signalList[signalIndex] : null} canTriage={canTriage} canFreeze={canFreeze} canAudit={canCross("/platform/audit")}
-          markBlocked={listState.state === "ready" && listState.stale ? STALE_MARK_REASON : undefined}
-          updating={updatingSignal} reach={canCross}
+        <SignalDrawer alert={detail.data ?? selectedSignal} canTriage={canTriage} canFreeze={canFreeze} canAudit={canAudit}
+          readLoading={detail.loading && !detail.data} readError={detail.error} onRetry={() => void detail.reload()}
+          staleNotice={detail.stale && <StaleNotice stale={detail.stale} onRetry={() => void detail.reload()} />}
+          markBlocked={list.stale ? STALE_MARK_REASON : detail.stale ? "详情没刷新成功，重试成功后再标记"
+            : !list.data ? "风险信号名单正在读取" : openSignal && pendingSignalNos.has(openSignal) ? "请先核对这条的原操作" : undefined}
+          userHref={userHref} actionsHref={actionsHref} updating={updatingSignal} reach={canCross} canTriageTarget={canTriageTarget}
           nav={{ hasPrev: signalIndex > 0, hasNext: signalIndex >= 0 && signalIndex < signalList.length - 1,
-            onPrev: () => setOpenSignal(signalList[signalIndex - 1]?.signalNo ?? null), onNext: () => setOpenSignal(signalList[signalIndex + 1]?.signalNo ?? null) }}
-          onClose={() => setOpenSignal(null)} onTriage={queueTriage} triageState={triageState} onStatus={openSignalStatus} />
+            onPrev: () => openDetail(signalList[signalIndex - 1]), onNext: () => openDetail(signalList[signalIndex + 1]) }}
+          onClose={() => setOpenedSignal(null)} onTriage={queueTriage} triageState={triageState} onStatus={openSignalStatus} />
 
       {threshold && (() => {
         const pressure = thresholdOriginal || approvalRecovery ? threshold : data?.bankrun ?? threshold;
@@ -888,6 +1035,7 @@ export default function RiskRadarPage() {
           <BlockState state={subscriptionLoading ? "loading" : "error"} title={subscriptionLoading ? "正在加载现在的订阅…" : subscriptionOriginal ? "现在的订阅没读到，不影响按原操作重试" : "现在的订阅没读到"} detail={subscriptionError || undefined}
             onRetry={subscriptionLoading ? undefined : () => setSubscriptionReload((value) => value + 1)} />
         );
+        const subscriptionStale = subscriptionError && subscriptionReadAt;
         const subscriptionConflict = subscriptionDraftPreserved && !subscriptionOriginal && !subscriptionLoading && !subscriptionError;
         // 只有查看权限：只看现在的订阅，不讲保存后会怎样。
         const subscriptionViewOnly = !canSubscribe && !subscriptionOriginal;
@@ -902,8 +1050,9 @@ export default function RiskRadarPage() {
               onClick={() => void saveSubscription()}>{subscriptionOriginal ? "按原操作重试" : "保存订阅"}</Button>
           </>}>
           <div className="b5-dialog">
-            {!subscriptionOriginal && (subscriptionLoading || subscriptionError) && subscriptionReadState}
-            {(subscriptionOriginal || (!subscriptionLoading && !subscriptionError)) && (
+            {!subscriptionOriginal && !subscriptionReadAt && (subscriptionLoading || subscriptionError) && subscriptionReadState}
+            {!subscriptionOriginal && subscriptionStale && <StaleNotice stale={{ at: subscriptionStale, auto: false }} onRetry={() => setSubscriptionReload(value => value + 1)} />}
+            {(subscriptionOriginal || subscriptionReadAt) && (
               <>
                 {subscriptionOriginal && subscriptionUnknown && (
                   <Notice tone="warn" title="结果未知，可能已经生效">
@@ -957,20 +1106,30 @@ export default function RiskRadarPage() {
 
       {statusDialog && (() => {
         const { alert, target } = statusDialog;
-        const length = statusReason.trim().length;
-        const valid = length >= 8 && length <= 200;
-        const short = `操作理由还差 ${Math.max(8 - length, 1)} 字`;
+        const length = visibleReasonLength(statusReason);
+        const valid = statusRule.ok(statusReason);
+        const hint = length < statusRule.min ? `操作理由还差 ${statusRule.min - length} 字`
+          : length > statusRule.max ? `操作理由多了 ${length - statusRule.max} 字` : undefined;
         const busy = updatingSignal === alert.signalNo;
         const line = signalFacts(alert).line;
         const level = SEVERITY[alert.level];
+        const replay = statusOriginal && b5Recovery.state(statusOriginal);
+        const blocked = !canTriage ? READ_ONLY : replay
+          ? replay.expired ? RETRY_EXPIRED_TEXT : replay.replayBlock ? "原请求不能重试" : undefined
+          : statusRead.state === "loading" ? "正在读取这条的当前进度…"
+            : statusRead.state === "error" ? "这条的当前进度没读到"
+              : statusRead.state === "conflict" ? "这条已被别人改过"
+                : statusRead.state === "changed" ? "这条的当前进度已经变了，不能继续这次标记"
+                  : list.stale ? STALE_MARK_REASON : !list.data ? "风险信号名单正在读取"
+                    : !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : valid ? undefined : hint;
         return (
-          <Modal title={`标记${signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty
+          <Modal title={`标记${alert.category === "TAMPER" ? "篡改拦截" : signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty
             sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
-            onClose={() => setStatusDialog(null)}
+            onClose={closeStatus}
             footer={<>
-              <Button disabled={busy} onClick={() => setStatusDialog(null)}>取消</Button>
-              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={!canTriage ? READ_ONLY : statusOriginal && b5Recovery.state(statusOriginal).replayBlock ? b5Recovery.state(statusOriginal).expired ? RETRY_EXPIRED_TEXT : "原请求不能重试" : valid ? undefined : short}
-                onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原操作重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
+              <Button disabled={busy} onClick={closeStatus}>取消</Button>
+              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={blocked}
+                onClick={() => void changeSignalStatus()}>{statusUnknown ? "按原操作重试" : statusRead.state === "loading" ? "正在读取这条的当前进度…" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">
               <p className="b5-line">不会解除风控，也不会放行提现；{freezeHint}</p>
@@ -979,15 +1138,25 @@ export default function RiskRadarPage() {
                 <Fact k="级别"><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></Fact>
                 <Fact k="用户"><span data-mono>{alert.userNo ?? `#${alert.userId}`}</span></Fact>
                 <Fact k="信号号"><RefText value={alert.signalNo} /></Fact>
-                <Fact k="记录时间">{stamp(alert.createdAt)}（北京时间）</Fact>
-                <Fact k="处理进度"><Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} /></Fact>
+                <Fact k="记录时间">{timeText(alert.createdAt)}</Fact>
+                <Fact k="处理进度">{statusRead.state === "changed" && !statusOriginal ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
               </Facts>
-              <Field label="操作理由" required hint="至少 8 字" error={statusReason && !valid ? short : undefined}>
-                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="例如：已核对拦截记录，账户安全设置未改变" count={`${length}/200`} onChange={(event) => setStatusReason(event.target.value)} />
-              </Field>
-              {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果未知，可能已经生效" : "没有标记成功"}>
-                {statusUnknown ? `理由已锁住。「按原操作重试」用原单号重新发送，不会重复改；也可以点「读取当前值」看这一条现在的进度，读到已处理不等于是这次改的，${canCross("/platform/audit") ? "到「操作记录与审批」核对。" : "请有「操作记录与审批」查看权限的同事按原操作核对。"}` : statusError}
+              {statusRead.state !== "changed" || statusOriginal ? <Field label="操作理由" required hint={`至少 ${statusRule.min} 字`}
+                help={!statusOriginal && !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : undefined}
+                error={!statusOriginal && statusRule.ready && statusReason ? hint : undefined}>
+                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusOriginal ? 200 : statusRule.max}
+                  rows={3} placeholder="例如：已核对拦截记录，账户安全设置未改变" count={`${length}/${statusOriginal ? 200 : statusRule.max}`} onChange={(event) => setStatusReason(event.target.value)} />
+              </Field> : null}
+              {!statusOriginal && statusRead.state === "error" && <BlockState state="error" title="这条的当前进度没读到" detail={statusRead.error} onRetry={() => void loadStatus(statusDialog)} />}
+              {!statusOriginal && statusRead.state === "conflict" && <Notice tone="warn">
+                <ConflictBar message="这条已被别人改过" onRead={() => loadStatus(statusDialog, true)} />
               </Notice>}
+              {statusOriginal && statusUnknown ? <Notice tone="warn" title="结果未知，可能已经生效"
+                action={<Button size="sm" disabled={busy} onClick={() => void queryWrite(statusOriginal)}>读取当前值</Button>}>
+                <p>{`理由已锁住。「按原操作重试」用原单号重新发送，不会重复改；也可以点「读取当前值」看这一条现在的进度，读到已处理不等于是这次改的，${canAudit ? "到「操作记录与审批」核对。" : "请有「操作记录与审批」查看权限的同事按原操作核对。"}`}</p>
+                {statusCurrent && <p>当前进度：{HANDLING[statusCurrent.handlingStatus].text}</p>}
+                {replay?.expired && <p>{RETRY_EXPIRED_TEXT}</p>}
+              </Notice> : statusError ? <Notice tone="danger" title="没有标记成功">{statusError}</Notice> : null}
             </div>
           </Modal>
         );

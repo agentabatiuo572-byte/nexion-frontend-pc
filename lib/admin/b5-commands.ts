@@ -1,6 +1,6 @@
 "use client";
 
-import { B5OutcomeUnknownError, B5RequestError, fetchB5Inbox, fetchB5Radar, fetchB5Subscription, normalizeB5Radar, normalizeB5Subscription, sendB5StoredWrite, type B5InboxItem, type B5Radar, type B5Subscription } from "./b5-client";
+import { B5OutcomeUnknownError, B5RequestError, fetchB5Inbox, fetchB5Radar, fetchB5Signal, fetchB5Subscription, normalizeB5Radar, normalizeB5Subscription, sendB5StoredWrite, type B5InboxItem, type B5Radar, type B5Subscription } from "./b5-client";
 import { isBCommandRejection } from "./b-command-rejection";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord, type SlotAttemptRecord } from "./pending-mutation-store";
 
@@ -132,7 +132,8 @@ async function sendOriginal(record: B5PendingWrite, retry: boolean) {
 export async function inspectB5Command(record: B5PendingWrite) {
   return record.kind === "subscription" ? { kind: "subscription" as const, data: await fetchB5Subscription() }
     : record.kind === "ack" ? { kind: "ack" as const, data: await fetchB5Inbox() }
-      : { kind: "radar" as const, data: await fetchB5Radar() };
+      : record.kind === "signal" ? { kind: "signal" as const, data: await fetchB5Signal(record.facts.signalNo) }
+        : { kind: "radar" as const, data: await fetchB5Radar() };
 }
 
 export function executeB5Command(record: B5PendingWrite, retry = true) {

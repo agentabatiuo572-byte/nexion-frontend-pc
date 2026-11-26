@@ -2,6 +2,7 @@ import { parseStrictFiniteNumber } from "./strict-number.ts";
 import { isConsecutiveDayLabels } from "./time-series-contract.ts";
 import { requiredReadAuthority } from "./cross-domain-authority.ts";
 import { readB5Amount } from "./b5-money.ts";
+import { isOffsetDateTime, isSignalCategory, type SignalCategory } from "./risk-feed.ts";
 
 export const PRESSURE_RED_LINE = 0.7;
 const GATE_KEYS = ["withdraw", "staking", "genesis", "exchange", "trial"] as const;
@@ -14,6 +15,9 @@ type Light = "green" | "yellow" | "red";
 export type B5SignalFacts = {
   tamperPath?: string;
   attackEffect?: string;
+  blockedAtEndpoint?: string;
+  blockedAtEndpointName?: string;
+  attackEffectSummary?: string;
   rowId?: string;
   cycleCount?: number;
   windowDays?: number;
@@ -72,10 +76,32 @@ export type B5Radar = {
   pressureHistory: Array<{ label: string; ratio: number | null }>;
   alertSeverity: Array<{ level: "P0" | "P1" | "P2" | "P3"; count: number }>;
   alertVolume: Array<{ label: string; count: number }>;
-  recentAlerts: Array<{ signalNo: string; level: "P0" | "P1" | "P2" | "P3"; message: string; userId: number; createdAt: string; target: string; handlingStatusAvailable: true; handlingStatus: "open" | "handled" | "resolved"; handlingVersion: number; deliveryStatus: string;
-    // Optional for snapshots saved before f7fec2da; missing fields remain unknown.
-    signalType?: string | null; userNo?: string | null; facts?: B5SignalFacts | null; handledBy?: string | null; handledAt?: string | null }>;
+  recentAlerts: B5Signal[];
   sources: string[];
+};
+
+export const B5_HANDLING_STATUSES = ["open", "handled", "resolved"] as const;
+export type B5HandlingStatus = typeof B5_HANDLING_STATUSES[number];
+export type B5Signal = {
+  signalNo: string;
+  level: "P0" | "P1" | "P2" | "P3";
+  message: string;
+  userId: number;
+  createdAt: string;
+  target: string;
+  handlingStatusAvailable: true;
+  handlingStatus: B5HandlingStatus;
+  handlingVersion: number;
+  deliveryStatus: string;
+  // The former radar snapshot and saved commands predate these fields.
+  signalType?: string | null;
+  userNo?: string | null;
+  facts?: B5SignalFacts | null;
+  handledBy?: string | null;
+  handledAt?: string | null;
+  category?: SignalCategory;
+  categoryName?: string;
+  occurredAt?: string | null;
 };
 
 function invalid(field: string): never {
@@ -105,7 +131,7 @@ function signalFacts(value: unknown, field: string): B5SignalFacts | null {
   if (value == null) return null;
   const source = row(value, field);
   const facts: B5SignalFacts = {};
-  for (const key of ["tamperPath", "attackEffect", "rowId", "view", "action", "source", "caseNo"] as const) {
+  for (const key of ["tamperPath", "attackEffect", "rowId", "view", "action", "source", "caseNo", "blockedAtEndpoint", "blockedAtEndpointName", "attackEffectSummary"] as const) {
     if (source[key] !== undefined) facts[key] = text(source[key], `${field}.${key}`);
   }
   for (const key of ["cycleCount", "windowDays"] as const) {
@@ -181,6 +207,62 @@ function radarGeneratedAt(value: unknown): string {
   // The old backend emitted this field using the fixed Asia/Shanghai clock.
   const local = isoLocalDateTime(offset ? raw.slice(0, -offset.length) : raw, "generatedAt");
   return local + (offset || "+08:00");
+}
+
+function offsetDateTime(value: unknown, field: string): string {
+  if (!isOffsetDateTime(value)) invalid(field);
+  return value;
+}
+
+export function normalizeB5Signal(value: unknown, field = "signal", legacy = false): B5Signal {
+  const item = row(value, field);
+  const level = text(item.level, `${field}.level`) as B5Signal["level"];
+  const target = text(item.target, `${field}.target`);
+  const handlingStatus = text(item.handlingStatus, `${field}.handlingStatus`) as B5HandlingStatus;
+  const userId = whole(item.userId, `${field}.userId`);
+  if (!["P0", "P1", "P2", "P3"].includes(level) || requiredReadAuthority(target) === null
+    || item.handlingStatusAvailable !== true || !B5_HANDLING_STATUSES.includes(handlingStatus) || userId <= 0) invalid(field);
+  const timestamp = legacy ? isoLocalDateTime : offsetDateTime;
+  const category = item.category;
+  if (!legacy && !isSignalCategory(category)) invalid(`${field}.category`);
+  return {
+    signalNo: text(item.signalNo, `${field}.signalNo`),
+    level,
+    message: text(item.message, `${field}.message`),
+    signalType: optionalText(item.signalType, `${field}.signalType`),
+    userId,
+    userNo: optionalText(item.userNo, `${field}.userNo`),
+    facts: signalFacts(item.facts, `${field}.facts`),
+    createdAt: timestamp(item.createdAt, `${field}.createdAt`),
+    target,
+    handlingStatusAvailable: true,
+    handlingStatus,
+    handlingVersion: whole(item.handlingVersion, `${field}.handlingVersion`),
+    handledBy: optionalText(item.handledBy, `${field}.handledBy`),
+    handledAt: item.handledAt == null ? null : timestamp(item.handledAt, `${field}.handledAt`),
+    deliveryStatus: text(item.deliveryStatus, `${field}.deliveryStatus`),
+    ...(legacy ? {} : {
+      category: category as SignalCategory,
+      categoryName: text(item.categoryName, `${field}.categoryName`),
+      occurredAt: item.occurredAt == null ? null : offsetDateTime(item.occurredAt, `${field}.occurredAt`),
+    }),
+  };
+}
+
+export function normalizeB5SignalPage(value: unknown) {
+  const source = row(value, "signals");
+  const records = arr(source.records, "signals.records").map((item, index) => normalizeB5Signal(item, `signals.records.${index}`));
+  const total = whole(source.total, "signals.total");
+  const accountCount = whole(source.accountCount, "signals.accountCount");
+  const pageNum = whole(source.pageNum, "signals.pageNum");
+  const pageSize = whole(source.pageSize, "signals.pageSize");
+  const startAt = offsetDateTime(source.startAt, "signals.startAt");
+  const endAt = offsetDateTime(source.endAt, "signals.endAt");
+  if (pageNum < 1 || pageSize < 1 || pageSize > 200 || accountCount > total
+    || records.length !== Math.min(pageSize, Math.max(0, total - (pageNum - 1) * pageSize))
+    || new Set(records.map(record => record.signalNo)).size !== records.length
+    || Date.parse(startAt) >= Date.parse(endAt)) invalid("signals");
+  return { records, total, accountCount, pageNum, pageSize, startAt, endAt };
 }
 
 export function normalizeB5Radar(value: unknown): B5Radar {
@@ -264,33 +346,8 @@ export function normalizeB5Radar(value: unknown): B5Radar {
       || new Set(alertVolume.map((item) => item.label)).size !== 7
       || !isConsecutiveDayLabels(alertVolume.map((item) => item.label))) invalid("alertVolume");
 
-  const recentAlerts = arr(source.recentAlerts, "recentAlerts").map((value, index) => {
-    const item = row(value, `recentAlerts.${index}`);
-    const level = text(item.level, `recentAlerts.${index}.level`);
-    const target = text(item.target, `recentAlerts.${index}.target`);
-    const handlingStatusAvailable = bool(item.handlingStatusAvailable, `recentAlerts.${index}.handlingStatusAvailable`);
-    const handlingStatus = text(item.handlingStatus, `recentAlerts.${index}.handlingStatus`);
-    if (!["P0", "P1", "P2", "P3"].includes(level) || requiredReadAuthority(target) === null || !handlingStatusAvailable
-      || !["open", "handled", "resolved"].includes(handlingStatus)) invalid(`recentAlerts.${index}`);
-    return {
-      signalNo: text(item.signalNo, `recentAlerts.${index}.signalNo`),
-      level: level as "P0" | "P1" | "P2" | "P3",
-      message: text(item.message, `recentAlerts.${index}.message`),
-      signalType: optionalText(item.signalType, `recentAlerts.${index}.signalType`),
-      userId: whole(item.userId, `recentAlerts.${index}.userId`),
-      userNo: optionalText(item.userNo, `recentAlerts.${index}.userNo`),
-      facts: signalFacts(item.facts, `recentAlerts.${index}.facts`),
-      createdAt: isoLocalDateTime(item.createdAt, `recentAlerts.${index}.createdAt`),
-      target,
-      handlingStatusAvailable: true as const,
-      handlingStatus: handlingStatus as "open" | "handled" | "resolved",
-      handlingVersion: whole(item.handlingVersion, `recentAlerts.${index}.handlingVersion`),
-      handledBy: optionalText(item.handledBy, `recentAlerts.${index}.handledBy`),
-      handledAt: item.handledAt == null ? null : isoLocalDateTime(item.handledAt, `recentAlerts.${index}.handledAt`),
-      deliveryStatus: text(item.deliveryStatus, `recentAlerts.${index}.deliveryStatus`),
-    };
-  });
-  if (recentAlerts.some((item) => item.userId <= 0)) invalid("recentAlerts.userId");
+  const recentAlerts = arr(source.recentAlerts, "recentAlerts")
+    .map((value, index) => normalizeB5Signal(value, `recentAlerts.${index}`, true));
   if (recentAlerts.length > 20 || new Set(recentAlerts.map((item) => item.signalNo)).size !== recentAlerts.length) invalid("recentAlerts");
 
   const pressureRedLine = num(bankrun.pressureRedLine, "bankrun.pressureRedLine");

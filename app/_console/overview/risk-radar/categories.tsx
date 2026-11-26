@@ -10,28 +10,20 @@ import Link from "next/link";
 import { ChevronRight, ListChecks } from "lucide-react";
 import { BlockState, Button, Notice, Panel, StatusTag } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { B5_PATH, isRiskConclusion, RISK_SEVERITIES, type RiskFeedItem, type RiskSev } from "@/lib/admin/risk-feed";
 import { SEVERITY } from "./insights";
 
-export type RiskSev = "p0" | "p1" | "p2" | "p3";
-
-export interface RiskCategoryRow {
-  /** 信号类是后端 category（TAMPER…），评分类是 band（AUTO_REPORT、HIGH_BELOW_AUTO、MEDIUM、STALE），评分暂时不可用写 SCORE_UNAVAILABLE，提现压力写 FUND。 */
-  key: string;
-  kind: "signal" | "score" | "fund";
-  /** 信号类用后端 categoryName；评分类、提现压力用 SCORE_BAND_NAME、FUND_NAME。 */
+type CategoryDisplay = {
   name: string;
   sev: RiskSev;
-  /** 信号类是待处理条数，评分类是账户数；评分暂时不可用、提现压力没有。 */
-  count?: number;
-  /** 信号类的去重账户数。 */
-  accountCount?: number;
-  /** 信号类最近一条的记录时间（后端 latestAt，带偏移）。 */
-  latestAt?: string;
-  /** 评分类的一句补充，比如高风险的「未到自动升级线」。 */
   note?: string;
-  /** 评分类去风险评分规则对应档的地址；信号类和提现压力不传，点了走 onSelect。 */
-  href?: string;
-}
+};
+export type RiskCategoryRow = CategoryDisplay & (
+  | { kind: "signal"; key: NonNullable<RiskFeedItem["category"]>; count: number; accountCount: number;
+    latestAt: string; startAt: string; endAt: string; handlingStatus: "open"; href?: never }
+  | { kind: "score"; key: keyof typeof SCORE_BAND_NAME; count?: number; href: string }
+  | { kind: "fund"; key: "FUND"; count?: never; href?: never }
+);
 
 /** 评分各档的叫法，首页、类型列表、风险评分规则页同一套。 */
 export const SCORE_BAND_NAME: Record<"AUTO_REPORT" | "HIGH_BELOW_AUTO" | "MEDIUM" | "STALE" | "SCORE_UNAVAILABLE", { name: string; note?: string }> = {
@@ -57,9 +49,27 @@ export type RiskCategoriesState =
 
 const DEST: Record<RiskCategoryRow["kind"], string> = { signal: "下方名单", score: "风险评分规则", fund: "上方提现压力" };
 
-const titleText = (row: RiskCategoryRow) => row.kind === "signal" && row.count !== undefined
-  ? `${row.name} ${row.count} 条${row.accountCount !== undefined ? ` · 涉及 ${row.accountCount} 个账户` : ""}`
-  : row.count !== undefined ? `${row.name} ${row.count} 个账户` : row.name;
+export function riskCategoryTitle(row: RiskCategoryRow) {
+  if (row.kind === "signal") return `${row.name} ${row.count} 条 · 涉及 ${row.accountCount} 个账户`;
+  return row.count === undefined ? row.name : `${row.name} ${row.count} 个账户`;
+}
+
+export function riskCategoryRows(feed: readonly RiskFeedItem[], reach: (href: string) => boolean) {
+  const rows: RiskCategoryRow[] = [];
+  for (const item of feed) {
+    if (isRiskConclusion(item)) continue;
+    if (item.category && reach(B5_PATH)) {
+      rows.push({ ...item, href: undefined, kind: "signal", key: item.category, name: item.categoryName });
+    } else if (item.href === "/risk/scoring" && item.band !== "HIGH" && reach(item.href)) {
+      const key = item.band ?? "SCORE_UNAVAILABLE";
+      const href = item.band ? `${item.href}?view=accounts&band=${item.band}` : item.href;
+      rows.push({ kind: "score", key, ...SCORE_BAND_NAME[key], sev: item.sev, count: item.count, href });
+    } else if (item.href === "/overview/dual-ledger" && reach(B5_PATH)) {
+      rows.push({ kind: "fund", key: "FUND", name: FUND_NAME[item.sev === "p0" ? "red" : "yellow"], sev: item.sev });
+    }
+  }
+  return rows.sort((a, b) => RISK_SEVERITIES.indexOf(a.sev) - RISK_SEVERITIES.indexOf(b.sev));
+}
 
 /** 「以下是 {时间} 的数据，刷新失败」：保留旧值时标明时间，旁边重试（名单、类型列表共用）。 */
 export function StaleNotice({ stale, onRetry }: { stale: StaleRead; onRetry: () => void }) {
@@ -102,11 +112,11 @@ export function RiskCategoryPanel({ data, selectedKey, onSelect, onRetry }: {
                 const body = (
                   <>
                     <span className="rd-todo-text" data-tone={row.sev === "p0" ? "danger" : undefined}>
-                      <span className="rd-todo-title">{selected && <span className="b5-cat-dot" aria-hidden />}{titleText(row)}</span>
+                      <span className="rd-todo-title">{selected && <span className="b5-cat-dot" aria-hidden />}{riskCategoryTitle(row)}</span>
                       <span className="rd-todo-sub">
                         <StatusTag tone={level.tone} icon={level.icon}>{level.text}</StatusTag>
                         {row.note && <span>{row.note}</span>}
-                        {row.latestAt && <span>最近 {formatBusinessTimeCompact(row.latestAt, "—")}</span>}
+                        {row.kind === "signal" && <span>最近 {formatBusinessTimeCompact(row.latestAt, "—")}</span>}
                       </span>
                     </span>
                     <span className="rd-todo-owner">{DEST[row.kind]}</span>
