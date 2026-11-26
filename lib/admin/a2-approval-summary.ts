@@ -6,6 +6,7 @@ import { withdrawalProposalChanges } from "./withdrawal-proposal-changes";
 
 const SEE_APPROVAL_DETAIL = "请在审批详情核对";
 const ACCOUNT_STATUS: Record<string, string> = { enabled: "启用", disabled: "停用" };
+export const a2AccountStatusText = (value: string) => Object.hasOwn(ACCOUNT_STATUS, value) ? ACCOUNT_STATUS[value] : undefined;
 const E1_APPROVAL_LABELS = new Map<string, string>(E1_SKU_FIELDS.map(({ key, label }) => [key, label]));
 E1_APPROVAL_LABELS.set("dailyEarnNex", "日产 UVT");
 E1_APPROVAL_LABELS.set("phoneDailyEarnNex", "手机每日收益 UVT");
@@ -45,8 +46,8 @@ export function approvalChangeSummary(row: A2OperationRow) {
   }
   if (row.operationCode === "e1_sku_update") return skuEditDetail(row.before, row.after) ?? SEE_APPROVAL_DETAIL;
   if (row.operationCode === "a1_account_status_update") {
-    const before = Object.hasOwn(ACCOUNT_STATUS, row.before) ? ACCOUNT_STATUS[row.before] : undefined;
-    const after = Object.hasOwn(ACCOUNT_STATUS, row.after) ? ACCOUNT_STATUS[row.after] : undefined;
+    const before = a2AccountStatusText(row.before);
+    const after = a2AccountStatusText(row.after);
     return before && after ? `${a2ObjectText(row)} · ${before} → ${after}` : SEE_APPROVAL_DETAIL;
   }
   if (readableNote(row.before) && readableNote(row.after)) return `${a2ObjectText(row)} · ${row.before} → ${row.after}`;

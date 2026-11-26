@@ -23,7 +23,7 @@ import { F5_KIND_LABELS } from "@/lib/admin/f-overview-contract";
 import { fetchF1VRankOverview, fetchF2RatesOverview } from "@/lib/admin/f1-client";
 import { F1_VOUCHER_REISSUE, F1_VOUCHER_REISSUE_UNAVAILABLE, F1_VOUCHER_REVERSE_CLAWBACK, F1_VOUCHER_REVERSE_KEEP } from "@/lib/admin/config-help/f1-voucher";
 import { fmtConfigPct, fmtPct, amountDisplay } from "@/lib/format";
-import { f4MonthlyCap } from "@/lib/admin/f4-money";
+import { f4Decimal, f4MonthlyCap } from "@/lib/admin/f4-money";
 import { fConfigSpec, fConfigValue, type FConfigSpec } from "./a2-f-config";
 import { F5CurrentFact, F5CurrentValue, F5ReissueOutcome, F5ReissueReadings, readF5Current } from "./a2-f5-current";
 import { A2I5DisclosureReview } from "./a2-i5-disclosure-review";
@@ -94,6 +94,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
 import { withdrawalProposalChanges, type WithdrawalProposalChanges } from "@/lib/admin/withdrawal-proposal-changes";
+import { a2AccountStatusText } from "@/lib/admin/a2-approval-summary";
 import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
@@ -795,8 +796,27 @@ function logActionText(code: string) {
   return A2_ACTION_NAMES[code] ?? a2ActionText(code);
 }
 
-/** 前 → 后里后端存的 true / false 写成是 / 否，原文在抽屉的技术信息里。 */
-function logDeltaText(delta: string) {
+/** 日志前后值只在显示时转换，技术信息仍使用记录原文。 */
+function logDeltaText({ delta, approvalAction, action, resourceType }: A2AuditLogRow) {
+  const sides = delta.split(/ -> | → /);
+  if (sides.length === 2) {
+    const [before, after] = sides;
+    const account = resourceType === "A2_OPERATION" && a2AccountStatusText(before) && a2AccountStatusText(after);
+    const operationCode = account ? "a1_account_status_update" : action === "FX_QUOTE_UPDATED" ? "d6_fx_quote" : undefined;
+    const changes = approvalDisplayChanges({ action: approvalAction ?? "", before, after, operationCode });
+    if (changes === null) return CHANGE_UNAVAILABLE;
+    if (changes) return [...changes.facts.map(({ label, before, after }) => `${label} ${before} → ${after}`),
+      ...(changes.forced ? ["强制保存倒挂价"] : [])].join("，");
+    const batch = fBatchTicket({ action: approvalAction, before, after });
+    if (batch?.items) {
+      const pages = fBatchPages(batch.items);
+      return batch.items.map((item) => {
+        const [from, to] = a2Pair(item.key, item.before, item.after);
+        return `${fBatchLabel(item, pages)} ${from} → ${to}`;
+      }).join("，");
+    }
+    if (approvalAction && G_PARAM_ACTION.test(approvalAction)) return sides.map(gParamText).join(" → ");
+  }
   return delta.split(" → ").map((part) => part === "true" ? "是" : part === "false" ? "否" : part).join(" → ");
 }
 
@@ -1426,24 +1446,67 @@ function reviewPair(before: string, after: string, operationCode?: string) {
 }
 
 /** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
-const D5_CHANGE_UNAVAILABLE = "未能读取变更明细";
+const CHANGE_UNAVAILABLE = "未能读取变更明细";
 
-function d5ApprovalChanges(ticket: A2OperationRow) {
+type ApprovalChangeValues = Pick<A2OperationRow, "operationCode" | "action" | "before" | "after" | "withdrawalChanges">;
+
+function d5ApprovalChanges(ticket: ApprovalChangeValues) {
   if (ticket.operationCode === D5_APPROVAL_OP || (!ticket.operationCode && ticket.action === "放宽提现参数")) {
     return withdrawalProposalChanges("D5", ticket);
   }
 }
 
+const FX_APPROVAL_FIELDS = [
+  ["baseRateVndPerUsdt", "基准价", " ₫/USDT"],
+  ["buySpreadPct", "买入点差", "%"],
+  ["lockWindowMinutes", "报价有效期", " 分钟"],
+] as const;
+
+function fxApprovalValues(text: string) {
+  const legacy = /^\{([A-Za-z]+=[\d.eE+-]+(?:, [A-Za-z]+=[\d.eE+-]+)*)\}$/.exec(text);
+  if (legacy) return Object.fromEntries(legacy[1].split(", ").map((part) => part.split("=")));
+  const parsed = parseReview(text);
+  return parsed?.kind === "object" ? parsed.value : {};
+}
+
+function fxApprovalNumber(value: unknown) {
+  const text = String(value ?? "");
+  if (!/^\d+(?:\.\d+)?(?:e[+-]?\d{1,2})?$/i.test(text)) return null;
+  return f4Decimal(text)?.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") ?? null;
+}
+
+function approvalDisplayChanges(ticket: ApprovalChangeValues): WithdrawalProposalChanges | null | undefined {
+  const { action, before, after, operationCode } = ticket;
+  if (operationCode === "a1_account_status_update") {
+    const from = a2AccountStatusText(before), to = a2AccountStatusText(after);
+    return from && to ? { facts: [{ key: "accountStatus", label: "账号状态", before: from, after: to }], forced: false } : null;
+  }
+  if (operationCode === "d6_fx_quote" || !operationCode && ["调整汇率", "调整敏感汇率"].includes(action)) {
+    const previous = fxApprovalValues(before), next = fxApprovalValues(after);
+    const facts: WithdrawalProposalChanges["facts"] = [];
+    for (const [key, label, unit] of FX_APPROVAL_FIELDS) {
+      const from = fxApprovalNumber(previous[key]), to = fxApprovalNumber(next[key]);
+      if (from === null || to === null) return null;
+      if (from !== to) facts.push({ key, label, before: `${grouped(from)}${unit}`, after: `${grouped(to)}${unit}` });
+    }
+    return facts.length ? { facts, forced: false } : null;
+  }
+  if (operationCode === "d7_payout_vnd_config" || !operationCode && action === "放宽越南盾提现参数") {
+    return withdrawalProposalChanges("D7", ticket);
+  }
+  return d5ApprovalChanges(ticket);
+}
+
 /** amountKey：整张单是哪个字段（a2TicketKey），文字型前后值按它判断是不是金额。 */
 function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string, amountKey?: string, withdrawalChanges?: WithdrawalProposalChanges | null) {
-  if (withdrawalChanges === null) return { main: D5_CHANGE_UNAVAILABLE };
+  if (withdrawalChanges === null) return { main: CHANGE_UNAVAILABLE };
   if (withdrawalChanges) {
     const { facts } = withdrawalChanges;
     const first = facts[0];
     return {
-      main: `${first.label} ${first.after}${facts.length > 1 ? ` 等 ${facts.length} 项` : ""}`,
+      main: `${first.label} ${first.after}${facts.length > 1 ? ` 等 ${facts.length} 项` : ""}${withdrawalChanges.forced ? " · 强制保存倒挂价" : ""}`,
       sub: `原 ${first.before}`,
-      title: facts.map(({ label, before, after }) => `${label} ${before} → ${after}`).join("\n"),
+      title: [...facts.map(({ label, before, after }) => `${label} ${before} → ${after}`), ...(withdrawalChanges.forced ? ["强制保存倒挂价"] : [])].join("\n"),
     };
   }
   const { b, a, labels, evidenceKeys } = reviewPair(before, after, operationCode);
@@ -1669,11 +1732,11 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
   const created = withdrawalChanges === undefined && !b;
   let body: ReactNode;
   if (withdrawalChanges === null) {
-    body = <Facts><Fact k="变更">{D5_CHANGE_UNAVAILABLE}</Fact></Facts>;
+    body = <Facts><Fact k="变更">{CHANGE_UNAVAILABLE}</Fact></Facts>;
   } else if (withdrawalChanges) {
     body = <Facts>{withdrawalChanges.facts.map(({ key, label, before, after }) => (
       <Fact key={key} k={label}><Change from={before} to={after} /></Fact>
-    ))}</Facts>;
+    ))}{withdrawalChanges.forced && <Fact k="倒挂价">强制保存</Fact>}</Facts>;
   } else if (!a) {
     body = <Facts><Fact k="变更后">—</Fact></Facts>;
   } else if (a.kind === "text" && b?.kind === "text" && fieldPairs(b.text, a.text)) {
@@ -3158,7 +3221,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
                   const mission = h3MissionView(w);
                   const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: f2BootstrapUsesRank(boot[0].usdtPct, boot[1].usdtPct) ? "第 1、2 层按受益人等级" : `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
-                    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w), d5ApprovalChanges(w));
+                    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w), approvalDisplayChanges(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -3246,6 +3309,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   const e1Approved = e1ApprovedLog(l, e1Proposals);
                   const e1Sides = e1SkuLogSides(l) ?? e1Approved?.sides;
                   const e1Change = e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
+                  const deltaText = logDeltaText(l);
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
                       <Td sticky="start"><Cell num main={thisYear(logTime(l))} title={logTime(l)} /></Td>
@@ -3254,7 +3318,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                       <Td>{fBatchLogItems(l) || F_BATCH_DIGEST.test(l.obj) ? <Cell main="整批调整的团队参数" title={l.obj} />
                         : obj.id ? <Cell main={obj.id.length > 16 ? `${obj.id.slice(0, 8)}…${obj.id.slice(-6)}` : obj.id} sub={obj.kind} title={[obj.kind, obj.id].filter(Boolean).join(" · ")} />
                           : <Cell main={obj.kind} title={obj.kind} />}</Td>
-                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : e1Change ? <Cell main={e1Change.main} sub={e1Change.sub} title={e1Change.main} /> : e1Approved?.price ? <Cell main={e1Approved.price} sub={E1_PRICE_ONLY} title={e1Approved.price} /> : <Cell mono main={logDeltaText(l.delta)} title={logDeltaText(l.delta)} />}</Td>
+                      <Td grow>{fBatchLogItems(l) ? <Cell main={fBatchSummary(fBatchLogItems(l)!)} title={l.delta} /> : e1Change ? <Cell main={e1Change.main} sub={e1Change.sub} title={e1Change.main} /> : e1Approved?.price ? <Cell main={e1Approved.price} sub={E1_PRICE_ONLY} title={e1Approved.price} /> : <Cell mono main={deltaText} title={deltaText} />}</Td>
                     </Tr>
                   );
                 })}
@@ -3419,6 +3483,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const shownLog = logShown.current;
   const shownLogApproved = shownLog ? e1ApprovedLog(shownLog, e1Proposals) : undefined;
   const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) ?? shownLogApproved?.sides : undefined;
+  const shownLogDelta = shownLog ? logDeltaText(shownLog) : undefined;
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
   const requestNo = shownLog?.action === H2_BUY_LIST_ACTION
@@ -3492,7 +3557,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} withdrawalChanges={d5ApprovalChanges(shown)}
+            : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} withdrawalChanges={approvalDisplayChanges(shown)}
                 facts={isV8PromotionTicket(shown) ? v8PromotionFacts(shown)
                   : shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
@@ -3516,7 +3581,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             // 对象是「类型 · 编号」，编号可能是整串 UUID：不用不换行的 a2-code，在「·」后面折行，不把抽屉撑出横向滚动。
             { label: "对象", value: F_BATCH_DIGEST.test(shownLog.obj) || fBatchLogItems(shownLog) ? "整批调整的团队参数" : [shownLogObject?.kind, shownLogObject?.id].filter(Boolean).join(" · ") },
             ...(shownLogApproved?.ticket ? [{ label: "审批单", value: shownLogApproved.ticket }] : []),
-            ...(fBatchLogItems(shownLog) || shownLogE1 ? [] : [{ label: "前值 → 后值", value: shownLogApproved?.price ? `${shownLogApproved.price}；${E1_PRICE_ONLY}` : <span data-mono>{logDeltaText(shownLog.delta)}</span> }]),
+            ...(fBatchLogItems(shownLog) || shownLogE1 ? [] : [{ label: "前值 → 后值", value: shownLogApproved?.price ? `${shownLogApproved.price}；${E1_PRICE_ONLY}` : <span data-mono>{shownLogDelta}</span> }]),
             { label: "原因", value: shownLog.reason || "—" },
           ]} />
           {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
@@ -3530,7 +3595,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
               {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
               <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
               {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
-              {(fBatchLogItems(shownLog) || shownLogE1 || shownLogApproved?.price || logDeltaText(shownLog.delta) !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
+              {(fBatchLogItems(shownLog) || shownLogE1 || shownLogApproved?.price || shownLogDelta !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
             </Facts>
           </Fold>
         </>}

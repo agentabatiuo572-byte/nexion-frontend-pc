@@ -328,6 +328,7 @@ export interface A2AuditLogRow {
   role: string;
   action: string;
   actionLabel?: string;
+  approvalAction?: string;
   obj: string;
   resourceType?: string;
   resourceId?: string;
@@ -796,6 +797,7 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
     role: asText(detail.role ?? log.actorType, "ADMIN"),
     action,
     actionLabel: auditActionFieldLabel(action, detail.field),
+    approvalAction: resourceType === "A2_OPERATION" ? asText(detail.action, "") : undefined,
     obj,
     resourceType,
     resourceId: asText(log.resourceId, ""),
