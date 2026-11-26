@@ -25,6 +25,36 @@ const CLOSED_METHOD: PurchasePaymentMethod = TRC20_PAYMENT_METHOD;
 const closedTag = <StatusTag tone="neutral" icon={CircleMinus}>{TRC20_CLOSED}</StatusTag>;
 const stateText: Record<PurchasePaymentState, string> = { CREATING: "正在创建", SUBMIT_UNKNOWN: "创建结果未知", AWAITING_PAYMENT: "等待付款", FUNDS_CONFIRMED: "已收款，待完成", DELIVERED: "已完成", MANUAL_REVIEW: "需人工处理", EXPIRED: "已过期" };
 const stateTone = (state: PurchasePaymentState): StateTone => state === "MANUAL_REVIEW" ? "warn" : state === "DELIVERED" ? "ok" : state === "EXPIRED" ? "done" : "progress";
+const paymentReasonNames: Record<string, string> = {
+  PAYMENT_TIMEOUT: "付款超时",
+  PAYMENT_FAILED: "付款失败",
+  PAYMENT_NOT_SUBMITTED: "未向支付机构提交付款单",
+  PROVIDER_CREATE_OUTCOME_UNKNOWN: "支付机构创建付款单的结果未确认",
+  PAYMENT_AMOUNT_MISMATCH: "付款金额不符",
+  PAYMENT_TIME_UNVERIFIED: "付款时间未确认",
+  PAYMENT_BEFORE_ALLOCATION: "付款早于付款单或收款地址生效",
+  PAYMENT_LATE_REVIEW: "付款有效期或到账确认时间需核对",
+  PAYMENT_MULTIPLE_ARRIVALS: "同一付款单收到多笔款项",
+  PAYMENT_REFUNDED_REVIEW: "退款结果需核对",
+  PAYMENT_AFTER_REFUND_REVIEW: "退款后又收到款项",
+  PAYMENT_REORG_REVIEW: "链上交易发生重组，需核对到账",
+  PAYMENT_REFUNDED: "已退款",
+  PURCHASE_PAYMENT_DELIVERY_BLOCKED: "款项已确认，业务未能完成",
+  PURCHASE_PAYMENT_DELIVERY_CONFLICT: "业务完成状态有冲突",
+  PURCHASE_PAYMENT_ORDER_LINK_CONFLICT: "付款单与订单信息不一致",
+  PURCHASE_PAYMENT_PRICING_CHANGED: "商品价格或优惠已变化",
+  PURCHASE_PAYMENT_RECEIPT_INVALID: "业务确认记录无效",
+  PURCHASE_PAYMENT_RECORD_CONFLICT: "付款记录已变化，需核对",
+  TRIAL_NOT_CONVERTIBLE: "试用记录无法转为购买",
+};
+
+function paymentReasonText(reason: PurchasePaymentRecord["reason"]): string | undefined {
+  const value = reason?.trim();
+  if (!value) return;
+  if (Object.hasOwn(paymentReasonNames, value)) return paymentReasonNames[value];
+  return /^[A-Z0-9_:]+$/.test(value) ? "付款原因待核实" : reason ?? undefined;
+}
+
 const STATE_GROUPS: readonly { label: string; states: readonly PurchasePaymentState[] }[] = [
   { label: "要处理", states: ["MANUAL_REVIEW"] },
   { label: "系统处理中", states: ["CREATING", "SUBMIT_UNKNOWN", "AWAITING_PAYMENT", "FUNDS_CONFIRMED"] },
@@ -258,11 +288,12 @@ function Workspace({ ctx, owner, epoch, onCount, onActivity, onUnconfigured, rel
               : items.length === 0 ? <TableMessage columns={columns} role="status">{filtered ? <>没有符合条件的付款记录。 <Button size="sm" onClick={() => { setStatus(""); setMethod(""); setPage(1); }}>清除筛选</Button></> : "暂无付款记录。用户用银行卡付款，或试用转购买、升级置换、扩容时用 USDT 付款，会出现在这里。"}</TableMessage>
                 : items.map(row => {
                   const rowPending = pending.some(item => item.scope === row.intentNo);
+                  const reason = paymentReasonText(row.reason);
                   return <Tr key={row.intentNo} selected={row.intentNo === selected} onOpen={() => setSelected(row.intentNo)}>
                     <Td sticky="start"><Cell mono full main={row.intentNo} sub={time(row.createdAt)} /></Td>
                     <Td><Cell main={row.userId} sub={`${kindText[row.kind] ?? "用途待确认"} · ${methodText[row.paymentMethod]}`} /></Td>
                     <Td align="right"><Cell num main={usdt(row.totalUsdt)} sub={`订单 ${usdt(row.subtotalUsdt)}`} /></Td>
-                    <Td><Cell main={<StatusTag tone={stateTone(row.status)}>{stateText[row.status]}</StatusTag>} sub={rowPending ? "有操作结果未知" : purchaseWasDelivered(row) && row.status !== "DELIVERED" ? "业务已完成" : row.reason ?? undefined} title={row.reason ?? undefined} /></Td>
+                    <Td><Cell main={<StatusTag tone={stateTone(row.status)}>{stateText[row.status]}</StatusTag>} sub={rowPending ? "有操作结果未知" : purchaseWasDelivered(row) && row.status !== "DELIVERED" ? "业务已完成" : reason} title={reason} /></Td>
                     <Td sticky="end" align="right"><Button size="sm" variant="ghost" onClick={() => setSelected(row.intentNo)}>查看详情</Button></Td>
                   </Tr>;
                 })}
@@ -399,7 +430,7 @@ function PaymentDetail({ intentNo, owner, owns, ctx, reloadTick, pending, nav, o
       : <JudgmentPoints loading={loading || !r} rows={r ? [
         { label: "用户实付", icon: Coins, tone: "money", value: `${usdt(r.totalUsdt)} USDT`, reason: `订单 ${usdt(r.subtotalUsdt)} · 手续费 ${usdt(r.channelFeeUsdt)} · 网络费 ${usdt(r.networkConfirmFeeUsdt)}` },
         { label: "用户", icon: User, tone: "users", value: r.userId, reason: `${kindText[r.kind] ?? "用途待确认"} · ${methodText[r.paymentMethod]}` },
-        { label: "状态", state: stateTone(r.status) === "progress" ? undefined : stateTone(r.status), value: stateText[r.status], reason: r.reason ?? undefined },
+        { label: "状态", state: stateTone(r.status) === "progress" ? undefined : stateTone(r.status), value: stateText[r.status], reason: paymentReasonText(r.reason) },
         { label: "是否完成", state: purchaseWasDelivered(r) && r.status === "DELIVERED" && r.receipt ? undefined : "warn", value: purchaseWasDelivered(r) ? "已完成" : r.receipt ? "业务已确认，待核对" : "还没完成", reason: deliveryNote(r) },
         ...(pending ? [{ label: "结果未知", state: "warn" as const, value: "这笔付款有一次操作结果未知，请在页面上方的提醒里查看。" }] : []),
       ] : []} />}
