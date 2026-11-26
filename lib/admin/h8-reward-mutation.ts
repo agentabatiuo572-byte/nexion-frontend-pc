@@ -1,7 +1,7 @@
 import { acknowledgeFReconfirmation, settleFReconfirmation, type FReconfirmationLink } from "./f-reconfirmation";
 import { activeRecoveryActor } from "./f-proposal-recovery";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, A2OutcomeUncertainError, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
-import { createH8CommandKey, growthRequest, h8RewardParamAmplifies, h8RewardParamValid, parseH8RewardSnapshot, type H8ReferralRewardOverview, type H8RewardParamKey } from "./h-client";
+import { createH8CommandKey, growthRequest, h8RewardParamAmplifies, h8RewardParamValid, parseH8RewardSnapshot, type H8ReferralRewardOverview, type H8RewardParamKey, type H8SettlementEligibility } from "./h-client";
 import { explicitRejectionCode } from "./explicit-rejection";
 import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } from "./outcome-classification";
 import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingCommandOwner, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
@@ -12,7 +12,7 @@ type Proposal = Parameters<typeof createA2OperationProposal>[0];
 export type H8Original = { overview: H8ReferralRewardOverview; body: string } & FReconfirmationLink & (
   | { kind: "direct"; paramKey: H8RewardParamKey; value: string; reason: string; operator: string }
   | { kind: "param-approval"; paramKey: H8RewardParamKey; value: string; request: Proposal }
-  | { kind: "settlement"; invitedUserId?: number; limit: number; request: Proposal }
+  | { kind: "settlement"; invitedUserId?: number; limit: number; request: Proposal; confirmedEligibility?: H8SettlementEligibility | null }
 );
 export type H8RewardCommand = PendingMutationRecord & FReconfirmationLink & {
   adminId: number; kind: H8Original["kind"]; paramKey?: H8RewardParamKey; value?: string;
