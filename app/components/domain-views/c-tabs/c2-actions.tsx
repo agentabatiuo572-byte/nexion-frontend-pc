@@ -1523,7 +1523,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>核实后解除</Button>}
         </>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试只发原内容，不会重复执行。"}</p>,
+        detail: <p>{expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试只发原内容，不会重复执行。"}</p>,
         tech: techRows(record),
       };
     }),
@@ -1544,14 +1544,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Button size="sm" disabled={busy} disabledReason={reason} onClick={() => void recoverRevocation(record, true)}>按原操作重试</Button>
           {state.replayRejection && !record.ticketId && <VerifiedReleaseButton disabled={busy} onClick={() => revocationRelease.ask({ operation: "退出全部设备", target: record.label, createdAt: record.createdAt, getSnapshot: sessionRevocationRecovery.releaseSnapshot(record), release: () => { const released = sessionRevocationRecovery.release(record); syncPending(); return released; } })} />}
         </>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批。重试使用原操作编号和原理由。</p>,
+        detail: <p>重试使用原操作编号和原理由。</p>,
         tech: techRows(record),
       };
     }),
   ];
   const pendingNotices = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
     explain="这些操作发出后没收到明确结果，可能已经生效。先查询原操作；按原操作重试只发原内容，不会重复执行。有结果前，相关账户、名单或申请不能再操作。"
-    foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批 →</Link> : <span>请有操作记录读权限的同事核对。</span>}
+    foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : <span>请有操作记录读权限的同事核对。</span>}
     items={recoveryItems} />;
 
   const focusNotice = focusUserCode && canReadC2 && (

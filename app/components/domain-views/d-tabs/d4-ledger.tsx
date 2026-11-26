@@ -143,16 +143,19 @@ function appliedTimeRange({ from, to }: { from: string; to: string }) {
   return to ? `截至 ${timeText(to)}（北京时间）` : "不限时间";
 }
 
-/** Names the conditions the table was really loaded with, so a refused query can say what is still on screen. */
-function appliedConditions(applied: Applied, type: D4BillType | "", bizNo: string) {
+/**
+ * Names the conditions the table was really loaded with, so a refused query can say what is still on screen.
+ * chips=false：筛选条第二行已有用户、时间的条件标签，「已应用：…」不再列这几项；只剩它们时返回空串（VS-105）。
+ */
+function appliedConditions(applied: Applied, type: D4BillType | "", bizNo: string, chips = true) {
   const parts = [
     type && BILL_TYPE_LABELS[type],
-    applied.userId && `用户 ${userCode(applied.userId)}`,
+    chips && applied.userId && `用户 ${userCode(applied.userId)}`,
     applied.status && billStatus(applied.status).label,
-    (applied.from || applied.to) && appliedTimeRange(applied),
+    chips && (applied.from || applied.to) && appliedTimeRange(applied),
     applied.keyword && (bizNo && applied.keyword === bizNo ? `账单号 ${bizNo}` : `关键词「${applied.keyword}」`),
   ].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "全部账单";
+  return parts.length ? parts.join(" · ") : chips || !(applied.userId || applied.from || applied.to) ? "全部账单" : "";
 }
 
 /** 网址参数不合法时回默认值（ST-26），进页读一次（ST-59）。 */
@@ -642,7 +645,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
         </FilterField>
       </>}
       applied={appliedChips}
-      result={draftChanged ? `条件未应用 · 已应用：${appliedConditions(applied, type, bizNo)}` : undefined}
+      result={draftChanged ? ((rest) => rest ? `条件未应用 · 已应用：${rest}` : "条件未应用")(appliedConditions(applied, type, bizNo, false)) : undefined}
       notice={filterProblem && (
         <span data-proof="d4-filter-refused">
           {PROBLEM_TEXT[filterProblem.kind]}没有查询{error ? "。" : "，下面仍是上次的结果。"}

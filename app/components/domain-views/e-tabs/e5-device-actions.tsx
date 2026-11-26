@@ -228,7 +228,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
           {refused && !record.receivedTicketId && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>核实后解除</Button>}
         </>,
         detail: <>
-          <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交 · {record.device.user} · 理由：{record.reason}</p>
+          <p>{record.device.user} · 理由：{record.reason}</p>
           <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="操作编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
     }),
   ];
@@ -236,7 +236,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
     {discardRecovery.dialog}
     {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
     <RecoveryPanel title={recoveryTitle(items.filter(item => !item.key.startsWith("waiting:")).length, items.filter(item => item.key.startsWith("waiting:")).length)} tone="warn"
-      explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看提交时间、说明和原请求。" items={items} />
+      explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看说明和原请求。" items={items} />
     {error && !records.length && <Notice tone="warn" title={error} />}
     {closing && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt} offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={<>{closing.intent === "pause" || closing.intent === "resume" ? <Fact label="用户" value={closing.device.user} /> : <><Fact label="设备" value={closing.device.deviceName} /><Fact label="实例号" value={closing.device.serial} mono /></>}<Fact label="原理由" value={closing.reason} /></>}

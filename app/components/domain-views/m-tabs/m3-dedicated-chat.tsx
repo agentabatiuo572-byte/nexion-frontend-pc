@@ -2123,16 +2123,15 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
     "发出后没收到明确结果的消息，查清前不能再给同一位客户发。",
     recoveries.some(entry => entry.first || entry.reply) && `「只能查询结果」：${lookupReason}`,
     recoveries.some(isRedacted) && "「已不能接待，只能查询结果」：客户被转走或你的权限变了，原文和图片已从本机清除，只能查有没有发出，不能重发。",
-    `时间为${zoneLabel}。`,
   ].filter(Boolean).join("");
   const pendingItems: RecoveryItem[] = [
     ...recoveries.map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt, object: customerLabel(originalCustomer(entry.locator)), tag: null,
       line: entry.first || entry.reply ? "只能查询结果" : isRedacted(entry) ? "已不能接待，只能查询结果" : "原记录不全，只能查询结果",
-      detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
+      tech: sendTech(entry.row.commandKey),
       actions: <Button size="sm" disabled={flights.current.has(`${scopeIdentity}:${originalCustomer(entry.locator) ?? entry.row.commandKey}`)} onClick={() => void queryRecovery(entry)}>查询原操作</Button> })),
     ...otherSends.filter(entry => originalCustomer(entry.locator) !== targetCustomer).map(entry => ({ key: entry.row.commandKey, createdAt: entry.row.createdAt,
       object: customerLabel(originalCustomer(entry.locator)), tag: null, line: entry.first ? "首次联系，打开后查询或重试" : "打开原会话后查询或重试",
-      detail: <p>发出时间：{businessStamp(entry.row.createdAt)}</p>, tech: sendTech(entry.row.commandKey),
+      tech: sendTech(entry.row.commandKey),
       actions: <Button size="sm" disabled={busy} onClick={() => openOtherSend(entry)}>打开会话</Button> })),
   ];
   const lengthHint = composerMode === "write" && !pending && !firstPending ? supportLengthHint(draft) : null;
@@ -2230,7 +2229,7 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
           </div>
           {archiveMode && <div className="m3s-batch"><span role="status">已选 {archiveIds.size} 位客户</span><Button size="sm" disabled={!archiveIds.size || actionChecking} onClick={() => void archiveBatch()}>归档已选 {archiveIds.size}</Button><Button size="sm" variant="ghost" onClick={() => { setArchiveMode(false); setArchiveIds(new Set()); }}>取消</Button></div>}
         </header>
-        {pendingItems.length > 0 && <div className="m3s-pending"><RecoveryPanel label="发送结果未知的消息" title={`${pendingItems.length} 条消息发送结果未知`} explainLabel="这些消息怎么处理"
+        {pendingItems.length > 0 && <div className="m3s-pending"><RecoveryPanel label="发送结果未知的消息" verb="发出" title={`${pendingItems.length} 条消息发送结果未知`} explainLabel="这些消息怎么处理"
             explain={pendingHelp} items={pendingItems} /></div>}
         {recoveryError && <div className="m3s-pending"><Notice tone={recoveryError.startsWith("查到了") ? "neutral" : "warn"} action={<Button size="sm" onClick={() => setRecoveryError("")}>知道了</Button>}>{recoveryError}</Notice></div>}
         <div ref={rowsRef} className="m3s-rows" onScroll={event => { const el = event.currentTarget; if (listLimit < filtered.length && el.scrollTop + el.clientHeight >= el.scrollHeight - 80) setListLimit(n => n + LIST_CHUNK); }}>
@@ -2308,8 +2307,8 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
             {` 发出时间：${businessStamp(record.createdAt)}（${businessZone().label}）。`}
             {sessionEndReadFailure(record)}
           </Notice>)}
-          {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
-            explain={`之前接待里点过「结束会话」、还没确认结果的记录。只能查原结果，不会重发，也不影响这次接待。时间为${businessZone().label}。`}
+          {!holdEnding && <RecoveryPanel tone="neutral" label="之前接待的结束记录" verb="发出" title={`之前的接待留下 ${sessionEndRecoveries.filter(record => record.instanceState === "historical").length} 条结束记录`} explainLabel="这些记录是什么"
+            explain={`之前接待里点过「结束会话」、还没确认结果的记录。只能查原结果，不会重发，也不影响这次接待。`}
             items={sessionEndRecoveries.filter(record => record.instanceState === "historical").map(record => {
               const started = record.sessionRef ? Date.parse(`${record.sessionRef.slice(record.sessionRef.indexOf(":") + 1)}Z`) : NaN;
               const lookup = holdEndLookups[record.commandKey];
@@ -2318,7 +2317,6 @@ export function M3DedicatedChat({ ctx, snapshotRevision, back, summary, banner, 
                 tag: record.rejection ? <StatusTag tone="warn">被拒绝</StatusTag> : isRetryExpired(record) ? <StatusTag tone="done" icon={TimerOff}>已过期</StatusTag> : <StatusTag tone="neutral" icon={Search}>只能查询</StatusTag>,
                 line: lookup?.kind === "error" ? `原操作回执加载失败：${lookup.message}`
                   : record.rejection ? "结束被拒绝，核实后可以解除这条记录。" : isRetryExpired(record) ? RETRY_EXPIRED_TEXT : "结果未知，只能查原结果。",
-                detail: <p>发出时间：{businessStamp(record.createdAt)}</p>,
                 tech: <Fold inset title="技术信息" summary="操作编号"><Facts><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts></Fold>,
                 actions: sessionEndActions(record, lookup?.kind === "error") };
             })} />}

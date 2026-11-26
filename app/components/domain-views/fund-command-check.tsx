@@ -1,18 +1,18 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, SearchCheck, X } from "lucide-react";
-import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, IrreversibleTag, Modal, Notice, Segments, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
+import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, IrreversibleTag, KeepText, Modal, Notice, Segments, StatusTag, Textarea, type StateTone } from "@/app/components/rd";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, useFreshFirst, type ClosureBasis } from "./recovery-panel";
+import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, sentLine, useFreshFirst, type ClosureBasis } from "./recovery-panel";
 import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
 export { FAILED_EXPIRED_LINE, closureKnown, closureConflict } from "./recovery-panel";
 
 /**
  * 资金类「结果未知」记录的恢复面板：D2、D3、D5、D6、D7、J1、K1、L1、E4 共用一个样子。
- * 一个面板、每条一行（操作 · 状态 · 一句结论 · 固定在右侧的按钮），点开一行才看发出时间、详细说明和技术信息。
+ * 一个面板、每条一行（操作 · 状态 · 提交时间和一句结论 · 固定在右侧的按钮），和共用恢复条同一个样子；点开一行看查询时间、详细说明和技术信息。
  * 查询原操作只读（GET by-command-key）；核查结案是另一个按钮、另一个确认框，只给有调查权限的超级管理员。
  * 资金操作系统证明不了「确实没执行」，所以没查到、仍未知都不写成没执行。
  */
@@ -131,7 +131,8 @@ export const REJECTED_HELP = "按后台当时的拒绝结案，记录解除。�
 
 const CONCLUSION_TEXT: Partial<Record<FundCommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知", REJECTED: "后台拒绝" };
 
-function RecoveryRow({ row }: { row: FundRecoveryRow }) {
+/** zoned：面板标题旁已经写了时区，展开后的查询时间不再写。 */
+function RecoveryRow({ row, zoned }: { row: FundRecoveryRow; zoned: boolean }) {
   const [open, setOpen] = useState(false);
   const [checkedAt, setCheckedAt] = useState<number>();
   useEffect(() => { if (row.outcome) setCheckedAt(Date.now()); }, [row.outcome]);
@@ -148,12 +149,13 @@ function RecoveryRow({ row }: { row: FundRecoveryRow }) {
         <ChevronRight className="fund-row-chevron" size={14} aria-hidden /><span className="fund-row-title" ref={fullTitle}>{row.title}</span>
       </button>
       <StatusTag tone={view.tone}>{view.label}</StatusTag>
-      <span className="fund-row-text">{view.line}</span>
+      {/* 提交时间常显在结论句前面（OP-93 第 1 项），写法同共用恢复条；一个分句整段换行，不折出孤字。 */}
+      <span className="fund-row-text"><KeepText text={sentLine(row.createdAt, view.line)} /></span>
       <span className="fund-row-actions">{row.actions}</span>
     </div>
     {open && <div className="fund-row-detail" id={id}>
       <p className="fund-row-full">{row.title}</p>
-      {(row.createdAt !== undefined || checkedAt) && <p>{[row.createdAt !== undefined ? `${formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")} 发出` : "", checkedAt ? `${formatBusinessTimeCompact(new Date(checkedAt).toISOString(), "—")} 查询` : ""].filter(Boolean).join("，")}（{businessZone().label}）。</p>}
+      {checkedAt && <p>{formatBusinessTimeCompact(new Date(checkedAt).toISOString(), "—")} 查询{zoned ? "" : `（${businessZone().label}）`}。</p>}
       {row.detail}
       {view.more && <p>{view.more}</p>}
       {error && <p>{error}</p>}
@@ -201,11 +203,12 @@ export function FundRecoveryPanel({ rows, link, settled, onDismissSettled, settl
   const open = labels.filter(label => OPEN_LABELS.includes(label)).length;
   const waiting = labels.filter(label => label === "待审批").length;
   const ended = labels.filter(label => label === "没有建成").length;
+  const timed = rows.some(row => row.createdAt !== undefined);
   return <>
     {settled?.map(item => <SettledLine key={item.key} label={item.label} text={settledText(item)} action={settledAction?.(item)}
       onDismiss={onDismissSettled && (() => onDismissSettled(item.key))} />)}
-    {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? recoveryTitle(rows.length - open - waiting - ended, waiting, ended, open)}<Explain label="结果未知怎么处理" content={INTRO} /></>}>
-      <ul className="fund-rows" aria-label="结果未知的操作">{visible.map(row => <RecoveryRow key={row.key} row={row} />)}</ul>
+    {rows.length > 0 && <div ref={box}><Notice tone="warn" title={<>{heading ?? recoveryTitle(rows.length - open - waiting - ended, waiting, ended, open)}<Explain label="结果未知怎么处理" content={INTRO} />{timed && <span className="fund-rows-zone">时间为{businessZone().label}</span>}</>}>
+      <ul className="fund-rows" aria-label="结果未知的操作">{visible.map(row => <RecoveryRow key={row.key} row={row} zoned={timed} />)}</ul>
       {(rows.length > 3 || link) && <div className="fund-rows-foot">
         {rows.length > 3 && <Button size="sm" variant="ghost" onClick={() => setAll(value => !value)}>{all ? "只看前 3 条" : `展开全部 ${rows.length} 条`}</Button>}
         {link}

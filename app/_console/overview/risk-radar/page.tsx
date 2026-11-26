@@ -1074,8 +1074,9 @@ export default function RiskRadarPage() {
                   </Facts>
                 </Notice>
               )}
-              <Field label="操作理由" required hint={!recovering && thresholdRule.ready ? `至少 ${thresholdRule.min} 字` : undefined}
-                help={!recovering && !thresholdRule.ready ? reasonHint : undefined}
+              {/* 理由规则读不到：和共用确认框同一个样子，橙黄提示条；读取中写在字段名后面（OP-22、DT-22）。 */}
+              {!recovering && thresholdRule.error && <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><Notice tone="warn">{thresholdRule.error}</Notice></div>}
+              <Field label="操作理由" required hint={recovering ? undefined : thresholdRule.ready ? `至少 ${thresholdRule.min} 字` : thresholdRule.error ? undefined : "正在加载，稍候即可提交。"}
                 error={!recovering && thresholdRule.ready && reason && !reasonValid && !thresholdLocked ? reasonHint : undefined}>
                 <Textarea value={reason} disabled={thresholdLocked} rows={3} placeholder="例如：工单号、调整依据" count={!recovering && thresholdRule.ready ? `${reasonLength}/${thresholdRule.max}` : undefined} onChange={(event) => setReason(event.target.value)} />
               </Field>
@@ -1213,8 +1214,8 @@ export default function RiskRadarPage() {
                 <Fact k="记录时间">{timeText(alert.createdAt)}</Fact>
                 <Fact k={statusChanged ? "最新进度" : "处理进度"}>{statusChanged ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
               </Facts>
-              {!statusChanged && <Field label="操作理由" required hint={statusRule.ready ? `至少 ${statusRule.min} 字` : undefined}
-                help={!statusOriginal && !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : undefined}
+              {!statusChanged && !statusOriginal && statusRule.error && <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><Notice tone="warn">{statusRule.error}</Notice></div>}
+              {!statusChanged && <Field label="操作理由" required hint={statusOriginal ? undefined : statusRule.ready ? `至少 ${statusRule.min} 字` : statusRule.error ? undefined : "正在加载，稍候即可提交。"}
                 error={!statusOriginal && statusRule.ready && statusReason ? hint : undefined}>
                 <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusRule.policy?.max}
                   rows={3} placeholder={isTamper(alert) ? "例如：已核对拦截记录，账户安全设置未改变" : "例如：已核对这条记录和账户近期操作"} count={statusRule.ready ? `${length}/${statusRule.max}` : undefined} onChange={(event) => setStatusReason(event.target.value)} />

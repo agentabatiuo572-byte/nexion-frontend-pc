@@ -1830,7 +1830,12 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     // 发放单号带连字符，按正文写，在连字符处换行，不出横向滚动。
     if (w.operationCode === "f_reward_payout_action") return objectText(w);
     if (isGParamTicket(w)) return objectText(w);
-    return <span data-mono className="a2-code">{objectText(w)}</span>;
+    // 认得出的名字（商品名、账号名、参数名）按正文写；只有回落到原编号时才等宽（TX-28、VS-52）。「名字（编号）」只把编号等宽。
+    const text = objectText(w);
+    if (text === w.obj) return <span data-mono className="a2-code">{text}</span>;
+    const code = `（${w.obj}）`;
+    if (text.endsWith(code)) return <>{text.slice(0, -code.length)}（<span data-mono className="a2-code">{w.obj}</span>）</>;
+    return text;
   };
   /** 补发两笔以上：逐笔读现在的样子，按申请单上的顺序列出（一笔时写在「这笔奖励」一行）。批准框里不折叠（flat，OP-151），抽屉里收在折叠里。 */
   const reissueList = (w: A2OperationRow, open = false, flat = false) => {

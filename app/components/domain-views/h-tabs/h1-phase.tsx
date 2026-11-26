@@ -969,7 +969,6 @@ export default function H1Phase({ ctx,
           result: title && resultLine ? { tag: <StatusTag tone={title === "记为失败" ? "neutral" : title === "还在执行" ? "progress" : "warn"}>{title}</StatusTag>, line: resultLine } : undefined,
           note: answer, actions: recordActions(row, false),
           detail: <>
-            <p>{formatBusinessTimeCompact(new Date(row.createdAt).toISOString(), "—")}（{businessZone().label}）提交。有结论前这项不能再改。</p>
             {row.requests.length > 1 && row.requests.every((item) => item.kind === "patch") && <p>{stepsText(row)}。{!isRetryExpired(row) && !line && "重试从没确认的那一步接着发，已保存的不再发。"}</p>}
             {row.state === "rejected" && title && <p>拒绝原因：{row.rejectionReason ?? "没有记下拒绝原因，请查询原操作核对。"}</p>}
             <p><Button size="sm" variant="ghost" onClick={() => setDetail(row)}>原操作详情</Button></p>

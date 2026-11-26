@@ -21,7 +21,7 @@ import { isDeterministicRejection } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, isRetryExpired, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { APP_VISIBLE_TEXT_HINT, containsHan } from "@/lib/admin/content-language-rules";
-import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import "./hosting-centers.css";
@@ -261,7 +261,6 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
         {receipt.status !== "unknown" && receipt.status !== "pending" && <Button size="sm" variant="ghost" onClick={() => dismiss(receipt)}>知道了</Button>}
       </>,
       detail: <Facts>
-        <Fact k="提交时间">{`${businessStamp(receipt.createdAt)}（${businessZone().label}）`}</Fact>
         <Fact k="改了什么"><DiffList rows={receipt.changes} /></Fact>
         {(receipt.why || (receipt === pending && receiptError)) && <Fact k="原因">{receipt.why || receiptError}</Fact>}
       </Facts>,

@@ -1444,7 +1444,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           {refused && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>核实后解除</Button>}
         </>,
         detail: <p>
-          {formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出，可能已经生效。
+          可能已经生效。
           {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
         </p>,

@@ -14,13 +14,14 @@ import { useReach } from "@/lib/nav/use-reach";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessZone } from "@/lib/admin/business-time";
 import { e3ConfigAmplifies } from "@/lib/admin/e3-outflow";
 import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, Facts, Fold, PageHeader, Panel,
   Modal, ReleaseModal, ScaleBar, SegmentBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr, TrendLines } from "@/app/components/rd";
 import type { EViewCtx, McSpec } from "./types";
 import { E3Manual } from "./e3-manual";
 import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
+import { TechInfo } from "../recovery-panel";
 import { amountDisplay } from "@/lib/format";
 
 /** 批准资格的真实路径（后端 A2：不同于发起人、有批准权、能访问 E 域；单项另要 E3 读权）。 */
@@ -132,8 +133,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations, e3Proposals } = ctx;
   usePendingReplayDeadline(nextRecoveryDeadline(e3Proposals.records));
   const E3_PROPOSALS = e3Proposals.records.map(p => ({ ...p, original: p, id: p.commandKey, reason: p.input.reason,
-    state: p.state === "unknown" && isRetryExpired(p) ? "expired" as const : p.state,
-    at: businessStamp(p.createdAt) }));
+    state: p.state === "unknown" && isRetryExpired(p) ? "expired" as const : p.state }));
   type Shown = typeof E3_PROPOSALS[number];
   const [releasing, setReleasing] = useState<Shown | null>(null);
   const endText = (status: string) => `审批${PROPOSAL_END[status]?.tag ?? "状态待核实"}：${PROPOSAL_END[status]?.text ?? "请到操作记录与审批核对。"}`;
@@ -174,7 +174,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const what = (p: Shown) => `修改「${p.label.replace(/ 调整$/, "")}」`;
   const busy = !!e3Proposals.busy;
   const query = (p: Shown, label = "查询原操作") => E3_RECOVERY.lookup && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={busy} onClick={() => void E3_RECOVERY.lookup!(p)}>{label}</Button>;
-  const changed = (p: Shown) => <p>{changeText(p)} · {p.at} 提交（{zone}）<br /><span className="e3p-sub">理由：{p.reason}</span></p>;
+  const changed = (p: Shown) => <p>{changeText(p)}<br /><span className="e3p-sub">理由：{p.reason}</span></p>;
   const pendingList = E3_PROPOSALS.filter(p => p.state === "pending");
   const items: RecoveryItem[] = [
     ...E3_PROPOSALS.map(p => {
@@ -198,12 +198,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       return { key: r.commandKey, createdAt: r.createdAt, object: `${names.slice(0, 3).join("、")}${names.length > 3 ? ` 等 ${names.length} 项` : ""}`, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
         line: "早期提交缺原请求，只能查询，不能重试。",
         actions: E3_RECOVERY.legacy && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原操作</Button>,
-        detail: <p>{businessStamp(r.createdAt)} 提交（{zone}）</p> };
+        // 展开后和商品管理的旧记录一样只有技术信息（操作编号，OP-154）；提交时间已常显在行上。
+        tech: <p className="fund-row-tech"><TechInfo commandKey={r.commandKey} /></p> };
     }),
   ];
   const recovery = <>
     <RecoveryPanel title={recoveryTitle(items.length - E3_PROPOSALS.filter(p => p.state === "pending" || p.state === "rejected").length, E3_PROPOSALS.filter(p => p.state === "pending").length, E3_PROPOSALS.filter(p => p.state === "rejected").length)} tone="warn"
-      explain={`有结论前，这几项不能再改。点行首的箭头看改了什么、提交时间（${zone}）和理由。`} items={items} />
+      explain="有结论前，这几项不能再改。点行首的箭头看改了什么和理由。" items={items} />
     {releasing && <ReleaseModal label={changeText(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => E3_RECOVERY.release(releasing)} />}
   </>;
   const missing = REQUIRED_E3_KEYS.filter((key) => pE(key) === "—");

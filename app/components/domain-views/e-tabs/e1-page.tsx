@@ -9,7 +9,7 @@ import { OperationConfirmModal, useToast, usePendingReplayDeadline } from "../de
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
-import { businessClock, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
 import { fetchE3Params } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -619,7 +619,6 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
   const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择操作编号")); };
-  const sent = (at: number) => `${formatBusinessTimeCompact(new Date(at).toISOString(), "—")} 提交`;
   const recovery: RecoveryItem[] = [
     ...waitingReceipts.map(row => ({ key: `receipt:${row.id}`, object: row.action, createdAt: row.createdAt,
       tag: <StatusTag tone="warn">待审批</StatusTag>,
@@ -669,7 +668,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留", createdAt: record.createdAt,
       tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
       actions: canQuery ? <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => void check(record)}>查询原操作</Button> : undefined,
-      detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
+      detail: <><p>升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
     ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
       actions: e1MediaHasOwner(record) ? <Button size="sm" disabledReason={readBlock({ op: "sku-save", target: record.skuId })} onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
@@ -683,7 +682,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
       <RecoveryPanel tone={recovery.length === waitingReceipts.length ? "progress" : "warn"} title={recoveryTitle(unknownCount, waitingReceipts.length, verifiedDrafts.length)} label="商品管理的修改"
-        explain="有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
+        explain="有结论前，这些对象不能提交新修改。点行首的箭头看说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
       <E1Catalog ctx={ctx} />
     </>}
     <E1Editor request={edit} gates={gates} currentPhaseId={currentPhase.phaseId} writable={canWrite && !editorReadBlock} writeBlockedReason={editorReadBlock} currentSku={currentSku} onClose={() => { setEdit(null); setSkuConflict(null); }} busy={editorBusy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onRevisionAccepted={() => { setSkuConflict(null); setAttemptKey(""); }} onReview={review => { setAttemptKey(""); setConfirmation({ ...review, briefKind: "config", name: `${review.beforeSku ? "编辑" : "新增"}商品 · ${review.sku.name}`, op: "sku-save", gates, isNew: !review.beforeSku }); }} />

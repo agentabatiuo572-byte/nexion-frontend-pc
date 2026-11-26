@@ -4218,16 +4218,23 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const effectiveEffect = typeof effect === "function" ? effect(businessValue, spec && editValueOk && newVal.trim() && !sameAsCurrent ? newVal : undefined) : effect;
   const coverageInFacts = coverageFirst && !!shownFacts;
   const checkCopy = readyReview?.coverageCheck ?? (rdApproval ? approvalSpec?.coverageCheckCopy ?? "提交和批准时检查兑付覆盖率。" : coverageCheck);
+  // 覆盖率读到了、够得上红线：安静的一行，数字强、其余弱，不带警告图标（VS-107、DP-05）。低于红线、读不到、没有覆盖率时照旧是提示条。
+  const coverageCalm = !!coverage && !coverageUnknown && !covBlocked;
+  const coverageExplain = <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage?.healthyPct !== undefined && !coverageUnknown && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />;
   const coverageNotice = effectiveAmplifies && (
     surface ? <div className="rd-confirm-funding">
-      <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
+      {coverageCalm ? <p className="rd-funding-calm">
+        {/* 长的后果句按分句换行，不在句末折出两三个字的孤行（TL-01）。 */}
+        {typeof coverageLead === "string" ? <KeepText text={/[。；！]$/.test(coverageLead) ? coverageLead : `${coverageLead}。`} /> : <span className="rd-keep">{coverageLead}。</span>}
+        <span className="rd-keep">兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageExplain}</span>
+      </p> : <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
         {(coverage || coverageUnknown) && <div className="rd-funding-coverage">
           兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageUnknown && "，暂时读不到"}
-          <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage?.healthyPct !== undefined && !coverageUnknown && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />
+          {coverageExplain}
         </div>}
         {covBlocked && <p>{coverageUnknown ? "读到之前不能提交。" : "低于红线，暂时不能提交。"}</p>}
         {!coverage && auditSink === "local-history" && <p>{checkCopy}本页暂不自动检查覆盖率，请自行确认资金影响。</p>}
-      </RdNotice>
+      </RdNotice>}
     </div> : <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
       <span className="ico"><Icon name="alert" size={16} /></span>
       <div className="tiny">

@@ -5,7 +5,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Copy, PowerOff } from "lucide-react";
 import { Button, Explain, IconButton, KeepText, Notice, ReleaseModal, StatusTag } from "@/app/components/rd";
-import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessZone } from "@/lib/admin/business-time";
 import { isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -230,7 +230,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
               {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>核实后解除</Button>}
             </>,
-            detail: <p>{businessStamp(item.createdAt)}（{zoneLabel()}）<KeepText text="发出，可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
+            detail: <p><KeepText text="可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
             tech: <p><Explain label="技术信息" content={`操作编号 ${item.key}`}>技术信息</Explain></p>,
           };
         })} />

@@ -163,8 +163,8 @@ export function M1TodoPanel(props: TodoPanelProps) {
   return <Panel className="m1-todo" icon={Users} tone="role-3" title="待跟进客户" sub={sub} explainLabel="待跟进客户的说明"
     explain="一位客户只算一次、占一行。不带筛选时和今日概览用同一范围，各自刷新。待回复的排在前面。">
     <FilterBar onSubmit={props.onSubmit} querying={props.querying} onClear={props.onClear} canClear={props.canClear} moreCount={props.moreCount} applied={props.applied}
-      // 「条件未应用」紧跟在「查询」后面，不另起一行把名单往下推（ST-18）；按钮和 FilterBar 自带的「查询」相同。
-      action={<><Button type="submit" disabled={props.querying}>查询</Button>{props.draftChanged && <span className="m1-todo-unapplied" role="status">条件未应用</span>}</>}
+      // 「条件未应用」由共用筛选条放在「查询」旁（ST-18）。
+      result={props.draftChanged ? "条件未应用" : undefined}
       scope={<FilterField><div className="rd-field"><span aria-hidden="true">待办原因</span><Segments label="待办原因" value={filter} items={FILTER_ITEMS} onChange={props.onFilter} /></div></FilterField>}
       more={<>
         <FilterField label="负责组"><Select aria-label="负责组" value={props.groupValue} options={groups.list} disabled={groups.disabled} onChange={props.onGroup} /></FilterField>
