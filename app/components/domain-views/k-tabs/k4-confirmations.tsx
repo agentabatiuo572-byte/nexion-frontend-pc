@@ -31,7 +31,7 @@ function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveSco
     </>,
     statedBrief: {
       impact: `系统先给这个账户评分，再撤掉人工改分 ${user.effectiveScore} 分。`,
-      check: "提交前已核对：这位用户的评分在你打开后没有被别人改过。",
+      check: "这位用户的评分在你打开后没有被别人改过。",
     },
     reasonPlaceholder: "写清依据，例如：工单号、申诉已核实",
     reason: true,

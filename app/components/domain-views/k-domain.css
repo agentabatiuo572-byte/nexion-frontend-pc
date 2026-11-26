@@ -549,6 +549,7 @@
 .k4-unscored { color: var(--rd-text-2); white-space: nowrap; }
 .k4-evidence-wins { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-4); color: var(--rd-text-2); }
 .k4-evidence-wins > span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k4-evidence-tip { max-width: 340px; }
 .k4-evidence-wins:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: var(--rd-radius-tag); }
 .k4-blocked { color: var(--rd-text-2); white-space: nowrap; }
 .k4-back { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }

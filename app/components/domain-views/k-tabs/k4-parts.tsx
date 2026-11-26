@@ -305,7 +305,7 @@ function WithdrawWindows({ data }: { data: K4WithdrawalEvidence }) {
             <span>{windowText("历史日均", summary.baselineDaily)}</span>
           </span>
         </Tooltip.Trigger>
-        <Tooltip.Portal><Tooltip.Content className="rd-tip rd-cell-tip" sideOffset={6}>{tip.join("\n")}</Tooltip.Content></Tooltip.Portal>
+        <Tooltip.Portal><Tooltip.Content className="rd-tip rd-cell-tip k4-evidence-tip" sideOffset={6}>{tip.join("\n")}</Tooltip.Content></Tooltip.Portal>
       </Tooltip.Root>
     </Tooltip.Provider>
   );
