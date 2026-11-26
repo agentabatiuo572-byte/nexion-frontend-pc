@@ -56,6 +56,7 @@ import { SignalList, type SignalListFilters, type SignalListPage, type SignalLis
 import { readSignalQuery, replaceSignalQuery, signalRequestQuery, signalReturnTo, SIGNAL_PAGE_SIZES } from "./signal-query";
 
 const THRESHOLD_SLOT = "bankrun-threshold";
+const THRESHOLD_REASON_MAX_UNITS = 200;
 const SUBSCRIPTION_SLOT = "alert-subscription";
 
 const TRIAGE = {
@@ -342,11 +343,14 @@ export default function RiskRadarPage() {
   const thresholdValid = Number.isFinite(yellowPct) && yellowPct >= 5 && yellowPct <= 50
     && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
   const thresholdRule = useReasonRule(!!threshold && !thresholdOriginal && !approvalRecovery);
-  const reasonLength = visibleReasonLength(reason);
-  const reasonValid = thresholdRule.ok(reason);
+  const thresholdReason = reason.trim();
+  const reasonLength = visibleReasonLength(thresholdReason);
+  // B5 的直接提交和审批均限制实际提交理由的 UTF-16 长度。
+  const reasonOverflow = Math.max(reasonLength - thresholdRule.max, thresholdReason.length - THRESHOLD_REASON_MAX_UNITS);
+  const reasonValid = thresholdRule.ready && reasonLength >= thresholdRule.min && reasonOverflow <= 0;
   const reasonHint = !thresholdRule.ready ? thresholdRule.error || "正在加载，稍候即可提交。"
     : reasonLength < thresholdRule.min ? `操作理由还差 ${thresholdRule.min - reasonLength} 字`
-      : reasonLength > thresholdRule.max ? `操作理由多了 ${reasonLength - thresholdRule.max} 字` : undefined;
+      : reasonOverflow > 0 ? `操作理由多了 ${reasonOverflow} 字` : undefined;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
   usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
@@ -625,14 +629,14 @@ export default function RiskRadarPage() {
     try {
       if (requiresApproval) {
         const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
-          pendingApproval?.reason ?? reason.trim(), fetchB5Radar, pendingApproval ? "retry" : "new", facts, thresholdDraftKey);
+          pendingApproval?.reason ?? thresholdReason, fetchB5Radar, pendingApproval ? "retry" : "new", facts, thresholdDraftKey);
         if (!result) return;
         setApprovalVerifiedKey(result.ticket.status === "pending" ? pendingThresholdConfigApproval("B5", session.adminId)?.commandKey ?? null : null);
         setToast(result.acknowledgement);
       } else {
         original ??= rememberB5Command(String(session.adminId), THRESHOLD_SLOT, "b5-threshold", {
           kind: "threshold", method: "PUT", path: "/api/admin/risk/bankrun-thresholds", facts,
-          body: JSON.stringify({ yellowPct, redPct, expectedVersion: threshold.version, reason: reason.trim(), operator }),
+          body: JSON.stringify({ yellowPct, redPct, expectedVersion: threshold.version, reason: thresholdReason, operator }),
         }) as Extract<B5PendingWrite, { kind: "threshold" }>;
         setThresholdOriginal(original);
         const saved = original;
@@ -1032,7 +1036,7 @@ export default function RiskRadarPage() {
               : !previewReady && approvalRecovery !== "retry" ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
                 : undefined;
         return (
-          <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty
+          <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty={thresholdChanged || !!thresholdReason}
             sub={requiresApproval
               ? <StatusTag tone="warn" icon={LockOpen} explain="提高红线要另一位超级管理员批准，自己不能批。批准前线被别人改过的，这张单会被拒。">批准后生效</StatusTag>
               : <StatusTag tone="progress" filled>立即生效</StatusTag>}
@@ -1080,7 +1084,7 @@ export default function RiskRadarPage() {
               <Field label="操作理由" required hint={!recovering && thresholdRule.ready ? `至少 ${thresholdRule.min} 字` : undefined}
                 help={!recovering && !thresholdRule.ready ? reasonHint : undefined}
                 error={!recovering && thresholdRule.ready && reason && !reasonValid && !thresholdLocked ? reasonHint : undefined}>
-                <Textarea value={reason} disabled={thresholdLocked} maxLength={thresholdRule.policy?.max} rows={3} placeholder="例如：工单号、调整依据" count={!recovering && thresholdRule.ready ? `${reasonLength}/${thresholdRule.max}` : undefined} onChange={(event) => setReason(event.target.value)} />
+                <Textarea value={reason} disabled={thresholdLocked} rows={3} placeholder="例如：工单号、调整依据" count={!recovering && thresholdRule.ready ? `${reasonLength}/${thresholdRule.max}` : undefined} onChange={(event) => setReason(event.target.value)} />
               </Field>
             </div>
           </Modal>

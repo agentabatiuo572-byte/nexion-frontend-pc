@@ -33,6 +33,11 @@ export type StatusSentence = {
   fundFailed?: boolean;
 };
 
+const riskFeedUnavailableDetails = {
+  aboutRiskFeed: true,
+  explain: "首页的风险汇总要有「资金与应付款总览」的查看权限，你的账号没有。待处理的风险到风险提醒看。",
+};
+
 export function statusSentence(input: {
   belowRedline: boolean;
   tier: B2WaterLevel["tier"] | null;
@@ -78,9 +83,13 @@ export function statusSentence(input: {
   if (input.belowHealthy) return { state: "warn", aboutFund: true, text: withDays("资金需要注意：覆盖率低于健康线"), hint: advice ?? undefined };
   if (input.tier === "WARNING") return { state: "warn", aboutFund: true, text: days ? `资金需要注意：储备只够付${days.replace("可覆盖 ", "")}` : "资金需要注意", hint: advice ?? undefined };
   if (input.pressure === "warn") return { state: "warn", aboutRisk: true, text: "提现压力到黄线，看一下风险与开关", explain: "近 24 小时提现申请或待提现总额占储备的比例到了黄线。" };
-  if (pendingRows > 0) return { state: "neutral", text: `有 ${pendingRows} 件事要处理${input.fundSafe ? "，资金安全" : ""}` };
+  if (pendingRows > 0) {
+    const text = `有 ${pendingRows} 件事要处理`;
+    if (input.riskFeedUnavailable) return { state: "neutral", text: `${text}，风险待处理这里看不到`, ...riskFeedUnavailableDetails };
+    return { state: "neutral", text: `${text}${input.fundSafe ? "，资金安全" : ""}` };
+  }
   if (input.failed.length === 1) return { state: "unknown", text: `${input.failed[0]}读取失败，状态不确定` };
   if (input.failed.length > 1) return { state: "unknown", text: "部分数据读取失败，状态不确定" };
-  if (input.riskFeedUnavailable) return { state: "unknown", aboutRiskFeed: true, text: "暂无法判断：这里看不到风险待处理", explain: "首页的风险汇总要有「资金与应付款总览」的查看权限，你的账号没有。待处理的风险到风险提醒看。" };
+  if (input.riskFeedUnavailable) return { state: "unknown", text: "暂无法判断：这里看不到风险待处理", ...riskFeedUnavailableDetails };
   return { state: "ok", text: "一切正常，没有要你处理的事" };
 }
