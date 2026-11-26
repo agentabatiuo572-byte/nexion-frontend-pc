@@ -268,7 +268,7 @@ export function IssueCard({ item, actions, extra }: { item: BuiltDimension; acti
 /** 正常和不用算的项：一项一行，名称、值、状态、入口。 */
 export function QuietRow({ item, actions, extra }: { item: BuiltDimension; actions: ReactNode; extra?: ReactNode }) {
   return (
-    <li className="b5-quiet-row">
+    <li className="b5-quiet-row" id={`b5-dim-${item.key}`}>
       <IconTile icon={item.icon} tone="role-other" size={22} />
       <span className="b5-quiet-name">{item.name}<Explain label={`${item.name}怎么算`} content={item.explain} /></span>
       <span className="b5-quiet-value" data-zero={item.zero ? "" : undefined}>{item.quiet}</span>

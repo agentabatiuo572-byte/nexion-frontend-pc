@@ -610,7 +610,7 @@ function exportPorts(operator: Operator, views: View[], invalidateAccess: () => 
         asOf: preview?.window ? businessStamp(Date.parse(preview.window.asOf)) : "—",
         items: preview?.items ?? uncheckedItems(restoration ? types : []),
         selected: draft ? selected : selected.filter(type => preview?.items.some(item => item.type === type && !["empty", "stale", "unavailable"].includes(item.check.state))),
-        blocked: previewBlocked(preview), restoration, recoveredReason: draft?.reason,
+        blocked: exportAvailability(options).exportBlocked ?? previewBlocked(preview), restoration, recoveredReason: draft?.reason,
       };
     },
     async check(query, edited) {

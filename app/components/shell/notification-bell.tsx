@@ -18,11 +18,11 @@ import { businessZone, formatBusinessTimeCompact, subscribeBusinessZone } from "
 import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
-import { fmtConfigPct, fmtPct } from "@/lib/format";
+import { fmtConfigPct, fmtNum, fmtPct } from "@/lib/format";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
 import { approvalActionName } from "@/lib/admin/a2-approval-text";
-import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
+import { isRiskConclusion, riskBellHref, riskFeedTitle } from "@/lib/admin/risk-feed";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
 type AlertLevel = "high" | "mid" | "low";
@@ -137,8 +137,9 @@ export function NotificationBell() {
       ...bDomain.riskRadar.feed.filter((item) => !isRiskConclusion(item)).slice(0, 5).map((item, index) => ({
         id: `b-feed-${index}-${item.sev}`,
         level: severityLevel(item.sev),
-        text: riskFeedTitle(item.t),
-        href: item.href || "/overview/risk-radar",
+        // 达到自动升级线一档和首页、类型列表、风险评分规则同名（VR-06）。
+        text: item.band === "AUTO_REPORT" ? `达到自动升级线 ${fmtNum(item.count)} 个账户` : riskFeedTitle(item.t),
+        href: riskBellHref(item),
       })),
     ];
   })();

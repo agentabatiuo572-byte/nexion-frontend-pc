@@ -61,13 +61,18 @@
 
 /* ---------- 两张表 ---------- */
 .radarpage .b5-lists { display: flex; flex-direction: column; gap: var(--rd-space-3); min-width: 0; }
-.radarpage .b5-signals th:nth-child(2), .radarpage .b5-signals td:nth-child(2) { width: 110px; }
-.radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 230px; }
-.radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 140px; white-space: nowrap; }
+/* 列：级别 · 风险信号（占满）、处理进度 · 发送、[被拦入口]、记录时间、去处理、操作 */
+.radarpage .b5-signals :is(th, td):nth-child(2) { width: 140px; }
+.radarpage .b5-signals:not([data-blocked]) :is(th, td):nth-child(3) { width: 175px; }
+.radarpage .b5-signals:not([data-blocked]) :is(th, td):nth-child(4) { width: 174px; white-space: nowrap; }
+.radarpage .b5-signals[data-blocked] :is(th, td):nth-child(3) { width: 140px; }
+.radarpage .b5-signals[data-blocked] :is(th, td):nth-child(4) { width: 175px; }
+.radarpage .b5-signals[data-blocked] :is(th, td):nth-child(5) { width: 174px; white-space: nowrap; }
+.radarpage .b5-signals .rd-cell-sub [data-mono] { font-size: inherit; }
 /* 一行：级别标签、类别、具体情况；放不下省略，悬停看全句，点行看详情 */
 .radarpage .b5-signals .rd-cell-main > .rd-tag { margin-right: var(--rd-space-2); vertical-align: middle; }
 .radarpage .b5-signal-fact { color: var(--rd-text-2); }
-.radarpage .b5-handler { color: var(--rd-text-2); }
+.radarpage .b5-handler { margin-left: var(--rd-space-2); color: var(--rd-text-2); }
 .radarpage .b5-inbox th:nth-child(2), .radarpage .b5-inbox td:nth-child(2) { width: 200px; }
 .radarpage .b5-inbox th:nth-child(3), .radarpage .b5-inbox td:nth-child(3) { width: 160px; }
 .radarpage .b5-inbox th:nth-child(4), .radarpage .b5-inbox td:nth-child(4) { width: 200px; }
@@ -78,13 +83,30 @@
 .b5-dialog .b5-preview { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); color: var(--rd-text-2); }
 
 @media (max-width: 1280px) {
-  .radarpage .b5-signals th:nth-child(3), .radarpage .b5-signals td:nth-child(3) { width: 146px; }
-  .radarpage .b5-signals th:nth-child(4), .radarpage .b5-signals td:nth-child(4) { width: 132px; white-space: normal; }
+  .radarpage .b5-signals:not([data-blocked]) :is(th, td):nth-child(4), .radarpage .b5-signals[data-blocked] :is(th, td):nth-child(5) { width: 132px; white-space: normal; }
 }
+
+/* ---------- 最近风险信号页签：类型列表在上，名单在下，区块之间 20 ---------- */
+.radarpage .b5-signals-pane { display: flex; flex-direction: column; gap: var(--rd-space-5); min-width: 0; }
+.radarpage .b5-cats-panel .rd-panel-head + * { margin-top: 0; }
+.radarpage .b5-cat-row { width: 100%; border: 0; font: inherit; text-align: left; cursor: pointer; }
+.radarpage .b5-cat-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) { .radarpage .b5-cat-row:hover { background: var(--rd-control); } }
+.radarpage .b5-cat-row[aria-pressed="true"] { background: var(--rd-selected); }
+.radarpage .b5-cat-dot { display: inline-block; width: 6px; height: 6px; margin-right: var(--rd-space-2); border-radius: 50%; background: var(--rd-brand-ink); vertical-align: middle; }
+.radarpage .b5-cats .rd-todo-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--rd-space-2); margin-top: 2px; }
+.radarpage .b5-cats .rd-todo-owner { color: var(--rd-text-2); }
+.radarpage .b5-list-filter { padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x) var(--rd-space-3); }
+.radarpage .b5-list-stale { padding: 0 var(--rd-panel-pad-x) var(--rd-space-3); }
+.radarpage .b5-empty { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--rd-space-2); }
+.b5-dialog .b5-ref { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 2px; }
+.b5-dialog .b5-ref:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; }
 @media (max-width: 1180px) {
   .radarpage .b5-quiet-row { grid-template-columns: 22px minmax(104px, 140px) minmax(0, 1fr) auto; }
   .radarpage .b5-quiet-actions { grid-column: 2 / -1; justify-content: flex-start; }
 }
+/* 抽屉判断要点里的用户编号等宽（TX-28）；抽屉在页面外层渲染，用自己的类，不改共用的判断要点样式。 */
+.b5-mono { font-family: var(--rd-font-mono); overflow-wrap: anywhere; }
 .radarpage .b5-tab-note { margin: 0; padding: var(--rd-panel-pad-y) var(--rd-panel-pad-x) var(--rd-space-1); display: flex; align-items: center; gap: 2px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 /* 分诊记录中：其余能记分诊的链接显示成禁用，指针显示进行中（点了不动，Ctrl／Cmd、中键照常开新标签）。 */
 .radarpage .rd-link[aria-disabled="true"] { color: var(--rd-text-disabled); text-decoration-color: var(--rd-line-strong); cursor: progress; }

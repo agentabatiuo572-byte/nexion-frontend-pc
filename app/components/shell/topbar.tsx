@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound, UserRoundPen } from "lucide-react";
 import dynamic from "next/dynamic";
-import { roleLabel, type AdminRole, type NavDomain } from "@/lib/nav/console-nav";
+import { canAccessResolvedPath, roleLabel, type AdminRole, type NavDomain } from "@/lib/nav/console-nav";
 import { isCommandPaletteBlockedByModal } from "@/lib/nav/leave-navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
@@ -17,9 +17,9 @@ import { NotificationBell } from "./notification-bell";
 import { CommandPalette } from "@/app/components/command-palette";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
-import { useServicePendingCount } from "./use-service-badges";
+import type { SupportPendingCount } from "./use-service-badges";
 import { useSupportUnreadTotal } from "@/lib/admin/support-alerts";
-import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import { B_DASHBOARD_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { selfAvatarCommands } from "@/lib/admin/account-avatar-pending";
 import { currentAdminSession } from "@/lib/admin/auth-client";
@@ -230,20 +230,20 @@ function SearchBox({ domains, showHome }: { domains: NavDomain[]; showHome: bool
 
 // 客服中心快捷入口（M-24）：未读消息数进会话台，待办客户数进工作台，两个数字分开显示。
 // 未读来自客服页已加载的会话（不在客服页时不显示）；待办来自 M1 TODO 分页的服务端 total，按客户去重。
-function SupportInboxPill({ pending }: { pending: number }) {
+function SupportInboxPill({ pending, sessionsReachable }: { pending: SupportPendingCount; sessionsReachable: boolean }) {
   const unread = useSupportUnreadTotal();
   return (
     <span className="admin-topbar-support rd-top-item relative inline-flex items-center gap-2">
-      <Link href="/service/sessions" prefetch={false} title="专属会话 · 未读消息" aria-label={unread > 0 ? `专属会话，${unread} 条未读` : "专属会话"} className="rd-top-link inline-flex items-center gap-1.5">
+      {sessionsReachable && <Link href="/service/sessions" prefetch={false} title="专属会话 · 未读消息" aria-label={unread > 0 ? `专属会话，${unread} 条未读` : "专属会话"} className="rd-top-link inline-flex items-center gap-1.5">
         <Headset size={14} aria-hidden />
         <span className="hidden md:inline">客服</span>
         {unread > 0 && <span className="admin-topbar-support-count rd-top-count font-mono-tabular inline-flex items-center justify-center">{unread}</span>}
-      </Link>
-      {pending > 0 && (
-        <Link href="/service/overview" prefetch={false} title="待办客户：待回复、待首次联系、待维护" aria-label={`${pending} 位待办客户`} className="rd-top-link hidden md:inline-flex items-center gap-1">
-          待办 <span className="rd-top-count font-mono-tabular">{pending}</span>
+      </Link>}
+      {pending ? (
+        <Link href="/service/overview" prefetch={false} title="待办客户：待回复、待首次联系、待维护" aria-label={pending === "—" ? undefined : `${pending} 位待办客户`} className="rd-top-link hidden md:inline-flex items-center gap-1">
+          待办 <span className="rd-top-count font-mono-tabular" data-unknown={pending === "—" ? "" : undefined}>{pending}</span>
         </Link>
-      )}
+      ) : null}
     </span>
   );
 }
@@ -259,12 +259,13 @@ export function TopBar({
   operator: string;
   domains: NavDomain[];
   authorities: string[];
-  servicePending: number;
+  servicePending: SupportPendingCount;
 }) {
   const supportOnly = role === "support";
   const adminId = useAdminAuth((s) => s.session?.adminId);
   const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
-  const canReadMContent = M_CONTENT_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
+  const sessionsReachable = canAccessResolvedPath(domains, "/service/sessions");
+  const pending = canAccessResolvedPath(domains, "/service/overview") ? servicePending : undefined;
   return (
     <header
       className="admin-topbar rd-top flex items-center justify-between gap-4 px-3 sm:px-5"
@@ -278,7 +279,7 @@ export function TopBar({
         {!supportOnly && canReadBDomain && <CoveragePill enabled />}
         <span className="admin-topbar-clock hidden xl:block"><UtcClock /></span>
         <ThemeToggle adminId={adminId} />
-        {canReadMContent && <SupportInboxPill pending={servicePending} />}
+        {sessionsReachable || pending ? <SupportInboxPill pending={pending} sessionsReachable={sessionsReachable} /> : null}
         {!supportOnly && <NotificationBell />}
         <RoleSwitcher role={role} operator={operator} />
       </div>

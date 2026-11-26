@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
-import { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
+import { normalizeB5Radar, normalizeB5Signal, normalizeB5SignalPage, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { parseB5MoneyJson } from "@/lib/admin/b5-money";
+import { useB5Read } from "./use-b5-read";
 
 export { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar };
 const B5_RADAR_ENDPOINT = "/api/admin/risk/radar";
@@ -15,6 +16,7 @@ const B5_THRESHOLD_ENDPOINT = "/api/admin/risk/bankrun-thresholds";
 const B5_SUBSCRIPTION_ENDPOINT = "/api/admin/risk/alert-subscription";
 const B5_TRIAGE_ENDPOINT = "/api/admin/risk/radar/triage";
 const B5_INBOX_ENDPOINT = "/api/admin/risk/radar/inbox";
+const B5_SIGNALS_ENDPOINT = "/api/admin/risk/radar/signals";
 
 type ApiResult<T> = { code: number; message?: string; data?: T };
 type Light = "green" | "yellow" | "red";
@@ -178,6 +180,16 @@ export async function fetchB5Radar() {
   return normalizeB5Radar(await request<unknown>(B5_RADAR_ENDPOINT));
 }
 
+export async function fetchB5Signals(query: string) {
+  return normalizeB5SignalPage(await request<unknown>(`${B5_SIGNALS_ENDPOINT}?${query}`));
+}
+
+export async function fetchB5Signal(signalNo: string) {
+  const signal = normalizeB5Signal(await request<unknown>(`${B5_SIGNALS_ENDPOINT}/${encodeURIComponent(signalNo)}`));
+  if (signal.signalNo !== signalNo) invalid("signal.signalNo");
+  return signal;
+}
+
 export async function fetchB5Subscription() {
   return normalizeB5Subscription(await request<unknown>(B5_SUBSCRIPTION_ENDPOINT));
 }
@@ -204,7 +216,7 @@ export async function previewB5Thresholds(yellowPct: number, redPct: number, exp
   const ratioCalculable = bool(value.ratioCalculable, "preview.ratioCalculable");
   const state = text(value.light, "preview.light");
   const version = num(value.expectedVersion, "preview.expectedVersion");
-  if (!Number.isSafeInteger(version) || !["red", "yellow", "green", "unavailable"].includes(state)
+  if (version !== expectedVersion || !["red", "yellow", "green", "unavailable"].includes(state)
     || ratioCalculable !== (ratio24h !== null) || ratioCalculable && state === "unavailable"
     || !ratioCalculable && state !== "red" && state !== "unavailable") invalid("preview");
   return { ratio24h, ratioCalculable, light: state as Light | "unavailable", expectedVersion: version };
@@ -270,61 +282,55 @@ export async function updateB5SignalStatus(
     });
 }
 
-export function useB5Radar() {
-  const [data, setData] = useState<B5Radar | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function useB5Radar(key: string, enabled: boolean) {
+  const radar = useB5Read(key, fetchB5Radar, enabled);
+  const { setData } = radar;
   const [streamWarning, setStreamWarning] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await fetchB5Radar();
-      setData(next);
-      return next;
-    } catch (cause) {
-      setData(null);
-      setError(displayAdminReadError(cause));
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void reload();
-    const stream = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
+    if (!enabled) return;
+    setStreamWarning(null);
+    let stream: EventSource | null = null;
     const onRadar = (event: Event) => {
       try {
         const next = normalizeB5Radar(parseB5MoneyJson((event as MessageEvent<string>).data));
         setData(next);
-        setError(null);
         setStreamWarning(null);
-        setLoading(false);
       } catch (cause) {
-        setData(null);
-        setError(displayAdminReadError(cause));
+        setStreamWarning(displayAdminReadError(cause));
       }
     };
-    stream.addEventListener("radar", onRadar);
-    stream.onerror = () => {
-      const closed = stream.readyState === EventSource.CLOSED;
-      setStreamWarning(closed ? "自动更新断开了；页面每 30 秒刷新一次。" : "自动更新正在重连；页面先显示最近一次的数据，每 30 秒刷新一次。");
-      // EventSource doesn't expose HTTP status. Confirm a closed stream through the guarded read.
-      if (closed) void fetchB5Radar().catch(() => undefined);
+    const connect = () => {
+      const next = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
+      next.addEventListener("radar", onRadar);
+      next.onerror = () => {
+        const closed = next.readyState === EventSource.CLOSED;
+        setStreamWarning(closed ? "自动更新断开了；页面每 30 秒刷新一次。" : "自动更新正在重连；页面先显示最近一次的数据，每 30 秒刷新一次。");
+        // EventSource doesn't expose HTTP status. Confirm a closed stream through the guarded read.
+        if (closed) void radar.reload("auto");
+      };
+      stream = next;
     };
-    const timer = window.setInterval(() => void reload(), 30_000);
-    return () => {
-      window.clearInterval(timer);
+    const disconnect = () => {
+      if (!stream) return;
       stream.removeEventListener("radar", onRadar);
+      stream.onerror = null;
       stream.close();
+      stream = null;
     };
-  }, [reload]);
+    const restore = (event: PageTransitionEvent) => {
+      if (event.persisted) connect();
+    };
+    connect();
+    // Full document navigation may skip React cleanup and leave the HTTP connection occupied.
+    window.addEventListener("pagehide", disconnect);
+    window.addEventListener("pageshow", restore);
+    return () => {
+      window.removeEventListener("pagehide", disconnect);
+      window.removeEventListener("pageshow", restore);
+      disconnect();
+    };
+  }, [enabled, radar.reload, setData]);
 
-  return { data, loading, error, streamWarning, reload, setData: (current: B5Radar) => {
-    setData(current);
-    setError(null);
-    setLoading(false);
-  } };
+  return { ...radar, streamWarning };
 }

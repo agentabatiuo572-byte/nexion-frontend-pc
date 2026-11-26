@@ -12,6 +12,7 @@
  *   onClearMore={clearMore}                       局部清除，只有 D2 这类页面传
  *   sort={<Select … />}
  *   result="共 128 条"
+ *   end="涉及 15 个账户"                           贴在第一行最右端的结果数；不传时样子不变
  *   applied={[{ key: "min", label: "金额 ≥ 1000", onRemove: … }]}
  *   notice="最低风险分须为 0–100 的整数。这次没有查询。"   条件不合法时写在这里，更多筛选收着也看得到（ST-19）
  * >
@@ -50,7 +51,7 @@ export function FilterField({ label, grow, wide, children }: { label?: ReactNode
   );
 }
 
-export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, onSubmit, querying = false, onClear, canClear = false, clearLabel = "清除筛选", action, sort, result, applied, notice }: {
+export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, onSubmit, querying = false, onClear, canClear = false, clearLabel = "清除筛选", action, sort, result, end, applied, notice }: {
   scope?: ReactNode;
   children?: ReactNode;
   more?: ReactNode;
@@ -65,6 +66,8 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
   action?: ReactNode;
   sort?: ReactNode;
   result?: ReactNode;
+  /** 第一行最右端的结果数，比如「涉及 15 个账户」：和筛选在同一行，不另起一行。 */
+  end?: ReactNode;
   applied?: readonly { key: string; label: ReactNode; onRemove: () => void }[];
   notice?: ReactNode;
 }) {
@@ -87,6 +90,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
         {action ?? (onSubmit && <Button type="submit" disabled={querying}>查询</Button>)}
         {onClear && <Button variant="ghost" disabled={!canClear} onClick={onClear}>{clearLabel}</Button>}
         {sort && <span className="rd-filter-sort">{sort}</span>}
+        {end && <span className="rd-filter-count" role="status">{end}</span>}
       </div>
       {more && (
         <div id={moreId} className="rd-filter-more" hidden={!moreOpen}>

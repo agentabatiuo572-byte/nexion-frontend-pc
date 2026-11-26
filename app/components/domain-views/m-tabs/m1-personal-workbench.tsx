@@ -170,7 +170,19 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   }, [authEpoch]);
 
   const personalSearchKey = `nexion-m1-personal-keyword:${adminId}`;
-  useEffect(() => { try { const saved = sessionStorage.getItem(personalSearchKey) ?? ""; setKeyword(saved); setKeywordDraft(saved); } catch { /* Search still works without memory. */ } }, [personalSearchKey]);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const freshTodo = url.searchParams.get("view") === "my-customers" && url.searchParams.get("entry") === "overview";
+    if (freshTodo) {
+      url.searchParams.delete("entry");
+      window.history.replaceState(null, "", url);
+    }
+    try {
+      if (freshTodo) sessionStorage.removeItem(personalSearchKey);
+      const saved = freshTodo ? "" : sessionStorage.getItem(personalSearchKey) ?? "";
+      setKeyword(saved); setKeywordDraft(saved);
+    } catch { /* Search still works without memory. */ }
+  }, [personalSearchKey]);
   useEffect(() => {
     if (!active || view !== "customers") return;
     const url = new URL(window.location.href);
@@ -456,7 +468,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         <FilterField label="客户" grow><Input aria-label="查询客户名称或用户编码" value={keywordDraft} onChange={e => setKeywordDraft(e.target.value)} placeholder="客户名称或用户编码" /></FilterField>
         <FilterField label="服务状态"><Select aria-label="筛选客户" value={filter} options={filters} onChange={value => { setFilter(value as SupportCustomerFilter); setPage(1); }} /></FilterField>
       </FilterBar>
-      {listState ?? <Table label="我的客户" className="m1-personal-table"><colgroup><col />{showInviter && <col />}<col /><col /><col /><col /></colgroup><thead><Tr><Th>客户</Th>{showInviter && <Th>邀请人<Explain label="邀请人的说明" content="邀请这位客户注册的人。人数在客户资料里看。" /></Th>}<Th>上次活动</Th><Th>账户 / 维护</Th><Th>待办</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{listRecords.map(row => <Tr key={row.customerId} selected={row.customerId === detailId}><Td><div className="m1-customer-name"><SupportAvatar name={customerName(row)} path={row.customerAvatarRef ?? undefined} /><div><Button variant="ghost" size="sm" onClick={() => void openDetail(row.customerId)}>{customerName(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></div></div></Td>{showInviter && <Td><InviterCell view={inviterView(row.inviter)} /></Td>}<Td><span className="m1-nowrap" title={formatTime(row.lastEffectiveAt)} tabIndex={0}>{row.lastEffectiveAt ? formatTime(row.lastEffectiveAt) : "—"}</span></Td><Td><Cell main={<StatusTag tone={accountTone(row)}>{labelForAccount(row.accountState)}</StatusTag>} sub={<StatusTag tone={maintenanceTone(row)}>{labelForMaintenance(row)}</StatusTag>} /></Td><Td><span>{row.waitingReply ? "待回复" : ""}</span><span className="rd-note">{row.maintenanceEnabled && row.firstContact ? "首次待联系" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : row.waitingReply ? "" : "—"}</span></Td><Td sticky="end"><Button size="sm" onClick={() => openChat(row.customerId, !row.waitingReply && row.maintenanceEnabled && row.maintenanceStatus === "DUE")}>{actionFor(row)}</Button></Td></Tr>)}</tbody></Table>}
+      {listState ?? <Table label="我的客户" className="m1-personal-table"><colgroup><col />{showInviter && <col />}<col /><col /><col /><col /></colgroup><thead><Tr><Th>客户</Th>{showInviter && <Th>邀请人<Explain label="邀请人的说明" content="邀请这位客户注册的人。人数在客户资料里看。" /></Th>}<Th>上次登录</Th><Th>账户 / 维护</Th><Th>待办</Th><Th sticky="end">操作</Th></Tr></thead><tbody>{listRecords.map(row => <Tr key={row.customerId} selected={row.customerId === detailId}><Td><div className="m1-customer-name"><SupportAvatar name={customerName(row)} path={row.customerAvatarRef ?? undefined} /><div><Button variant="ghost" size="sm" onClick={() => void openDetail(row.customerId)}>{customerName(row)}</Button><span className="rd-note"><span className="m-user-code">{m1CustomerCode(row.customerId)}</span></span></div></div></Td>{showInviter && <Td><InviterCell view={inviterView(row.inviter)} /></Td>}<Td><span className="m1-nowrap" title={formatTime(row.lastEffectiveAt)} tabIndex={0}>{row.lastEffectiveAt ? formatTime(row.lastEffectiveAt) : "—"}</span></Td><Td><Cell main={<StatusTag tone={accountTone(row)}>{labelForAccount(row.accountState)}</StatusTag>} sub={<StatusTag tone={maintenanceTone(row)}>{labelForMaintenance(row)}</StatusTag>} /></Td><Td><span>{row.waitingReply ? "待回复" : ""}</span><span className="rd-note">{row.maintenanceEnabled && row.firstContact ? "首次待联系" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "待维护" : row.waitingReply ? "" : "—"}</span></Td><Td sticky="end"><Button size="sm" onClick={() => openChat(row.customerId, !row.waitingReply && row.maintenanceEnabled && row.maintenanceStatus === "DUE")}>{actionFor(row)}</Button></Td></Tr>)}</tbody></Table>}
       {rows && rows.total > 0 && <Pager label="我的客户" total={rows.total} page={page} pageSize={PAGE_SIZE} sizes={[PAGE_SIZE]} onPage={setPage} onPageSize={() => undefined} />}
     </Panel>}
     {bulkOpen && <SupportBulkComposer ctx={ctx} onClose={() => setBulkOpen(false)} />}
