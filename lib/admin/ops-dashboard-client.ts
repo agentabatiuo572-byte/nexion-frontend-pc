@@ -48,17 +48,24 @@ const ACCOUNT_ALERT_TITLES = new Map([
   ["auth.refresh_token_reuse_detected", "登录凭证被重复使用，已全部下线"],
 ]);
 
+const COUNTRY_CODE = /^[A-Z]{2}$/;
+
 function geoAlertScope(scope: unknown, target: unknown) {
   switch (scope) {
-    case "country": return typeof target === "string" && /^[A-Z]{2}$/.test(target) ? `地区 ${target}` : "地区";
+    case "country": return typeof target === "string" && COUNTRY_CODE.test(target) ? `地区 ${target}` : "地区";
     case "country-list":
       if (target === "blocked") return "封锁名单";
       if (target === "limited") return "受限名单";
       return "地区名单";
     case "endpoint": return "功能入口规则";
     case "edge-source": return "地区识别源";
-    case "country-batch": return "应急批量封锁";
-    default: return "变更范围未提供";
+    case "country-batch": {
+      const countries = typeof target === "string" ? target.split(",") : [];
+      return countries.length > 0 && countries.every((country) => COUNTRY_CODE.test(country))
+        ? `应急批量封锁 ${countries.join("、")}`
+        : "应急批量封锁";
+    }
+    default: return undefined;
   }
 }
 
@@ -74,16 +81,18 @@ function alertReason(value: unknown) {
 
 function geoAlertHint(row: Record<string, unknown>, hint: string) {
   let { scope, target, operator, reason } = row;
-  if (scope === undefined) {
+  const fallback = hint.replace(/\bK4\b/g, "风险评分");
+  if (typeof scope !== "string" || !scope.trim()) {
     const prefix = "J2 地域策略已变更 · ";
     const parts = /^(.*?) · (.*?) · ([\s\S]*)$/.exec(hint);
     if (typeof row.title !== "string" || !row.title.startsWith(prefix) || !parts) {
-      return hint.replace(/\bK4\b/g, "风险评分");
+      return fallback;
     }
     scope = row.title.slice(prefix.length);
     [, target, operator, reason] = parts;
   }
-  return [geoAlertScope(scope, target), alertOperator(operator), alertReason(reason)].join(" · ");
+  const range = geoAlertScope(scope, target);
+  return range ? [range, alertOperator(operator), alertReason(reason)].join(" · ") : fallback;
 }
 
 function tamperAlertConfig(value: unknown) {
@@ -114,11 +123,16 @@ function tamperAlertHint(row: Record<string, unknown>, hint: string) {
   }
 
   const changes: string[] = [];
-  if (before.threshold !== undefined && after.threshold !== undefined && before.threshold !== after.threshold) {
-    changes.push(`告警阈值 ${before.threshold} → ${after.threshold} 次 / 24 小时`);
+  if (after.threshold !== undefined && before.threshold !== after.threshold) {
+    changes.push(before.threshold === undefined
+      ? `告警阈值改为 ${after.threshold} 次 / 24 小时`
+      : `告警阈值 ${before.threshold} → ${after.threshold} 次 / 24 小时`);
   }
-  if (before.feedK4 !== undefined && after.feedK4 !== undefined && before.feedK4 !== after.feedK4) {
-    changes.push(`新事件计入风险评分 ${before.feedK4 ? "开" : "关"} → ${after.feedK4 ? "开" : "关"}`);
+  if (after.feedK4 !== undefined && before.feedK4 !== after.feedK4) {
+    const next = after.feedK4 ? "开" : "关";
+    changes.push(before.feedK4 === undefined
+      ? `新事件计入风险评分改为${next}`
+      : `新事件计入风险评分 ${before.feedK4 ? "开" : "关"} → ${next}`);
   }
   return [...changes, alertOperator(operator), alertReason(reason)].join(" · ");
 }
