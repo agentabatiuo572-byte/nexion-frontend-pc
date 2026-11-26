@@ -274,8 +274,8 @@ const countText = (raw: string) => raw.includes(".") ? raw.replace(/0+$/, "").re
 
 /** 一个窗口：「24 小时 · 6 笔 · 31,500 USDT」；混币只写笔数，零笔写「0 笔」（TX-20）。 */
 function windowText(name: string, window: K4WithdrawalWindow) {
-  const count = countText(window.count);
-  const money = window.amount !== null && window.currency !== null && Number(count) !== 0 ? ` · ${moneyText(window.amount)} ${window.currency}` : "";
+  const count = countText(String(window.count));
+  const money = window.amount !== null && window.currency !== null && count !== "0" ? ` · ${moneyText(window.amount)} ${window.currency}` : "";
   return `${name} · ${count} 笔${money}`;
 }
 
@@ -291,8 +291,7 @@ function WithdrawWindows({ summary }: { summary: K4WithdrawalSummary }) {
 }
 
 /**
- * 一个用户五维贡献：子分、权重、贡献和后端证据原文。贡献条是这一维占系统评分的多少。看它能判断：系统评分主要来自哪一维。
- * 提现速度带了打分时的原始记录（structured）时，这一行可以展开看各币种；旧评分记录没有，只显示原文。
+ * 一个用户五维贡献：子分、权重、贡献和证据。提现速度用结构化记录，可以展开看各币种。
  */
 export function ContributionTable({ rows, total, label }: { rows: K4Contribution[]; total: number; label: string }) {
   const [open, setOpen] = useState(false);
@@ -306,31 +305,33 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
         <Th><span className="k4-th">证据<Explain label="证据是什么" content="每一维为什么得这个分。提现速度按时间窗口写笔数和金额，金额按各自币种；一个窗口里有几种币种时只写笔数，点「各币种明细」看。" /></span></Th>
       </tr></thead>
       <tbody>
-        {rows.map((row) => (
-          <Fragment key={row.dimKey}>
-            <Tr>
-              <Td><span className="k4-dim">{row.name}{row.hit ? <StatusTag tone="warn" icon={Crosshair}>命中</StatusTag> : <StatusTag tone="neutral" icon={Minus}>未命中</StatusTag>}</span></Td>
-              <Td align="right"><Cell num main={`${row.subScore} 分`} sub={`权重 ${row.weightPct}%`} /></Td>
-              <Td>
-                <span className="k4-weight">
-                  {total > 0 ? <RatioBar compact quiet label={`${row.name}贡献`} value={row.points} total={total} valueText={`${row.points} 分，系统评分 ${total} 分`} tone="role-4" /> : <span className="k4-bar-gap" aria-hidden />}
-                  <span className="k4-weight-num">{row.points} 分</span>
-                </span>
-              </Td>
-              <Td grow>
-                <span className="k4-evidence-cell">
-                  {row.structured?.summary
-                    ? <WithdrawWindows summary={row.structured.summary} />
-                    // TODO(B-wire): 旧评分只有 assets、或没有结构化明细时按已有事实写，缺的写「—」，不从这句原文推币种（design-plan 板 3）。
-                    : <span className="k4-evidence" data-user-content="" title={row.evidence || undefined}>{row.evidence || "—"}</span>}
-                  {row.structured && <Button size="sm" variant="ghost" className="k4-evidence-toggle" aria-expanded={open} aria-controls={detailId}
-                    icon={<ChevronDown size={14} aria-hidden className="k4-chevron" data-open={open ? "" : undefined} />} onClick={() => setOpen((value) => !value)}>各币种明细</Button>}
-                </span>
-              </Td>
-            </Tr>
-            {row.structured && open && <tr className="k4-withdraw-row"><td colSpan={4}><WithdrawEvidence data={row.structured} id={detailId} /></td></tr>}
-          </Fragment>
-        ))}
+        {rows.map((row) => {
+          const evidence = row.dimKey === "withdrawVelocity" ? "—" : row.evidence;
+          return (
+            <Fragment key={row.dimKey}>
+              <Tr>
+                <Td><span className="k4-dim">{row.name}{row.hit ? <StatusTag tone="warn" icon={Crosshair}>命中</StatusTag> : <StatusTag tone="neutral" icon={Minus}>未命中</StatusTag>}</span></Td>
+                <Td align="right"><Cell num main={`${row.subScore} 分`} sub={`权重 ${row.weightPct}%`} /></Td>
+                <Td>
+                  <span className="k4-weight">
+                    {total > 0 ? <RatioBar compact quiet label={`${row.name}贡献`} value={row.points} total={total} valueText={`${row.points} 分，系统评分 ${total} 分`} tone="role-4" /> : <span className="k4-bar-gap" aria-hidden />}
+                    <span className="k4-weight-num">{row.points} 分</span>
+                  </span>
+                </Td>
+                <Td grow>
+                  <span className="k4-evidence-cell">
+                    {row.structured
+                      ? <WithdrawWindows summary={row.structured.summary} />
+                      : <span className="k4-evidence" data-user-content="" title={evidence === "—" ? undefined : evidence || undefined}>{evidence || "—"}</span>}
+                    {row.structured && <Button size="sm" variant="ghost" className="k4-evidence-toggle" aria-expanded={open} aria-controls={detailId}
+                      icon={<ChevronDown size={14} aria-hidden className="k4-chevron" data-open={open ? "" : undefined} />} onClick={() => setOpen((value) => !value)}>各币种明细</Button>}
+                  </span>
+                </Td>
+              </Tr>
+              {row.structured && open && <tr className="k4-withdraw-row"><td colSpan={4}><WithdrawEvidence data={row.structured} id={detailId} /></td></tr>}
+            </Fragment>
+          );
+        })}
       </tbody>
       <tfoot><tr className="k4-contrib-total"><Td>系统评分</Td><Td /><Td><b>{total} 分</b></Td><Td /></tr></tfoot>
     </Table>

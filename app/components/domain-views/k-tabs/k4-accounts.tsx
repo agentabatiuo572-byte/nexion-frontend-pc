@@ -7,34 +7,9 @@
 import { Hourglass, List, PenLine } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Pager, Panel, Segments, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { K4_ACCOUNT_BANDS, type K4AccountBand, type K4AccountPage } from "@/lib/admin/k-client";
 
-/** 名单的档键，和后端 /risk/scoring/accounts 的 band 一致。高风险用 HIGH_BELOW_AUTO：不含达到自动升级线的人（B120）。 */
-export type K4AccountBand = "AUTO_REPORT" | "HIGH_BELOW_AUTO" | "MEDIUM" | "STALE";
-
-/** 名单一行。未评分（scored=false）时 modelScore、modelVersion、asOf 为 null；effectiveScore 只在人工改分生效时有值。 */
-export type K4AccountRow = {
-  userNo: string;
-  scored: boolean;
-  modelScore: number | null;
-  effectiveScore: number | null;
-  overridden: boolean;
-  modelVersion: string | null;
-  asOf: string | null;
-};
-
-/** 一页名单。分档线取这次名单回包里的（同一次读数），total 是服务端给的这一档人数。 */
-export type K4AccountPage = {
-  band: K4AccountBand;
-  total: number;
-  pageNum: number;
-  pageSize: number;
-  bandLowMax: number;
-  bandHighMin: number;
-  autoEscalateScore: number;
-  records: K4AccountRow[];
-};
-
-/** 名单区自己的状态：读取中、读取失败（含名单接口的 503，只重试名单）、读到了。message 现在不上屏：503 的通用错误文案写「本次没有放行」，放在名单上不对。 */
+/** 名单区自己的状态，包含只重试名单的读取失败。 */
 export type K4AccountListState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
@@ -51,7 +26,6 @@ export const K4_BAND_NAME: Record<K4AccountBand, string> = {
   MEDIUM: "中风险",
   STALE: "等待重新评分",
 };
-const BAND_ORDER: K4AccountBand[] = ["AUTO_REPORT", "HIGH_BELOW_AUTO", "MEDIUM", "STALE"];
 const ORDER_TEXT = "按有效分从高到低，同分按用户编号";
 
 const panelTitle = (band: K4AccountBand) => band === "STALE" ? "等待重新评分的账户" : band === "MEDIUM" ? "中风险账户" : band === "AUTO_REPORT" ? "达到自动升级线的账户" : "高风险（未到自动升级线）账户";
@@ -107,10 +81,10 @@ export function K4AccountList({ band, state, lines, version, highlight, pageSize
     <Panel id="k4-accounts" className="k4-accounts" title={panelTitle(band)} icon={band === "STALE" ? Hourglass : List} tone={band === "STALE" ? "progress" : "role-3"}
       explain={bandExplain(band, now, version)} sub={sub} flush>
       <div className="k4-accounts-bands">
-        <Segments label="风险档" value={band} onChange={onBand} items={BAND_ORDER.map((value) => ({ value, label: K4_BAND_NAME[value] }))} />
+        <Segments label="风险档" value={band} onChange={onBand} items={K4_ACCOUNT_BANDS.map((value) => ({ value, label: K4_BAND_NAME[value] }))} />
       </div>
       {state.kind === "loading" ? <BlockState state="loading" title="正在加载…" />
-        : state.kind === "error" ? <BlockState state="error" title="账户名单加载失败" detail="这次没读到名单，其他页签照常。" onRetry={onRetry} retryKey="k4-accounts" />
+        : state.kind === "error" ? <BlockState state="error" title="账户名单加载失败" detail={state.message} onRetry={onRetry} retryKey="k4-accounts" />
           : state.page.records.length === 0 && state.page.total === 0 ? <BlockState state="empty" title={empty.title} detail={empty.detail} />
             : (
               <>

@@ -11,10 +11,8 @@ import { ModelDiff, changedCount, editableModel, fmt, modelDiffRows } from "./k4
 /**
  * 还没有评分、但人工改分仍生效的账户：「恢复系统评分」的确认框（3-tgt-7）。
  * 和已评分账户的恢复框同一结构、同一按钮；对象只写在标题里，事实不画占位 0 和规则版本。
- * TODO(B-wire): K4Operation 的 recompute 现在只收已评分用户（k4-command.ts），未评分账户也没有 rowVersion；
- * 接上后提交照旧带服务端返回的 rowVersion（K4-A10），结果未知和按原操作重试走现有恢复流程，再从这里或 openK4Confirmation 打开。
  */
-export function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveScore: number }, modelVersion: number,
+function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveScore: number }, modelVersion: number,
   recovery: Pick<ConfirmReq, "getPendingReason" | "blockedReason" | "getPendingValue">,
   submit: (reason: string) => Promise<void>) {
   const saved = recovery.getPendingReason?.() !== undefined;
@@ -91,6 +89,10 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
   }
   if (operation.kind === "recompute") {
     const user = operation.user;
+    if (!user.scored) {
+      openK4UnscoredRecompute(ctx, user, overview.model.version, recovery, submit);
+      return;
+    }
     ctx.openConfirm({ recoveryUi: true, briefKind: "judgment",
       errorHandled: true,
       action: `恢复系统评分 · ${user.userNo}`,

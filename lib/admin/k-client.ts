@@ -462,11 +462,39 @@ export type K4ModelDraftInput = {
   autoEscalateScore: number;
 };
 export type K4Distribution = { band: string; rangeText: string; count: number; percentage: number; color: string; tone: string };
-export type K4Override = { userNo: string; modelScore: number; overrideScore: number; reason: string; operator: string; timeText: string; active: boolean;
-  // TODO(B-wire): 改分时这个账户是否已有系统评分。后端 B122 补字段前不解析，页面按已评分画；为 false 时写「还没有评分 → N 分」。
-  modelScored?: boolean };
+export const K4_ACCOUNT_BANDS = ["AUTO_REPORT", "HIGH_BELOW_AUTO", "MEDIUM", "STALE"] as const;
+export type K4AccountBand = (typeof K4_ACCOUNT_BANDS)[number];
+export type K4AccountRow = {
+  userNo: string;
+  scored: boolean;
+  modelScore: number | null;
+  effectiveScore: number | null;
+  overridden: boolean;
+  modelVersion: string | null;
+  asOf: string | null;
+};
+export type K4AccountPage = AdminPage<K4AccountRow> & {
+  band: K4AccountBand;
+  modelVersion: string;
+  bandLowMax: number;
+  bandHighMin: number;
+  autoEscalateScore: number;
+};
+type K4AccountQuery = Pick<K4AccountPage, "band" | "pageNum" | "pageSize">;
+
+export type K4Override = {
+  userNo: string;
+  overrideScore: number;
+  reason: string;
+  operator: string;
+  timeText: string;
+  active: boolean;
+} & (
+  { systemScoreState: "SCORED"; systemScoreBefore: number }
+  | { systemScoreState: "UNSCORED" | "UNKNOWN"; systemScoreBefore: null }
+);
 /** B118 提现速度的结构化摘要（structured.summary）：每个窗口一种币种时才有 amount、currency；混币时两者为 null；零笔 count 为 0。 */
-export type K4WithdrawalWindow = { count: string; amount: string | null; currency: string | null };
+export type K4WithdrawalWindow = { count: number | string; amount: string | null; currency: string | null };
 export type K4WithdrawalSummary = { last24h: K4WithdrawalWindow; last7d: K4WithdrawalWindow; baselineDaily: K4WithdrawalWindow };
 export type K4WithdrawalEvidence = {
   source: string;
@@ -476,8 +504,7 @@ export type K4WithdrawalEvidence = {
   statusFilter: string;
   baselineDivisorDays: number;
   windows: Record<"24h" | "7d" | "baseline", { fromInclusive: string; toExclusive: string | null }>;
-  // TODO(B-wire): normalizeK4WithdrawalEvidence 还没解析 summary（B118）；接上后证据格按三个窗口分段写。
-  summary?: K4WithdrawalSummary | null;
+  summary: K4WithdrawalSummary;
   assets: Array<{
     currency: string;
     count24h: number;
@@ -527,11 +554,16 @@ export type K4ScoredUser = {
   contributions: K4Contribution[];
   history: K4ScoreHistory[];
 };
-export type K4User = K4ScoredUser | {
+type K4UnscoredUser = {
   scored: false;
   userNo: string;
-  effectiveScore: number | null;
-};
+  rowVersion: number;
+} & (
+  { overridden: true; effectiveScore: number }
+  | { overridden: false; effectiveScore: null }
+);
+export type K4User = K4ScoredUser | K4UnscoredUser;
+export type K4RecomputableUser = K4ScoredUser | Extract<K4UnscoredUser, { overridden: true }>;
 export type K4UserOption = {
   userNo: string;
   label: string;
@@ -541,8 +573,7 @@ export type K4UserOption = {
   bandLabel: string;
   bandTone: string;
   overridden: boolean;
-  // TODO(B-wire): 候选的 scored（B119）还没解析；为 false 时候选写「还没有评分」，不写档位。
-  scored?: boolean;
+  scored: boolean;
 };
 export type ScoringOverview = {
   model: K4Model | null;
@@ -1533,15 +1564,25 @@ function normalizeK4Model(value: unknown, path: string, expectedState?: K4ModelS
 
 function normalizeK4Override(row: unknown, path: string): K4Override {
   const data = requiredK4Record(row, path);
-  return {
+  const fields = {
     userNo: requiredK4String(data.userNo, `${path}.userNo`),
-    modelScore: requiredK4Integer(data.modelScore, `${path}.modelScore`, 0, 100),
     overrideScore: requiredK4Integer(data.overrideScore, `${path}.overrideScore`, 0, 100),
     reason: requiredK4String(data.reason, `${path}.reason`),
     operator: requiredK4String(data.operator, `${path}.operator`),
     timeText: requiredK4String(data.timeText, `${path}.timeText`),
     active: requiredK4Boolean(data.active, `${path}.active`),
   };
+  const state = data.systemScoreState;
+  if (state === undefined) {
+    return { ...fields, systemScoreState: "SCORED", systemScoreBefore: requiredK4Integer(data.modelScore, `${path}.modelScore`, 0, 100) };
+  }
+  if (state === "SCORED") {
+    return { ...fields, systemScoreState: state, systemScoreBefore: requiredK4Integer(data.systemScoreBefore, `${path}.systemScoreBefore`, 0, 100) };
+  }
+  if ((state === "UNSCORED" || state === "UNKNOWN") && data.systemScoreBefore === null) {
+    return { ...fields, systemScoreState: state, systemScoreBefore: null };
+  }
+  return invalidK4Response(`${path}.systemScoreState`);
 }
 
 function normalizeK4OverridePage(value: unknown): AdminPage<K4Override> {
@@ -1554,6 +1595,48 @@ function normalizeK4OverridePage(value: unknown): AdminPage<K4Override> {
     pageNum: requiredK4Integer(page.pageNum, "overrides.pageNum", 1),
     pageSize: requiredK4Integer(page.pageSize, "overrides.pageSize", 1, 50),
     records,
+  };
+}
+
+function normalizeK4UnscoredOverride(data: Record<string, unknown>, path: string) {
+  if (requiredK4Boolean(data.overridden, `${path}.overridden`)) {
+    return { overridden: true as const, effectiveScore: requiredK4Integer(data.effectiveScore, `${path}.effectiveScore`, 0, 100) };
+  }
+  if (data.effectiveScore !== null) invalidK4Response(`${path}.effectiveScore`);
+  return { overridden: false as const, effectiveScore: null };
+}
+
+function normalizeK4AccountPage(value: unknown, query: K4AccountQuery): K4AccountPage {
+  const page = requiredK4Record(value, "scoreAccounts");
+  const { band, pageNum, pageSize } = query;
+  if (page.band !== band || page.pageNum !== pageNum || page.pageSize !== pageSize) invalidK4Response("scoreAccounts.query");
+  const total = requiredK4Integer(page.total, "scoreAccounts.total", 0);
+  const bandLowMax = requiredK4Integer(page.bandLowMax, "scoreAccounts.bandLowMax", 0, 100);
+  const bandHighMin = requiredK4Integer(page.bandHighMin, "scoreAccounts.bandHighMin", bandLowMax + 1, 100);
+  const autoEscalateScore = requiredK4Integer(page.autoEscalateScore, "scoreAccounts.autoEscalateScore", Math.max(70, bandHighMin), 100);
+  const records = requiredK4Array(page.records, "scoreAccounts.records").map((value, index): K4AccountRow => {
+    const path = `scoreAccounts.records[${index}]`;
+    const row = requiredK4Record(value, path);
+    const userNo = requiredK4String(row.userNo, `${path}.userNo`);
+    const scored = requiredK4Boolean(row.scored, `${path}.scored`);
+    if (!scored) {
+      if (row.modelScore !== null || row.modelVersion !== null || row.asOf !== null) invalidK4Response(path);
+      return { userNo, scored, ...normalizeK4UnscoredOverride(row, path), modelScore: null, modelVersion: null, asOf: null };
+    }
+    return {
+      userNo, scored,
+      modelScore: requiredK4Integer(row.modelScore, `${path}.modelScore`, 0, 100),
+      effectiveScore: requiredK4Integer(row.effectiveScore, `${path}.effectiveScore`, 0, 100),
+      overridden: requiredK4Boolean(row.overridden, `${path}.overridden`),
+      modelVersion: requiredK4String(row.modelVersion, `${path}.modelVersion`),
+      asOf: row.asOf === null ? null : requiredK4String(row.asOf, `${path}.asOf`),
+    };
+  });
+  const expectedCount = Math.max(0, Math.min(pageSize, total - (pageNum - 1) * pageSize));
+  if (records.length !== expectedCount) invalidK4Response("scoreAccounts.records");
+  return {
+    band, total, pageNum, pageSize, bandLowMax, bandHighMin, autoEscalateScore, records,
+    modelVersion: requiredK4String(page.modelVersion, "scoreAccounts.modelVersion"),
   };
 }
 
@@ -1615,13 +1698,55 @@ export function normalizeK4(raw: unknown): ScoringOverview {
   };
 }
 
+function k4Decimal(value: unknown, field: string) {
+  if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) invalidK4Response(field);
+  return value;
+}
+
+function normalizeK4WithdrawalWindow(value: unknown, path: string, daily = false): K4WithdrawalWindow {
+  const row = requiredK4Record(value, path);
+  return {
+    count: daily ? k4Decimal(row.count, `${path}.count`) : requiredK4Integer(row.count, `${path}.count`, 0),
+    amount: row.amount === null ? null : k4Decimal(row.amount, `${path}.amount`),
+    currency: row.currency === null ? null : requiredK4String(row.currency, `${path}.currency`),
+  };
+}
+
 function normalizeK4WithdrawalEvidence(value: unknown, path: string): K4WithdrawalEvidence | null {
   if (value == null) return null;
   const row = requiredK4Record(value, path);
   const windows = requiredK4Record(row.windows, `${path}.windows`);
-  const decimal = (value: unknown, field: string) => {
-    if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) invalidK4Response(field);
-    return value;
+  const assets = requiredK4Array(row.assets, `${path}.assets`).map((value, index) => {
+    const field = `${path}.assets[${index}]`;
+    const asset = requiredK4Record(value, field);
+    return {
+      currency: requiredK4String(asset.currency, `${field}.currency`),
+      count24h: requiredK4Integer(asset.count24h, `${field}.count24h`, 0),
+      amount24h: k4Decimal(asset.amount24h, `${field}.amount24h`),
+      count7d: requiredK4Integer(asset.count7d, `${field}.count7d`, 0),
+      amount7d: k4Decimal(asset.amount7d, `${field}.amount7d`),
+      baselineCount: requiredK4Integer(asset.baselineCount, `${field}.baselineCount`, 0),
+      baselineAmount: k4Decimal(asset.baselineAmount, `${field}.baselineAmount`),
+      baselineDailyCount: k4Decimal(asset.baselineDailyCount, `${field}.baselineDailyCount`),
+      baselineDailyAmount: k4Decimal(asset.baselineDailyAmount, `${field}.baselineDailyAmount`),
+      max24h: asset.max24h === null ? null : k4Decimal(asset.max24h, `${field}.max24h`),
+    };
+  });
+  const baselineDivisorDays = requiredK4Integer(row.baselineDivisorDays, `${path}.baselineDivisorDays`, 1);
+  const summaryPath = `${path}.summary`;
+  const summary = row.summary == null ? null : requiredK4Record(row.summary, summaryPath);
+  const legacyWindow = (
+    countKey: "count24h" | "count7d" | "baselineCount",
+    amountKey: "amount24h" | "amount7d" | "baselineDailyAmount",
+  ): K4WithdrawalWindow => {
+    const entries = assets.filter((asset) => asset[countKey] > 0);
+    const single = entries.length === 1 ? entries[0] : null;
+    const total = entries.reduce((count, asset) => count + asset[countKey], 0);
+    // The historical SQL projects COUNT(*) / 30.0 to four decimal places.
+    const count = countKey === "baselineCount"
+      ? single?.baselineDailyCount ?? (total / baselineDivisorDays).toFixed(4)
+      : total;
+    return { count, amount: single?.[amountKey] ?? null, currency: single?.currency ?? null };
   };
   return {
     source: requiredK4String(row.source, `${path}.source`),
@@ -1629,7 +1754,7 @@ function normalizeK4WithdrawalEvidence(value: unknown, path: string): K4Withdraw
     capturedAt: requiredK4String(row.capturedAt, `${path}.capturedAt`),
     timeZone: requiredK4String(row.timeZone, `${path}.timeZone`),
     statusFilter: requiredK4String(row.statusFilter, `${path}.statusFilter`),
-    baselineDivisorDays: requiredK4Integer(row.baselineDivisorDays, `${path}.baselineDivisorDays`, 1),
+    baselineDivisorDays,
     windows: Object.fromEntries((["24h", "7d", "baseline"] as const).map(key => {
       const window = requiredK4Record(windows[key], `${path}.windows.${key}`);
       return [key, {
@@ -1637,22 +1762,16 @@ function normalizeK4WithdrawalEvidence(value: unknown, path: string): K4Withdraw
         toExclusive: window.toExclusive === null ? null : requiredK4String(window.toExclusive, `${path}.windows.${key}.toExclusive`),
       }];
     })) as K4WithdrawalEvidence["windows"],
-    assets: requiredK4Array(row.assets, `${path}.assets`).map((value, index) => {
-      const field = `${path}.assets[${index}]`;
-      const asset = requiredK4Record(value, field);
-      return {
-        currency: requiredK4String(asset.currency, `${field}.currency`),
-        count24h: requiredK4Integer(asset.count24h, `${field}.count24h`, 0),
-        amount24h: decimal(asset.amount24h, `${field}.amount24h`),
-        count7d: requiredK4Integer(asset.count7d, `${field}.count7d`, 0),
-        amount7d: decimal(asset.amount7d, `${field}.amount7d`),
-        baselineCount: requiredK4Integer(asset.baselineCount, `${field}.baselineCount`, 0),
-        baselineAmount: decimal(asset.baselineAmount, `${field}.baselineAmount`),
-        baselineDailyCount: decimal(asset.baselineDailyCount, `${field}.baselineDailyCount`),
-        baselineDailyAmount: decimal(asset.baselineDailyAmount, `${field}.baselineDailyAmount`),
-        max24h: asset.max24h === null ? null : decimal(asset.max24h, `${field}.max24h`),
-      };
-    }),
+    assets,
+    summary: summary ? {
+      last24h: normalizeK4WithdrawalWindow(summary.last24h, `${summaryPath}.last24h`),
+      last7d: normalizeK4WithdrawalWindow(summary.last7d, `${summaryPath}.last7d`),
+      baselineDaily: normalizeK4WithdrawalWindow(summary.baselineDaily, `${summaryPath}.baselineDaily`, true),
+    } : {
+      last24h: legacyWindow("count24h", "amount24h"),
+      last7d: legacyWindow("count7d", "amount7d"),
+      baselineDaily: legacyWindow("baselineCount", "baselineDailyAmount"),
+    },
   };
 }
 
@@ -1686,11 +1805,9 @@ export function normalizeK4User(raw: unknown): K4User {
   const data = requiredK4Record(raw, "scoreUser");
   const userNo = requiredK4String(data.userNo, "scoreUser.userNo");
   const scored = data.scored === undefined || requiredK4Boolean(data.scored, "scoreUser.scored");
+  const rowVersion = requiredK4Integer(data.rowVersion, "scoreUser.rowVersion", 0);
   if (!scored) {
-    const effectiveScore = data.overridden === true && data.effectiveScore != null
-      ? requiredK4Integer(data.effectiveScore, "scoreUser.effectiveScore", 0, 100)
-      : null;
-    return { scored: false, userNo, effectiveScore };
+    return { scored: false, userNo, rowVersion, ...normalizeK4UnscoredOverride(data, "scoreUser") };
   }
   const modelScore = requiredK4Integer(data.modelScore, "scoreUser.modelScore", 0, 100);
   const effectiveScore = requiredK4Integer(data.effectiveScore, "scoreUser.effectiveScore", 0, 100);
@@ -1719,7 +1836,7 @@ export function normalizeK4User(raw: unknown): K4User {
     bandTone: requiredK4String(data.bandTone, "scoreUser.bandTone"),
     modelVersion: requiredK4String(data.modelVersion, "scoreUser.modelVersion"),
     updatedText: requiredK4String(data.updatedText, "scoreUser.updatedText"),
-    rowVersion: requiredK4Integer(data.rowVersion, "scoreUser.rowVersion", 0),
+    rowVersion,
     asOf: data.asOf === null ? null : requiredK4String(data.asOf, "scoreUser.asOf"),
     contributions,
     history,
@@ -1737,6 +1854,7 @@ function normalizeK4UserOption(raw: Record<string, unknown>): K4UserOption {
     bandLabel: requiredK4String(raw.bandLabel, "scoreUserOption.bandLabel"),
     bandTone: requiredK4String(raw.bandTone, "scoreUserOption.bandTone"),
     overridden: requiredK4Boolean(raw.overridden, "scoreUserOption.overridden"),
+    scored: raw.scored === undefined || requiredK4Boolean(raw.scored, "scoreUserOption.scored"),
   };
 }
 
@@ -1849,6 +1967,10 @@ export async function fetchK4ScoringOverview(query: K4PaginationQuery = {}): Pro
     overridePageNum: query.overridePageNum ?? 1,
     overridePageSize: query.overridePageSize ?? 5,
   })}`).then(normalizeK4);
+}
+
+export async function fetchK4ScoringAccounts(query: K4AccountQuery): Promise<K4AccountPage> {
+  return apiRequest(`/scoring/accounts${queryString(query)}`).then((raw) => normalizeK4AccountPage(raw, query));
 }
 
 export async function fetchK4WithdrawalAlerts(): Promise<K4WithdrawalAlertOverview> {
