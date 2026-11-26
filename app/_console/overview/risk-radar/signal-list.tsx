@@ -23,7 +23,7 @@ export interface SignalListFilters {
   onWindow: (value: string) => void;
   onClear: () => void;
   canClear: boolean;
-  /** 服务端给的去重账户数；没读到写不出来时传 null。 */
+  /** 服务端给的去重账户数；没读到时传 null。名单读取失败或加载中不显示，不当 0（ST-34）。 */
   accountCount: number | null;
 }
 
@@ -68,7 +68,7 @@ export function SignalList({ data, filters, page, scopeNote, legacyEmpty, onRetr
       {filters ? (
         <div className="b5-list-filter">
           <FilterBar onClear={filters.onClear} canClear={filters.canClear}
-            end={filters.accountCount === null ? undefined : `涉及 ${filters.accountCount} 个账户`}>
+            end={data.state !== "ready" || filters.accountCount === null ? undefined : `涉及 ${filters.accountCount} 个账户`}>
             <FilterField><Select aria-label="风险类型" value={filters.category} onChange={filters.onCategory} options={CATEGORY_OPTIONS} /></FilterField>
             <FilterField><Select aria-label="处理进度" value={filters.status} onChange={filters.onStatus} options={STATUS_OPTIONS} /></FilterField>
             <FilterField><Select aria-label="时间范围" value={filters.window} onChange={filters.onWindow} options={[...filters.windowOptions]} /></FilterField>

@@ -962,7 +962,7 @@ export default function RiskRadarPage() {
         const line = signalFacts(alert).line;
         const level = SEVERITY[alert.level];
         return (
-          <Modal title={`${target === "handled" ? "标记已处理" : "标记已解决"} · ${signalName(alert)}`} icon={ShieldCheck} busy={busy} dirty
+          <Modal title={`标记${signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty
             sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
             onClose={() => setStatusDialog(null)}
             footer={<>
