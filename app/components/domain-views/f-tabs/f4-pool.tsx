@@ -187,7 +187,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
           <ConfigRow name="设置版本" what="上面几项都合法时系统生成的版本号，只读。" value={<span data-mono>{configVersionEff}</span>} />
         </ConfigList>
       </Panel>
-      <p className="f4-foot">补发、冲正、冻结奖励在「奖励记录核对」处理。<Explain label="三块怎么生效" content="团队激励池、购机名额、大使申请、排行榜各自独立生效；这页的写操作除了材料核验和不放宽预算的大使规则，都要另一位管理员批准。" /></p>
+      <p className="f4-foot">补发、冲正、冻结奖励在「奖励记录核对」处理。<Explain label="三块怎么生效" content="团队激励池、购机名额、大使申请、排行榜各自独立生效；这页的写操作除了材料核验和不放宽预算的大使规则，都要另一位超级管理员批准。" /></p>
     </div>
   );
 }

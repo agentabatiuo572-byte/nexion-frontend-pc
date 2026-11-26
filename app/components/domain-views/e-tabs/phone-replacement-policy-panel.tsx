@@ -180,7 +180,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             if (live.current) {
                 syncPending();
                 setConfirm(null); setEditor(false);
-                setMessage("申请已提交审批，尚不代表策略生效。请另一位审批人核对后批准。");
+                setMessage("申请已提交审批，尚不代表策略生效。请另一位超级管理员核对后批准。");
             }
         }
         catch (failure) {
@@ -297,7 +297,7 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
             if (live.current) {
                 proposals.remember(pending.fingerprint, pending.commandKey, { ...pending, ticketId: ticket.id });
                 syncPending();
-                setMessage("已找回原审批提案，请等待另一位审批人核对。");
+                setMessage("已找回原审批提案，请等待另一位超级管理员核对。");
             }
         } catch (failure) {
             if (live.current) setError(displayAdminError(failure));
@@ -375,14 +375,14 @@ function PolicyEditor({ owner, operator, rights, configReadFailed }: {
           <Notice tone="neutral">四项一起提交审批；按策略版本 {policy.policyVersion??"未取得"} 核对，只影响后续换机资格。</Notice>
           <Check label="允许更换绑定手机" checked={allow} disabled={blocked} onChange={e=>setAllow(e.target.checked)}/><div className="e6-form-grid">{["换机最短间隔","换机统计窗口","窗口内换机上限"].map((label,i)=><Field key={label} label={label.split("（")[0]} help={i===0?"非负整数天，0 表示不限间隔":i===1?"1–365 整数天":"1–100 整数次"} error={draftError&&(!/^\d+$/.test(values[i])||i===0&&draftError.startsWith("换机间隔")||i===1&&draftError.startsWith("滚动窗口")||i===2&&draftError.startsWith("窗口内上限"))?draftError:undefined}><NumberInput min={i===0?0:1} max={i===1?365:i===2?100:undefined} step={1} value={values[i]} disabled={blocked} unit={i===2?"次":"天"} onChange={e=>setValues(current=>current.map((v,j)=>j===i?e.target.value:v))}/></Field>)}</div>
         </Drawer>}
-        {confirm&&<OperationConfirmModal action="发布手机换机规则" briefKind="config" statedBrief={{impact:"四项批准后同时生效，只约束后续换机，不追溯已有运行手机。",check:"核对四项原值、目标值与策略版本，提交给另一位审批人。"}} detail="四项批准后同时生效，只约束后续换机。若他人先更新策略，须重新读取并确认。" completionCopy="由另一位有审批权的管理员核对并批准。" reasonMin={8} reasonMax={200} confirmLabel="提交审批" blockedReason={!ack?"请先勾选下方的核对确认":undefined} onClose={()=>setConfirm(null)} onConfirm={submit}
+        {confirm&&<OperationConfirmModal action="发布手机换机规则" briefKind="config" statedBrief={{impact:"四项批准后同时生效，只约束后续换机，不追溯已有运行手机。",check:"核对四项原值、目标值与策略版本，提交给另一位超级管理员。"}} detail="四项批准后同时生效，只约束后续换机。若他人先更新策略，须重新读取并确认。" completionCopy="由另一位超级管理员核对并批准。" reasonMin={8} reasonMax={200} confirmLabel="提交审批" blockedReason={!ack?"请先勾选下方的核对确认":undefined} onClose={()=>setConfirm(null)} onConfirm={submit}
           facts={<Facts><Fact k="原策略版本">{confirm.version}</Fact>{[
             {key:"allow",label:"允许更换绑定手机",before:confirm.before.allowReplacement==null?"未配置":confirm.before.allowReplacement?"开启":"关闭",after:confirm.values["E.compute.phoneBinding.allowReplacement"]==="on"?"开启":"关闭"},
             {key:"interval",label:"换机最短间隔",before:confirm.before.minReplacementIntervalDays==null?"未配置":`${confirm.before.minReplacementIntervalDays} 天`,after:`${confirm.values["E.compute.phoneBinding.minReplacementIntervalDays"]} 天`},
             {key:"window",label:"换机统计窗口",before:confirm.before.replacementWindowDays==null?"未配置":`${confirm.before.replacementWindowDays} 天`,after:`${confirm.values["E.compute.phoneBinding.replacementWindowDays"]} 天`},
             {key:"limit",label:"窗口内换机上限",before:confirm.before.maxReplacementsInWindow==null?"未配置":`${confirm.before.maxReplacementsInWindow} 次`,after:`${confirm.values["E.compute.phoneBinding.maxReplacementsInWindow"]} 次`},
           ].filter(row=>row.before!==row.after).map(row=><Fact key={row.key} k={row.label}><DiffList rows={[row]}/></Fact>)}</Facts>}
-          content={<Check disabled={busy} checked={ack} onChange={e=>setAck(e.target.checked)} label="我已核对四项前后值，确认提交给另一位审批人"/>}/>
+          content={<Check disabled={busy} checked={ack} onChange={e=>setAck(e.target.checked)} label="我已核对四项前后值，确认提交给另一位超级管理员"/>}/>
         }
         {!inDrawer&&recovery}
         {canRecover&&<Fold title="查询原发布结果" summary="按发布操作号或批准时的原标识查询" inset><div className="e6-fold-content"><p>提交提案的标识不能代替批准标识。原发布结果与当前策略分别显示。</p><div className="e6-form-grid"><Field label="查询方式"><Select aria-label="查询方式" value={mode} onChange={setMode} options={[{value:"id",label:"发布操作号"},{value:"key",label:"批准操作的原标识"}]}/></Field>{mode==="key"&&<Field label="发布类型"><Select aria-label="发布类型" value={type} onChange={setType} options={[{value:"PHONE_POLICY_PUBLISH",label:"整组手机策略"},{value:"PHONE_POLICY_PARAM_PUBLISH",label:"单项手机策略"}]}/></Field>}<Field label={mode==="id"?"发布操作号":"当前审批人的批准操作标识"}><Input maxLength={128} value={lookup} onChange={e=>setLookup(e.target.value)}/></Field></div><Button size="sm" disabled={busy||!lookup.trim()} onClick={()=>void query()}>只读查询原发布</Button>{queryMessage&&<Notice tone="neutral">{queryMessage}</Notice>}{queryError&&<Notice tone="warn">{queryError}</Notice>}{receipt&&<PhoneReceiptView receipt={receipt}/>}</div></Fold>}

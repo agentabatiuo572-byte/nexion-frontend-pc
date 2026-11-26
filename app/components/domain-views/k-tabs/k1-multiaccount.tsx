@@ -869,7 +869,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     if (!ticket) { note("暂未查到原审批单，原记录继续保留。"); return; }
     if (ticket.status === "pending") {
       if (current.clusterProposal) retainApproval({ ...current, clusterReceipt: { pendingTicketId: ticket.id } });
-      note(`审批单 ${ticket.id} 等另一位管理员批准。`);
+      note(`审批单 ${ticket.id} 等另一位超级管理员批准。`);
       return ticket;
     }
     if (current.clusterProposal) retainApproval({ ...current, clusterReceipt: {} });

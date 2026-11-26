@@ -459,7 +459,7 @@ export function ExecutePrepare({ playbook, emergency, draft: initial, onNext, on
   return (
     <Modal title={`发起正式执行 · ${playbook.name}`} wide tone="danger" icon={Siren} className="j4-execute" onClose={onClose}
       sub={<>
-        <StatusTag tone="warn" icon={Clock3} explain="提交后先建一张审批申请，另一位管理员在「操作记录与审批」批准后才执行；批准前任何业务都不变。">批准后才执行</StatusTag>
+        <StatusTag tone="warn" icon={Clock3} explain="提交后先建一张审批申请，另一位超级管理员在「操作记录与审批」批准后才执行；批准前任何业务都不变。">批准后才执行</StatusTag>
         {emergency ? <StatusTag tone="danger" icon={Siren} explain="执行记为「应急执行」。审批人、批准要求和执行顺序都和常规一样，不会加急。">应急通道</StatusTag> : <StatusTag tone="neutral" icon={Workflow}>常规通道</StatusTag>}
       </>}
       footer={<>

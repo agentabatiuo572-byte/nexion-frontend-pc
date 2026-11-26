@@ -963,13 +963,13 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "E5" && <E5Ops ctx={ctx} />}
       {tab === "E6" && <E6ComputeConfigComp ctx={ctx} />}
 
-      {taskDrawer && <Drawer title={editTaskId ? "编辑手机任务" : "新增手机任务"} sub="仅用于手机任务池 · 另一位管理员批准后生效" onClose={() => setTaskDrawer(false)}
+      {taskDrawer && <Drawer title={editTaskId ? "编辑手机任务" : "新增手机任务"} sub="仅用于手机任务池 · 另一位超级管理员批准后生效" onClose={() => setTaskDrawer(false)}
         footer={<><Btn onClick={() => setTaskDrawer(false)}>取消</Btn><Btn variant="primary" disabled={!canMutateE2Tasks || !taskForm.n.trim()} onClick={editTaskId ? submitTaskEdit : submitTask}>提交审批</Btn></>}>
         <div className="tp-dialog"><div className="tp-key-info">{editTaskId ? taskForm.n : "新任务将加入手机任务池"}</div>
           <label className="col">任务名称<input className="fld" value={taskForm.n} onChange={event => setTaskForm({ ...taskForm, n: event.target.value })} /></label>
           <div className="grid g-2 phone-task-fields">
             <SkuFld label="固定时长（分钟）" type="number" min={1} max={1440} step={1} value={taskForm.durationMinutes} onChange={value => setTaskForm({ ...taskForm, durationMinutes: value })} />
-            <SkuFld label="每任务奖励" value={taskForm.baseReward} onChange={value => setTaskForm({ ...taskForm, baseReward: value })} tip="最多 12 位整数、6 位小数。修改仍要另一位管理员批准，并检查兑付覆盖率。" />
+            <SkuFld label="每任务奖励" value={taskForm.baseReward} onChange={value => setTaskForm({ ...taskForm, baseReward: value })} tip="最多 12 位整数、6 位小数。修改仍要另一位超级管理员批准，并检查兑付覆盖率。" />
             <label className="col">奖励资产<select className="fld" value={taskForm.asset} onChange={event => setTaskForm({ ...taskForm, asset: event.target.value })}><option value="USDT">USDT</option><option value="UVT">UVT</option></select></label>
             <label className="col">任务类型<select className="fld" value={taskForm.taskClass} onChange={event => setTaskForm({ ...taskForm, taskClass: event.target.value })}>{TASK_CLASSES.map(c => <option key={c} value={c}>{TASK_CLASS_LABELS[c]}</option>)}</select></label>
           </div>
@@ -1020,9 +1020,9 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
         reasonMax={200}
         coverageCheck={e3Confirm ? E3_COVERAGE_CHECK : undefined}
         completionCopy={mc.orderId ? undefined : e3Confirm ? (e3Confirm === "param" ? E3_APPROVER_SINGLE : E3_APPROVER_BATCH) : isE2TaskMutation(mc.op)
-          ? "批准后生效：提交后请另一位有批准权限和任务池修改权限的管理员在「操作记录与审批」中批准。"
+          ? "批准后生效：提交后请另一位超级管理员（需有任务池修改权限和审批批准权限）在「操作记录与审批」中批准。"
           : ["sku-save", "sku-status", "sku-delete"].includes(mc.op)
-            ? "批准后生效：提交后请另一位有批准权限和商品修改权限的管理员在「操作记录与审批」中批准。"
+            ? "批准后生效：提交后请另一位超级管理员（需有商品修改权限和审批批准权限）在「操作记录与审批」中批准。"
             : "批准后生效：提交后请另一位超级管理员在「操作记录与审批」中批准。"}
         effect={mc.effect}
         confirmLabel={mc.confirmLabel}

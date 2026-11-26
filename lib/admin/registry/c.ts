@@ -18,7 +18,7 @@ export const DOMAIN_C: ModuleEntry[] = [
   },
   {
     path: "/users/assets",
-    summary: "补偿或纠错时手动增减用户的 USDT / UVT 余额，每笔都要填原因和凭证，由另一位同事复核批准后才生效。超过 500 USDT 等值需财务主管或超级管理员处理。",
+    summary: "补偿或纠错时手动增减用户的 USDT / UVT 余额，每笔都要填原因和凭证，由另一位管理员复核批准后才生效。超过 500 USDT 等值需财务主管或超级管理员处理。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
