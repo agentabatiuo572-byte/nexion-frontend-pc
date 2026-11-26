@@ -61,8 +61,8 @@ export function RewardFlow({ pending, blocked, settled, mode }: { pending: React
         <div className="h8-flow-body">
           <span className="h8-flow-title">新人注册
             <Explain label="哪些注册会进入结算" content={<>
-              <p>生效时间起（含这一刻）注册的正式账号按现行金额结；之前注册、还没结算的，按他们那段生效区间的金额结。</p>
-              <p>奖励停用或三项金额都是 0 的那段时间注册的，不进入结算。</p>
+              <p>生效时间起（含这一刻）注册的正式账号按现行金额结；之前注册、还没结算的，按各人生效区间的金额结。</p>
+              <p>奖励停用或三项都是 0 时注册的，不进入结算。</p>
               <p>没有邀请人的新人也有新人礼；这时邀请人那一份不发。</p>
             </>} />
           </span>
@@ -90,7 +90,7 @@ export function RewardFlow({ pending, blocked, settled, mode }: { pending: React
           <span className="h8-flow-title">结算
             <Explain label="结算怎么发生" content={<>
               <p>不会自动结算。要有结算权限的人在这页提交批量或指定新人的结算审批，另一位超级管理员在「操作记录与审批」批准后才发。</p>
-              <p>批准时按当时的名单发：先结现行生效时间起注册的，再结之前各生效区间的，同一区间按注册先后；奖励配置在这期间变了，要重新提交。</p>
+              <p>批准时按当时的名单发：先结现行生效区间，再结之前各生效区间，三项都是 0 的区间不结，同一区间按注册先后；奖励配置在这期间变了，要重新提交。</p>
             </>} />
           </span>
           <span className="h8-flow-sub">提交审批，批准后发 · 已结算 <b>{settled}</b></span>

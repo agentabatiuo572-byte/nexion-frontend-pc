@@ -610,8 +610,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           : "批准执行时逐项核对；不符合就不发"}</Fact>}
         {targeted ? null
           : <>
-            <Fact k="读取时待结算">{countText(pendingNow)} 位</Fact>
-            <Fact k="批准时结谁">按那时的名单，批准前新符合条件的也算；先结现行生效时间起注册的，再结之前各生效区间的，同一区间按注册先后</Fact>
+            <Fact k="提交时待结算">{countText(pendingNow)} 位</Fact>
+            <Fact k="批准时结谁">按那时的名单，批准前新符合条件的也算；先结现行生效区间，再结之前各生效区间，三项都是 0 的区间不结；同一区间按注册先后</Fact>
           </>}
         {originalSummary ? <Fact k="原结算说明">{originalSummary}</Fact> : <>
           <Fact k="每位新人">{amounts.newcomer}</Fact>
@@ -886,15 +886,15 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           ? <Conclusion state="warn" icon={ListChecks}
               hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位超级管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
               explain="生效时间起注册的新人不发奖励；等待结算的是之前生效区间里注册的，按各人生效区间的金额发。">
-              奖励开着，现行三项金额都是 0；有 {countText(pending)} 位按之前的金额等待结算</Conclusion>
+              奖励开着，现行三项都是 0；有 {countText(pending)} 位按之前生效区间的金额等待结算</Conclusion>
           : <Conclusion state="warn" hint={canWrite ? "在「每位发多少」里调整基础额。" : undefined}
-              explain="生效时间起注册的新人不发奖励。之前生效区间里注册、还没结算的，仍按那段的金额结。">奖励开着，但现行三项金额都是 0，新注册的不发</Conclusion>
+              explain="生效时间起注册的新人不发奖励。之前生效区间里注册、还没结算的，仍按各人生效区间的金额结。">奖励开着，但现行三项金额都是 0，新注册的不发</Conclusion>
         : pending > 0
           ? <Conclusion state="warn" icon={ListChecks}
               hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位超级管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
               explain="不会自动结算。批准时按那一刻的名单发，人数可能和现在不同。">
               奖励开着，有 {countText(pending)} 位新人等待结算</Conclusion>
-          : <Conclusion state="ok" explain="待结算是已开钱包、还没结算、没被风控拦下的新人，含之前生效区间里注册、按旧金额结的。">奖励开着，没有等待结算的注册</Conclusion>;
+          : <Conclusion state="ok" explain="待结算是已开钱包、还没结算、没被风控拦下的新人，含之前生效区间里注册的；都按各人生效区间的金额结。">奖励开着，没有等待结算的注册</Conclusion>;
 
   const amountCard = (param: AmountParam) => {
     const base = String(data.params[param.key]);
@@ -967,7 +967,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
               what="这个时间起（含这一刻）注册的新人按现行金额结算"
-              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，仍按他们注册时那段的金额和发放方式结；那段奖励停用或三项都是 0 的不结。</p></>}
+              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，仍按各人生效区间的金额和发放方式结；奖励停用或三项都是 0 时注册的不结。</p></>}
               value={<span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
           </ConfigList>
         </Panel>
