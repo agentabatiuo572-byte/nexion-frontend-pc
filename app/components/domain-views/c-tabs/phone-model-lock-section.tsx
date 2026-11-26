@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LockKeyhole, RefreshCw } from "lucide-react";
-import { BlockState, Button, Cell, Decision, Drawer, Fact, Facts, Fold, IconButton, Notice, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Change, Decision, Drawer, Fact, Facts, Fold, IconButton, Notice, Panel, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { PhoneApiError, fetchPhoneModelLocks, submitModelLockCommand, modelLockCommandBlocks, modelLockCommandRecords, settleReturnedModelLockCommands, recoverModelLockCommand, retryModelLockCommand, forgetModelLockCommand, type PendingModelLockCommand, type PhoneModelLock } from "@/lib/admin/phone-replacement-client";
@@ -14,6 +14,26 @@ import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
 function state(lock: PhoneModelLock) {
   return lock.released ? "已解除，待重新校准" : lock.held ? "换报机型或芯片被拦截" : lock.releasable ? "已锁定" : "未锁定";
 }
+
+function confirmationFacts(userLabel: string, lock: PhoneModelLock, conflictBaseline: PhoneModelLock | null) {
+  const before = conflictBaseline?.installationId === lock.installationId ? conflictBaseline : null;
+  const field = (key: "lockedModel" | "lockedChip" | "reportedModel" | "revision") => {
+    const current = lock[key] ?? "—";
+    const previous = before?.[key] ?? "—";
+    return before && previous !== current ? <Change from={previous} to={current} settled /> : current;
+  };
+  const status = state(lock);
+  return <Facts>
+    <Fact k="用户">{userLabel}</Fact>
+    <Fact k="安装编号">{lock.installationId}</Fact>
+    <Fact k="锁定机型">{field("lockedModel")}</Fact>
+    <Fact k="锁定芯片">{field("lockedChip")}</Fact>
+    <Fact k="最近上报">{field("reportedModel")}</Fact>
+    {before && state(before) !== status && <Fact k="状态"><Change from={state(before)} to={status} settled /></Fact>}
+    <Fact k="原版本">{field("revision")}</Fact>
+  </Facts>;
+}
+
 export function PhoneModelLockSection({ userId, userCode, userLabel, rights, active = true, onPendingChange, onBusyChange }: { active?: boolean; userId: string; userCode: string; userLabel: string; rights: string[]; onPendingChange?: () => void; onBusyChange?: (busy: boolean) => void }) {
   const owner = useAdminAuth(value => value.session?.adminId ?? 0), canRelease = rights.includes(PHONE_GRANT);
   const [locks, setLocks] = useState<PhoneModelLock[] | null>(null), [error, setError] = useState(""), [message, setMessage] = useState("");
@@ -22,6 +42,7 @@ export function PhoneModelLockSection({ userId, userCode, userLabel, rights, act
   const [targetId, setTarget] = useState<string | null>(null), [detailId, setDetail] = useState<string | null>(null);
   const [readError, setReadError] = useState("");
   const [confirmationRound, setConfirmationRound] = useState(0);
+  const [conflictBaseline, setConflictBaseline] = useState<PhoneModelLock | null>(null);
   const [denied, setDenied] = useState(false);
   const [notFoundKey, setNotFoundKey] = useState<string | null>(null);
   const verifiedRelease = useVerifiedRelease((text, kind) => (kind === "warn" ? setError : setMessage)(text));
@@ -56,15 +77,16 @@ export function PhoneModelLockSection({ userId, userCode, userLabel, rights, act
   const openConfirmation = (installationId: string) => {
     const lock = currentLock(installationId);
     if (!canRelease || !lock || blocked(installationId)) return;
-    setMessage(""); setTarget(installationId);
+    setMessage(""); setConflictBaseline(null); setTarget(installationId);
   };
-  const releaseConflict = () => new ConfirmReadConflict({
+  const releaseConflict = (submitted: PhoneModelLock) => new ConfirmReadConflict({
     preserveReason: true,
     renderNotice: readLatest => <Notice tone="warn" action={<Button size="sm" onClick={readLatest}>读取最新</Button>}>
       这台手机的机型锁记录刚被改过。读取最新后，请重新核对并填写理由。
     </Notice>,
     readLatest: async () => {
       if (!await load()) throw new Error("没有读到最新机型锁，请再试一次。");
+      setConflictBaseline(submitted);
       setConfirmationRound(round => round + 1);
       return true;
     },
@@ -116,12 +138,12 @@ export function PhoneModelLockSection({ userId, userCode, userLabel, rights, act
       <Table aria-label="手机机型锁" label="手机机型锁" className="c5-model-locks"><thead><tr><Th>手机</Th><Th>锁定机型</Th><Th>最近上报</Th><Th>状态</Th><Th sticky="end">操作</Th></tr></thead><tbody>{loading ? <TableLoading columns={5} /> : locks?.map(lock => <Tr key={lock.installationId} selected={detailId === lock.installationId} onOpen={() => setDetail(lock.installationId)}><Td><Cell main={phonePlatformLabel(lock.platform)} sub={<PhoneIdentifier value={lock.installationId} />} title={lock.installationId} /></Td><Td><Cell main={lock.lockedModel ?? "—"} title={lock.lockedModel ?? "—"} /></Td><Td><Cell main={lock.reportedModel ?? "—"} title={lock.reportedModel ?? "—"} /></Td><Td><StatusTag tone={lock.held ? "warn" : "done"}>{state(lock)}</StatusTag></Td><Td sticky="end">{canRelease ? <Button size="sm" disabledReason={blocked(lock.installationId)} onClick={() => openConfirmation(lock.installationId)}>解除机型锁</Button> : <Button size="sm" variant="ghost" onClick={() => setDetail(lock.installationId)}>查看详情</Button>}</Td></Tr>)}{!loading && locks?.length === 0 && <TableMessage columns={5}>这个用户还没有手机校准记录</TableMessage>}</tbody></Table>
     </div>
     {active && detailId && <Drawer open onClose={() => setDetail(null)} title="手机机型锁详情" icon={LockKeyhole} footer={<Decision primary={canRelease && <Button disabledReason={blocked(detailId)} onClick={() => openConfirmation(detailId)}>解除机型锁</Button>} />}>{!targetId && readFailure}{detail && <Facts><Fact k="手机">{phonePlatformLabel(detail.platform)}</Fact><Fact k="安装编号">{detail.installationId}</Fact><Fact k="锁定机型">{detail.lockedModel ?? "—"}</Fact><Fact k="锁定芯片">{detail.lockedChip ?? "—"}</Fact><Fact k="最近上报机型">{detail.reportedModel ?? "—"}</Fact><Fact k="状态">{state(detail)}</Fact><Fact k="更新时间">{phoneTime(detail.updatedAt)}</Fact><Fact k="版本">{detail.revision}</Fact><Fact k="校准状态">{({ MATCHED: "已匹配", PENDING_VERIFICATION: "待核验" } as Record<string, string>)[detail.calibrationStatus ?? ""] ?? "未确认"}</Fact><Fact k="激活状态">{({ ACTIVE: "已激活", CALIBRATED: "已校准", PENDING: "待处理" } as Record<string, string>)[detail.activationStatus ?? ""] ?? "未确认"}</Fact></Facts>}</Drawer>}
-    {active && targetId && <OperationConfirmModal key={`${targetId}:${confirmationRound}`} briefKind="record" title="解除手机机型锁" action="解除手机机型锁" reasonMin={8} reasonMax={200} confirmLabel="确认解除机型锁" blockedReason={!canRelease ? "当前账号没有解除机型锁的权限" : readFailure || blocked(targetId)} detail="解除后，请用户在 App 里重新校准；下一次校准锁定新机型。" statedBrief={{ impact: "解除当前安装的机型锁，用户仍需重新校准", check: "提交时检查换机特批权限、当前安装与原版本" }} facts={target && <Facts><Fact k="用户">{userLabel}</Fact><Fact k="安装编号">{target.installationId}</Fact><Fact k="锁定机型">{target.lockedModel ?? "—"}</Fact><Fact k="锁定芯片">{target.lockedChip ?? "—"}</Fact><Fact k="最近上报">{target.reportedModel ?? "—"}</Fact><Fact k="原版本">{target.revision}</Fact></Facts>} onClose={() => setTarget(null)} onConfirm={async reason => {
+    {active && targetId && <OperationConfirmModal key={`${targetId}:${confirmationRound}`} briefKind="record" title="解除手机机型锁" action="解除手机机型锁" reasonMin={8} reasonMax={200} confirmLabel="确认解除机型锁" blockedReason={!canRelease ? "当前账号没有解除机型锁的权限" : readFailure || blocked(targetId)} detail="解除后，请用户在 App 里重新校准；下一次校准锁定新机型。" statedBrief={{ impact: "解除当前安装的机型锁，用户仍需重新校准", check: "提交时检查换机特批权限、当前安装与原版本" }} facts={target && confirmationFacts(userLabel, target, conflictBaseline)} onClose={() => setTarget(null)} onConfirm={async reason => {
       const lock = currentLock(targetId);
       if (!canRelease || mutation.current || !lock || blocked(lock.installationId)) return;
       mutation.current = true; setBusy(true); onBusyChange?.(true);
       try { await submitModelLockCommand(owner, userId, lock, reason, { label: userLabel, userNo: userCode }); if (!live.current) return; setTarget(null); setDetail(null); setMessage("已解除机型锁。请告诉用户在 App 里重新校准。"); if (!await load()) setMessage("解除已完成，但页面没能重新读取。请刷新后核对。"); }
-      catch (failure) { if (live.current) { const next = modelLockCommandRecords(owner, userId); setRecords(next); if (failure instanceof PhoneApiError && [401, 403].includes(failure.status)) { setDenied(true); setTarget(null); setDetail(null); announcePermissionDenied(); } if (next.some(row => modelLockCommandBlocks(row, targetId))) { setTarget(null); setError(failure instanceof PhoneApiError && [401, 403].includes(failure.status) ? failure.message : "提交结果待核实，原请求已保留。请按原操作重试或查原解除结果，不要另提解除。"); } else if (failure instanceof PhoneApiError && failure.reasonCode === "PHONE_MODEL_LOCK_RELEASE_CONFLICT") throw releaseConflict(); else throw failure; } }
+      catch (failure) { if (live.current) { const next = modelLockCommandRecords(owner, userId); setRecords(next); if (failure instanceof PhoneApiError && [401, 403].includes(failure.status)) { setDenied(true); setTarget(null); setDetail(null); announcePermissionDenied(); } if (next.some(row => modelLockCommandBlocks(row, targetId))) { setTarget(null); setError(failure instanceof PhoneApiError && [401, 403].includes(failure.status) ? failure.message : "提交结果待核实，原请求已保留。请按原操作重试或查原解除结果，不要另提解除。"); } else if (failure instanceof PhoneApiError && failure.reasonCode === "PHONE_MODEL_LOCK_RELEASE_CONFLICT") throw releaseConflict(lock); else throw failure; } }
       finally { mutation.current = false; onBusyChange?.(false); if (live.current) { setBusy(false); setRecords(modelLockCommandRecords(owner, userId)); onPendingChange?.(); } }
     }} />}
     {active && !denied && verifiedRelease.dialog}
