@@ -394,7 +394,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const from = valueText(field, String(before[field.key])), to = valueText(field, String(snapshot.params[field.key]));
       return from === to ? [] : [<Fact key={field.key} k={`他人修改 · ${paramTitle(field)}`}><Change from={from} to={to} /></Fact>];
     }) : [];
-    const resetFact = (when = "保存或批准") => `${when}后，现在等结算的 ${pendingCount} 位不再进入结算`;
+    const resetFact = (when = "保存或批准") => `${when}后，现在等结算的 ${pendingCount} 位仍按各人生效区间的金额结`;
     const approvalCopy = numeric
       ? "批准前仍按原金额发；批准时按那时的当月加成重算，并检查兑付覆盖率。"
       : isEnabled
@@ -654,7 +654,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       lead: "结算会真的给用户发钱",
       check: "提交审批时不检查兑付覆盖率；批准后、真正入账前各检查一次，低于红线整批不发。",
     },
-    confirmLabel: "提交结算审批",
+    confirmLabel: "提交审批",
     confirmTone: "danger",
     getPendingReason: () => { const o = currentCommand()?.original; return o && o.kind !== "direct" ? o.request.reason : undefined; },
     getPendingRecovery: () => { const record = currentCommand(); return record && fConfirmRecovery(h8Recovery, record, () => queryCommand(record)); },
@@ -932,11 +932,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
       <StatBand fit label="结算情况">
         <Stat lead icon={UserPlus} tone="role-3" label="等待结算" value={countText(pending)} unit="位"
-          explain="生效时间起注册、已开钱包、还没结算、也没被风控拦下的新人，有没有邀请人都算。奖励停用时照样统计，但不能结算。" />
+          explain="已开钱包、还没结算、也没被风控拦下的新人，有没有邀请人都算：现行生效时间起注册的，加上之前各生效区间里注册的；三项都是 0 时注册的不算。奖励停用时照样统计，但不能结算。" />
         <Stat icon={ShieldAlert} tone="role-3" label="被风控拦下" value={countText(data.blockedByK2)} unit="位"
           explain={<>
-            <p><KeepText text="生效时间起注册、还没结算的新人里，被风控拦下、不会给他们结算的：账户或账户组被标记、冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={K2_NAME} /></p>
-            <p>发放方式是「先过风险检查再发」时，命中待复核风险的也算在这里。改发放方式会把生效时间改成那一刻，这些人注册在前，不会因此转到等待结算。</p>
+            <p><KeepText text="还没结算的新人里（含之前生效区间里注册的），被风控拦下、不会给他们结算的：账户或账户组被标记、冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={K2_NAME} /></p>
+            <p>按各人生效区间的发放方式：是「先过风险检查再发」的，命中待复核风险的也算在这里。改发放方式会把生效时间改成那一刻，这些人注册在前，不会因此转到等待结算。</p>
           </>} />
         <Stat icon={Check} tone="role-3" label="已结算" value={countText(data.settled)} unit="位"
           explain="历史上全部已结算的新人，不分时间。已结算不等于新人已经拿到可以提现的钱：新人礼可能还冻结到首笔实付订单，进钱包后也按收益规则分到可提现、待审核或锁定。" />
