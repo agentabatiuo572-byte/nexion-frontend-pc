@@ -223,7 +223,7 @@
 
 .m1-todo-customer { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .m1-todo-customer > span:last-child { display: flex; flex-direction: column; min-width: 0; }
-.m1-todo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m1-todo-customer .rd-cell { max-width: 96px; }  /* 列宽 148 减格子内边距、头像和间距：长名字在列里省略，不把待办原因挤成两行（ST-04） */
 .m1-todo-customer .m-user-code { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 
 /* 原因格：一种原因一段，段内不折行，放不下时整段换到下一行。 */

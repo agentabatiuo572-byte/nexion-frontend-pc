@@ -83,7 +83,8 @@ export default function CommandCenter() {
 
   const [refreshKey, setRefreshKey] = useState(0);
   const bDomain = useBDomainDashboard(blocks.fund);
-  const canReadRiskFeed = blocks.fund && reach(B5_PATH);
+  const canReachRiskRadar = reach(B5_PATH, "overview_b5_read");
+  const canReadRiskFeed = blocks.fund && canReachRiskRadar;
   const pendingRisk = useBDomainDashboard(canReadRiskFeed, "OPEN_BY_CATEGORY");
   const reserve = useBlock(fetchB2Reserve, blocks.coverDays, refreshKey);
   const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
@@ -189,7 +190,8 @@ export default function CommandCenter() {
   const businessBlocks = [business, devices, exchangeQueue, referralRewards, promotionRewards];
   const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || systemProcessing.loading
     || topup.loading || businessBlocks.some((block) => block.loading) || pendingLoading;
-  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, ...businessBlocks].some(firstLoad);
+  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading
+    || [reserve, flows, topup, systemProcessing, ...businessBlocks].some(firstLoad);
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
   const clock = readAt === null ? null : businessClock(readAt);
@@ -240,6 +242,7 @@ export default function CommandCenter() {
     withdrawRows: closedBusinesses ? 1 : 0,
     belowHealthy,
     pendingRows,
+    riskFeedUnavailable: canReachRiskRadar && !canReadRiskFeed,
     fundSafe: fundReady && level === "ok" && !reserve.error,
     failed: [
       ...(business.error && blocks.moneyFlows ? ["入金和提现"] : []),
@@ -247,6 +250,8 @@ export default function CommandCenter() {
       ...(business.error && blocks.newUsers ? ["注册用户"] : []),
       ...(business.error && blocks.activeUsers ? ["活跃用户"] : []),
       ...(flows.error ? ["资金进出"] : []),
+      ...(systemProcessing.error ? ["系统处理中提现"] : []),
+      ...(reviewPending.error && !reach("/finance/withdrawals") ? ["待审核提现"] : []),
       ...(topup.error && !canShowBankReview ? ["今日充值"] : []),
       ...(devices.error ? ["设备数据"] : []),
       ...(exchangeQueue.error ? ["兑换排队"] : []),
@@ -261,7 +266,7 @@ export default function CommandCenter() {
     if (pendingRisk.error) void pendingRisk.reload();
     if (reserve.error) reserve.reload();
   };
-  // 结论句的入口只放一个：资金读取失败给重试，说开关给开关页，说资金给资金总览，说提现压力就展开「风险与开关」。
+  // 结论句只给一个对应的入口。
   const briefAction = sentence.fundFailed
     ? <Button loading={bDomain.loading || reserve.loading} onClick={retryFund}>重试</Button>
     : sentence.aboutSwitch && reach("/emergency/kill-switch")
@@ -270,7 +275,9 @@ export default function CommandCenter() {
       ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金与应付款总览</span></Link>
       : sentence.aboutRisk
         ? <Button onClick={() => openFold("risk", "risk")}>查看风险与开关</Button>
-        : undefined;
+        : sentence.aboutRiskFeed
+          ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={B5_FROM_HOME} prefetch={false}><span className="rd-btn-face">查看风险提醒</span></Link>
+          : undefined;
   const phase = rhythm.h1;
   const phaseText = phase.currentPhase ? `${phase.currentPhase} 阶段 · 第 ${phase.currentMonth}/${phase.totalMonths} 月` : "运营阶段未配置";
   const fundOpen = folds.isOpen("fund", fundAlert);

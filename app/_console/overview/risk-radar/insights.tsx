@@ -304,7 +304,7 @@ export function SignalsTable({ alerts, showBlocked = false, singleStatus = false
   reach: (path: string) => boolean;
   canTriageTarget: (path: string) => boolean;
   selected: string | null;
-  onOpen: (alert: SignalRow) => void;
+  onOpen?: (alert: SignalRow) => void;
   onTriage: (path: string) => boolean;
   /** 分诊记录中：active 是正在记的这条，blocked 是其余能记分诊的链接（显示成禁用，点了不动）。 */
   triageState: (path: string) => "active" | "blocked" | undefined;
@@ -338,7 +338,7 @@ export function SignalsTable({ alerts, showBlocked = false, singleStatus = false
             const level = SEVERITY[alert.level];
             const user = alert.userNo ?? `#${alert.userId}`;
             return (
-              <Tr key={alert.signalNo} selected={alert.signalNo === selected} onOpen={() => onOpen(alert)}>
+              <Tr key={alert.signalNo} selected={alert.signalNo === selected} onOpen={onOpen ? () => onOpen(alert) : undefined}>
                 <Td grow><Cell title={`${signalName(alert)}${line ? ` · ${line}` : ""} · 用户 ${user} · ${alert.signalNo}`}
                   main={<><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag><span className="b5-signal-name">{signalName(alert)}</span>{line && <span className="b5-signal-fact"> · {line}</span>}</>}
                   sub={<>用户 <span data-mono>{user}</span> · <SignalNo value={alert.signalNo} /></>} /></Td>

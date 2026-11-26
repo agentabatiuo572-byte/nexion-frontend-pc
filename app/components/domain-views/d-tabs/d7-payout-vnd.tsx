@@ -349,6 +349,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const refresh = () => {
     const run = () => {
       void reload();
+      void bDomain.reload(true);
       approvals.refreshApprovals();
     };
     if (editing) requestClose(run);
