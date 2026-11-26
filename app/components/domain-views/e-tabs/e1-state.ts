@@ -44,6 +44,20 @@ export function e1NumericReviewValue(key: string, value: unknown): string | unde
   return `${sign}${integer}${fraction ? `.${fraction}` : ""}`;
 }
 
+/** 空值、空串和缺键等价。只在数值字段里忽略数字的书写差异。 */
+export function e1ReviewValue(key: string, value: unknown): unknown {
+  if (value == null || value === "") return null;
+  // A2 的展示值给售价加了币种后缀。
+  const numeric = e1NumericReviewValue(key, key === "price" && typeof value === "string" ? value.replace(/ USD$/, "") : value);
+  if (numeric !== undefined) return numeric;
+  if (Array.isArray(value)) return value.map(item => e1ReviewValue(key, item));
+  if (value && typeof value === "object") {
+    const fields = value as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(fields).sort().map(field => [field, e1ReviewValue(field, fields[field])]));
+  }
+  return value;
+}
+
 /** 只读金额按全站写法（amountDisplay，PRD §5A）：去掉末尾 0、整数不写小数点、不补零。e1Decimal 的写法留给审批前后值和「有没有改动」的判断，不动。 */
 export function e1Amount(value: number | string | null | undefined): string {
   const raw = e1Number(value);
