@@ -214,7 +214,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
     <div ref={box}><Notice tone="warn" title={<>{recoveryTitle(open - attempts.filter((attempt) => attempt.ticket?.status !== "pending" && attempt.received).length, attempts.length - open, drafts.length, 0, attempts.filter((attempt) => attempt.ticket?.status !== "pending" && attempt.received).length)}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原操作；24 小时内可以按原操作重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
-      <ul className="f2-recovery" aria-label="还没有结论的原申请">
+      <ul className="f2-recovery" aria-label="还没处理完的原申请">
         {(all ? ordered : ordered.slice(0, 3)).map(({ attempt }) => {
           const { name, change } = attemptLabel(attempt);
           const expired = attempt.expiresAt <= Date.now();

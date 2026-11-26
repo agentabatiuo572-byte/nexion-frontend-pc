@@ -205,7 +205,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
   return <>
     <div className="f1-recovery-wrap"><Notice tone="warn" title={recoveryTitle(rows.filter((row) => row.state === "unknown" || row.state === "expired").length, rows.filter((row) => row.state === "pending").length, rows.filter((row) => row.state === "settled").length, 0, rows.filter((row) => row.state === "received").length) || "原操作内容不完整"}>
       {policyBroken && <p>有一条门槛或奖励的原操作内容不完整，请到「操作记录与审批」核对。</p>}
-      {rows.length > 0 && <ul className="f1-recovery" aria-label="还没有结论的原操作">
+      {rows.length > 0 && <ul className="f1-recovery" aria-label="还没处理完的原操作">
         {rows.map((row) => <li key={row.key} data-recovery-state={row.state}>
           <span className="f1-recovery-name">{row.name}</span>
           <span className="f1-recovery-change">{row.change}</span>

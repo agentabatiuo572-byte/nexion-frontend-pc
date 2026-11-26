@@ -69,7 +69,8 @@ export function expiredTag(kind: "direct" | "approval") {
 }
 
 export function resolvedTag(status: "approved" | "rejected" | "withdrawn" | "expired") {
-  const label = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[status];
+  // 审批单本身过期叫「审批单已过期」，和本地 24 小时重试到期的「已过期」分开。
+  const label = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "审批单已过期" }[status];
   return <StatusTag tone="done" explain="原审批单已有结论。点「查询原操作」，读到现在的值后这条记录会清掉。">{label}</StatusTag>;
 }
 

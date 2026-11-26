@@ -421,7 +421,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原操作；24 小时内可以按原操作重试，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低全平台封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
-      <ul className="f3-recovery" aria-label="还没有结论的原操作">
+      <ul className="f3-recovery" aria-label="还没处理完的原操作">
         {settlePending && <li>
           <span className="f3-recovery-name">手动结算</span>
           <span className="f3-recovery-change">{settleOriginal ? <>邀请人 {settleOriginal.ownerUserId} · <span className="rd-keep">结算日 {settleOriginal.settlementDate}</span></> : "原申请内容不完整，请到「操作记录与审批」核对"}</span>

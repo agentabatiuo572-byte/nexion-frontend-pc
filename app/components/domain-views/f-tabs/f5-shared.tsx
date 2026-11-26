@@ -309,8 +309,8 @@ export function F5RecoveryNotice({ rows }: { rows: readonly F5RecoveryRow[] }) {
       ? <StatusTag tone="warn" icon={Clock3} explain={`等${APPROVER}在「操作记录与审批」批准。批准前这笔奖励不变，同一对象不能再提交别的处置。`}>待审批</StatusTag>
       : <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
   return (
-    <Notice tone="warn" title={<>{recoveryTitle(rows.filter((row) => row.state === "unknown" || row.state === "expired").length, rows.filter((row) => row.state === "pending").length, rows.filter((row) => row.state === "settled").length)}<Explain label="原操作怎么处理" content="这些处置提交时没收到确定结果，或还在等批准。有结论前不要换个办法重做同一件事。" /></>}>
-      <ul className="f5-recovery" aria-label="还没有结论的处置">
+    <Notice tone="warn" title={<>{recoveryTitle(rows.filter((row) => row.state === "unknown" || row.state === "expired").length, rows.filter((row) => row.state === "pending").length, rows.filter((row) => row.state === "settled").length)}<Explain label="原操作怎么处理" content="这里列还没处理完的处置：结果未知的、在等审批的、确认没执行的。有结论前不要换个办法重做同一件事。" /></>}>
+      <ul className="f5-recovery" aria-label="还没处理完的处置">
         {rows.map((row) => (
           <li key={row.key} data-recovery-state={row.state}>
             <span className="f5-recovery-name">{row.name}</span>
