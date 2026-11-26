@@ -1,0 +1,16 @@
+/* K4「账户名单」页签（k4-accounts.tsx）。只用 --rd-* 令牌，两套主题同一份。 */
+.k4-accounts-bands { padding: 0 var(--rd-panel-pad-x) var(--rd-space-4); }
+.k4-account-table { table-layout: fixed; }
+.k4-account-table th:nth-child(1), .k4-account-table td:nth-child(1) { width: 22%; }
+.k4-account-table th:nth-child(2), .k4-account-table td:nth-child(2) { width: 14%; }
+.k4-account-table th:nth-child(3), .k4-account-table td:nth-child(3) { width: 16%; }
+.k4-account-table th:nth-child(4), .k4-account-table td:nth-child(4) { width: 96px; padding-left: var(--rd-space-6); }
+.k4-account-table th:nth-child(6), .k4-account-table td:nth-child(6) { width: 120px; }
+.k4-account-version { font-family: var(--rd-font-mono); }
+.k4-unscored { color: var(--rd-text-2); white-space: nowrap; }
+.k4-evidence-wins { display: flex; flex-wrap: wrap; gap: var(--rd-space-1) var(--rd-space-4); color: var(--rd-text-2); }
+.k4-evidence-wins > span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.k4-blocked { color: var(--rd-text-2); white-space: nowrap; }
+.k4-back { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+@media (hover: hover) and (pointer: fine) { .k4-back:hover { color: var(--rd-text); } }
+.k4-back:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: 4px; }

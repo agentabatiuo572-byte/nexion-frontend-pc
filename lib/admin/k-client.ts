@@ -462,7 +462,12 @@ export type K4ModelDraftInput = {
   autoEscalateScore: number;
 };
 export type K4Distribution = { band: string; rangeText: string; count: number; percentage: number; color: string; tone: string };
-export type K4Override = { userNo: string; modelScore: number; overrideScore: number; reason: string; operator: string; timeText: string; active: boolean };
+export type K4Override = { userNo: string; modelScore: number; overrideScore: number; reason: string; operator: string; timeText: string; active: boolean;
+  // TODO(B-wire): 改分时这个账户是否已有系统评分。后端 B122 补字段前不解析，页面按已评分画；为 false 时写「还没有评分 → N 分」。
+  modelScored?: boolean };
+/** B118 提现速度的结构化摘要（structured.summary）：每个窗口一种币种时才有 amount、currency；混币时两者为 null；零笔 count 为 0。 */
+export type K4WithdrawalWindow = { count: string; amount: string | null; currency: string | null };
+export type K4WithdrawalSummary = { last24h: K4WithdrawalWindow; last7d: K4WithdrawalWindow; baselineDaily: K4WithdrawalWindow };
 export type K4WithdrawalEvidence = {
   source: string;
   amountBasis: string;
@@ -471,6 +476,8 @@ export type K4WithdrawalEvidence = {
   statusFilter: string;
   baselineDivisorDays: number;
   windows: Record<"24h" | "7d" | "baseline", { fromInclusive: string; toExclusive: string | null }>;
+  // TODO(B-wire): normalizeK4WithdrawalEvidence 还没解析 summary（B118）；接上后证据格按三个窗口分段写。
+  summary?: K4WithdrawalSummary | null;
   assets: Array<{
     currency: string;
     count24h: number;
@@ -534,6 +541,8 @@ export type K4UserOption = {
   bandLabel: string;
   bandTone: string;
   overridden: boolean;
+  // TODO(B-wire): 候选的 scored（B119）还没解析；为 false 时候选写「还没有评分」，不写档位。
+  scored?: boolean;
 };
 export type ScoringOverview = {
   model: K4Model | null;

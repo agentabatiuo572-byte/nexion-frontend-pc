@@ -7,7 +7,7 @@
 import { Fragment, useId, useState, type ReactNode } from "react";
 import { ChevronDown, CircleOff, Crosshair, Minus } from "lucide-react";
 import { BarList, Button, Cell, Check, DiffList, Explain, Fold, NumberInput, Panel, RatioBar, ScaleBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
-import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings, type K4WithdrawalEvidence } from "@/lib/admin/k-client";
+import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings, type K4WithdrawalEvidence, type K4WithdrawalSummary, type K4WithdrawalWindow } from "@/lib/admin/k-client";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { amountDisplay } from "@/lib/format";
 
@@ -101,7 +101,7 @@ function bandSegments(model: Pick<EditableModel, "bandLowMax" | "bandHighMin" | 
     { from: 0, to: model.bandLowMax, name: "低风险" },
     { from: model.bandLowMax, to: model.bandHighMin, name: "中风险" },
     { from: model.bandHighMin, to: model.autoEscalateScore, name: "高风险" },
-    { from: model.autoEscalateScore, to: 100, name: "转人工审核" },
+    { from: model.autoEscalateScore, to: 100, name: "达到自动升级线" },
   ].filter((cut) => cut.to > cut.from);
   return { labels: cuts.map((item) => item.name), marks: cuts.slice(1).map((item) => ({ value: item.from, text: String(item.from) })) };
 }
@@ -269,6 +269,27 @@ function WithdrawEvidence({ data, id }: { data: K4WithdrawalEvidence; id: string
   );
 }
 
+/** 笔数原样写：去掉小数末尾的 0（日均可以是 0.4 笔），不补零、不舍入。 */
+const countText = (raw: string) => raw.includes(".") ? raw.replace(/0+$/, "").replace(/\.$/, "") : raw;
+
+/** 一个窗口：「24 小时 · 6 笔 · 31,500 USDT」；混币只写笔数，零笔写「0 笔」（TX-20）。 */
+function windowText(name: string, window: K4WithdrawalWindow) {
+  const count = countText(window.count);
+  const money = window.amount !== null && window.currency !== null && Number(count) !== 0 ? ` · ${moneyText(window.amount)} ${window.currency}` : "";
+  return `${name} · ${count} 笔${money}`;
+}
+
+/** 提现速度的证据：三个窗口分三段并排，放不下按段换行，段内不折行（VS-109）。 */
+function WithdrawWindows({ summary }: { summary: K4WithdrawalSummary }) {
+  return (
+    <span className="k4-evidence-wins">
+      <span>{windowText("24 小时", summary.last24h)}</span>
+      <span>{windowText("7 天", summary.last7d)}</span>
+      <span>{windowText("历史日均", summary.baselineDaily)}</span>
+    </span>
+  );
+}
+
 /**
  * 一个用户五维贡献：子分、权重、贡献和后端证据原文。贡献条是这一维占系统评分的多少。看它能判断：系统评分主要来自哪一维。
  * 提现速度带了打分时的原始记录（structured）时，这一行可以展开看各币种；旧评分记录没有，只显示原文。
@@ -282,7 +303,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
         <Th>维度 · 命中</Th>
         <Th align="right">子分 · 权重</Th>
         <Th>贡献</Th>
-        <Th><span className="k4-th">证据（原文）<Explain label="证据是什么" content="评分时记下的原文。提现速度一项把各币种合在一起算，「$」不代表美元；点「各币种明细」看各币种原额，旧评分记录没有明细。" /></span></Th>
+        <Th><span className="k4-th">证据<Explain label="证据是什么" content="每一维为什么得这个分。提现速度按时间窗口写笔数和金额，金额按各自币种；一个窗口里有几种币种时只写笔数，点「各币种明细」看。" /></span></Th>
       </tr></thead>
       <tbody>
         {rows.map((row) => (
@@ -298,7 +319,10 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
               </Td>
               <Td grow>
                 <span className="k4-evidence-cell">
-                  <span className="k4-evidence" data-user-content="" title={row.evidence || undefined}>{row.evidence || "—"}</span>
+                  {row.structured?.summary
+                    ? <WithdrawWindows summary={row.structured.summary} />
+                    // TODO(B-wire): 旧评分只有 assets、或没有结构化明细时按已有事实写，缺的写「—」，不从这句原文推币种（design-plan 板 3）。
+                    : <span className="k4-evidence" data-user-content="" title={row.evidence || undefined}>{row.evidence || "—"}</span>}
                   {row.structured && <Button size="sm" variant="ghost" className="k4-evidence-toggle" aria-expanded={open} aria-controls={detailId}
                     icon={<ChevronDown size={14} aria-hidden className="k4-chevron" data-open={open ? "" : undefined} />} onClick={() => setOpen((value) => !value)}>各币种明细</Button>}
                 </span>

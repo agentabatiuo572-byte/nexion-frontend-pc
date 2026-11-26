@@ -8,6 +8,41 @@ import type { ConfirmReq, KCtx } from "./types";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { ModelDiff, changedCount, editableModel, fmt, modelDiffRows } from "./k4-parts";
 
+/**
+ * 还没有评分、但人工改分仍生效的账户：「恢复系统评分」的确认框（3-tgt-7）。
+ * 和已评分账户的恢复框同一结构、同一按钮；对象只写在标题里，事实不画占位 0 和规则版本。
+ * TODO(B-wire): K4Operation 的 recompute 现在只收已评分用户（k4-command.ts），未评分账户也没有 rowVersion；
+ * 接上后提交照旧带服务端返回的 rowVersion（K4-A10），结果未知和按原操作重试走现有恢复流程，再从这里或 openK4Confirmation 打开。
+ */
+export function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveScore: number }, modelVersion: number,
+  recovery: Pick<ConfirmReq, "getPendingReason" | "blockedReason" | "getPendingValue">,
+  submit: (reason: string) => Promise<void>) {
+  const saved = recovery.getPendingReason?.() !== undefined;
+  const now = saved ? "提交时" : "现在";
+  ctx.openConfirm({ recoveryUi: true, briefKind: "judgment",
+    errorHandled: true,
+    action: `恢复系统评分 · ${user.userNo}`,
+    effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
+    detail: `系统先给这个账户评分，再撤掉人工改分 ${user.effectiveScore} 分。`,
+    content: <>
+      <Facts>
+        <Fact k={`${now}的有效分`}>{user.effectiveScore} 分（人工改分）</Fact>
+        <Fact k="系统评分">还没有评分</Fact>
+      </Facts>
+      <Notice tone="progress">按执行那一刻生效的规则 v{modelVersion} 评分，评出多少分提交后才知道。</Notice>
+    </>,
+    statedBrief: {
+      impact: `这个账户还没有系统评分，现在按人工改分 ${user.effectiveScore} 分算。确认后按当前规则 v${modelVersion} 评分，人工改分不再生效，改分记录保留。`,
+      check: "提交前已核对：这位用户的评分在你打开后没有被别人改过。",
+    },
+    reasonPlaceholder: "写清依据，例如：工单号、申诉已核实",
+    reason: true,
+    okLabel: "确认重算",
+    ...recovery,
+    run: (reason) => submit(reason),
+  });
+}
+
 export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
   recovery: Pick<ConfirmReq, "getPendingReason" | "blockedReason" | "getPendingValue">,
   submit: (reason: string, value?: string) => Promise<void>) {
