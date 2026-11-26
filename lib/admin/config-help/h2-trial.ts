@@ -114,12 +114,12 @@ export const TRIAL_PARAM_HELP: Record<string, TrialParamHelp> = {
   earlyPurchaseDiscountUSD: {
     what: "试用期内购买再减的固定金额",
     when: AT_PURCHASE,
-    impact: "符合条件时再减这笔，并结算全部试用天数的收益",
-    how: "0–100 USDT，最多两位小数，填 0 表示关闭。",
-    howMore: "试用期内购买才有；领取资料不全、或每日 USDT 或 UVT 收益为 0 的没有。在其他优惠之后再减，不超过还要付的钱。抵扣只用已累计 USDT，其余收益购买后进余额，入账前查覆盖率。",
-    where: "App 试用详情的「额外立减」标题和「专享立减」明细，满足提前购买条件时出现",
+    impact: "符合提前购机条件时减少本单应付金额",
+    how: "0–100 USDT，最多两位小数，填 0 取消购机立减。",
+    howMore: "符合条件的用户在原试用期内购机，按原试用天数结算收益。立减在其他优惠之后扣，应付最低为 0。抵扣只用已累计 USDT，结余购后进钱包。",
+    where: "App 和 H5 Lite 的试用详情与结算页，按本单实际立减显示",
     input: { unit: "USDT", min: 0, max: 100, step: 0.01 },
-    whatIf: (value) => (Number(value) === 0 ? "改成 0：关闭提前购买立减和整期结算，购买时只结算已累计的收益。" : `改成 ${value}：符合提前购买条件时再减 ${value} USDT，并结算全部试用天数的收益；其他按已累计结算。`),
+    whatIf: (value) => (Number(value) === 0 ? "填 0 取消购机立减。符合条件的提前购机仍按整期结算试用收益。" : `符合提前购买条件时，应付再减 ${value} USDT，最多减到 0。`),
   },
   shadowDailyUSD: {
     what: "商品没配日收益时，试用每天按这个算",
