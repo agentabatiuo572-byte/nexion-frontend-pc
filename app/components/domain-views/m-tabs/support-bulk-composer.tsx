@@ -382,6 +382,8 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
         commands.forget(record.fingerprint, record.commandKey);
         if (currentRecord()) return false;
         setPending(null);setMutationFailure("");setError("");setNotReceived(false);
+        // 从存储恢复的原提交没有名单：解除后回到圈选，不留空的第 3 步（DP-42）。
+        if (!record.action && !selection) setStep(1);
         return true;
       },
     });
