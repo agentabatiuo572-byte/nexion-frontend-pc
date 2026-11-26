@@ -310,7 +310,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
               : "显示现在尚未办结的活动奖励项数，不随时段变。"}
           rows={rewardDetail ? [{
             k: rewardDetail.href
-              ? <Link className="pointer-events-auto" href={rewardDetail.href} prefetch={false}>{rewardDetail.label}</Link>
+              ? <Link className="rd-link pointer-events-auto" href={rewardDetail.href} prefetch={false}>{rewardDetail.label}</Link>
               : rewardDetail.label,
             v: rewardDetail.block.error
               ? <>暂时读不到 · <InlineRetry onRetry={rewardDetail.block.reload} /></>

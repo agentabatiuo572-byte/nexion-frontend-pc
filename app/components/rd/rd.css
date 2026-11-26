@@ -256,6 +256,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-metric-pairs { display: grid; grid-template-columns: minmax(0, max-content) max-content; align-content: start; column-gap: 4px; }
 .rd-metric-pairs > .rd-metric-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
 .rd-metric-row dt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); }
+.rd-metric-row dt .rd-explain { height: var(--rd-lh-aux); margin-left: 4px; vertical-align: top; }  /* 名称后 4px（VS-85），和名称行一样；不撑高这一行 */
 .rd-metric-row dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--tone, var(--rd-text)); white-space: nowrap; }
 .rd-metric-row dd[data-zero] { color: var(--rd-text-3); }
 .rd-metric-note { color: var(--rd-text-3); }
