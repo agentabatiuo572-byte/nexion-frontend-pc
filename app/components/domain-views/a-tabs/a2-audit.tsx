@@ -2718,6 +2718,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         ?? (isMine(shown) ? OWN_TICKET_REASON : !shownCanApprove ? shown.approveDeniedMessage ?? NO_DECIDE
           : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : shownD5Block ?? h5ApproveBlock(shown)));
   const shownK1 = shown ? k1TicketView(shown) : undefined;
+  const shownTitle = shown ? approvalTitleParts(shown) : undefined;
   const shownBoot = shown?.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(shown.after) : undefined;
   // 改值类单：判断要点直接写第一项的「原值 → 新值」，多项写「等 N 项」，完整变更留在下面（OP-149）。
   // 提现参数和账号启停有逐项的前后值；其余用队列同一句（新值一行、原值一行），队列写不出原值时不加这一行。K1 自己有「改动」。
@@ -2732,7 +2733,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     ...(shownAmount ? [shownAmount.state === "ok"
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
-    { label: "要做什么", value: approvalActionName(shown) },
+    // 动作名里已带对象（A1「停用账号 · 账号名」）时这里只写动作，对象在下一行写一次（VS-105）。
+    { label: "要做什么", value: shownTitle && shownTitle.objectInAction && shownTitle.action.endsWith(` · ${shownTitle.object}`) ? shownTitle.action.slice(0, -` · ${shownTitle.object}`.length) : approvalActionName(shown) },
     { label: "对象", value: objectNode(shown) },
     ...(shownChange ? [shownChange] : []),
     ...(shownK1?.kind === "param" ? [{ label: "改动", value: <Change from={`${shownK1.from} 个账户`} to={`${shownK1.to} 个账户`} /> }]
