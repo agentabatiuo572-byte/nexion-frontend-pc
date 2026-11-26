@@ -226,7 +226,9 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
         if (notifyOriginal) window.dispatchEvent(new CustomEvent('admin-promotion-original-settled', { detail: result.idempotencyKey }));
         acknowledgePromotionCommand(result);
     };
-    const submit = async (retry = false) => { if (busy || !writeAllowed || !record && needsReload || record && isRetryExpired(record)) return; setBusy(true); setError(null); try {
+    // 请求在途时原记录已先存（OP-92），但还没有结果：显示「正在提交」，不提前说「结果未知」（OP-33）。
+    const [submitting, setSubmitting] = useState(false);
+    const submit = async (retry = false) => { if (busy || !writeAllowed || !record && needsReload || record && isRetryExpired(record)) return; setBusy(true); setSubmitting(true); setError(null); try {
         const result = record?.receipt || await promotionCommand(record && retry ? record
             : { ...intent, body: prepareBody ? await prepareBody(payload) : payload }, retry);
         await complete(result, !!record);
@@ -249,6 +251,7 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
     }
     finally {
         setBusy(false);
+        setSubmitting(false);
         setVersion(v => v + 1);
     } };
     const reload = async () => {
@@ -293,9 +296,10 @@ export function ConfirmCommand({ title, intent, body, prepareBody, children, onC
         : locked ? <RdNotice tone="warn" title="这次没有执行：你打开后，别人改过这个活动">{`点「重新加载并核对」，看清变了什么再决定要不要${confirmLabel}。`}</RdNotice>
         : reviewed;
     const conflictExplains = !!conflictBlock && (locked || !!conflictReview?.final);
-    return <Dialog title={title} sub={sub} danger={danger} busy={busy} onClose={onClose} wide={requireEvidence || !!conflictBlock} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{extraAction?.(busy)}{needsReload && onReload && !conflictReview?.final && <RdButton variant="primary" onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</RdButton>}{record ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原操作'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原操作重试</Button>}</> : !locked && <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || needsReload || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
+    return <Dialog title={title} sub={sub} danger={danger} busy={busy} onClose={onClose} wide={requireEvidence || !!conflictBlock} footer={<><Button onClick={onClose} disabled={busy}>取消</Button>{extraAction?.(busy)}{needsReload && onReload && !conflictReview?.final && <RdButton variant="primary" onClick={reload} disabled={busy || !!record}>{busy ? "正在加载…" : "重新加载并核对"}</RdButton>}{record && !submitting ? <><Button onClick={recover} disabled={busy}>{record.receipt ? '读取已成功的结果' : '查询原操作'}</Button>{record.recoveryState === 'NOT_FOUND' && !isRetryExpired(record) && <Button kind="primary" onClick={() => submit(true)} disabled={busy || !writeAllowed || policy.loading || !!policy.error}>按原操作重试</Button>}</> : !locked && <RdButton variant={danger ? 'danger' : 'primary'} onClick={() => submit()} disabled={busy || needsReload || invalid || !writeAllowed}>{busy ? '正在提交…' : confirmLabel}</RdButton>}</>}>
     {conflictBlock}
-    {record && <RdNotice tone="warn" title="结果未知">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；查询前不会创建第二次操作。关闭后仍可在活动中心继续处理。'}</RdNotice>}
+    {record && submitting && <RdNotice tone="neutral" title="正在提交…">请求已发出，正在等待结果，请不要关闭或重复提交。</RdNotice>}
+    {record && !submitting && <RdNotice tone="warn" title="结果未知">{record.receipt ? '原操作已经成功，当前只重读结果；不会再次提交。' : '原参数已锁定；查询前不会创建第二次操作。关闭后仍可在活动中心继续处理。'}</RdNotice>}
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{children}</fieldset>
     <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}><RdField label="操作理由" required hint={policy.data ? `${policy.data.minChars}–${policy.data.maxChars} 字，和操作一起留痕` : '正在加载理由要求'}>{control => <Textarea {...control} value={reason} onChange={e => setReason(e.target.value)} maxLength={policy.data?.maxChars} count={policy.data ? `${reasonLength}/${policy.data.maxChars}` : undefined}/>}</RdField>{evidenceOptions.length > 0 && <fieldset className="h4-fieldset h4-evidence"><legend className="rd-form-label">关联证据{requireEvidence ? <span className="rd-form-required" aria-hidden>*</span> : null}</legend>{evidenceOptions.map(option => <RdCheck key={option.value} label={option.label} checked={evidence.includes(option.value)} onChange={e => setEvidence(e.target.checked ? [...evidence, option.value] : evidence.filter(x => x !== option.value))}/>)}</fieldset>}</fieldset>
     {requireEvidence && evidenceMode === 'upload' && <fieldset className="h4-fieldset" disabled={busy || !!record || !writeAllowed}>{evidenceNote}<BusinessFormBlock spec={{ kind: 'multi-field', title: '上传处置证据', fields: [{ key: 'evidenceAssetId', label: '关联证据图片', inputKind: 'asset-upload', required: true, wide: true, uploadDomain: 'growth', uploadUsage: 'promotion-evidence', uploadTarget, help: '上传可核验的关联凭据，上传成功后才允许提交。' }] }} value={upload} onChange={v => { setUpload(v); setEvidence(v.evidenceAssetId ? [v.evidenceAssetId] : []); }} onUploadStateChange={(_, state) => setUploadState(state)}/></fieldset>}
