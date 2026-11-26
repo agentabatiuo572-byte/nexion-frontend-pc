@@ -731,3 +731,14 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h2-others-note { display: flex; flex-direction: column; gap: 4px; }
 .h2-buy-target { margin-left: 8px; }
 .h2-diff-line { display: block; }
+/* 确认框差异行：名称不折行，值过长时值换行 */
+.h2-confirm-diff .rd-diff-rows { grid-template-columns: minmax(min-content, 1fr) minmax(0, max-content) 14px minmax(0, max-content); }
+.h2-confirm-diff .rd-diff-name { white-space: nowrap; }
+.h2-confirm-diff :is(.rd-diff-before, .rd-diff-after) { word-break: keep-all; }  /* 值只在空格和标点处换行，不拆「最高」 */
+/* 读取最新后没有剩下的改动：「没有改动」只写在确认按钮的提示里（VS-103、OP-126） */
+.rd-modal:has([data-h2-nochange]) .rd-confirm-alert:not([data-policy-state]) { display: none; }
+[data-h2-nochange] .rd-diff-empty { display: none; }
+/* 被拒提示：文字长时「返回调整」换到下一行，和正文左对齐，不压正文 */
+.h2-reject .rd-notice { flex-wrap: wrap; }
+.h2-reject .rd-notice-text { flex: 1 1 auto; }
+.h2-reject .rd-notice-action { margin-left: 24px; }

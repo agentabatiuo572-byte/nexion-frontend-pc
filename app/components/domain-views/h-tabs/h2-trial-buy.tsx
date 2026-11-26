@@ -68,6 +68,8 @@ const PRICED = {
   conflictAux: "读取最新后核对改动，理由要重填。",
 };
 const invalidText = (count: number) => `有 ${count} 处要改正，改好后才能下一步`;
+/** 离开提示里没有「下一步」：写回到编辑去改（OP-126）。 */
+const leaveInvalidText = (count: number) => `有 ${count} 处要改正，回到编辑改好后才能保存`;
 
 const priceNumber = (device: BuyDevice) => device.priceUsdt === null ? Infinity : Number(device.priceUsdt);
 const byPrice = <T extends BuyDevice>(list: readonly T[]) => [...list].sort((a, b) => priceNumber(a) - priceNumber(b));
@@ -91,7 +93,7 @@ export function buyListRejection(outcome: Extract<BuyListSubmitResult, { kind: "
   const retained = base.find((item) => item.productNo === outcome.productNo);
   const refused = retained ?? candidates.find((item) => item.productNo === outcome.productNo);
   if (!refused) return outcome.message;
-  return `没有保存：${productName(refused)}${buyProductReason(outcome.reason, refused.status)}，${retained ? "不能改优惠" : "不能新增"}。`;
+  return `没有保存：${productName(refused)}：${buyProductReason(outcome.reason, refused.status)}，${retained ? "不能改优惠" : "不能新增"}。`;
 }
 
 /** 配置行的值：数量写正文，不用处理的状态写次文字（PLAN R7）。 */
@@ -176,10 +178,10 @@ function othersPricing(before: BuyDevice[], latest: BuyDevice[], mine: ReadonlyM
     </Notice>];
   });
   const gone = [...mine.keys()].filter((no) => old.has(no) && !latest.some((item) => item.productNo === no))
-    .map((no) => <Notice key={`gone-${no}`} tone="neutral">{productName(old.get(no)!)} 已被移除，本次不保存它的优惠；要加回请重新选择</Notice>);
+    .map((no) => <Notice key={`gone-${no}`} tone="neutral"><KeepText text={`${productName(old.get(no)!)} 已被移除，这次不保存它的优惠；要加回请重新选择`} /></Notice>);
   const locked = latest.filter((item) => !item.selectable && mine.has(item.productNo)).map((item) => (
     <Notice key={`locked-${item.productNo}`} tone="neutral">
-      {productName(item)} {item.status === "OFF_SALE" ? "已下架" : hiddenText(item)}，这次对它的优惠改动不保存
+      <KeepText text={`${productName(item)} ${item.status === "OFF_SALE" ? "已下架" : hiddenText(item)}，这次对它的优惠改动不保存`} />
     </Notice>
   ));
   return [...changed, ...gone, ...locked];
@@ -384,7 +386,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         return {
           key: `${item.productNo}:${group}`, label: `${label(item)} · ${GROUP_NAME[group]}`,
           before: groupBefore(now(item), group, pricing), after: after.value,
-          note: others ? `别人刚把它从 ${groupBefore(was, group, pricing)} 改成 ${groupBefore(now(item), group, pricing)}；确认后改为${after.value}` : undefined,
+          // 数字和单位不拆到两行：只改这一句的显示，存下的文字不变。
+          note: others ? `别人刚把它从 ${groupBefore(was, group, pricing)} 改成 ${groupBefore(now(item), group, pricing)}；确认后改为${/^\d/.test(after.value) ? " " : ""}${after.value}`.replace(/ USDT/g, "\u00A0USDT") : undefined,
           sub: subs.length ? <>{subs.map((line, at) => <span key={at} className="h2-diff-line">{line}</span>)}</> : undefined,
         };
       });
@@ -424,7 +427,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         window.setTimeout(refocusDrawer, 100);
         return false;
       },
-      renderNotice: (back) => <Notice tone="danger" action={<Button size="sm" onClick={back}>返回调整</Button>}>{message}</Notice>,
+      renderNotice: (back) => <div className="h2-reject"><Notice tone="danger" action={<Button size="sm" onClick={back}>返回调整</Button>}>{message}</Notice></div>,
     });
     const priced: BuyPricingDraft | undefined = pricing ? {
       changed: repriced.map(productName),
@@ -503,7 +506,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       statedBrief: pricing ? { impact: PRICED.impact, check: PRICED.check } : { impact: "之后发起的购买按新清单，进行中的试用也一样", check: "前后清单记入操作记录；改错了再点「调整」改回。" },
       facts: (
-        <div className="rd-stack">
+        <div className="rd-stack h2-confirm-diff" data-h2-nochange={hasChanges ? undefined : ""}>
           {othersNote}
           <DiffList rows={rows} restTitle="其余设备" named />
           <Facts>
@@ -619,7 +622,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         footer={leaving
           ? <Decision note={note}
             others={<><Button size="md" onClick={continueEditing}>继续编辑</Button><Button variant="danger-outline" size="md" onClick={discard}>放弃改动并返回</Button></>}
-            primary={<TipSide side="top" align="end"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>保存并立即生效</Button></TipSide>} />
+            primary={<TipSide side="top" align="end"><Button variant="primary" size="md" disabledReason={!blocked && !invalidPicked && errorCount ? leaveInvalidText(errorCount) : draftBlock} onClick={openConfirm}>保存并立即生效</Button></TipSide>} />
           : <Decision note={note}
             others={<Button size="md" onClick={leaveDrawer}>取消</Button>}
             primary={<TipSide side="top" align="end"><Button variant="primary" size="md" disabledReason={draftBlock} onClick={openConfirm}>下一步：核对并保存</Button></TipSide>} />}>

@@ -99,12 +99,14 @@ export const pricingOf = (edit: PricingEdit): BuyPricing => ({
 /** 范围和 H2 默认参数一致（D5）：比例 0–100，上限 0–1,000,000 USDT，立减 0–100 USDT 最多两位小数。填错时错误顶替范围，所以写全（VS-103）。 */
 export function editErrors(edit: PricingEdit): Partial<Record<PricingField, string>> {
   const errors: Partial<Record<PricingField, string>> = {};
+  // 有效位数（不算末尾的 0）超过六位时，错误写位数，句式和立减一样（TX-33）。
+  const places = (value: string) => (value.split(".")[1] ?? "").replace(/0+$/, "").length;
   if (edit.discount === "custom") {
     const rate = edit.rate.trim(), cap = edit.cap.trim();
     if (!rate) errors.rate = "单独设置时不能留空，要填 0–100";
-    else if (!validBuyPricingValue(rate, "discountRate")) errors.rate = "要填 0–100 的数";
+    else if (!validBuyPricingValue(rate, "discountRate")) errors.rate = places(rate) > 6 ? "最多六位小数，要填 0–100" : "要填 0–100 的数";
     if (!cap) errors.cap = "单独设置时不能留空，要填 0–1,000,000";
-    else if (!validBuyPricingValue(cap, "discountCapUSD")) errors.cap = "要填 0–1,000,000 的数";
+    else if (!validBuyPricingValue(cap, "discountCapUSD")) errors.cap = places(cap) > 6 ? "最多六位小数，要填 0–1,000,000" : "要填 0–1,000,000 的数";
   }
   if (edit.early === "custom") {
     const amount = edit.amount.trim();
@@ -155,10 +157,10 @@ export function PricingEditor({ device, edit, defaults, isTarget, focusOnOpen, s
         <p className="h2-price-default">{edit.discount === "follow" ? `现在 ${defaultDiscount(defaults)}，默认改了一起变` : `默认 ${defaultDiscount(defaults)}`}</p>
         {edit.discount === "custom" && (
           <div className="h2-price-fields">
-            <Field label="比例" hint="0–100" error={error("rate")}>
+            <Field label="比例" required hint="0–100" error={error("rate")}>
               <NumberInput unit="%" min={0} max={100} value={edit.rate} onBlur={() => onBlur("rate")} onChange={(event) => onChange({ ...edit, rate: event.target.value })} />
             </Field>
-            <Field label="最高" hint="0–1,000,000" error={error("cap")}>
+            <Field label="最高" required hint="0–1,000,000" error={error("cap")}>
               <NumberInput unit="USDT" min={0} max={1_000_000} value={edit.cap} onBlur={() => onBlur("cap")} onChange={(event) => onChange({ ...edit, cap: event.target.value })} />
             </Field>
           </div>
@@ -171,7 +173,7 @@ export function PricingEditor({ device, edit, defaults, isTarget, focusOnOpen, s
         <p className="h2-price-default">{edit.early === "follow" ? `现在 ${defaultEarly(defaults)}，默认改了一起变` : `默认 ${defaultEarly(defaults)}`}</p>
         {edit.early === "custom" && (
           <div className="h2-price-fields">
-            <Field label="金额" hint="0–100，最多两位小数" error={error("amount")}>
+            <Field label="金额" required hint="0–100，最多两位小数" error={error("amount")}>
               <NumberInput unit="USDT" min={0} max={100} step={0.01} value={edit.amount} onBlur={() => onBlur("amount")} onChange={(event) => onChange({ ...edit, amount: event.target.value })} />
             </Field>
           </div>

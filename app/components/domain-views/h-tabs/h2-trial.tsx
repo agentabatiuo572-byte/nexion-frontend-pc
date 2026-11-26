@@ -455,7 +455,7 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
         </Facts>
         <p className="h2-target-note"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>换掉后，{currentProduct?.name ?? current} 不在其他可购买设备里，新领取的用户不能用试用抵扣金买它</span></p>
       </> } : {}),
-      ...(isProduct && hasBuyList ? { reasonPlaceholder: "写清调整原因和依据" } : {}),
+      ...((isProduct && hasBuyList) || (pricing && Object.hasOwn(PRICING_DEFAULT_GROUP, param.key)) ? { reasonPlaceholder: "写清调整原因和依据" } : {}),
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
