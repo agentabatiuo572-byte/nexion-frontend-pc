@@ -1174,7 +1174,7 @@ function VersionEditor({ initial, requiredLanguages, switcher, regions, language
   const langName = LANGUAGE_NAME[lang];
 
   return <>
-    <Drawer open wide onClose={close} title={initial.mode === "edit" ? "编辑披露草稿" : "新建披露版本"} sub={initial.mode === "edit" ? `${form.jurisdiction} ${form.version}` : undefined} explain={initial.mode === "create" ? "内容已带入这个适用范围当前的已发布版本，切换生效版本后，用户原来的确认失效。" : undefined} icon={FilePen} tone="role-1"
+    <Drawer open wide onClose={close} onInteractOutside={guard.keepDraftForLeaveLink} title={initial.mode === "edit" ? "编辑披露草稿" : "新建披露版本"} sub={initial.mode === "edit" ? `${form.jurisdiction} ${form.version}` : undefined} explain={initial.mode === "create" ? "内容已带入这个适用范围当前的已发布版本，切换生效版本后，用户原来的确认失效。" : undefined} icon={FilePen} tone="role-1"
       footer={<Decision explain="保存草稿不改变 App 内容。" others={<Button onClick={close}>取消</Button>} primary={<Button variant="primary" disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>} />}>
       <div data-business-form="version-authoring" className="rd-form-stack">
         <MergeNotice report={merged} name={fieldName} />

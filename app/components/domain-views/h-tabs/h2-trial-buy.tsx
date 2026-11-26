@@ -4,9 +4,8 @@
  * 免费试用设置 ·「可购买设备」分区（PLAN 第三节，画板 01–11）：用户除了自己领的试用设备，还能用试用抵扣金买哪些设备。
  * 后台只保存「其他可购买设备」；读取结果里没有这块数据时整块不显示，页面和以前一样。
  */
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { CircleDot, Coins, Eye, EyeOff, Package, PackageX, Plus, SlidersHorizontal, X } from "lucide-react";
 import { BlockState, Button, Cell, Check, CheckGroup, ConfigList, ConfigRow, Decision, DiffList, Drawer, Explain, Fact, Facts, KeepText, Notice, Panel, StatusTag, Table, TableMessage, Td, Th, type DiffRow } from "@/app/components/rd";
 import { TipSide } from "@/app/components/rd/button";
@@ -17,7 +16,7 @@ import { buyProductReason, LISTING_BLOCKED, readH2BuyDevices, type BuyDevice, ty
 import { isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { useReach } from "@/lib/nav/use-reach";
 import type { HCtx } from "./types";
-import { useHistoryBackGuard, warnAboutUnsavedChanges } from "../i-tabs/i5-writes";
+import { useNavigationLeaveGuard } from "../i-tabs/i5-writes";
 
 export type BuyListDraft = Omit<BuyListWrite, "requestNo" | "confirmedActorId"> & {
   added: string[];
@@ -190,7 +189,6 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const [leaving, setLeaving] = useState(false);
   const afterLeave = useRef<() => void>(undefined);
   const formSequence = useRef(0);
-  const router = useRouter();
   const items = list ? byPrice(list.items) : [];
   const { items: draftItems, candidates } = buyChoices(draftBase);
   const inList = new Set(draftItems.map((item) => item.productNo));
@@ -202,8 +200,13 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const draftBlock = blocked ?? (invalidPicked ? INVALID_PICKED : changed ? undefined : NO_CHANGES);
 
   const dirty = !!draftBase && changed;
+  const leaveThen = useCallback((next: () => void) => {
+    if (leaving || ctx.currentActionConfirm()) return;
+    afterLeave.current = next;
+    setLeaving(true);
+  }, [ctx, leaving]);
   // 浏览器后退和换页一样先问（OP-29）。
-  useHistoryBackGuard(dirty, (resume) => { afterLeave.current = resume; setLeaving(true); });
+  useNavigationLeaveGuard(dirty, ({ resume }) => leaveThen(resume), { pathOnly: true });
   const openDrawer = () => {
     // 抽屉开着时「调整」仍可用键盘点到：有改动先问，不重置勾选。
     if (dirty) { afterLeave.current = undefined; setLeaving(true); return; }
@@ -216,27 +219,9 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const discard = () => { const next = afterLeave.current; closeDrawer(); next?.(); };
   useEffect(() => {
     if (!dirty) return;
-    const leaveThen = (next: () => void) => { afterLeave.current = next; setLeaving(true); };
     leaveGuard.current = leaveThen;
-    const warn = (event: BeforeUnloadEvent) => warnAboutUnsavedChanges(event);
-    // 侧栏、面包屑和抽屉里的链接会换页：先问，放弃后再去。
-    const intercept = (event: MouseEvent) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!link || link.target && link.target !== "_self" || link.hasAttribute("download") || link.origin !== window.location.origin
-        || link.pathname === window.location.pathname) return;
-      event.preventDefault();
-      event.stopPropagation();
-      leaveThen(() => router.push(`${link.pathname}${link.search}${link.hash}`));
-    };
-    window.addEventListener("beforeunload", warn);
-    document.addEventListener("click", intercept, true);
-    return () => {
-      leaveGuard.current = null;
-      window.removeEventListener("beforeunload", warn);
-      document.removeEventListener("click", intercept, true);
-    };
-  }, [dirty, leaveGuard, router]);
+    return () => { leaveGuard.current = null; };
+  }, [dirty, leaveGuard, leaveThen]);
   // 换成离开提示时，原来聚焦的勾选框没了。
   useEffect(refocusDrawer, [leaving]);
   const toggle = (no: string, on: boolean) => setPicked((current) => on ? [...current, no] : current.filter((item) => item !== no));

@@ -15,7 +15,7 @@ import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { fetchDeveloperDocsAdmin, fetchHowContentAdmin, type PublishedContentDocument, type PublishedHowContentDocument } from "@/lib/admin/published-content-client";
 
-import { LeaveDialog, useLeaveGuard, type EditorSwitch } from "../i-tabs/i5-writes";
+import { LeaveDialog, useLeaveGuard, type EditorSwitch, type LeaveSaveContinuation } from "../i-tabs/i5-writes";
 import { CONFLICT_READ_FAILED, READBACK_FAILED, row, same, text, useContentEditor, useDraftRefresh, type A3ContentRead, type A3ContentReads, type ContentDocument, type Mode, type Row } from "./a3-content-editor";
 
 export type A3ContentSummary = { unsaved: number };
@@ -69,7 +69,7 @@ type DraftControls = {
   dirty: boolean;
   discard: () => void;
   saveBlocked?: string;
-  save: (saved: () => void) => void;
+  save: (saved: LeaveSaveContinuation) => void;
 };
 
 function referenceFields(value: ContentDocument) {
@@ -190,9 +190,13 @@ export function A3Content({ commands, recovery, onRecovered, toast, onSummary, c
     ]} />
     <div {...ids.panel("how")} hidden={tab !== "how"}><HowContent commands={commands} recovery={recovery} onRecovered={onRecovered} incoming={contentReads.how} toast={toast} onDirty={markHow} drafts={drafts.current} {...release} /></div>
     <div {...ids.panel("docs")} hidden={tab !== "docs"}><DeveloperDocs commands={commands} recovery={recovery} onRecovered={onRecovered} incoming={contentReads.docs} toast={toast} onDirty={markDocs} drafts={drafts.current} {...release} /></div>
-    <LeaveDialog guard={leave} saveLabel="保存草稿"
+    <LeaveDialog guard={leave} saveLabel="保存草稿" retainSave
       saveBlocked={dirty.docs && dirty.how ? "两类内容都有未保存的修改，请先保存其中一类" : drafts.current[active]?.saveBlocked}
-      onSave={saved => drafts.current[active]?.save(saved)} />
+      onSave={saved => {
+        const draft = drafts.current[active];
+        if (draft) draft.save(saved);
+        else saved.cancel?.();
+      }} />
   </div>;
 }
 
@@ -262,8 +266,9 @@ function DeveloperDocs({ commands, recovery, onRecovered, incoming, toast, onDir
   const saveBlocked = (target: Mode) => commonBlocked
     ?? (target === "PUBLISHED" && dirty ? SAVE_BEFORE_PUBLISH : invalid ? INVALID_CONTENT
       : !hasChanges && target === statusOf(baseline?.status ?? "") ? "内容没有变化，无需提交。" : undefined);
-  const beginSave = (target: Mode, saved?: () => void) => {
+  const beginSave = (target: Mode, saved?: LeaveSaveContinuation) => {
     if (canWrite && !saveBlocked(target)) editor.beginSave(target, saved);
+    else saved?.cancel?.();
   };
   const draftRefresh = useDraftRefresh(dirty, () => void refresh());
   useLayoutEffect(() => {
@@ -462,8 +467,9 @@ function HowContent({ commands, recovery, onRecovered, incoming, toast, onDirty,
       : target === "PUBLISHED" && placeholderSpots.length ? "还有没替换的占位符，不能发布"
       : target === "PUBLISHED" && KEYS.some(page => !document?.contents[page]) ? "先补齐六页内容"
       : !hasChanges && target === statusOf(baseline?.status ?? "") ? "内容没有变化，无需提交。" : undefined);
-  const beginSave = (target: Mode, saved?: () => void) => {
+  const beginSave = (target: Mode, saved?: LeaveSaveContinuation) => {
     if (canWrite && !saveBlocked(target)) editor.beginSave(target, saved);
+    else saved?.cancel?.();
   };
   const draftRefresh = useDraftRefresh(dirty, () => void refresh());
   useLayoutEffect(() => {

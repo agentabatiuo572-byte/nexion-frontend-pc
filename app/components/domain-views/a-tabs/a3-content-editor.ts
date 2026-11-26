@@ -7,6 +7,7 @@ import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-mess
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { parseDeveloperDocs, parseHowContent } from "@/lib/admin/published-content-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import type { LeaveSaveContinuation } from "../i-tabs/i5-writes";
 
 type Kind = A3ContentOriginal["kind"];
 export type Mode = A3ContentOriginal["mode"];
@@ -99,7 +100,7 @@ export function useContentEditor<D extends ContentDocument>({
   const [directDelivered, setDirectDelivered] = useState<ContentCommand>();
   const [readbackContinuation, setReadbackContinuation] = useState<(() => void) | null>(null);
   const readInFlight = useRef(false);
-  const afterSave = useRef<(() => void) | null>(null);
+  const afterSave = useRef<LeaveSaveContinuation | null>(null);
   const afterReadback = useRef<(() => void) | null>(null);
   const awaitingReadback = useRef(false);
   const latestCommands = useRef(commands);
@@ -224,11 +225,16 @@ export function useContentEditor<D extends ContentDocument>({
     : readbackError ? READBACK_FAILED
     : !readReady || loading || saving ? "正在加载或保存" : undefined);
 
-  const beginSave = (target: Mode, saved?: () => void) => {
+  const beginSave = (target: Mode, saved?: LeaveSaveContinuation) => {
     afterSave.current = saved ?? null;
     setError(null); setMode(target);
   };
-  const cancelSave = () => { afterSave.current = null; setMode(null); };
+  const cancelSave = () => {
+    const proceed = afterSave.current;
+    afterSave.current = null;
+    setMode(null);
+    proceed?.cancel?.();
+  };
   const discardDraft = () => { setDocument(loadedBaseline); setIntent(null); setNotice(null); setError(null); };
   const discardReference = () => {
     if (!reference || !owner) return;
@@ -258,7 +264,10 @@ export function useContentEditor<D extends ContentDocument>({
       setReadReady(false); setReason(""); setMode(null);
       afterReadback.current = proceed;
       awaitingReadback.current = true;
-      await refresh();
+      if (!await refresh()) {
+        afterReadback.current = null;
+        proceed?.cancel?.();
+      }
       if (!proceed) toast(target === "PUBLISHED" ? `${name}已发布` : "草稿已保存，App 读到的不变", "success");
     } catch (cause) {
       const conflict = latestCommands.current.find(kind);
@@ -266,6 +275,7 @@ export function useContentEditor<D extends ContentDocument>({
         setMode(null); setReason(""); setNotice(null);
         await refresh({ ...conflict, directContentConflict: true });
       } else setError(displayAdminError(cause));
+      proceed?.cancel?.();
     } finally { setSaving(false); }
   };
   return { canRead, canWrite, document, baseline, baselineRead, original, loading, saving, mode, reason, setReason, error, notice,

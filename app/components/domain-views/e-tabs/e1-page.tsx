@@ -397,6 +397,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
       setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
       closeOwnEditor();
+      if (ownEditor) ownConfirmation?.afterSubmitted?.();
     } catch (failure) {
       const response = failure as { httpStatus?: number; apiCode?: number; backendMessage?: string; message?: string };
       const firstRejection = !record.receivedTicketId && !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
