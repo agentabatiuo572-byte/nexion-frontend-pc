@@ -643,7 +643,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       await dispatch(write, key, actions, async (spec) => {
         // 失败写在确认框里，结果未知转成待确认条，都不再弹同一句；只有提交成功才提示。
         await propose(() => undefined, spec);
-        toast("已提交审批，另一位超级管理员批准后执行", "success");
+        toast("已提交，等待审批后执行", "success");
       });
     } catch (cause) {
       const unknown = isA2OutcomeUncertainError(cause) || isOutcomeUnknownError(cause);

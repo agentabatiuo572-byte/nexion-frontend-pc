@@ -3555,7 +3555,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       </Drawer>
 
       <Drawer open={confirmListOpen} onClose={() => setConfirmListOpen(false)} title={`需要确认的操作（${confirmCategories.length} 类）`} icon={ListChecks}
-        explain="清单只是说明，不改变权限和审批规则。走审批的要另一位超级管理员批准后才生效，直接执行的确认后立即生效。">
+        explain="清单只是说明，不改变权限和审批规则。走审批的一般由另一位超级管理员批准后才生效，人工调整等级由发起人以外、有人工调级权限和审批批准权限的管理员批；业务里的第二人复核（如调账）按各页写的复核人；直接执行的确认后立即生效。">
         {confirmCategories.length ? (
           <Table label="需要确认的操作">
             <thead><tr><Th>类别</Th><Th>例子</Th><Th>谁能执行</Th></tr></thead>
