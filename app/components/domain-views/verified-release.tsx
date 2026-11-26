@@ -37,6 +37,29 @@ export function useVerifiedRelease(toast: (message: string, kind?: "success" | "
   const [verified, setVerified] = useState(false);
   const close = () => setCurrent(null);
   const changed = () => toast("这条记录刚有变化，没有解除，请看最新状态。", "warn");
+  const footer = current && <>
+    <Button onClick={close}>取消</Button>
+    <Button variant="primary" disabledReason={verified ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={() => {
+      close();
+      try {
+        if (current.snapshot !== current.getSnapshot()) { changed(); return; }
+        const released = current.release();
+        if (released === "pending") return;
+        if (released === false) { changed(); return; }
+        toast("已解除这条记录。", "success");
+      } catch (error) { toast(displayAdminError(error), "warn"); }
+    }}>确认解除</Button>
+  </>;
+  const body = current && <div className="rd-stack">
+    <Facts>
+      <Fact k="原操作">{current.operation}</Fact>
+      {current.target && <Fact k={current.targetLabel ?? "对象"}>{current.target}</Fact>}
+      <Fact k="发出时间">{`${businessStamp(current.createdAt)}（${businessZone().label}）`}</Fact>
+    </Facts>
+    <p><KeepText text="重试被拒绝不等于原操作没生效，请先到操作记录与审批核对。" /></p>
+    <p><KeepText text="解除后这一项可以重新操作（以当时的数据和权限为准），原操作不再重试，也不会撤销。只清这个标签页里的记录，不进操作记录。" /></p>
+    <Check label="我已核实原操作的结果" checked={verified} onChange={(event) => setVerified(event.target.checked)} />
+  </div>;
   return {
     ask: (next: Release) => {
       const snapshot = next.getSnapshot();
@@ -44,29 +67,8 @@ export function useVerifiedRelease(toast: (message: string, kind?: "success" | "
       setVerified(false);
       setCurrent({ ...next, snapshot });
     },
-    dialog: current && <Modal title="解除原操作记录" icon={ShieldCheck} dirty={verified} onClose={close} footer={<>
-      <Button onClick={close}>取消</Button>
-      <Button variant="primary" disabledReason={verified ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={() => {
-        close();
-        try {
-          if (current.snapshot !== current.getSnapshot()) { changed(); return; }
-          const released = current.release();
-          if (released === "pending") return;
-          if (released === false) { changed(); return; }
-          toast("已解除这条记录。", "success");
-        } catch (error) { toast(displayAdminError(error), "warn"); }
-      }}>确认解除</Button>
-    </>}>
-      <div className="rd-stack">
-        <Facts>
-          <Fact k="原操作">{current.operation}</Fact>
-          {current.target && <Fact k={current.targetLabel ?? "对象"}>{current.target}</Fact>}
-          <Fact k="发出时间">{`${businessStamp(current.createdAt)}（${businessZone().label}）`}</Fact>
-        </Facts>
-        <p><KeepText text="重试被拒绝不等于原操作没生效，请先到操作记录与审批核对。" /></p>
-        <p><KeepText text="解除后这一项可以重新操作（以当时的数据和权限为准），原操作不再重试，也不会撤销。只清这个标签页里的记录，不进操作记录。" /></p>
-        <Check label="我已核实原操作的结果" checked={verified} onChange={(event) => setVerified(event.target.checked)} />
-      </div>
-    </Modal>,
+    dialog: current && <Modal title="解除原操作记录" icon={ShieldCheck} dirty={verified} onClose={close} footer={footer}>{body}</Modal>,
+    /** 宿主框里同框换成这块内容（PG-38），不另开弹窗：宿主换标题、用这里的底栏，×、Esc 调 cancel，焦点由宿主交接。 */
+    inline: current && { verified, body, footer, cancel: close },
   };
 }
