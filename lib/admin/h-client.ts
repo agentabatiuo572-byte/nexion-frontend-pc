@@ -1099,7 +1099,11 @@ export async function fetchH8ReferralRewards(cursor = ""): Promise<H8ReferralRew
 
 /** Eligibility is a point-in-time read, not a promise of release or sufficient coverage. */
 export async function fetchH8SettlementEligibility(invitedUserId: number): Promise<H8SettlementEligibility> {
-  const row = h8Record(await growthRequest<unknown>(`/referral-rewards/settlements/eligibility?invitedUserId=${encodeURIComponent(invitedUserId)}`), "eligibility");
+  return parseH8SettlementEligibility(await growthRequest<unknown>(`/referral-rewards/settlements/eligibility?invitedUserId=${encodeURIComponent(invitedUserId)}`));
+}
+
+export function parseH8SettlementEligibility(value: unknown): H8SettlementEligibility {
+  const row = h8Record(value, "eligibility");
   const boolean = (key: string, nullable = false): boolean | null => {
     if (nullable && row[key] === null) return null;
     if (typeof row[key] !== "boolean") h8Invalid(`eligibility.${key}`);

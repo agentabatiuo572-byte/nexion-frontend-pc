@@ -30,6 +30,7 @@ import {
   h8EffectiveRewardReference,
   h8RewardParamAmplifies,
   h8RewardParamValid,
+  parseH8SettlementEligibility,
   type H8ReferralRewardOverview,
   type H8SettlementEligibility,
 } from "@/lib/admin/h-client";
@@ -81,6 +82,21 @@ const modeHelp = (mode: string | undefined) => mode && MODE_HELP[mode] ? <KeepTe
 
 /** 指定新人的结算条件（e6d5bdca 资格读取）：一句结论 + 批准后会怎样。读到的空值写未知，不推断。 */
 type EligibilityRead = { id: number; state: "loading" } | { id: number; state: "ready"; data: H8SettlementEligibility } | { id: number; state: "error"; message: string };
+type H8ConfirmReq = ActionConfirmReq & {
+  commandKey?: string;
+  getSettlementBlockReason?: () => string | undefined;
+  getSettlementCoverage?: () => { lead: string; check: string };
+};
+type SettlementOriginal = Extract<NonNullable<H8RewardCommand["original"]>, { kind: "settlement" }>;
+const SETTLEMENT_INTERVAL_AMOUNT = "按各人生效区间的金额";
+const PREVIOUS_GIFT_RELEASE_SUMMARY = "仅解冻原礼包，不发新奖励";
+const GIFT_RELEASE_AMOUNT = "按原礼包冻结记录里的金额解冻";
+
+function readSettlementEligibility(id: number | undefined, read: EligibilityRead | null, draft?: H8SettlementEligibility) {
+  if (draft && draft.invitedUserId === id) return draft;
+  if (read?.state === "ready" && read.id === id && read.data.invitedUserId === id) return read.data;
+}
+
 const ELIGIBILITY_REASON: Record<string, { tone: StateTone; tag: string; text: string }> = {
   ELIGIBLE: { tone: "ok", tag: "现在能结", text: "符合结算条件" },
   ALREADY_SETTLED_GIFT_RELEASABLE: { tone: "done", tag: "已结算", text: "礼包还冻结，已有首笔实付订单" },
@@ -94,22 +110,62 @@ const ELIGIBILITY_REASON: Record<string, { tone: StateTone; tag: string; text: s
   RISK_BLOCKED: { tone: "warn", tag: "不能结", text: "被风控拦下" },
   NOT_ELIGIBLE: { tone: "warn", tag: "不能结", text: "现在不符合结算条件" },
 };
-function eligibilityView(value: H8SettlementEligibility) {
-  const known = ELIGIBILITY_REASON[value.reason] ?? { tone: "neutral" as const, tag: "没认出", text: "系统给的原因这页认不出" };
-  const text = value.reason === "REGISTERED_BEFORE_EFFECTIVE_AT" && value.registeredAt === null ? "注册时间没有记录" : known.text;
-  const outcome = value.reason === "ELIGIBLE" ? value.willFreeze ? "批准后发奖励，新人礼先冻结到首笔实付订单" : "批准后给新人和邀请人发奖励"
-    : value.reason === "ALREADY_SETTLED_GIFT_RELEASABLE" ? "不再发新的，批准后可能解冻原礼包"
-      : value.reason === "ALREADY_SETTLED" ? "不发" : "批准执行时仍不符合就不发";
+function settlementSettingsBlock(snapshot: H8ReferralRewardOverview, value?: H8SettlementEligibility) {
+  if (!value) return;
+  if (value.reason === "DISABLED") return "奖励已停用，请刷新页面读取最新设置后再确认。";
+  if (Date.parse(value.effectiveAt) !== Date.parse(snapshot.effectiveAt)) return "奖励设置已变化，请刷新页面读取最新设置后再确认。";
+}
+
+function eligibilityView(snapshot: H8ReferralRewardOverview, value: H8SettlementEligibility) {
+  const settingsBlock = settlementSettingsBlock(snapshot, value);
+  if (settingsBlock) return { tone: "warn" as const, tag: "不能结", text: settingsBlock, outcome: "重新读取设置后再确认" };
+  const reason = value.releasePossible ? "ALREADY_SETTLED_GIFT_RELEASABLE" : value.reason;
+  const known = ELIGIBILITY_REASON[reason] ?? { tone: "neutral" as const, tag: "没认出", text: "系统给的原因这页认不出" };
+  const text = reason === "REGISTERED_BEFORE_EFFECTIVE_AT" && value.registeredAt === null ? "注册时间没有记录" : known.text;
+  const outcome = reason === "ELIGIBLE" ? value.willFreeze ? "批准后发奖励，新人礼先冻结到首笔实付订单" : "批准后给新人和邀请人发奖励"
+    : reason === "ALREADY_SETTLED_GIFT_RELEASABLE" ? "不再发新的，批准后可能解冻原礼包"
+      : reason === "ALREADY_SETTLED" ? "不发" : "批准执行时仍不符合就不发";
   return { ...known, text, outcome };
 }
+
+function settlementEligibilityBlock(snapshot: H8ReferralRewardOverview, value?: H8SettlementEligibility) {
+  return settlementSettingsBlock(snapshot, value)
+    ?? (value && !value.eligible && !value.releasePossible ? eligibilityView(snapshot, value).text : undefined);
+}
+
+function storedSettlementEligibility(original: SettlementOriginal) {
+  if (original.confirmedEligibility == null) return original.confirmedEligibility;
+  try {
+    const eligibility = parseH8SettlementEligibility(original.confirmedEligibility);
+    if (eligibility.invitedUserId === original.invitedUserId) return eligibility;
+  } catch { /* A missing display snapshot does not invalidate the replay body. */ }
+}
+
+function settlementAmounts(snapshot: H8ReferralRewardOverview, eligibility: H8SettlementEligibility | null | undefined, originalSummary?: string) {
+  const settingsBlock = settlementSettingsBlock(snapshot, eligibility ?? undefined);
+  const releaseOnly = !settingsBlock && (eligibility?.releasePossible === true
+    || originalSummary?.split(" · ").includes(PREVIOUS_GIFT_RELEASE_SUMMARY) === true);
+  if (releaseOnly) {
+    return { releaseOnly, newcomer: GIFT_RELEASE_AMOUNT, inviter: "不发新奖励", summary: `${GIFT_RELEASE_AMOUNT}，不发新奖励` };
+  }
+  if (!settingsBlock && eligibility?.eligible && eligibility.registeredAt
+      && Date.parse(eligibility.registeredAt) >= Date.parse(snapshot.effectiveAt)) {
+    const rewards = snapshot.effectiveRewards;
+    const uvtDecimals = decimalsOf(rewards["newcomer.nex"], rewards["inviter.nex"]);
+    const newcomer = `${amountText(rewards["newcomer.usdt"], decimalsOf(rewards["newcomer.usdt"]))} USDT + ${amountText(rewards["newcomer.nex"], uvtDecimals)} UVT`;
+    const inviter = `${amountText(rewards["inviter.nex"], uvtDecimals)} UVT`;
+    return { releaseOnly, newcomer, inviter: `${inviter}，没有邀请人的不发`, summary: `新人 ${newcomer} · 邀请人 ${inviter}` };
+  }
+  return { releaseOnly, newcomer: SETTLEMENT_INTERVAL_AMOUNT, inviter: `${SETTLEMENT_INTERVAL_AMOUNT}，没有邀请人的不发`, summary: SETTLEMENT_INTERVAL_AMOUNT };
+}
 const yesNo = (value: boolean | null, yes: string, no: string, unknown = "未知") => value === null ? unknown : value ? yes : no;
-function EligibilityDetail({ value }: { value: H8SettlementEligibility }) {
+function EligibilityDetail({ value, original }: { value: H8SettlementEligibility; original?: boolean }) {
   return <>
     <p>注册 {value.registeredAt ? formatBusinessTimeCompact(value.registeredAt, "—") : "时间未知"}（{businessZone().label}）</p>
     <p>生效时间 {formatBusinessTimeCompact(value.effectiveAt, "—")}</p>
     <p>钱包{yesNo(value.walletPresent, "已开", "没有")} · 风控{yesNo(value.riskBlocked, "拦下了", "没拦")} · {yesNo(value.settled, "已结算", "没结算", "结算未知")}</p>
     <p>新人礼{yesNo(value.freezeGift, "会先冻结", "不冻结")} · 冻结中 {value.frozenGiftCount === null ? "未知" : `${value.frozenGiftCount} 份`} · 首笔实付{yesNo(value.firstPaidOrder, "有", "没有")}</p>
-    <p>这是现在的情况，批准执行时再核对。</p>
+    <p>{original ? "这是提交时核对的情况，批准执行时再核对。" : "这是现在的情况，批准执行时再核对。"}</p>
   </>;
 }
 
@@ -130,7 +186,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invitedUserIdInput, setInvitedUserIdInput] = useState("");
-  const [mc, setMc] = useState<(ActionConfirmReq & { commandKey?: string }) | null>(null);
+  const [mc, setMc] = useState<H8ConfirmReq | null>(null);
   const loadGeneration = useRef(0);
   const [, changed] = useReducer((value: number) => value + 1, 0);
   const [readReady, setReadReady] = useState(false);
@@ -139,6 +195,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [stale, setStale] = useState<{ param?: H8Param; value?: string } | null>(null);
   const [releasing, setReleasing] = useState<H8RewardCommand | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityRead | null>(null);
+  const [eligibilityRetry, setEligibilityRetry] = useState(0);
+  // 点「重试」后按钮随读取卸下，焦点交给结论这一行（OP-46、ST-56）。
+  const eligibilityLine = useRef<HTMLParagraphElement>(null);
   const eligibilityRef = useRef(eligibility);
   eligibilityRef.current = eligibility;
   useEffect(() => {
@@ -152,9 +211,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         .catch((cause) => { if (live) setEligibility({ id, state: "error", message: displayAdminReadError(cause) }); });
     }, 400);
     return () => { live = false; window.clearTimeout(timer); };
-  }, [invitedUserIdInput, canSettle]);
+  }, [invitedUserIdInput, canSettle, eligibilityRetry]);
   const conflictDraft = useHConflictDraft(readReady && !loading && !error);
-  const openConfirm = (req: (ActionConfirmReq & { commandKey?: string }) | null) => setMc(req ? conflictDraft.action(req) : null);
+  const openConfirm = (req: H8ConfirmReq | null) => setMc(req ? conflictDraft.action(req) : null);
   useEffect(() => {
     setMc(current => current?.commandKey && drafts.some(row => row.commandKey === current.commandKey) ? null : current);
   }, [drafts.length]);
@@ -338,7 +397,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const from = valueText(field, String(before[field.key])), to = valueText(field, String(snapshot.params[field.key]));
       return from === to ? [] : [<Fact key={field.key} k={`他人修改 · ${paramTitle(field)}`}><Change from={from} to={to} /></Fact>];
     }) : [];
-    const resetFact = (when = "保存或批准") => `${when}后，现在等结算的 ${pendingCount} 位不再进入结算`;
+    const resetFact = (when = "保存或批准") => `${when}后，现在等结算的 ${pendingCount} 位仍按各人生效区间的金额结`;
     const approvalCopy = numeric
       ? "批准前仍按原金额发；批准时按那时的当月加成重算，并检查兑付覆盖率。"
       : isEnabled
@@ -394,7 +453,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         {isEnabled && !enabling && <Fact k="已冻结的新人礼">首笔实付订单后照常解冻</Fact>}
         {isEnabled && <Fact k="生效时间">{enabling ? <Change from={gateNow} to="批准那一刻" /> : `不变：${gateNow}`}</Fact>}
         {isEnabled && <Fact k="等结算的注册">{enabling
-          ? `批准后，现在等结算的 ${pendingCount} 位不再进入结算`
+          ? resetFact("批准")
           : `${pendingCount} 位照常统计，停用期间不能结算`}</Fact>}
       </Facts> : undefined,
       statedBrief: isEnabled
@@ -522,67 +581,96 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     invitedUserId = original?.invitedUserId ?? invitedUserId;
     const targeted = original ? original.invitedUserId !== undefined : invitedUserId != null;
     const currentCommand = () => pendingH8RewardCommands(session.adminId).find(r => r.commandKey === (pending?.commandKey ?? confirmation.current?.commandKey));
-    const rewards = snapshot?.effectiveRewards;
-    const usdtDecimals = decimalsOf(rewards?.["newcomer.usdt"]);
-    const uvtDecimals = decimalsOf(rewards?.["newcomer.nex"], rewards?.["inviter.nex"]);
+    const readEligibility = () => targeted ? readSettlementEligibility(invitedUserId, eligibilityRef.current, draftEligibility) : undefined;
+    const getSettlementBlockReason = () => pending || currentCommand() ? undefined : settlementEligibilityBlock(snapshot, readEligibility());
+    const settlementReview = () => {
+      const saved = original ?? currentCommand()?.original;
+      const recovering = saved?.kind === "settlement";
+      const eligibility = recovering ? storedSettlementEligibility(saved) : readEligibility();
+      const originalSummary = recovering && eligibility === undefined
+        ? (typeof saved.request.afterValue === "string" && saved.request.afterValue || "原申请未保存结算说明") : undefined;
+      return { eligibility, recovering, originalSummary, amounts: settlementAmounts(snapshot, eligibility, originalSummary) };
+    };
     const loaded = targeted ? snapshot?.recentSettlements.find((row) => row.invitedUserId === invitedUserId) : undefined;
     const proposeBlock = withdrawalApprovalDisabledReason(session?.authorities ?? []);
     const settleFacts = (value?: string) => {
       const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
       const pendingNow = snapshot.pending;
-      const batchCount = Math.min(limit, pendingNow);
-      const read = targeted ? eligibilityRef.current : null;
-      const readData = draftEligibility ?? (read?.state === "ready" && read.id === invitedUserId ? read.data : null);
-      const checked = readData ? eligibilityView(readData) : null;
+      const { eligibility: readData, recovering, originalSummary, amounts } = settlementReview();
+      const checked = readData ? eligibilityView(snapshot, readData) : null;
       return <Facts>
         {targeted
           ? <Fact k="新人用户编号" lead>{invitedUserId}</Fact>
-          : <Fact k="这一批最多" lead unit={value ? "位新人" : undefined}>{value ? countText(batchCount) : "—"}</Fact>}
+          : <Fact k="这一批最多" lead unit={value ? "位新人" : undefined}>{value ? countText(limit) : "—"}</Fact>}
         {targeted
           ? <Fact k="这位新人">{checked
-            ? <><StatusTag tone={checked.tone}>{checked.tag}</StatusTag> {checked.text}<Explain label="这位新人的情况" content={<EligibilityDetail value={readData!} />} /></>
-            : loaded ? "已结算过，不会再发一份" : "没读到他现在能不能结"}</Fact>
+            ? <><StatusTag tone={checked.tone}>{checked.tag}</StatusTag> {checked.text}<Explain label="这位新人的情况" content={<EligibilityDetail value={readData!} original={recovering} />} /></>
+            : loaded ? "已结算过，不会再发一份" : recovering ? "原申请没有资格详情" : "没读到他现在能不能结"}</Fact>
           : null}
         {targeted && loaded && <Fact k="原结算号"><span data-mono>{loaded.settlementNo}</span></Fact>}
-        {targeted && <Fact k="这次会怎样">{checked ? checked.outcome : loaded
+        {targeted && <Fact k="这次会怎样">{amounts.releaseOnly ? "批准时复核解冻条件，通过后按原冻结金额解冻" : checked ? checked.outcome : loaded
           ? "他的礼包还冻结、又已经有首笔实付订单的，只解冻原礼包；否则不发"
           : "批准执行时逐项核对；不符合就不发"}</Fact>}
         {targeted ? null
-          : <Fact k="现在待结算">{countText(pendingNow)} 位，从最早注册的开始发；批准时按那一刻的名单</Fact>}
-        <Fact k="每位新人">{amountText(rewards?.["newcomer.usdt"], usdtDecimals)} USDT + {amountText(rewards?.["newcomer.nex"], uvtDecimals)} UVT</Fact>
-        <Fact k="每位邀请人">{amountText(rewards?.["inviter.nex"], uvtDecimals)} UVT，没有邀请人的不发</Fact>
-        {!targeted && value && <Fact k="这一批最多发出">{timesText(rewards?.["newcomer.usdt"], batchCount, usdtDecimals)} USDT + {timesText(rewards?.["newcomer.nex"], batchCount, uvtDecimals, rewards?.["inviter.nex"])} UVT</Fact>}
+          : <>
+            <Fact k="上次读取时待结算">{countText(pendingNow)} 位</Fact>
+            <Fact k="批准时结谁">按那时的名单，批准前新符合条件的也算；先结现行生效区间，再结之前各生效区间，三项都是 0 的区间不结；同一区间按注册先后</Fact>
+          </>}
+        {originalSummary ? <Fact k="原结算说明">{originalSummary}</Fact> : <>
+          <Fact k="每位新人">{amounts.newcomer}</Fact>
+          <Fact k="每位邀请人">{amounts.inviter}</Fact>
+          {!targeted && value && <Fact k="这一批最多发出">金额无法预估，{SETTLEMENT_INTERVAL_AMOUNT}</Fact>}
+        </>}
         {!checked && <Fact k="会冻结的">注册时标了首购冻结的，新人礼冻结到首笔实付订单；有几位页面算不出</Fact>}
-        <Fact k="钱从哪出">平台出钱，进新人和邀请人的钱包，记进资金账本</Fact>
+        <Fact k="钱从哪出">{amounts.releaseOnly ? "来自原礼包的冻结记录，解冻后记进新人的钱包和资金账本" : "平台出钱，进新人和邀请人的钱包，记进资金账本"}</Fact>
         <Fact k="谁来批">{APPROVER}</Fact>
         <Fact k="需有权限">{fApprovalPermissionText(H8_SETTLEMENT_APPROVAL_PERMISSION)}</Fact>
         {proposeBlock && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，提交会被拒绝；请有权限的同事发起</Fact>}
       </Facts>;
     };
-    openConfirm({ commandKey: pending?.commandKey, briefKind: "funds",
+    openConfirm({ commandKey: pending?.commandKey, briefKind: "funds", getSettlementBlockReason,
     action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
     title: targeted ? "给指定新人结算" : "批量结算邀请奖励",
     detail: targeted
       ? `只结算新人 ${invitedUserId}；不符合条件就不发，也不会改发给别人。已结算、礼包还冻结又已有首笔实付订单的，这次只解冻原礼包。`
-      : "按注册先后找出生效时间起注册、已开钱包、还没结算、没被风控拦下的新人，有没有邀请人都算。",
-    effect: <><StatusTag tone="progress" filled explain={`${APPROVER}在「操作记录与审批」批准后才发，批准前什么都不发。批准时按那时的名单发；奖励配置在这期间变了，要重新提交。`}>批准后执行</StatusTag><IrreversibleTag /></>,
-    statedBrief: {
-      impact: targeted ? "批准后给这位新人和他的邀请人发奖励，发出去不能撤回。" : "批准后按注册先后给这一批新人和他们的邀请人发奖励，发出去不能撤回。",
-      check: "核对人数和每位金额；理由写清结算依据或工单号。",
+      : "找出已开钱包、还没结算、没被风控拦下的新人，有没有邀请人都算。",
+    effect: () => <><StatusTag tone="progress" filled explain={settlementReview().amounts.releaseOnly
+      ? `${APPROVER}在「操作记录与审批」批准时复核，符合条件才解冻原礼包；奖励配置在这期间变了，要重新提交。`
+      : `${APPROVER}在「操作记录与审批」批准后才发，批准前什么都不发。批准时按那时的名单发；奖励配置在这期间变了，要重新提交。`}>批准后生效</StatusTag><IrreversibleTag /></>,
+    statedBrief: () => {
+      const { amounts, originalSummary } = settlementReview();
+      if (amounts.releaseOnly) return {
+        impact: "批准时复核解冻资格和兑付覆盖率。通过后只按原礼包冻结记录里的金额解冻，不发新奖励。",
+        check: "核对新人编号和原礼包冻结记录；理由写清结算依据或工单号。",
+      };
+      if (originalSummary) return { impact: "批准时按原申请复核结算资格。", check: "核对原结算说明和操作理由。" };
+      return {
+        impact: targeted ? "批准后给这位新人和他的邀请人发奖励，发出去不能撤回。" : "批准后按那时的名单给这一批新人和他们的邀请人发奖励，发出去不能撤回。",
+        check: "核对人数和每位金额；理由写清结算依据或工单号。",
+      };
     },
     facts: settleFacts,
-    coverageLead: "结算会真的给用户发钱",
-    coverageCheck: "提交审批时不检查兑付覆盖率；批准后、真正入账前各检查一次，低于红线整批不发。",
-    confirmLabel: "提交结算审批",
+    getSettlementCoverage: () => settlementReview().amounts.releaseOnly ? {
+      lead: "解冻会把原礼包金额记入新人的钱包",
+      check: "提交审批时不检查兑付覆盖率；批准执行时复核，低于红线不能解冻。",
+    } : {
+      lead: "结算会真的给用户发钱",
+      check: "提交审批时不检查兑付覆盖率；批准后、真正入账前各检查一次，低于红线整批不发。",
+    },
+    confirmLabel: "提交审批",
     confirmTone: "danger",
     getPendingReason: () => { const o = currentCommand()?.original; return o && o.kind !== "direct" ? o.request.reason : undefined; },
     getPendingRecovery: () => { const record = currentCommand(); return record && fConfirmRecovery(h8Recovery, record, () => queryCommand(record)); },
     reasonPlaceholder: "例如：本周新人礼例行结算、工单号",
     amplifies: true,
-    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", current: "20", currentLabel: "默认", ...(original || draft?.limit !== undefined ? { initialValue: String(original?.limit ?? draft?.limit) } : {}), unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，填了才能提交；按注册先后从最早的开始" },
+    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", current: "20", currentLabel: "默认", ...(original || draft?.limit !== undefined ? { initialValue: String(original?.limit ?? draft?.limit) } : {}), unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，填了才能提交" },
     run: async (reason, value) => {
       const previous = currentCommand();
       if (previous) { await sendCommand(previous, true); return; }
+      if (pending) throw new Error("H8_ORIGINAL_RESOLVED");
+      const eligibility = readEligibility();
+      const blocked = settlementEligibilityBlock(snapshot, eligibility);
+      if (blocked) throw new Error(blocked);
       if (!currentRead.current.ready || currentRead.current.data !== snapshot || !snapshot.enabled) throw new Error("H8_OVERVIEW_REQUIRED");
       // The legacy empty field was never submittable. Keep its fallback and exact limit body.
       const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
@@ -592,7 +680,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         action: targeted ? "给指定新人结算邀请奖励" : "结算邀请奖励",
         obj: targeted ? `新人 ${invitedUserId}` : "待结算邀请批次",
         beforeValue: `待结算 ${snapshot.pending} 条 · 设置版本 v${snapshot.version} · 第 ${snapshot.rhythmMonth} 个月`,
-        afterValue: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · 新人 ${snapshot.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${snapshot.effectiveRewards["newcomer.nex"] ?? "—"} UVT · 邀请人 ${snapshot.effectiveRewards["inviter.nex"] ?? "—"} UVT · 快照 ${snapshot.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
+        afterValue: `${targeted ? `仅结算新人 ${invitedUserId} 的邀请奖励` : `最多结算 ${limit} 条`} · ${settlementAmounts(snapshot, eligibility).summary} · 快照 ${snapshot.rewardSnapshotHash.slice(0, 12)}…`,
         operator: actor.operator || actor.username, operatorRole: roleLabel(actor.role),
         type: "fund" as const, amplifies: true, sos: false, roleGate: def.gateLabel, reason, sourceDomain: "H8",
         command: def.buildCommand({ limit, invitedUserId, expectedH8Version: snapshot.version,
@@ -600,7 +688,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         target: def.buildTarget({ limit, invitedUserId }),
       };
       await sendCommand(createH8RewardCommand(session.adminId, { kind: "settlement", overview: snapshot,
-        ...(targeted ? { invitedUserId } : {}), limit, request, body: JSON.stringify(request), continuedFrom: draft?.commandKey }), false);
+        ...(targeted ? { invitedUserId } : {}), limit, request, body: JSON.stringify(request),
+        confirmedEligibility: eligibility ?? null, continuedFrom: draft?.commandKey }), false);
     },
     });
   };
@@ -628,7 +717,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         change: param ? record.original
             ? <>{record.kind !== "direct" && <span className="h8-rec-kind">申请</span>}<Change from={valueText(param, String(record.original.overview.params[param.key]))} to={valueText(param, record.value)} /></>
             : <span>{record.kind === "direct" ? "改成" : "申请改成"} {valueText(param, record.value)}</span>
-          : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
+          : <span>{record.invitedUserId !== undefined ? `新人 ${record.invitedUserId}` : `最多 ${record.limit ?? "—"} 位`}{record.original && `（提交前读取时 ${countText(record.original.overview.pending)} 位待结算）`}</span>,
         actions: <>
           {isRetryExpired(record) && <span>{RETRY_EXPIRED_TEXT}</span>}
           <Button size="sm" aria-label={`查询${param ? paramTitle(param) : "结算"}的原操作`}
@@ -689,6 +778,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   </Notice>;
 
   // 固定 key，三种状态用同一个根元素：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
+  const settlementCoverage = mc?.getSettlementCoverage?.();
   const confirmModal = mc && (<Fragment key="h8-confirm">
     <OperationConfirmModal initialReason={mc.initialReason} briefKind={mc.briefKind}
       key={mc.formKey}
@@ -702,9 +792,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       effect={mc.effect}
       confirmLabel={mc.confirmLabel}
       confirmTone={mc.confirmTone}
+      blockedReason={mc.getSettlementBlockReason?.() ?? mc.blockedReason}
       statedBrief={mc.statedBrief}
-      coverageLead={mc.coverageLead}
-      coverageCheck={mc.coverageCheck}
+      coverageLead={settlementCoverage?.lead ?? mc.coverageLead}
+      coverageCheck={settlementCoverage?.check ?? mc.coverageCheck}
       reasonPlaceholder={mc.reasonPlaceholder}
       inlineApproval={mc.inlineApproval}
       reasonMin={mc.inlineApproval ? mc.reasonMin : undefined}
@@ -758,6 +849,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   const targetUserId = Number(invitedUserIdInput.trim());
   const targetUserValid = /^[1-9]\d*$/.test(invitedUserIdInput.trim()) && Number.isSafeInteger(targetUserId);
+  const targetBlock = settleWriteBlock ?? freshBlocked ?? (!data.enabled ? "奖励已停用，不能结算"
+    : !targetUserValid ? "先填一个正确的新人用户编号" : settlementEligibilityBlock(data, readSettlementEligibility(targetUserId, eligibility)));
   const submitTarget = conflictDraft.register("settle:target", () => settle(targetUserId));
   const zone = businessZone().label;
   const effectiveAtText = formatBusinessTimeFull(data.effectiveAt, "—");
@@ -792,14 +885,19 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           explain="停用期间 App 不显示奖励金额，新的结算不发；已冻结的新人礼首笔实付后照常解冻。待结算照常统计。">
           奖励已停用：新注册的不发新人礼，邀请人也不发奖励</Conclusion>
       : allZero
-        ? <Conclusion state="warn" hint={canWrite ? "在「每位发多少」里调整基础额。" : undefined}
-            explain="三项实际发放都是 0 时不能结算；至少把一项改成大于 0。">奖励开着，但三项金额都是 0，现在结算会被拒绝</Conclusion>
+        ? pending > 0
+          ? <Conclusion state="warn" icon={ListChecks}
+              hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位超级管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
+              explain="生效时间起注册的新人不发奖励；等待结算的是之前生效区间里注册的，按各人生效区间的金额发。">
+              奖励开着，现行三项都是 0；有 {countText(pending)} 位按之前生效区间的金额等待结算</Conclusion>
+          : <Conclusion state="warn" hint={canWrite ? "在「每位发多少」里调整基础额。" : undefined}
+              explain="生效时间起注册的新人不发奖励。之前生效区间里注册、还没结算的，仍按各人生效区间的金额结。">奖励开着，但现行三项金额都是 0，新注册的不发</Conclusion>
         : pending > 0
           ? <Conclusion state="warn" icon={ListChecks}
               hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位超级管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
               explain="不会自动结算。批准时按那一刻的名单发，人数可能和现在不同。">
               奖励开着，有 {countText(pending)} 位新人等待结算</Conclusion>
-          : <Conclusion state="ok" explain="待结算只算生效时间起注册、已开钱包、还没结算、没被风控拦下的新人。">奖励开着，没有等待结算的注册</Conclusion>;
+          : <Conclusion state="ok" explain="待结算是已开钱包、还没结算、没被风控拦下的新人，含之前生效区间里注册的；都按各人生效区间的金额结。">奖励开着，没有等待结算的注册</Conclusion>;
 
   const amountCard = (param: AmountParam) => {
     const base = String(data.params[param.key]);
@@ -812,7 +910,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       <Stat key={param.key} tone="role-4"
         head={<span className="h8-card-head"><who.icon size={14} aria-hidden />{param.label}<small>{who.per}</small></span>}
         label="实际发放" value={amountText(effective, decimals)} unit={param.unit}
-        explain={`每份奖励按这个数发，不是某位用户已经到账的钱；由下面两项相乘，按 6 位小数四舍五入。调高要批准，调低之后结算的按新额发。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
+        explain={`现行生效区间的每份奖励按这个数发，不是某位用户已经到账的钱；由下面两项相乘，按 6 位小数四舍五入。调高要批准；调低后，生效时间起注册的按新额发，之前生效区间里注册、还没结算的仍按原额发。${param.key === "inviter.nex" ? "新人没有有效邀请人时，这一份不发。" : ""}`}>
         <div className="h8-formula" aria-label={`基础额 ${amountText(base, decimals)} ${param.unit} 乘 ${multiplierName} ${multiplierText(multiplier)}`}>
           <span className="h8-formula-term"><small>基础额</small><Amount value={base} unit={param.unit} decimals={decimals} /></span>
           <span className="h8-formula-term"><small>第 {data.rhythmMonth} 月{multiplierName}</small><b>{multiplierText(multiplier)}</b></span>
@@ -837,11 +935,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
       <StatBand fit label="结算情况">
         <Stat lead icon={UserPlus} tone="role-3" label="等待结算" value={countText(pending)} unit="位"
-          explain="生效时间起注册、已开钱包、还没结算、也没被风控拦下的新人，有没有邀请人都算。奖励停用时照样统计，但不能结算。" />
+          explain="已开钱包、还没结算、也没被风控拦下的新人，有没有邀请人都算：现行生效时间起注册的，加上之前各生效区间里注册的；三项都是 0 时注册的不算。奖励停用时照样统计，但不能结算。" />
         <Stat icon={ShieldAlert} tone="role-3" label="被风控拦下" value={countText(data.blockedByK2)} unit="位"
           explain={<>
-            <p><KeepText text="生效时间起注册、还没结算的新人里，被风控拦下、不会给他们结算的：账户或账户组被标记、冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={K2_NAME} /></p>
-            <p>发放方式是「先过风险检查再发」时，命中待复核风险的也算在这里。改发放方式会把生效时间改成那一刻，这些人注册在前，不会因此转到等待结算。</p>
+            <p><KeepText text="还没结算的新人里（含之前生效区间里注册的），被风控拦下、不会给他们结算的：账户或账户组被标记、冻结的，在「异常套利与刷量排查」被拦截新人礼的。" phrases={K2_NAME} /></p>
+            <p>按各人生效区间的发放方式：是「先过风险检查再发」的，命中待复核风险的也算在这里。改发放方式会把生效时间改成那一刻，这些人注册在前，不会因此转到等待结算。</p>
           </>} />
         <Stat icon={Check} tone="role-3" label="已结算" value={countText(data.settled)} unit="位"
           explain="历史上全部已结算的新人，不分时间。已结算不等于新人已经拿到可以提现的钱：新人礼可能还冻结到首笔实付订单，进钱包后也按收益规则分到可提现、待审核或锁定。" />
@@ -871,8 +969,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
-              what="这个时间起（含这一刻）注册的新人才进入结算"
-              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，不再进入结算。</p></>}
+              what="这个时间起（含这一刻）注册的新人按现行金额结算"
+              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前、在奖励开着且有正额的生效区间里注册、还没结算的新人，仍按那个区间的金额和发放方式结；不在任何这样的区间里注册的不结。</p></>}
               value={<span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
           </ConfigList>
         </Panel>
@@ -883,15 +981,15 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         <RewardFlow pending={`${countText(pending)} 位`} blocked={`${countText(data.blockedByK2)} 位`} settled={`${countText(data.settled)} 位`} mode={modeLabel} />
         <div className="h8-settle-foot">
           {canSettle ? (
-            <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (!settleWriteBlock && readReady && data.enabled && targetUserValid) submitTarget(); }}>
+            <form className="h8-target" onSubmit={(event) => { event.preventDefault(); if (!targetBlock) submitTarget(); }}>
               <Field label="给指定新人结算" explain="只结算这一位：不符合条件就不发，也不会改发给别人。已结算、礼包还冻结又已有首笔实付订单的，这次只解冻原礼包。">
                 {(control) => <Input {...control} inputMode="numeric" placeholder="新人用户编号" aria-label="指定结算的新人用户编号"
                   value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} />}
               </Field>
-              <Button type="submit" disabledReason={settleWriteBlock ?? freshBlocked ?? (!data.enabled ? "奖励已停用，不能结算" : !targetUserValid ? "先填一个正确的新人用户编号" : undefined)}>给这位新人结算</Button>
-              {targetUserValid && eligibility?.id === targetUserId && <p className="h8-target-check" aria-live="polite">{eligibility.state === "loading" ? "正在查这位新人能不能结…"
-                : eligibility.state === "error" ? <>读不到他现在能不能结<Explain label="失败原因" content={eligibility.message} /></>
-                  : (() => { const view = eligibilityView(eligibility.data); return <><StatusTag tone={view.tone}>{view.tag}</StatusTag><span>{view.text}</span><Explain label="这位新人的情况" content={<EligibilityDetail value={eligibility.data} />} /></>; })()}</p>}
+              <Button type="submit" disabledReason={targetBlock}>给这位新人结算</Button>
+              {targetUserValid && eligibility?.id === targetUserId && <p ref={eligibilityLine} tabIndex={-1} className="h8-target-check" aria-live="polite">{eligibility.state === "loading" ? "正在查这位新人能不能结…"
+                : eligibility.state === "error" ? <>读不到他现在能不能结：{eligibility.message}<Button type="button" size="sm" onClick={() => { eligibilityLine.current?.focus(); setEligibilityRetry(n => n + 1); }}>重试</Button></>
+                  : (() => { const view = eligibilityView(data, eligibility.data); return <><StatusTag tone={view.tone}>{view.tag}</StatusTag><span>{view.text}</span><Explain label="这位新人的情况" content={<EligibilityDetail value={eligibility.data} />} /></>; })()}</p>}
             </form>
           ) : <p className="h8-muted">结算要由有邀请奖励结算权限的同事发起。</p>}
           {latest && <p className="h8-latest">{<>最近一次结算：新人 {latest.invitedUserId}，{amountText(latest.newcomerUsdt, rowUsdtDecimals)} USDT + {amountText(latest.newcomerNex, rowUvtDecimals)} UVT{latest.inviterUserId === undefined ? "，没有邀请人" : `，邀请人 ${latest.inviterUserId} 得 ${amountText(latest.inviterNex, rowInviterDecimals)} UVT`}</>}</p>}
@@ -944,18 +1042,6 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       {confirmModal}
     </div>
   );
-}
-
-/** 每位金额 × 人数（可再加一项每位金额），按微单位整数算，不经过浮点。 */
-function timesText(per: string | number | undefined, count: number, decimals: number, extra?: string | number) {
-  const units = (raw: string | number | undefined) => {
-    const parts = amountParts(raw);
-    return parts ? BigInt(parts.int) * BigInt(1000000) + BigInt((parts.frac + "000000").slice(0, 6)) : null;
-  };
-  const a = units(per), b = extra === undefined ? BigInt(0) : units(extra);
-  if (a === null || b === null) return "—";
-  const total = (a + b) * BigInt(count);
-  return amountText(`${total / BigInt(1000000)}.${String(total % BigInt(1000000)).padStart(6, "0")}`, decimals);
 }
 
 function effectiveTimeText(value: string) {
