@@ -241,7 +241,7 @@ function SupportInboxPill({ pending, sessionsReachable }: { pending: SupportPend
       </Link>}
       {pending ? (
         <Link href="/service/overview" prefetch={false} title="待办客户：待回复、待首次联系、待维护" aria-label={pending === "—" ? undefined : `${pending} 位待办客户`} className="rd-top-link hidden md:inline-flex items-center gap-1">
-          待办 <span className="rd-top-count font-mono-tabular">{pending}</span>
+          待办 <span className="rd-top-count font-mono-tabular" data-unknown={pending === "—" ? "" : undefined}>{pending}</span>
         </Link>
       ) : null}
     </span>

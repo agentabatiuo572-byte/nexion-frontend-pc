@@ -166,6 +166,7 @@ export function M1TodoTab({ adminId, mode, groups, revision, conversationSnapsho
     ...(query.keyword ? [{ key: "keyword", label: "关键词：" + query.keyword, onRemove: () => { setKeyword(""); change({ keyword: "" }); } }] : []),
   ];
   const read: TodoListRead = result?.query === query ? result.read : { state: "loading" };
+  const keptTotal = result?.read.state === "ready" && result.read.rows.length > 0 ? result.read.total : undefined;
   const rows = read.state === "ready" ? read.rows : [];
   const profileIndex = rows.findIndex(row => row.customerId === profileId);
   const profileRow = profileIndex >= 0 ? rows[profileIndex] : null;
@@ -179,12 +180,12 @@ export function M1TodoTab({ adminId, mode, groups, revision, conversationSnapsho
 
   return <>
     <M1TodoPanel scope={scope} read={read} filter={query.reason} onFilter={reason => change({ reason })}
-      keyword={keyword} onKeyword={setKeyword} onSubmit={() => change({ keyword: keyword.trim() })}
+      keyword={keyword} onKeyword={setKeyword} onSubmit={() => change({ keyword: keyword.trim() })} draftChanged={keyword.trim() !== query.keyword}
       groupValue={query.groupId} groupOptions={groups} onGroup={groupId => change({ groupId, agentId: "" })}
       agentValue={query.agentId} agentOptions={agents} onAgent={agentId => change({ agentId })}
       applied={chips} moreCount={[query.groupId, query.agentId].filter(Boolean).length} canClear={canClear}
       onClear={() => { setKeyword(""); change({ reason: "TODO", groupId: "", agentId: "", keyword: "" }); }}
-      querying={querying || read.state === "loading"} onRetry={() => setRetry(n => n + 1)} configLink={configLink} noGroups={noGroups}
+      querying={querying || read.state === "loading"} keptTotal={keptTotal} onRetry={() => setRetry(n => n + 1)} configLink={configLink} noGroups={noGroups}
       page={query.page} pageSize={query.pageSize} onPage={page => apply({ ...query, page })} onPageSize={pageSize => change({ pageSize })}
       access={access} checkingId={checkingId} selectedId={profileId}
       onStart={row => onStart(toTarget(row), false)} onRead={row => onOpenSessions(toTarget(row))} onProfile={row => selectProfile(row.customerId)}

@@ -52,6 +52,9 @@
 .rd-nav-rail { position: relative; display: grid; place-items: center; width: 40px; height: 40px; margin-inline: auto; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
 .rd-nav-rail[data-active] { background: var(--rd-panel-inner); }
 .rd-nav-dot-badge { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--rd-warn); }
+/* 待处理数读不到：「—」用弱文字，不用橙黄（VS-11）；折叠栏写在小点的位置，不压图标底。 */
+.rd-nav-badge[data-unknown] { color: var(--rd-text-3); }
+.rd-nav-rail-unknown { position: absolute; top: 1px; right: 0; color: var(--rd-text-3); font-size: 13px; line-height: 13px; }
 @media (hover: hover) and (pointer: fine) {
   .rd-nav-item:not([data-active]):hover, .rd-nav-sub:not([data-active]):hover, .rd-nav-rail:not([data-active]):hover { background: var(--rd-panel); color: var(--rd-text); }
 }
@@ -62,6 +65,7 @@
 .rd-top-item { min-height: 44px; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--rd-text-2); font: inherit; font-size: 13px; cursor: pointer; }
 .rd-top-link { color: inherit; }
 .rd-top-count { color: var(--rd-warn); font-weight: 500; }
+.rd-top-count[data-unknown] { color: var(--rd-text-3); }
 .rd-crumb { color: var(--rd-text-3); }
 .rd-crumb[data-current] { color: var(--rd-text); font-weight: 500; }
 .admin-topbar-search.rd-top-item { width: auto; min-width: 44px; color: var(--rd-text-3); }

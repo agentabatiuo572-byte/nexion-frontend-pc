@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { Clock3, Info, MessageSquare, UserRound, Users } from "lucide-react";
-import { BlockState, Button, Drawer, Explain, FilterBar, FilterField, Input, Notice, Pager, Panel, Segments, Select, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Drawer, Explain, FilterBar, FilterField, Input, Notice, Pager, Panel, Segments, Select, StatusTag, Table, TableLoading, Td, Th, Tr } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { durationText } from "./m1-live-service";
 import { SupportAvatar } from "./support-avatar";
@@ -113,6 +113,8 @@ export type TodoPanelProps = {
   keyword: string;
   onKeyword: (keyword: string) => void;
   onSubmit: () => void;
+  /** 输入框里的客户词和已应用的不一样（还没点查询）：查询旁写「条件未应用」（ST-18）。 */
+  draftChanged: boolean;
   /** 更多筛选：负责组、客服。选项读不到时传 unavailable 写原因，名单照常。 */
   groupValue: string;
   groupOptions: TodoOptions;
@@ -125,6 +127,8 @@ export type TodoPanelProps = {
   canClear: boolean;
   onClear: () => void;
   querying: boolean;
+  /** 换条件或翻页读取中：上一次读到的总数。表格换成占位，分页条留着、按钮禁用；读完再按新结果校正，失败或 0 条时移除（ST-13、ST-32）。 */
+  keptTotal?: number;
   noGroups: boolean;
   onRetry: () => void;
   configLink?: TodoConfigLink;
@@ -152,10 +156,12 @@ export function M1TodoPanel(props: TodoPanelProps) {
   const filtered = props.canClear;
   const groups = optionsOf(props.groupOptions, "全部负责组");
   const agents = optionsOf(props.agentOptions, "全部客服");
+  const kept = read.state === "loading" ? props.keptTotal : undefined;
+  const list = ready && ready.rows.length > 0 ? { rows: ready.rows, total: ready.total } : kept ? { rows: null, total: kept } : null;
   const sub = <>{scopeText(props.scope)}{ready && ready.rows.length > 0 && <>{filter === "WAITING_REPLY" ? "" : " · 待回复在前"} · {asOf(ready.evaluatedAt)}</>}</>;
   return <Panel className="m1-todo" icon={Users} tone="role-3" title="待跟进客户" sub={sub} explainLabel="待跟进客户的说明"
     explain="一位客户只算一次、占一行。不带筛选时和今日概览用同一范围，各自刷新。待回复的排在前面。">
-    <FilterBar onSubmit={props.onSubmit} querying={props.querying} onClear={props.onClear} canClear={props.canClear} moreCount={props.moreCount} applied={props.applied}
+    <FilterBar onSubmit={props.onSubmit} querying={props.querying} onClear={props.onClear} canClear={props.canClear} moreCount={props.moreCount} applied={props.applied} result={props.draftChanged ? "条件未应用" : undefined}
       scope={<FilterField><div className="rd-field"><span aria-hidden="true">待办原因</span><Segments label="待办原因" value={filter} items={FILTER_ITEMS} onChange={props.onFilter} /></div></FilterField>}
       more={<>
         <FilterField label="负责组"><Select aria-label="负责组" value={props.groupValue} options={groups.list} disabled={groups.disabled} onChange={props.onGroup} /></FilterField>
@@ -165,7 +171,7 @@ export function M1TodoPanel(props: TodoPanelProps) {
       <FilterField label="客户" grow><Input value={props.keyword} maxLength={200} onChange={event => props.onKeyword(event.target.value)} placeholder="客户名称、用户编码或手机号" aria-label="查询客户名称、用户编码或手机号" /></FilterField>
     </FilterBar>
     {props.notice}
-    {read.state === "loading" && <BlockState state="loading" title="正在加载…" />}
+    {read.state === "loading" && !kept && <BlockState state="loading" title="正在加载…" />}
     {read.state === "error" && <BlockState state="error" title="待跟进客户加载失败" detail={read.detail} onRetry={props.onRetry} retrying={props.querying} />}
     {read.state === "missing" && <BlockState state="error" title="待跟进客户加载失败" detail={read.detail} />}
     {read.state === "denied" && <BlockState state="denied" title="无权限访问" detail={read.detail} />}
@@ -177,11 +183,11 @@ export function M1TodoPanel(props: TodoPanelProps) {
     {ready && ready.rows.length === 0 && (filtered
       ? <BlockState state="empty" title="没有符合条件的待跟进客户" detail={<>换个待办原因或客服再看。<span className="m1-todo-empty-action"><Button size="sm" onClick={props.onClear}>清除筛选</Button></span></>} />
       : props.noGroups ? <TodoNoGroups /> : <BlockState state="empty" title="暂无待跟进客户" detail="客户发来消息、新分给专属客服或到了维护时间，会出现在这里。" />)}
-    {ready && ready.rows.length > 0 && <>
-      <Table label="待跟进客户" className="m1-todo-table">
+    {list && <>
+      <Table label="待跟进客户" className="m1-todo-table" aria-busy={list.rows === null || undefined}>
         <colgroup><col /><col /><col /><col /><col /></colgroup>
         <thead><Tr><Th>客户</Th><Th>负责客服</Th><Th><span className="m1-todo-th">待办原因<Explain label="待办原因的说明" content="待回复写等了多久，从最早一条没回的消息算；首次待联系写分给专属客服多久；待维护写超期多久。都算到「截至」的时间。" /></span></Th><Th>上次登录</Th><Th sticky="end">操作</Th></Tr></thead>
-        <tbody>{ready.rows.map(row => <Tr key={row.customerId} selected={row.customerId === props.selectedId} onOpen={() => props.onProfile(row)}>
+        <tbody>{list.rows === null ? <TableLoading columns={5} rows={Math.min(props.pageSize, 10)} /> : list.rows.map(row => <Tr key={row.customerId} selected={row.customerId === props.selectedId} onOpen={() => props.onProfile(row)}>
           <Td><span className="m1-todo-customer" title={row.name + " · " + row.customerCode}><SupportAvatar name={row.name} path={row.avatarPath} size={28} /><span><span className="m1-todo-name">{row.name}</span><span className="m-user-code">{row.customerCode}</span></span></span></Td>
           <Td><span className="m1-todo-nowrap">{row.agentName ?? "—"}</span></Td>
           <Td><TodoReasons row={row} quietReply={filter === "WAITING_REPLY"} /></Td>
@@ -189,7 +195,7 @@ export function M1TodoPanel(props: TodoPanelProps) {
           <Td sticky="end"><TodoRowActions row={row} access={props.access} checking={props.checkingId === row.customerId} refreshing={props.querying} onStart={() => props.onStart(row)} onRead={() => props.onRead(row)} onProfile={() => props.onProfile(row)} /></Td>
         </Tr>)}</tbody>
       </Table>
-      <Pager label="待跟进客户" total={ready.total} page={props.page} pageSize={props.pageSize} sizes={TODO_PAGE_SIZES} loading={props.querying} onPage={props.onPage} onPageSize={props.onPageSize} />
+      <Pager label="待跟进客户" total={list.total} page={props.page} pageSize={props.pageSize} sizes={TODO_PAGE_SIZES} loading={props.querying} onPage={props.onPage} onPageSize={props.onPageSize} />
     </>}
   </Panel>;
 }

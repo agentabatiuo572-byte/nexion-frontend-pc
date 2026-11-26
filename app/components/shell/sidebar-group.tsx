@@ -32,25 +32,27 @@ export function SidebarGroup({
   const groupActive = domain.l2.some((l2) => l2.path === pathname);
   const counts = domain.l2.map(l2 => badges?.[l2.path]);
   const groupBadge = counts.includes("—") ? "—" : counts.reduce<number>((sum, count) => sum + (typeof count === "number" ? count : 0), 0);
-  // 待处理计数徽标:橙黄表示有要处理的(06 第 2.2 节)。
+  // 待处理计数徽标:橙黄表示有要处理的(06 第 2.2 节)。读不到写「—」,弱文字,不用橙黄(VS-11);折叠栏也要看得出。
   const navBadge = (n: number | "—") => (
-    <span className="rd-nav-badge font-mono-tabular" aria-label={n === "—" ? undefined : `${n} 条待处理`}>
+    <span className="rd-nav-badge font-mono-tabular" data-unknown={n === "—" ? "" : undefined} aria-label={n === "—" ? undefined : `${n} 条待处理`}>
       {typeof n === "number" && n > 99 ? "99+" : n}
     </span>
   );
 
   if (collapsed) {
+    const railLabel = groupBadge === "—" ? `${domain.code} ${domain.name} · 待处理数暂时读不到` : `${domain.code} ${domain.name}`;
     return (
       <button
         type="button"
         onClick={onToggle}
-        title={`${domain.code} ${domain.name}`}
-        aria-label={`${domain.code} ${domain.name}`}
+        title={railLabel}
+        aria-label={railLabel}
         className="rd-nav-rail"
         data-active={groupActive ? "" : undefined}
       >
         <IconTile tone={tone} icon={domain.icon} size={22} />
         {typeof groupBadge === "number" && groupBadge > 0 && <span className="rd-nav-dot-badge" aria-label={`${groupBadge} 条待处理`} />}
+        {groupBadge === "—" && <span className="rd-nav-rail-unknown" aria-hidden>—</span>}
       </button>
     );
   }
