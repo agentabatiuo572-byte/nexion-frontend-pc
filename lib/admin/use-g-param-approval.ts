@@ -4,12 +4,13 @@ import { useReducer, useRef } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
-import { isExplicitRejection } from "./explicit-rejection";
+import { explicitRejectionCode } from "./explicit-rejection";
 import { findHighOp } from "./high-ops-registry";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "./pending-mutation-store";
 import { displayAdminError, displayAdminReadError } from "./error-messages";
 import { isPermissionDenied } from "./operation-confirm-error";
 import { G_PARAM_APPROVAL_RECOVERY } from "./operator-copy";
+import { replayRejectionText } from "./retry-rejected";
 import type { PendingConfirmRecovery } from "@/app/components/domain-views/design-kit";
 
 type Page = "G2" | "G4" | "G7";
@@ -30,6 +31,8 @@ export interface GParamRecovery extends PendingGParam {
   canRetry: boolean;
   canRelease: boolean;
 }
+
+const isEmissionProposal = (original: PendingGParam) => original.request.command.op === "g4_genesis_rerun_dividend";
 
 const ops = { G2: "g2_exchange_param", G4: "g4_genesis_param", G7: "g7_repurchase_param" } as const;
 const ticketStatus = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
@@ -134,20 +137,22 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
   // Query evidence belongs to the current page. Reopening the page requires a new read of the original.
   const missingOriginals = useRef(new Set<string>());
   const record = (key: string) => pending.list().find(r => r.adminId === adminId && r.page === page && r.request.obj === key);
+  const canPropose = (key: string, authorities: readonly string[], emission: boolean) =>
+    emission ? authorities.includes("finprod_g4_write") : canProposeGParam(page, key, authorities);
   const canRetry = (original: PendingGParam) => {
     const auth = useAdminAuth.getState();
-    return missingOriginals.current.has(original.commandKey) && !original.ticket && !isRetryExpired(original)
+    return missingOriginals.current.has(original.commandKey) && !original.ticket && !original.replayRejection && !isRetryExpired(original)
       && auth.isAuthenticated && !auth.logoutPending && !!auth.session && auth.session.adminId === original.adminId
-      && canProposeGParam(page, original.request.obj, auth.session.authorities);
+      && canPropose(original.request.obj, auth.session.authorities, isEmissionProposal(original));
   };
   const clearMissing = (original: PendingGParam) => {
     if (missingOriginals.current.delete(original.commandKey)) changed();
   };
-  const requireActor = (key: string, proposing: boolean) => {
+  const requireActor = (key: string, proposing: boolean, emission = false) => {
     const auth = useAdminAuth.getState();
     if (!auth.isAuthenticated || auth.logoutPending || !auth.session || auth.session.adminId !== adminId || !adminId
-      || !auth.session.authorities.includes(gParamAuthority(page, key))) throw new Error("当前账号没有此参数的修改权限，请核对授权。");
-    if (proposing && !canProposeGParam(page, key, auth.session.authorities)) {
+      || !auth.session.authorities.includes(emission ? "finprod_g4_write" : gParamAuthority(page, key))) throw new Error("当前账号没有此项操作权限，请核对授权。");
+    if (proposing && !canPropose(key, auth.session.authorities, emission)) {
       throw new Error("当前账号没有发起审批的权限，请由有提案权和此参数修改权限的同事发起。");
     }
     return auth.session;
@@ -194,7 +199,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     clearMissing(original);
     const ticket = await readOriginal(original, { keepPendingConfirm });
     // The strict lookup only resolves without a ticket on A2_PROPOSAL_NOT_FOUND.
-    if (!ticket && !original.ticket) {
+    if (!ticket && !original.ticket && !original.replayRejection) {
       missingOriginals.current.add(original.commandKey);
       changed();
     }
@@ -204,6 +209,8 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     // POST idempotency receipts can retain their historical pending status on all
     // three pages. Recovery uses the current ticket, then the current overview.
     if (recovering) {
+      const rejection = replayRejectionText(original);
+      if (rejection) throw new Error(rejection);
       if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
       if (!canRetry(original)) throw new Error("请先查询原操作。明确查不到原审批单且仍有发起权限，才可按原操作重试。");
       clearMissing(original);
@@ -214,7 +221,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       if (ticket) return acceptTicket(original, ticket, true);
       if (isRetryExpired(original)) throw new Error(RETRY_EXPIRED_TEXT);
     }
-    requireActor(original.request.obj, true);
+    requireActor(original.request.obj, true, isEmissionProposal(original));
     if (!pending.isDurablyStored(original.fingerprint, original.commandKey)) {
       throw new Error("浏览器存不下完整原请求，本次没有发送。请保留原记录并查询原审批单。");
     }
@@ -222,10 +229,12 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     try {
       result = await createA2OperationProposal(original.request, original.commandKey, true);
     } catch (error) {
-      if (!original.ticket && isExplicitRejection(error)) {
-        pending.forget(original.fingerprint, original.commandKey);
+      const code = explicitRejectionCode(error);
+      if (!original.ticket && code) {
+        if (recovering) pending.markReplayRejected(original.fingerprint, original.commandKey, code);
+        else pending.forget(original.fingerprint, original.commandKey);
         changed();
-        if (recovering && page === "G4") await Promise.allSettled([refresh()]);
+        if (recovering && page === "G4") await Promise.allSettled([refresh(true)]);
       }
       throw error;
     }
@@ -236,6 +245,10 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       return ticket;
     }
     return acceptTicket(original, result);
+  };
+  const rejectedOriginal = (original: PendingGParam) => {
+    const current = record(original.request.obj);
+    return current?.commandKey === original.commandKey && !current.ticket && current.replayRejection ? current : undefined;
   };
   return {
     record,
@@ -262,6 +275,16 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       const ticket = await query(original);
       return !!ticket && ticket.status !== "pending" && !record(key);
     },
+    releaseRejected(original: PendingGParam) {
+      if (!rejectedOriginal(original)) return false;
+      pending.forget(original.fingerprint, original.commandKey);
+      clearMissing(original);
+      changed();
+      return !record(original.request.obj);
+    },
+    rejectedSnapshot(original: PendingGParam) {
+      return rejectedOriginal(original)?.replayRejection;
+    },
     recheck: refresh,
     // Recovery remains independent of whether the page permits a new edit.
     async open(key: string) {
@@ -274,6 +297,10 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
         return false as const;
       }
       const current = record(key);
+      if (current?.replayRejection) {
+        showError(replayRejectionText(current)!);
+        return false as const;
+      }
       if (isRetryExpired(original)) {
         showError(RETRY_EXPIRED_TEXT);
         return false as const;
@@ -289,7 +316,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
         expiresAt: original.expiresAt,
         queryOnly: !retryAllowed,
         statusText: original.ticket ? `审批单${ticketStatus[original.ticket.status]} · ${original.ticket.id}`
-          : isRetryExpired(original) ? RETRY_EXPIRED_TEXT : retryAllowed ? undefined : G_PARAM_APPROVAL_RECOVERY,
+          : replayRejectionText(original) ?? (isRetryExpired(original) ? RETRY_EXPIRED_TEXT : retryAllowed ? undefined : G_PARAM_APPROVAL_RECOVERY),
         query: async () => {
           const ticket = await query(original, true);
           if (ticket && ticket.status !== "pending" && !record(key)) onSettled();
@@ -317,7 +344,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
     async run<T>(change: Change, direct: () => Promise<T>): Promise<{ direct: T } | { proposal: A2OperationRow }> {
       const original = record(change.key);
       if (original) return { proposal: await send(original) };
-      requireActor(change.key, false);
+      requireActor(change.key, false, !!change.batchNo);
       if (!amplifies(page, change)) {
         try { return { direct: await direct() }; }
         catch (error) {
@@ -327,7 +354,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
           if (reasonCode(error) !== required) throw error;
         }
       }
-      const actor = requireActor(change.key, true);
+      const actor = requireActor(change.key, true, !!change.batchNo);
       const op = findHighOp(change.batchNo ? "g4_genesis_rerun_dividend" : ops[page])!;
       const context = { paramKey: change.key, value: change.value,
         ...(page === "G4" && change.key === "dividend" ? {} : { expectedValue: change.current }),
