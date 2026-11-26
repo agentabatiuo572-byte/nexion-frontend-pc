@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { BellDot, BellRing, CircleHelp, FilePenLine, PenLine, History, RefreshCw, RotateCcw, Scale, ShieldAlert, ShieldCheck, TriangleAlert, SlidersHorizontal, Upload, UserRound, Users } from "lucide-react";
+import { ArrowLeft, BellDot, BellRing, CircleHelp, Clock, FilePenLine, PenLine, History, RefreshCw, RotateCcw, Scale, ShieldAlert, ShieldCheck, TriangleAlert, SlidersHorizontal, Upload, UserRound, Users } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints,
   Notice, PageHeader, PageTabs, Pager, Panel, ScaleBar, SearchSelect, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds,
@@ -11,13 +11,18 @@ import {
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   K1OutcomeUncertainError,
+  K1RequestError,
   executeK4Command,
+  fetchK4ScoringAccounts,
+  K4_ACCOUNT_BANDS,
   K4_DIMENSION_KEYS,
   fetchK4WithdrawalAlerts,
   markK4WithdrawalAlertRead,
   newK1CommandKey,
+  type K4AccountBand,
   type K4Model,
   type K4ModelDraftInput,
+  type K4RecomputableUser,
   type K4ScoredUser,
   type K4ScoreHistory,
   type K4ScoreMappingKey,
@@ -29,6 +34,7 @@ import { isPendingCommandOwnedBy, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/l
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { k4Commands, k4Slot, k4Target, saveK4Operation, type K4Attempt, type K4Operation, type K4PendingCommand, type K4Snapshot } from "@/lib/admin/k4-command";
 import { openK4Confirmation } from "./k4-confirmations";
+import { K4AccountList, K4_BAND_NAME, type K4AccountListState } from "./k4-accounts";
 import { expiredTag, KRecoveryNotice, MidId, unknownTag, type KRecoveryRow } from "./k-recovery";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -43,7 +49,24 @@ function errorText(error: unknown) {
   return error instanceof Error ? displayAdminError(error) : "操作失败，请稍后重试";
 }
 
-type K4Tab = "model" | "users" | "alerts";
+type K4Tab = "model" | "accounts" | "users" | "alerts";
+const ACCOUNT_PAGE_SIZES = [5, 10, 20, 50];
+
+function writeAccountQuery(params: URLSearchParams, band: K4AccountBand, page: number, pageSize: number, includeDefaultSize = false) {
+  params.set("band", band);
+  params.set("page", String(page));
+  if (pageSize === 10 && !includeDefaultSize) params.delete("pageSize");
+  else params.set("pageSize", String(pageSize));
+}
+
+function writeScoringLocation(change: (params: URLSearchParams) => void, navigate = false) {
+  const url = new URL(window.location.href);
+  change(url.searchParams);
+  if (url.href !== window.location.href) {
+    if (navigate) window.history.pushState(null, "", url);
+    else window.history.replaceState(null, "", url);
+  }
+}
 
 /** 原操作的槽位名换成运营看得懂的操作名。 */
 function slotLabel(slot: string) {
@@ -71,6 +94,8 @@ function BandTag({ tone, children }: { tone: string; children: ReactNode }) {
   const state = bandState(tone);
   return <StatusTag tone={state} icon={state === "danger" ? ShieldAlert : state === "warn" ? TriangleAlert : ShieldCheck}>{children}</StatusTag>;
 }
+/** 发布人、起草人是后端定时任务时写「系统」。 */
+const actorText = (name: string) => (name === "system" ? "系统" : name);
 const bandState = (tone: string) => (tone === "bad" || tone === "danger" ? "danger" : tone === "warn" ? "warn" : "ok") as "danger" | "warn" | "ok";
 
 export function K4HeaderActions() {
@@ -83,12 +108,12 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const searchParams = useSearchParams();
   const userCode = searchParams?.get("userCode") ?? null;
   const returnTo = searchParams?.get("returnTo") ?? null;
+  const view = searchParams?.get("view");
   const inboundError = returnTo !== null && userCode === null ? "带入链接缺少用户编号，请从用户详情重新进入"
     : userCode !== null && (!/^U\d{8,19}$/.test(userCode) || searchParams?.getAll("userCode").length !== 1)
     ? "带入的用户编号格式无效，请核对用户详情地址后重新进入"
     : returnTo !== null && (!/^\/users\/search\/[^/?#\\]+(?:\?[^#\\]*)?$/.test(returnTo) || searchParams?.getAll("returnTo").length !== 1)
       ? "返回用户详情的地址无效，请从用户详情重新进入" : null;
-  const INBOUND_USER = userCode && !inboundError ? { userNo: userCode, returnTo } : null;
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const isSuperAdmin = session?.role === "superadmin";
@@ -97,8 +122,12 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const canOverride = authorities.includes("risk_k4_user_override");
   const canRecompute = authorities.includes("risk_k4_user_recompute");
   const canReadWithdrawalAlerts = canOverride || isSuperAdmin;
+  const tab: K4Tab = view === "accounts" || view === "users" || view === "model" || (view === "alerts" && canReadWithdrawalAlerts)
+    ? view : userCode !== null || inboundError ? "users" : "model";
+  const inboundUser = tab === "users" && userCode && !inboundError && (returnTo || view !== "users") ? { userNo: userCode, returnTo } : null;
   const reach = useReach();
   const overview = ctx.risk.scoring;
+  const activeModelVersion = overview?.model?.version;
   const [modelDraft, setModelDraft] = useState<EditableModel | null>(null);
   const [userSearch, setUserSearch] = useState("");
   const [userOptions, setUserOptions] = useState<K4UserOption[]>([]);
@@ -116,7 +145,34 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const [alertsReading, setAlertsReading] = useState(false);
   const [alertBusy, setAlertBusy] = useState<string | null>(null);
   const [alertUnknown, setAlertUnknown] = useState<string[]>([]);
-  const [tab, setTab] = useState<K4Tab>(INBOUND_USER ? "users" : "model");
+  const bandParam = searchParams?.get("band");
+  const queryBand = K4_ACCOUNT_BANDS.find((band) => band === bandParam);
+  const pageParam = searchParams?.get("page") ?? "";
+  const pageNumber = Number(pageParam);
+  const queryPage = /^\d{1,10}$/.test(pageParam) && pageNumber > 0 && pageNumber <= 2147483647 ? pageNumber : null;
+  const sizeParam = searchParams?.get("pageSize");
+  const queryPageSize = ACCOUNT_PAGE_SIZES.find((size) => String(size) === sizeParam);
+  const accountsBand = queryBand ?? "AUTO_REPORT";
+  const accountsPage = queryPage ?? 1;
+  const accountsPageSize = queryPageSize ?? 10;
+  const listSource = tab === "users" && userCode && !inboundError && returnTo === null
+    && searchParams?.get("source") === "accounts" && queryBand && queryPage && queryPageSize
+    && ["source", "band", "page", "pageSize"].every((key) => searchParams.getAll(key).length === 1)
+    ? { band: queryBand, page: queryPage, pageSize: queryPageSize, userNo: userCode } : null;
+  const [accountsHighlight, setAccountsHighlight] = useState<string | null>(null);
+  const [accountsRead, setAccountsRead] = useState(0);
+  const [accountsResult, setAccountsResult] = useState<{ key: string; scope: string; state: K4AccountListState } | null>(null);
+  const accountsScope = `${session?.adminId}:${activeModelVersion}:${accountsBand}`;
+  const accountsKey = `${accountsScope}:${accountsPage}:${accountsPageSize}`;
+  // 跟随等待档的概览回读，包括停止轮询前队列归零的回包。
+  const staleAccountsOverview = accountsBand === "STALE" ? overview : null;
+  // 同一档翻页、换条数时，读到之前留着上一页的表头、分页和总数（ST-13、ST-32）；换档不留。
+  const accountList: K4AccountListState = accountsResult?.key === accountsKey ? accountsResult.state
+    : { kind: "loading", previous: accountsResult?.scope === accountsScope && accountsResult.state.kind === "ready" ? accountsResult.state.page : undefined };
+  const accountsPageReload = useRef(false);
+  const accountsPolledFrom = useRef<typeof staleAccountsOverview>(null);
+  const accountsInFlight = useRef<{ readAfterQueueDrains: boolean } | null>(null);
+  const reloadAccounts = () => setAccountsRead((read) => read + 1);
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyEntry, setHistoryEntry] = useState<K4ScoreHistory | null>(null);
   const [pending, setPending] = useState<K4PendingCommand[]>([]);
@@ -125,6 +181,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const pageEffectMounted = useRef(false);
   const lookupSequence = useRef(0);
   const inboundLoaded = useRef<string | null>(null);
+  const pushedAccountDetail = useRef<string | null>(null);
   const currentState = useRef({ ctx, rereadPending, lookupUser });
   currentState.current = { ctx, rereadPending, lookupUser };
 
@@ -136,6 +193,55 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   }, [onCommandsChange, session?.adminId]);
   useEffect(() => { syncPending(); }, [syncPending]);
   useEffect(() => { if (overview) setReadAt(Date.now()); }, [overview]);
+
+  useEffect(() => { if (ctx.contentLoading) accountsPageReload.current = true; }, [ctx.contentLoading]);
+  // 轮询触发同一查询时不废弃回包；离开名单或换查询时才废弃。
+  useEffect(() => () => { accountsInFlight.current = null; }, [tab, accountsKey]);
+  useEffect(() => {
+    if (tab !== "accounts") accountsPolledFrom.current = null;
+    if (tab !== "accounts" || activeModelVersion === undefined || ctx.contentError || ctx.contentLoading) return;
+    // 只有重算轮询带动的同条件回读失败时留着旧行（ST-51）；首次读、翻页、页头刷新、手动重试失败仍换成错误卡（ST-36 K 域）。
+    const previousOverview = accountsPolledFrom.current;
+    const polled = staleAccountsOverview !== null && previousOverview !== null
+      && previousOverview !== staleAccountsOverview && !accountsPageReload.current;
+    accountsPolledFrom.current = staleAccountsOverview;
+    accountsPageReload.current = false;
+    if (accountsInFlight.current) {
+      // 队列归零是最后一轮概览，等在途回包落地后还要再读一次。
+      if (staleAccountsOverview?.recomputePending === 0 && previousOverview && previousOverview.recomputePending > 0) {
+        accountsInFlight.current.readAfterQueueDrains = true;
+      }
+      return;
+    }
+
+    const readAccounts = async (automatic: boolean) => {
+      const request = { readAfterQueueDrains: false };
+      accountsInFlight.current = request;
+      setAccountsResult((current) => current?.scope === accountsScope && current.state.kind === "ready" ? current : null);
+      try {
+        const page = await fetchK4ScoringAccounts({ band: accountsBand, pageNum: accountsPage, pageSize: accountsPageSize });
+        if (accountsInFlight.current !== request) return;
+        const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+        if (page.pageNum > lastPage) {
+          writeScoringLocation((params) => params.set("page", String(lastPage)));
+          return;
+        }
+        setAccountsResult({ key: accountsKey, scope: accountsScope, state: { kind: "ready", page, readAt: Date.now() } });
+      } catch (error) {
+        if (accountsInFlight.current !== request) return;
+        const message = error instanceof K1RequestError && error.reasonCode === "K4_RISK_SCORE_UNAVAILABLE"
+          ? "这次没读到名单，其他页签照常。" : displayAdminError(error);
+        setAccountsResult((current) => automatic && current?.key === accountsKey && current.state.kind === "ready"
+          ? { ...current, state: { ...current.state, autoFailed: true } }
+          : { key: accountsKey, scope: accountsScope, state: { kind: "error", message } });
+      } finally {
+        if (accountsInFlight.current === request) accountsInFlight.current = null;
+      }
+      if (request.readAfterQueueDrains) void readAccounts(true);
+    };
+    void readAccounts(polled);
+  }, [tab, activeModelVersion, accountsBand, accountsPage, accountsPageSize, accountsKey, accountsScope, accountsRead,
+    staleAccountsOverview, ctx.contentError, ctx.contentLoading]);
 
   const sourceModel = overview ? (overview.draft ?? overview.model) : null;
   const sourceSignature = sourceModel
@@ -264,8 +370,12 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       } else if (operation.kind === "batch") {
         if (live.totalUsers > 1000) throw new Error("K4_SCORE_BATCH_TOO_LARGE");
         if (live.model.version !== operation.overview.model.version) throw new Error("K4_MODEL_VERSION_CONFLICT");
-      } else if (!current.lookupUser?.scored || current.lookupUser.userNo !== operation.user.userNo || current.lookupUser.rowVersion !== operation.user.rowVersion) {
-        throw new Error("K4_SCORE_CONCURRENT_UPDATE");
+      } else {
+        const user = current.lookupUser;
+        if (!user || (!user.scored && (operation.kind === "override" || !user.overridden))
+          || user.userNo !== operation.user.userNo || user.rowVersion !== operation.user.rowVersion) {
+          throw new Error("K4_SCORE_CONCURRENT_UPDATE");
+        }
       }
       if (operation.kind === "override" && (!value?.trim() || !/^\d+$/.test(value.trim()) || Number(value) > 100)) throw new Error("SCORE_OVERRIDE_INVALID");
     }
@@ -385,24 +495,27 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   };
 
   const openOverride = (user: K4ScoredUser) => { if (overview?.model) openOperation({ kind: "override", user, overview: overview as K4Snapshot }); };
-  const openRecompute = (user: K4ScoredUser) => { if (overview?.model) openOperation({ kind: "recompute", user, overview: overview as K4Snapshot }); };
+  const openRecompute = (user: K4RecomputableUser) => { if (overview?.model) openOperation({ kind: "recompute", user, overview: overview as K4Snapshot }); };
 
   const prepareRecompute = async (userNo: string) => {
     const user = await loadUser(userNo);
-    if (user?.scored) openRecompute(user);
+    if (user && (user.scored || user.overridden)) openRecompute(user);
   };
 
   const lookupModelVersion = lookupUser?.scored ? lookupUser.modelVersion : null;
+  const recomputeWaiting = (overview?.recomputePending ?? 0) > 0;
   useEffect(() => {
-    if (!overview?.model || overview.recomputePending <= 0) return;
+    if (activeModelVersion === undefined || !recomputeWaiting) return;
     let cancelled = false;
     let timer: number | undefined;
     const poll = async () => {
+      const sequence = lookupSequence.current;
       try {
-        await ctx.refreshK4Scoring({ overridePageNum: overridePage, overridePageSize });
-        if (!cancelled && lookupUser
-            && lookupModelVersion !== `k4-v${overview.model!.version}`) {
-          await loadUser(lookupUser.userNo);
+        const scoring = await ctx.refreshK4Scoring({ overridePageNum: overridePage, overridePageSize });
+        if (!cancelled && scoring?.model && lookupUser && sequence === lookupSequence.current
+            && lookupModelVersion !== `k4-v${scoring.model.version}`) {
+          const user = await ctx.actions.fetchK4User(lookupUser.userNo);
+          if (sequence === lookupSequence.current) setLookupUser(user);
         }
       } catch {
         // Keep the last authoritative snapshot visible; the next poll retries only the read.
@@ -415,16 +528,20 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-    // Re-arm only when queue or selected-user version changes; ctx methods are stable in KDomainView.
+    // Re-arm when the queue starts or stops, or the read conditions change; ctx methods are stable in KDomainView.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overview?.recomputePending, overview?.model?.version, overridePage, overridePageSize,
+  }, [recomputeWaiting, activeModelVersion, overridePage, overridePageSize,
     lookupUser?.userNo, lookupModelVersion]);
 
   useEffect(() => {
-    const key = searchParams?.toString() ?? "";
+    if (userCode === null && !inboundError) {
+      inboundLoaded.current = null;
+      return;
+    }
+    if (tab !== "users") return;
+    const key = JSON.stringify([userCode, returnTo, inboundError]);
     if (inboundLoaded.current === key) return;
     inboundLoaded.current = key;
-    if (userCode !== null || inboundError) setTab("users");
     if (inboundError) {
       lookupSequence.current += 1;
       setLookupUser(null);
@@ -432,13 +549,13 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       setUserSearch(userCode ?? "");
       setLookupError(inboundError);
       ctx.toast(inboundError);
-    } else if (INBOUND_USER) {
-      setUserSearch(INBOUND_USER.userNo);
-      void loadUser(INBOUND_USER.userNo);
+    } else if (userCode) {
+      setUserSearch(userCode);
+      void loadUser(userCode);
     }
     // The detail request does not depend on a successful overview read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, userCode, returnTo, inboundError]);
+  }, [tab, userCode, returnTo, inboundError]);
 
   const markAlertRead = async (alert: K4WithdrawalAlert) => {
     if (k4Commands.list().some(record => record.alertId === alert.id)) { readWithdrawalAlerts(); return; }
@@ -469,10 +586,55 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const unreadAlerts = withdrawalAlerts.filter((alert) => !alert.read).length;
 
+  const setTab = (next: K4Tab) => {
+    if (next === tab) return;
+    writeScoringLocation((params) => {
+      params.set("view", next);
+      if (params.get("source") === "accounts") params.delete("source");
+      if (next === "accounts") {
+        params.delete("userCode");
+        params.delete("returnTo");
+        writeAccountQuery(params, accountsBand, accountsPage, accountsPageSize);
+      }
+    });
+  };
+
+  const openFromList = (userNo: string) => {
+    setAccountsHighlight(userNo);
+    setLookupUser(null);
+    setLookupError(null);
+    setLookupLoading(true);
+    setUserSearch(userNo);
+    writeScoringLocation((params) => {
+      params.set("view", "users");
+      params.set("userCode", userNo);
+      params.set("source", "accounts");
+      writeAccountQuery(params, accountsBand, accountsPage, accountsPageSize, true);
+      params.delete("returnTo");
+    }, true);
+    pushedAccountDetail.current = window.location.href;
+  };
+  const backToList = () => {
+    if (!listSource) return;
+    setAccountsHighlight(listSource.userNo);
+    // 直达或刷新没有本次页面推入的历史项，沿用已校验的名单条件。
+    if (window.location.href === pushedAccountDetail.current) {
+      window.history.back();
+      return;
+    }
+    writeScoringLocation((params) => {
+      params.set("view", "accounts");
+      params.delete("userCode");
+      params.delete("source");
+      writeAccountQuery(params, listSource.band, listSource.page, listSource.pageSize);
+    });
+  };
+
   const header = (
     <PageHeader pageId="K4" title="风险评分规则" summary="维护给用户打风险分的模型，查单个用户为什么是这个分。"
-      meta={readAt && overview && !ctx.contentError ? `读取于 ${formatBusinessTimeCompact(new Date(readAt).toISOString())}（${businessZone().label}）· 待重新计算时每 1.5 秒自动刷新，其余手动刷新` : undefined}
-      readOnly={canModelWrite || canOverride || canRecompute ? undefined : isSuperAdmin ? "当前账号只能查看评分，提现升级告警可以标为已读" : "当前账号只能查看这页"}
+      back={listSource ? <button type="button" className="k4-back" onClick={backToList}><ArrowLeft size={14} aria-hidden />返回{K4_BAND_NAME[listSource.band]}名单 · 第 {listSource.page} 页</button> : undefined}
+      meta={readAt && overview?.model && !ctx.contentError ? `读取于 ${formatBusinessTimeCompact(new Date(readAt).toISOString())}（${businessZone().label}）· 待重新计算时每 1.5 秒自动刷新，其余手动刷新` : undefined}
+      readOnly={canModelWrite || canOverride || canRecompute ? undefined : isSuperAdmin ? "当前账号只能查看评分，提现升级告警可以标为已读" : "你只能查看；改分需要「单用户人工覆盖评分」权限，恢复系统评分需要「重算回模型分」权限，请联系管理员在「角色管理」里开通。"}
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading && Boolean(overview)} onClick={() => void reloadCurrentScoring().catch(() => undefined)}>刷新</Button>} />
   );
 
@@ -525,9 +687,9 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       explain={<><p>提交时没收到确定结果，可能已经生效。先读取当前值：看现在的评分规则、用户分数或告警状态。读到的是现在的值，不能单凭它认定原操作成没成。</p><p>24 小时内可以按原操作重试：打开原来的确认框，内容和理由都不变，不会重复执行。告警标为已读不提供重试。</p><p>原请求只保存在这个浏览器标签页里。</p></>} />
   );
 
-  const inboundNotice = INBOUND_USER && (
-    <Notice tone="progress" title={`从用户详情带入 ${INBOUND_USER.userNo}`}
-      action={INBOUND_USER.returnTo && reach(INBOUND_USER.returnTo, "user_c1_read") ? <Link className="rd-link" href={{ pathname: `/users/search/${INBOUND_USER.returnTo.split("/users/search/")[1].split("?")[0]}`, query: Object.fromEntries(new URLSearchParams(INBOUND_USER.returnTo.split("?")[1] ?? "")) }}>返回用户详情</Link> : undefined}>
+  const inboundNotice = inboundUser && (
+    <Notice tone="progress" title={`从用户详情带入 ${inboundUser.userNo}`}
+      action={inboundUser.returnTo && reach(inboundUser.returnTo, "user_c1hub_read") ? <Link className="rd-link" href={inboundUser.returnTo}>返回用户详情</Link> : undefined}>
       已打开「用户分数」并查这位用户的评分。
     </Notice>
   );
@@ -565,10 +727,10 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     return (
       <>
         {header}
-        <Conclusion state="unknown" icon={ShieldCheck}>风险评分暂不可用，这页没有判断</Conclusion>
+        <Conclusion state="unknown" icon={ShieldCheck}>风险评分暂无法判断</Conclusion>
         {pendingBars}
         <Panel title="风险评分">
-          <BlockState state="error" title="没有拿到当前生效的评分规则" detail="生效的评分规则暂时读不到，这页不拿默认值代替。请重新加载，仍然没有就联系值班人员。"
+          <BlockState state="error" title="没有生效的评分规则" detail="重试仍不行，请联系值班人员。"
             onRetry={() => void reloadCurrentScoring().catch(() => undefined)} />
         </Panel>
       </>
@@ -690,6 +852,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const tabs = (
     <PageTabs label="风险评分规则" value={tab} onChange={setTab} ids={tabIds} items={[
       { value: "model", label: "评分模型" },
+      { value: "accounts", label: "账户名单" },
       { value: "users", label: "用户分数" },
       ...(canReadWithdrawalAlerts ? [{ value: "alerts" as const, label: "提现升级告警", count: alertsLoaded ? (withdrawalAlertError ? "—" : unreadAlerts) : undefined }] : []),
     ]} />
@@ -699,16 +862,16 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const publishBlocked = modelDirty ? "有未保存的修改，先保存草稿或放弃修改" : undefined;
   const versionCards = (
     <div className="rd-split k4-versions" data-even="">
-      <Panel title={`生效中 · v${overview.model.version}`} icon={ShieldCheck} tone="ok"
-        explain={<><p>新的评分和提现时的风控判断按这一版算。发布后用户分批重算，还没算到的人暂时是旧分数；人工改的分保留；已发出的告警保留当时的分数和版本。</p><p>时间为{businessZone().label}。</p></>}>
+      <Panel title={`生效中 · v${overview.model.version}`} icon={ShieldCheck} tone="ok" sub={businessZone().label}
+        explain="新的评分和提现时的风控判断按这一版算。发布后用户分批重算，还没算到的人暂时是旧分数；人工改的分保留；已发出的告警保留当时的分数和版本。">
         <VersionFacts rows={[
-          { key: "pub", label: "发布", value: overview.model.publishedAt ? `${overview.model.publishedBy ?? "—"} · ${stamp(overview.model.publishedAt)}` : "—" },
-          { key: "by", label: "起草", value: `${overview.model.createdBy} · ${stamp(overview.model.createdAt)}` },
+          { key: "pub", label: "发布", value: overview.model.publishedAt ? `${actorText(overview.model.publishedBy ?? "—")} · ${stamp(overview.model.publishedAt)}` : "—" },
+          { key: "by", label: "起草", value: `${actorText(overview.model.createdBy)} · ${stamp(overview.model.createdAt)}` },
           { key: "why", label: "理由", value: overview.model.reason },
         ]} />
       </Panel>
       <Panel title={overview.draft ? `草稿 · v${overview.draft.version}` : "草稿"} icon={FilePenLine} tone={overview.draft ? "warn" : "role-other"}
-        explain="草稿只存在后台，不影响线上评分。有评分规则修改权限的人可以起草；有这项权限的超级管理员才能发布。"
+        explain={`草稿只存在后台，不影响线上评分。有评分规则修改权限的人可以起草；有这项权限的超级管理员才能发布。${canModelWrite ? "" : "你没有这项权限，要起草请联系管理员在「角色管理」里开通。"}`}
         actions={<span className="k4-actions">
           {canModelWrite && <Button icon={<SlidersHorizontal size={14} aria-hidden />} onClick={editModel}>{modelDirty ? "继续编辑" : overview.draft ? "编辑草稿" : "起草新版本"}</Button>}
           {canPublish && overview.draft && <Button variant="primary" icon={<Upload size={14} aria-hidden />} disabledReason={publishBlocked} onClick={publishModel}>发布草稿</Button>}
@@ -720,7 +883,6 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
             { key: "why", label: "理由", value: overview.draft.reason },
           ]} />
         ) : <p className="k4-quiet">暂无草稿</p>}
-        {!canModelWrite && <p className="k4-quiet">你没有修改评分规则的权限，请联系管理员在「角色管理」里开通。</p>}
         {canModelWrite && !canPublish && overview.draft && <p className="k4-quiet">发布要由有评分规则修改权限的超级管理员操作。</p>}
       </Panel>
     </div>
@@ -842,9 +1004,16 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   );
 
   // ── 用户分数 ──
-  const userHref = (userNo: string) => `/users/search/${encodeURIComponent(userNo)}`;
-  const userRef = (userNo: string) => reach(userHref(userNo), "user_c1_read")
-    ? <Link className="rd-link" href={{ pathname: `/users/search/${encodeURIComponent(userNo)}` }}>{userNo}</Link> : userNo;
+  const userRef = (userNo: string, fromScore = false) => {
+    const pathname = `/users/search/${encodeURIComponent(userNo)}`;
+    if (!reach(pathname, "user_c1hub_read")) return userNo;
+    if (!fromScore) return <Link className="rd-link" href={{ pathname }}>{userNo}</Link>;
+    const params = new URLSearchParams(searchParams?.toString());
+    params.set("view", "users");
+    params.set("userCode", userNo);
+    params.delete("returnTo");
+    return <Link className="rd-link" href={{ pathname, query: { returnTo: `/risk/scoring?${params}` } }}>{userNo}</Link>;
+  };
   const oldModel = lookupModelVersion !== `k4-v${overview.model.version}`;
   const escalated = lookupUser?.scored && lookupUser.effectiveScore >= overview.model.autoEscalateScore;
   const scoreTicks = [0, overview.model.bandLowMax, overview.model.bandHighMin, overview.model.autoEscalateScore, 100]
@@ -870,7 +1039,9 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
             setLookupLoading(false);
             setUserSearch(next);
           }}
-          options={userOptions.map((option) => ({ value: option.userNo, label: option.label, extra: <BandTag tone={option.bandTone}>{option.bandLabel}{option.overridden ? " · 人工改分" : ""}</BandTag> }))}
+          options={userOptions.map((option) => ({ value: option.userNo, label: option.label, extra: !option.scored
+            ? <StatusTag tone="neutral" icon={Clock}>{option.overridden ? "还没有评分 · 人工改分" : "还没有评分"}</StatusTag>
+            : <BandTag tone={option.bandTone}>{option.bandLabel}{option.overridden ? " · 人工改分" : ""}</BandTag> }))}
           optionsFor={userSearchLoading ? null : userSearchFor}
           loading={userSearchLoading}
           error={userSearchError ? `候选加载失败 · ${userSearchError}` : undefined}
@@ -882,6 +1053,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     </Panel>
   );
 
+  const unscoredOverride = lookupUser && !lookupUser.scored && lookupUser.overridden ? lookupUser : null;
   const userResult = lookupLoading
     ? <Panel title="用户评分" id="k4-user"><BlockState state="loading" title="正在加载…" /></Panel>
     : lookupError
@@ -889,13 +1061,13 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       : !lookupUser
         ? <Panel title="用户评分" id="k4-user"><BlockState state="empty" title="请选择用户，查看风险分怎么来的" /></Panel>
         : !lookupUser.scored ? (
-          <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo)}</span>}>
-            <p className="k4-quiet">这个账户还没有评分。</p>
-            {lookupUser.effectiveScore !== null && <p className="k4-quiet">人工改分 {lookupUser.effectiveScore} 分</p>}
+          <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo, true)}</span>}
+            actions={unscoredOverride && canRecompute ? <Button onClick={() => openRecompute(unscoredOverride)}>恢复系统评分</Button> : undefined}>
+            <BlockState state="empty" title="这个账户还没有评分" detail={unscoredOverride ? `人工改分 ${unscoredOverride.effectiveScore} 分` : "可到「评分模型」看重算进度。"} />
           </Panel>
         )
         : (
-          <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo)}<BandTag tone={lookupUser.bandTone}>{lookupUser.bandLabel}</BandTag>{lookupUser.overridden && <StatusTag tone="warn" icon={PenLine}>人工改分</StatusTag>}</span>}
+          <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo, true)}<BandTag tone={lookupUser.bandTone}>{lookupUser.bandLabel}</BandTag>{lookupUser.overridden && <StatusTag tone="warn" icon={PenLine}>人工改分</StatusTag>}</span>}
             sub={lookupUser.asOf === null ? "评分时间 —" : `评分时间 ${stamp(lookupUser.asOf)}（${businessZone().label}）`}
             actions={<span className="k4-actions">
               {canOverride && <Button onClick={() => openOverride(lookupUser)}>手动改分</Button>}
@@ -918,7 +1090,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                   : `离自动升级线 ${overview.model.autoEscalateScore} 分还差 ${overview.model.autoEscalateScore - lookupUser.effectiveScore} 分`}</p>
               </div>
             </div>
-            {!canOverride && !canRecompute && <p className="k4-quiet">你没有修改用户风险分的权限。</p>}
+            {canModelWrite && !canOverride && !canRecompute && <p className="k4-quiet">你没有修改用户风险分的权限。</p>}
             <ContributionTable rows={lookupUser.contributions} total={lookupUser.modelScore} label={`${lookupUser.userNo} 的五维贡献`} />
             <Fold title="最近评分记录" icon={History} summary={lookupUser.history.length > 0 ? `最近 ${lookupUser.history.length} 次 · 最新 ${stamp(lookupUser.history[0].createdAt)}` : "暂无记录"}
               explain={<><p>最多显示最近 20 次，按时间从新到旧；点一行看那一次的五维明细和理由。</p><p>时间为{businessZone().label}。</p></>}>
@@ -943,26 +1115,31 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         );
 
   const overrideTable = (
-    <Panel title="手动改分记录" icon={FilePenLine} tone="role-other" sub={`共 ${fmt(overridesPage.total)} 条 · 生效中 ${fmt(overview.overrideActive)} 人`}
-      explain={<><p>谁、改了谁的分、改成多少、为什么。生效中的排在前面。</p><p>「系统评分」是改分那一刻的系统评分，之后不随重算变化，不一定等于改分前的有效分。「已失效」表示这次改分已经不生效：可能被恢复了系统评分，也可能被之后的又一次改分替换。</p><p>时间为{businessZone().label}。</p></>}
-      actions={canRecompute ? <Button variant="danger-outline" disabledReason={overview.totalUsers > 1000 ? "超过 1000 人不能手动全部重算；发布评分规则会分批重算，但保留人工改分" : undefined} onClick={recomputeAll}>全部恢复系统评分</Button> : undefined}
+    <Panel title="手动改分记录" icon={FilePenLine} tone="role-other" sub={`生效中 ${fmt(overview.overrideActive)} 人 · ${businessZone().label}`}
+      explain={<><p>谁、改了谁的分、改成多少、为什么。生效中的排在前面。</p><p>「系统评分」是改分那一刻的系统评分，之后不随重算变化，不一定等于改分前的有效分。「已失效」表示这次改分已经不生效：可能被恢复了系统评分，也可能被之后的又一次改分替换。</p></>}
+      actions={canRecompute ? <span className="k4-actions">
+        {overview.totalUsers > 1000 && <span className="k4-blocked">评分用户超过 1,000 人，请逐条恢复</span>}
+        <Button variant="danger-outline" disabledReason={overview.totalUsers > 1000 ? "超过 1000 人不能手动全部重算；发布评分规则会分批重算，但保留人工改分" : undefined} onClick={recomputeAll}>全部恢复系统评分</Button>
+      </span> : undefined}
       flush>
       <Table label="手动改分记录" className="k4-overrides">
-        <thead><tr><Th>用户</Th><Th align="right">系统评分 → 改后</Th><Th>原因</Th><Th>操作人 · 时间</Th><Th>状态</Th><Th align="right">操作</Th></tr></thead>
+        <thead><tr><Th>用户</Th><Th align="right">系统评分 → 改后</Th><Th>原因</Th><Th>操作人 · 时间</Th><Th>状态</Th>{canRecompute && <Th align="right">操作</Th>}</tr></thead>
         <tbody>
-          {overrides.length === 0 && <TableMessage columns={6}>暂无手动改分记录</TableMessage>}
+          {overrides.length === 0 && <TableMessage columns={canRecompute ? 6 : 5}>暂无手动改分记录</TableMessage>}
           {overrides.map((row) => (
             <Tr key={`${row.userNo}-${row.timeText}`} selected={lookupUser?.userNo === row.userNo && row.active}>
               <Td><Cell mono main={<button type="button" className="rd-link k4-user-link" onClick={() => { setUserSearch(row.userNo); void loadUser(row.userNo).then(() => document.getElementById("k4-user")?.scrollIntoView({ block: "start", behavior: "instant" as ScrollBehavior })); }}>{row.userNo}</button>} /></Td>
-              <Td align="right"><span className="k4-change"><Change from={String(row.modelScore)} to={String(row.overrideScore)} settled={!row.active} tone={row.active ? (row.overrideScore > row.modelScore ? "danger" : "ok") : undefined} /> <span className="k4-unit">分</span></span></Td>
+              <Td align="right"><span className="k4-change">{row.systemScoreState === "SCORED"
+                ? <Change from={String(row.systemScoreBefore)} to={String(row.overrideScore)} settled={!row.active} tone={row.active ? (row.overrideScore > row.systemScoreBefore ? "danger" : "ok") : undefined} />
+                : <Change from={row.systemScoreState === "UNSCORED" ? "还没有评分" : "未知"} to={String(row.overrideScore)} settled />} <span className="k4-unit">分</span></span></Td>
               <Td grow><Cell main={row.reason} title={row.reason} /></Td>
               <Td><Cell main={row.operator} sub={stamp(row.timeText)} /></Td>
               <Td>{row.active ? <StatusTag tone="progress" icon={PenLine}>生效中</StatusTag> : <StatusTag tone="done">已失效</StatusTag>}</Td>
-              <Td align="right" data-fit="">
-                {row.active && canRecompute
+              {canRecompute && <Td align="right" data-fit="">
+                {row.active
                   ? <Button size="sm" onClick={async () => { await prepareRecompute(row.userNo); }}>恢复系统评分</Button>
-                  : <span className="k4-quiet">{row.active ? "无权限" : "—"}</span>}
-              </Td>
+                  : <span className="k4-quiet">—</span>}
+              </Td>}
             </Tr>
           ))}
         </tbody>
@@ -970,6 +1147,20 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       {overridesPage.total > 0 && <Pager label="手动改分记录" total={overridesPage.total} page={overridesPage.pageNum} pageSize={overridesPage.pageSize} sizes={[5, 10, 20, 50]}
         onPage={setOverridePage} onPageSize={(next) => { setOverridePageSize(next); setOverridePage(1); }} />}
     </Panel>
+  );
+
+  const accountsTab = (
+    <div {...tabIds.panel("accounts")} className="k4-tab">
+      <K4AccountList band={accountsBand} state={accountList} lines={overview.model} version={versionText(accountList.kind === "ready" ? accountList.page.modelVersion : accountList.kind === "loading" && accountList.previous ? accountList.previous.modelVersion : overview.model.version)} highlight={accountsHighlight} pageSizes={ACCOUNT_PAGE_SIZES}
+        onBand={(band) => {
+          setAccountsHighlight(null);
+          writeScoringLocation((params) => writeAccountQuery(params, band, 1, accountsPageSize));
+        }}
+        onPage={(page) => writeScoringLocation((params) => writeAccountQuery(params, accountsBand, page, accountsPageSize))}
+        onPageSize={(size) => writeScoringLocation((params) => writeAccountQuery(params, accountsBand, 1, size))}
+        onRetry={reloadAccounts}
+        onOpenUser={openFromList} />
+    </div>
   );
 
   const usersTab = (
@@ -1044,6 +1235,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       {inboundNotice}
       {tabs}
       {tab === "model" && modelTab}
+      {tab === "accounts" && accountsTab}
       {tab === "users" && usersTab}
       {tab === "alerts" && alertsTab}
       {editor}
