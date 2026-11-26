@@ -278,8 +278,8 @@ function TriageLink({ link, onTriage, triageState, blocked, button }: {
   return (
     <Link className={button ? "rd-btn" : "rd-link"} data-variant={button} data-size={button ? "md" : undefined} href={target} prefetch={false}
       aria-disabled={!!(actionBlocked || state) || undefined} title={actionBlocked ?? (state === "blocked" ? "正在记录另一条分诊，记完再点" : undefined)}
-      onClick={actionBlocked ? event => event.preventDefault() : undefined}
-      onAuxClick={actionBlocked ? event => event.preventDefault() : undefined}
+      // 读取中或旧数据时只拦会记分诊的普通点击；Ctrl/Cmd、Shift 和中键照旧在新标签打开，不记分诊（BR2-01）。
+      onClick={actionBlocked ? event => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey) event.preventDefault(); } : undefined}
       onNavigate={mode === "triage" ? (event) => { if (onTriage(target)) event.preventDefault(); } : undefined}>{button ? <span className="rd-btn-face">{text}</span> : text}</Link>
   );
 }
@@ -414,7 +414,8 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actio
       {handler && <span className="b5-handler"> {handler}{alert.handledAt && <span className="b5-muted"> {stamp(alert.handledAt)}</span>}</span>}</>,
       reason: `最近一次发送：${deliveryStatusText(alert.deliveryStatus)}` },
   ];
-  const hasDecision = canTriage ? !!(next || treatment) : treatment?.mode === "read";
+  // 底部只在有能做的事时出现：还能标记，或「去处理」点得开（BR2-04）。
+  const hasDecision = canTriage ? !!(next || (treatment && treatment.mode !== "unreachable")) : treatment?.mode === "read";
   const unread = !staleNotice && (readLoading || readError);
   return (
     <Drawer open onClose={onClose} title={signalName(alert)} icon={level.icon} tone={levelTone(alert)} nav={nav}

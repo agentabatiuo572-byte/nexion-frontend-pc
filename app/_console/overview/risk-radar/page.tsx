@@ -50,7 +50,7 @@ import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
-import { AlertDistribution, CATEGORY_TARGETS, HANDLING, InboxTable, PressureTrend, RefText, SEVERITY, STALE_MARK_REASON, SignalDrawer, TARGET_NAME, TabNote, handlingHint, levelTone, signalFacts, signalName, signalTreatmentLink, stamp, triageTarget } from "./insights";
+import { AlertDistribution, CATEGORY_TARGETS, HANDLING, InboxTable, PressureTrend, RefText, SEVERITY, STALE_MARK_REASON, SignalDrawer, TARGET_NAME, TabNote, handlingHint, levelTone, signalFacts, signalName, isTamper, signalTreatmentLink, stamp, triageTarget } from "./insights";
 import { RiskCategoryPanel, StaleNotice, riskCategoryRows, type RiskCategoriesState, type RiskCategoryRow } from "./categories";
 import { SignalList, type SignalListFilters, type SignalListPage, type SignalListState } from "./signal-list";
 import { readSignalQuery, replaceSignalQuery, signalRequestQuery, signalReturnTo, SIGNAL_PAGE_SIZES } from "./signal-query";
@@ -1208,7 +1208,7 @@ export default function RiskRadarPage() {
                 help={!statusOriginal && !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : undefined}
                 error={!statusOriginal && statusRule.ready && statusReason ? hint : undefined}>
                 <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusOriginal ? 200 : statusRule.max}
-                  rows={3} placeholder="例如：已核对拦截记录，账户安全设置未改变" count={`${length}/${statusOriginal ? 200 : statusRule.max}`} onChange={(event) => setStatusReason(event.target.value)} />
+                  rows={3} placeholder={isTamper(alert) ? "例如：已核对拦截记录，账户安全设置未改变" : "例如：已核对这条记录和账户近期操作"} count={`${length}/${statusOriginal ? 200 : statusRule.max}`} onChange={(event) => setStatusReason(event.target.value)} />
               </Field> : null}
               {!statusOriginal && statusRead.state === "error" && <BlockState state="error" title="这条的当前进度没读到" detail={statusRead.error} onRetry={() => void loadStatus(statusDialog)} />}
               {!statusOriginal && statusRead.state === "conflict" && <Notice tone="warn">
