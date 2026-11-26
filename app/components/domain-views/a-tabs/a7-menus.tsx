@@ -598,7 +598,7 @@ function NodeDetail({ node, parent, canWrite, writeReason, nav, reach, onCreate,
         </div>
         {node.legacyNavigationNode && <Notice tone="neutral" title="改版前留下的老节点">
           <p>{node.roleBindingCount ? `还有 ${node.roleBindingCount} 个角色勾着它（含已停用的）；` : "没有角色勾着它；"}这页不会自动收回授权。</p>
-          <p>要清理，可以在这里停用（立即生效），或到「角色管理」把它从角色里去掉（要另一位管理员批准）。</p>
+          <p>要清理，可以在这里停用（立即生效），或到「角色管理」把它从角色里去掉（要另一位超级管理员批准）。</p>
         </Notice>}
         <dl className="a7-kv">
           {parent && <div><dt>上一级</dt><dd>{menuNameText(parent)} <span className="a7-code">{parent.menuCode}</span></dd></div>}

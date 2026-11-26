@@ -152,7 +152,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
           { key: "rack", label: "Rack 商品月额度", value: unlockValue("RACK", data.rackUnlock), explain: "名字里带 Rack 的第一个在卖商品，取额度和已用里较大的一个。不是购买门槛。" },
         ]} />
         <Fold title="已用记录" summary={data.quotaUsages.length ? `最近 ${data.quotaUsages.length} 条 · 可回收` : "还没有已用记录"}
-          explain={`按发生时间从新到旧，最多 30 条，不含待付款；时间为${zoneNote()}。回收要另一位管理员批准。`}>
+          explain={`按发生时间从新到旧，最多 30 条，不含待付款；时间为${zoneNote()}。回收要另一位超级管理员批准。`}>
           <Table label="购机名额已用记录" className="f4-usage-table">
             <thead><tr><Th>记录</Th><Th>用户</Th><Th>商品</Th><Th align="right">数量</Th><Th>订单号</Th><Th>时间</Th><Th>状态</Th><Th data-fit=""><span className="rd-sr-only">操作</span></Th></tr></thead>
             <tbody>
@@ -174,7 +174,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
       <Panel title="大使申请" icon={Users} tone="role-3" sub={`最近 ${data.ambassadorApplications.length} 份 · 待处理 ${count(data.ambassadorPendingCount)} 份`}
         explain={<>
           <p>一份申请的流程：申请人提交材料 → 业务核验和财务核验（先后不限）→ 最终批准。批准只开通申请人所选那一类的额度，不是付款。</p>
-          <p>业务和财务核验在材料详情里直接记录；批准和驳回在材料详情里发起，由另一位管理员批准，核验过这一版材料的人不能做最终批准。</p>
+          <p>业务和财务核验在材料详情里直接记录；批准和驳回在材料详情里发起，由另一位超级管理员批准，核验过这一版材料的人不能做最终批准。</p>
         </>}>
         <ol className="f4-flow" aria-label="大使申请流程">
           {["提交材料", "业务核验", "财务核验", "最终批准"].map((step, index) => <li key={step}><span className="f4-flow-no">{index + 1}</span>{step}{index === 3 && <small>开通所选类别额度</small>}</li>)}

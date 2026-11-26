@@ -48,7 +48,7 @@ const NOT_READY = "应急执行服务尚未就绪，请联系技术人员检查"
 const REASON_HINT = "例如：监管来函编号、事件编号、工单号";
 const NO_REAL = <StatusTag tone="neutral" icon={FlaskConical}>不动真实业务</StatusTag>;
 const IMMEDIATE = <StatusTag tone="progress" filled>立即生效</StatusTag>;
-const APPROVER = "另一位管理员在「操作记录与审批」批准；需有审批权和应急预案执行权，你不能批自己的申请";
+const APPROVER = "另一位超级管理员在「操作记录与审批」批准；需有审批批准权限和应急预案执行权限，你不能批自己的申请";
 /** 查询原操作查到执行申请已经结束：轻提示写结论（和 F2、J1 同一组说法）。批准回放只有执行完才成功（中途失败回 J4_EXECUTION_PARTIAL，单子留在待审批），执行完也可能有跳过的步骤。 */
 const J4_PROPOSAL_END = {
   approved: "原执行申请已批准：预案已按顺序执行完；每一步是做了还是跳过，到「执行记录」看。",
@@ -1217,7 +1217,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       <KeyValues rows={[
         { key: "dir", label: "不能放的动作", value: "恢复、解封、放行、开启、启用这类动作，所有预案都不能放；风险解除后到对应页面操作" },
         { key: "pre", label: "正式执行前提", value: "预案已保存、90 天内演练通过且有演练记录；绑定了通知活动的，活动还要是已排期" },
-        { key: "approve", label: "审批", value: "常规和应急通道都要另一位管理员批准；应急通道不会加急" },
+        { key: "approve", label: "审批", value: "常规和应急通道都要另一位超级管理员批准；应急通道不会加急" },
         { key: "reason", label: "操作理由", value: "必填；字数要求以提交时理由框的提示为准" },
         { key: "record", label: "执行记录", value: "每一步都记录；失败如实显示，前面做完的保持生效" },
       ]} />

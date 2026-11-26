@@ -24,8 +24,8 @@ import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, 
 import { amountDisplay } from "@/lib/format";
 
 /** 批准资格的真实路径（后端 A2：不同于发起人、有批准权、能访问 E 域；单项另要 E3 读权）。 */
-export const E3_APPROVER_SINGLE = "另一位有批准权限、能查看这页的管理员在「操作记录与审批」批准后生效，发起人不能自批；批准前规则不变。";
-export const E3_APPROVER_BATCH = "另一位有批准权限的管理员在「操作记录与审批」批准后整组一起生效，发起人不能自批；批准前规则不变。";
+export const E3_APPROVER_SINGLE = "另一位超级管理员（需有审批批准权限和这页的查看权限）在「操作记录与审批」批准后生效，发起人不能自批；批准前规则不变。";
+export const E3_APPROVER_BATCH = "另一位超级管理员（需有审批批准权限）在「操作记录与审批」批准后整组一起生效，发起人不能自批；批准前规则不变。";
 /** 覆盖率和任务奖励上限在批准执行时检查，提交时不查。 */
 export const E3_COVERAGE_CHECK = "提交时不查；批准时再查兑付覆盖率，产能类修改还查各商品的任务奖励上限，不通过就不执行。";
 
@@ -179,7 +179,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const items: RecoveryItem[] = [
     ...E3_PROPOSALS.map(p => {
       const recoveryState = e3Proposals.recoveryState(p.original);
-      const state = p.state === "pending" ? { tag: "待审批", tone: "warn" as const, line: "等另一位管理员批准，批准前按现在的规则执行。" }
+      const state = p.state === "pending" ? { tag: "待审批", tone: "warn" as const, line: "等另一位超级管理员批准，批准前按现在的规则执行。" }
         : p.state === "unknown" ? { tag: "结果未知", tone: "warn" as const, line: RECOVERY_LINE.unknown }
           : p.state === "submitted" ? { tag: "进度没读到", tone: "warn" as const, line: RECOVERY_LINE.created }
             : p.state === "expired" ? { tag: "结果未知", tone: "warn" as const, line: RETRY_EXPIRED_TEXT }
@@ -289,7 +289,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const pendingTag = (keys: readonly string[]) => {
     const p = pendingFor(keys), u = unsettledFor(keys);
     const pendingDetail = E3_PROPOSALS.filter(p => p.state === "pending" && p.keys.some(k => keys.includes(k))).map(p =>
-      `${changeText(p)}。等另一位管理员批准，批准前按现在的值执行。`).join("\n");
+      `${changeText(p)}。等另一位超级管理员批准，批准前按现在的值执行。`).join("\n");
     if (u) return <StatusTag tone="warn" explain={u.state === "submitted" ? "审批单已建成，现在批没批还没查到，先在页面上方查询原操作。" : "这一项有一次提交结果未知，先在页面上方查询原操作。"}>结果未知</StatusTag>;
     if (p) return <StatusTag tone="warn" icon={Clock3} explain={pendingDetail}>待批准</StatusTag>;
     return e3Proposals.locked(keys) && <StatusTag tone="warn" explain={`${LEGACY_LOCKED}。`}>结果未知</StatusTag>;
@@ -399,7 +399,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
     {/* 任务产能节奏：产能随月龄下降（参与任务递减的商品） */}
     <Panel title="产能规则" icon={Gauge} tone="role-4" sub="7 项" data-proof="e3-capacity-rules"
-      explain="产能按月龄分三段，每段每月按设定的比例变化。修改都先提交审批，另一位管理员批准后才生效。">
+      explain="产能按月龄分三段，每段每月按设定的比例变化。修改都先提交审批，另一位超级管理员批准后才生效。">
       <ConfigList label="产能规则">
         {([1, 2, 3] as const).map((band) => {
           const key = `E.device.capacity.band${band}DeltaPct`;

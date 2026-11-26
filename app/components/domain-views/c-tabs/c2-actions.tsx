@@ -104,7 +104,7 @@ const MIRROR_PAGES = [
 
 const K1_BLOCK = "这个账户是随多账户风险排查的账户组冻结的，要在那里解除，这里不能恢复。";
 /** 系统不会自己解冻：要在充值异常处置里单独提交解冻，另一位同事复核（后端 CregisReorgResolutionService 的 UNFREEZE）。 */
-const CREGIS_BLOCK = "这个账户因 USDT 充值异常冻结，这里不能恢复，需要单独解冻处置：异常和欠款处理完后，在「充值与收款对账」提交解冻，另一位同事复核后解除。";
+const CREGIS_BLOCK = "这个账户因 USDT 充值异常冻结，这里不能恢复，需要单独解冻处置：异常和欠款处理完后，在「充值与收款对账」提交解冻，另一位管理员复核后解除。";
 const LOCKED_USER = "这个账户有一次操作结果未知，先到页面上方查询原操作";
 const LOCKED_LIST = "这个用户的名单有一次操作结果未知，先到页面上方查询原操作";
 const LOCKED_VIEW = "这次查看有一次操作结果未知，先到页面上方查询原操作";

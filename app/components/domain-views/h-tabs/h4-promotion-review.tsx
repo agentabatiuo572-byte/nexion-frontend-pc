@@ -252,8 +252,8 @@ function recheckBlocked(action: string, latest: Promotion): string | undefined {
     if (action === 'draft-versions') return ['ENDED', 'ARCHIVED'].includes(latest.state) ? state : latest.draftVersion ? '已经有一个改版草稿。' : undefined;
     return undefined;
 }
-const REVIEWER = '另一位有「审核促销活动」权限的管理员';
-const PUBLISHER = '另一位有「发布促销活动」权限的管理员';
+const REVIEWER = '另一位有「审核促销活动」权限的超级管理员';
+const PUBLISHER = '另一位有「发布促销活动」权限的超级管理员';
 /** 每个动作的后果写成事实行：从什么时候、对哪些人、钱从哪出、已预留的怎么办、用户还能不能看到（以后端事实为准）。 */
 function actionFacts(action: string, activity: Promotion, candidate: Version | null | undefined, catalog: Catalog): ReactNode {
     const zone = activity.displayTimezone || 'UTC';

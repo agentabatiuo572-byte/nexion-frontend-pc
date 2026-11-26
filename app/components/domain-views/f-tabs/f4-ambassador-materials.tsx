@@ -188,7 +188,7 @@ function MaterialDrawer({ application, ctx, onClose, actorId }: {
     <Drawer open onClose={onClose} icon={FileCheck2} tone="role-3"
       title={`大使申请 #${application.id}`}
       sub={`${operatorNicknameText(application.applicantName)} · ${application.region}${application.city ? ` / ${application.city}` : ""} · ${application.currentRank}`}
-      explain="核验结论直接记录到当前这一版材料，不批准预算。批准和驳回要另一位管理员批准；核验过这一版材料的人不能做最终批准。申请人补交材料会形成新的一版，旧结论要重新核验。"
+      explain="核验结论直接记录到当前这一版材料，不批准预算。批准和驳回要另一位超级管理员批准；核验过这一版材料的人不能做最终批准。申请人补交材料会形成新的一版，旧结论要重新核验。"
       footer={<Decision
         note={!final && !ctx.can("network_f4_ambassador_approve") ? "当前账号没有大使最终批准权限，只能查看和核验。" : final ? "这份申请已经处理，只能查看。" : undefined}
         danger={!final && ctx.can("network_f4_ambassador_approve") ? <Button variant="danger-outline" disabledReason={operable ? expiredReason : loading ? "正在加载材料" : pending ? "有一次核验结果未知，先处理它" : "材料没读到，刷新后再试"} onClick={reject}>驳回申请</Button> : undefined}

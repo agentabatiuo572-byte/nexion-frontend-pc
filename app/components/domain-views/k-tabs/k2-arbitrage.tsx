@@ -693,7 +693,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       action: `冻结关联账户 · ${r.cells[0]}`,
       title: retained ? "按原操作重试 · 冻结关联账户" : "冻结关联账户",
       detail: `冻结 ${r.cluster || r.rowId} 这组关联账户，套利证据会一起记入操作记录。`,
-      effect: <StatusTag tone="progress" filled explain="另一位管理员批准后才执行，不能自己批。批准前账户、登录和提现都不变。">批准后生效</StatusTag>,
+      effect: <StatusTag tone="progress" filled explain="另一位超级管理员批准后才执行，不能自己批。批准前账户、登录和提现都不变。">批准后生效</StatusTag>,
       confirmLabel: "提交审批",
       facts: (
         <Facts>
@@ -701,7 +701,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
           <Fact k="账户组状态"><Change from={CLUSTER_STATUS_LABELS[r.clusterStatus ?? ""] ?? "—"} to="已冻结" /></Fact>
           {cell(r, 0) !== r.clusterId && <Fact k="命中对象">{cell(r, 0)}</Fact>}
           <Fact k="风险等级" tone={levelInfo(r.level).tone}>{levelInfo(r.level).text}</Fact>
-          <Fact k="谁来批">另一位管理员（需有冻结和审批权限）</Fact>
+          <Fact k="谁来批">另一位超级管理员（需有冻结关联账户权限和审批批准权限）</Fact>
         </Facts>
       ),
       statedBrief: {
@@ -861,7 +861,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       : reload;
     const verified = approvalVerified(record);
     const tag = verified
-      ? pendingTag(action === "freeze" ? "另一位管理员" : "另一位超级管理员", action === "freeze" ? "批准前这组账户、登录和提现都不变；这条命中的处置按钮先锁住。" : "批准前 App 仍按系统默认值处理；这一项先锁住。")
+      ? pendingTag("另一位超级管理员", action === "freeze" ? "批准前这组账户、登录和提现都不变；这条命中的处置按钮先锁住。" : "批准前 App 仍按系统默认值处理；这一项先锁住。")
       : record.proposed
         ? submittedTag()
         : expired ? expiredTag(approval ? "approval" : "direct") : unknownTag(approval ? "approval" : "direct");
@@ -917,7 +917,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
   const totalRows = summaries.reduce((sum, item) => sum + item.total, 0);
   const totalPending = summaries.reduce((sum, item) => sum + item.pending, 0);
   const totalAwaiting = summaries.reduce((sum, item) => sum + item.awaiting, 0);
-  const awaitingText = totalAwaiting > 0 ? `另有 ${totalAwaiting} 条已提交冻结审批，等另一位管理员批准。` : "";
+  const awaitingText = totalAwaiting > 0 ? `另有 ${totalAwaiting} 条已提交冻结审批，等另一位超级管理员批准。` : "";
   // 先处理哪一类：待处置最多的；一样多时按类别卡的顺序。各类的等级含义不同，不跨类比。
   const urgent = summaries.filter((item) => item.pending > 0).sort((a, b) => b.pending - a.pending)[0];
   const currentKey = views.some((view) => view.key === viewKey) ? viewKey! : urgent?.view.key ?? (views.find((view) => view.key === "trial") ?? views[0])?.key;
@@ -970,7 +970,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
 
   const dispositionCell = (r: K2Row) => {
     if (r.disposition) return <StatusTag tone="done" icon={CheckCircle2}>{K2_DISPOSITION_LABELS[r.disposition] ?? "已处置"}</StatusTag>;
-    if (awaitingApproval(r)) return pendingTag("另一位管理员", "批准前这组账户、登录和提现都不变，这条命中的处置按钮先锁住。");
+    if (awaitingApproval(r)) return pendingTag("另一位超级管理员", "批准前这组账户、登录和提现都不变，这条命中的处置按钮先锁住。");
     const buttons = rowActions(r, "sm");
     return buttons ? <span className="k2-row-actions">{buttons}</span> : <StatusTag tone="neutral">待处置</StatusTag>;
   };
@@ -1101,7 +1101,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       <Drawer open={Boolean(openRow)} onClose={() => setOpenRowId(null)} title="命中详情" sub={openRow ? cell(openRow, 0) : undefined} icon={ui?.icon} tone="role-3"
         nav={{ hasPrev: openIndex > 0, hasNext: openIndex >= 0 && openIndex < rows.length - 1, onPrev: () => setOpenRowId(rows[openIndex - 1]?.rowId ?? null), onNext: () => setOpenRowId(rows[openIndex + 1]?.rowId ?? null) }}
         footer={openRow && !openRow.disposition && drawerButtons ? <Decision danger={drawerFreeze} primary={drawerOthers?.length ? drawerOthers : undefined}
-          explain="标记套利、拦截新人礼、标记刷榜立即生效，本页不能撤销；冻结关联账户要另一位管理员批准。" /> : undefined}>
+          explain="标记套利、拦截新人礼、标记刷榜立即生效，本页不能撤销；冻结关联账户要另一位超级管理员批准。" /> : undefined}>
         {openRow && ui && (
           <>
             <JudgmentPoints rows={[
@@ -1113,9 +1113,9 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
                 : openRow.clusterId === cell(openRow, 0) ? CLUSTER_STATUS_LABELS[openRow.clusterStatus ?? ""] ?? "状态未知"
                 : `${openRow.clusterId}（${CLUSTER_STATUS_LABELS[openRow.clusterStatus ?? ""] ?? "状态未知"}）` },
               { label: "处置", value: openRow.disposition ? <StatusTag tone="done" icon={CheckCircle2}>{K2_DISPOSITION_LABELS[openRow.disposition] ?? "已处置"}</StatusTag>
-                : awaitingApproval(openRow) ? pendingTag("另一位管理员", "批准前这组账户、登录和提现都不变，这条命中的处置按钮先锁住。") : <StatusTag tone="warn">待处置</StatusTag> },
+                : awaitingApproval(openRow) ? pendingTag("另一位超级管理员", "批准前这组账户、登录和提现都不变，这条命中的处置按钮先锁住。") : <StatusTag tone="warn">待处置</StatusTag> },
               ...(!openRow.disposition && openRow.pendingApproval ? [{ label: "待批申请", value: openRow.pendingApproval.action ?? "申请内容未知",
-                reason: `${openRow.pendingApproval.submittedBy ?? "提交人未知"} · ${openRow.pendingApproval.submittedAt ? `${formatBusinessTimeCompact(openRow.pendingApproval.submittedAt, "时间未知")}（${businessZone().label}）提交` : "提交时间未知"}` }] : !openRow.disposition && approvalVerified(pendingFor(openRow.rowId)) ? [{ label: "待批申请", value: "你提交的冻结关联账户，在等另一位管理员批准" }] : []),
+                reason: `${openRow.pendingApproval.submittedBy ?? "提交人未知"} · ${openRow.pendingApproval.submittedAt ? `${formatBusinessTimeCompact(openRow.pendingApproval.submittedAt, "时间未知")}（${businessZone().label}）提交` : "提交时间未知"}` }] : !openRow.disposition && approvalVerified(pendingFor(openRow.rowId)) ? [{ label: "待批申请", value: "你提交的冻结关联账户，在等另一位超级管理员批准" }] : []),
             ]} />
             {freezeBlocked && (
               <Notice tone="warn" title="冻结前要先标记可疑"
