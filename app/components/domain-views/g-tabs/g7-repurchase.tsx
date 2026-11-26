@@ -36,7 +36,8 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useReach } from "@/lib/nav/use-reach";
 import { gParamApprovalFeedback, gParamAuthority, useGParamApproval, type GParamRecovery } from "@/lib/admin/use-g-param-approval";
 import { canRetryG7DirectCommand, g7DirectCommandExpired, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands, type G7DirectCommand } from "@/lib/admin/g7-direct-command";
-import { expiredTag, GRecoveryNotice, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
+import { rejectedTag } from "../verified-release";
 import { amountDisplay } from "@/lib/format";
 
 /** 本页的确认框请求：在共用的 ActionConfirmReq 上只加显示用的字段，提交仍走 run。 */
@@ -217,6 +218,7 @@ function orderStatus(status: string) {
 
 /** 原申请记录的状态：标签、色调和气泡（G 域五页同一写法）。 */
 function recoveryTag(record: GParamRecovery) {
+  if (record.replayRejection && !record.ticket) return rejectedTag();
   if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
   if (record.status === "pending") return pendingTag();
   if (record.status === "expired") return expiredTag("approval");
@@ -381,14 +383,18 @@ function G7RepurchasePage() {
         const params = record.request.command.params as { value?: unknown; expectedValue?: unknown };
         const to = paramValueText(key, typeof params.value === "string" ? params.value : undefined);
         const from = typeof params.expectedValue === "string" ? paramValueText(key, params.expectedValue) : undefined;
+        const change = from ? <Change from={from} to={to} /> : <>申请改成 {to}</>;
+        const rejected = record.replayRejection && !record.ticket;
         return {
           key: record.commandKey, name, submittedAt: record.createdAt,
           state: record.ticket?.status === "pending" ? "approval-locked" : record.ticket ? "approval-resolved" : "local-frozen",
-          change: from ? <Change from={from} to={to} /> : <>申请改成 {to}</>,
+          change: <>{change}{rejected && <GReplayRejectionNote record={record} />}</>,
           tag: recoveryTag(record), ticket: record.ticket?.id,
           actions: <>
             <Button size="sm" disabled={recoverBusy} aria-label={`查询${name}的原操作`} onClick={() => void recover(key, false)}>查询原操作</Button>
             {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原操作重试${name}`} onClick={() => void recover(key, true)}>按原操作重试</Button>}
+            {rejected && <GRejectedRelease record={record} name={name} target={change} disabled={recoverBusy} toast={toast}
+              getSnapshot={() => paramApproval.rejectedSnapshot(record)} release={() => paramApproval.releaseRejected(record)} />}
           </>,
         };
       }),

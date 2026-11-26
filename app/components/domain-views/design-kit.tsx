@@ -615,6 +615,8 @@ export type PendingConfirmRecovery = {
   queryOnly?: boolean;
   queryLabel?: string;
   statusText?: string;
+  /** 当前原操作的反馈；同一编号的后续回执可以更新它。 */
+  outcomeMessage?: string;
   state?: PendingRecoveryState;
   subscribe?: (listener: () => void) => () => void;
   getRevision?: () => number;
@@ -3864,6 +3866,7 @@ export type InlineOperationApproval = {
   readbackNote?: string;
   retry?: () => Promise<void>;
   pending?: boolean;
+  pendingNotice?: string;
   /** Saved direct commands can expose the existing query and retry actions together. */
   initialRecovery?: "lookup" | "retry";
   expired?: boolean;
@@ -3908,12 +3911,13 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   const [uploadStates, setUploadStates] = useState<Record<string, "uploading" | "failed" | undefined>>({});
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(() => initialRejection && !rejectedEdit
+  const [attemptError, setSubmitError] = useState<string | null>(() => initialRejection && !rejectedEdit
     && !(initialRejection instanceof ConfirmReadConflict && initialRejection.review) ? displayAdminError(initialRejection) : null);
   const [readConflict, setReadConflict] = useState<ConfirmReadConflict | null>(() => initialRejection instanceof ConfirmReadConflict ? initialRejection : null);
   const [readingConflict, setReadingConflict] = useState(false);
   // 结果未知（原操作可能已生效）用警示色，红只给明确失败（VS-107）。
   const [submitUnknown, setSubmitUnknown] = useState(false);
+  const submitError = attemptError ?? (submitUnknown ? pendingRecovery?.outcomeMessage : null);
   // 刚打开不报错：字段错误等失焦或点过提交才显示（DP-06）。
   const [attempted, setAttempted] = useState(false);
   const [reasonLeft, setReasonLeft] = useState(false);
@@ -4113,8 +4117,11 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         setSubmitError(`${message} 命令号：${error.commandKey}`);
       } else {
         setApprovalRecovery(inlineApproval?.initialRecovery && getPendingReason?.() !== undefined ? inlineApproval.initialRecovery : null);
-        setSubmitUnknown(error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name) || getPendingReason?.() !== undefined);
-        setSubmitError(getPendingRecovery?.() && isA2OutcomeUncertainError(error) && error.queryMessage
+        const uncertain = error instanceof Error && /Outcome(Uncertain|Unknown)Error$/.test(error.name);
+        const recovery = getPendingRecovery?.();
+        setSubmitUnknown(uncertain || getPendingReason?.() !== undefined);
+        if (uncertain && recovery?.outcomeMessage) setSubmitError(null);
+        else setSubmitError(recovery && isA2OutcomeUncertainError(error) && error.queryMessage
           ? `${error.queryMessage} 命令号：${error.commandKey}` : operationConfirmErrorMessage(error));
       }
     } finally {
@@ -4278,8 +4285,8 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
         ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.disabledReason}</RdNotice></div>
         : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.disabledReason}</div>)}
       {inlineApproval?.pending && approvalRecovery === "lookup" && !submitError && (surface
-        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">上次提交结果未知，可能已经建了审批单，先查询原操作。</RdNotice></div>
-        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>上次提交结果未知，可能已经建了审批单，先查询原操作。</div>
+        ? <div className="rd-confirm-alert" role="status"><RdNotice tone="warn">{inlineApproval.pendingNotice ?? "上次提交结果未知，可能已经建了审批单，先查询原操作。"}</RdNotice></div>
+        : <div className="alertbar warn" role="status" style={{ marginBottom: 16 }}>{inlineApproval.pendingNotice ?? "上次提交结果未知，可能已经建了审批单，先查询原操作。"}</div>
       )}
       {!reasonPolicyReady && !retryApproval && (!surface || reasonPolicyError) && (surface
         ? <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><RdNotice tone="warn">{reasonPolicyError ?? "正在加载，稍候即可提交。"}</RdNotice></div>
