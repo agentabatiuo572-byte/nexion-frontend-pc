@@ -10,6 +10,8 @@ export interface TrialParamHelp {
   what: string;
   /** 什么时候生效。 */
   when: string;
+  /** 谁按它算：有按设备优惠时，默认值管哪些设备（写在说明气泡的「备注」一行）。 */
+  who?: string;
   /** 这项改了影响谁，写在修改框的标题行（OP-48）。生效时间已在标签上，不写第二遍。 */
   impact?: string;
   /** 怎么填，放修改框：单位和范围。 */
@@ -155,11 +157,54 @@ const LEGACY_TRIAL_PARAM_COPY: Record<string, Partial<TrialParamHelp>> = {
   },
 };
 
-export function trialParamHelp(key: string, hasBuyList: boolean) {
+/**
+ * 读取带「支持按设备优惠」标识时（B125）：三项改作默认值，名字和 App 票据一致（PLAN 三.5、画板 ⑥）。
+ * 没有标识时不用这一层，页面文字和以前一样。
+ */
+const PRICING_TRIAL_PARAM_COPY: Record<string, Partial<TrialParamHelp>> = {
+  discountRate: {
+    label: "试用期折扣比例",
+    what: "试用转购时售价减掉的比例（默认值）",
+    who: "用户本人的试用设备，和折扣跟随默认的设备按它算",
+    when: "立即生效，购买时按新值算，进行中的试用也一样",
+    impact: "按默认算的购买改用新比例，进行中的试用也一样",
+    howMore: "实际减的钱不超过「试用期折扣上限」，和试用抵扣金、专享立减叠加。",
+    where: "App 票据「试用期折扣」",
+    whatIf: (value) => (Number(value) === 0 ? "改成 0：按默认折扣购买时，没有试用期折扣。" : `改成 ${value}：跟随默认的设备购买时售价减 ${value}%，不超过试用期折扣上限。`),
+  },
+  discountCapUSD: {
+    label: "试用期折扣上限",
+    what: "试用期折扣最多减多少钱（默认值）",
+    who: "用户本人的试用设备，和折扣跟随默认的设备按它算",
+    when: "立即生效，购买时按新值算，进行中的试用也一样",
+    impact: "按默认算的购买改用新上限，进行中的试用也一样",
+    howMore: "只管试用期折扣这一项，不管试用抵扣金和专享立减。",
+    where: "App「试用期折扣」里的「最高」；用户本人的试用设备剩 24 小时提示「现在购买最高抵」",
+    whatIf: (value) => `改成 ${value}：跟随默认的设备，试用期折扣最多减 ${value} USDT。`,
+  },
+  earlyPurchaseDiscountUSD: {
+    label: "专享立减",
+    what: "试用期内购买再减的金额（默认值）",
+    who: "用户本人的试用设备，和立减跟随默认的设备按它算",
+    when: "立即生效，购买时按新值算，进行中的试用也一样",
+    impact: "按默认算的提前购买，立减改为新金额",
+    how: "0–100 USDT，最多两位小数，填 0 取消立减。",
+    where: "App 票据「专享立减」",
+    whatIf: (value) => (Number(value) === 0 ? "填 0 取消按默认计算的专享立减。符合条件的提前购买仍按整期结算试用收益。" : `改成 ${value}：跟随默认的设备符合提前购买条件时，最多再减 ${value} USDT，应付最低为 0。`),
+  },
+  trialOffsetCapUSD: { howMore: "只管试用收益能抵多少，和试用期折扣、专享立减叠加。" },
+};
+
+export function trialParamHelp(key: string, hasBuyList: boolean, pricing = false) {
   const help = TRIAL_PARAM_HELP[key];
   const legacy = LEGACY_TRIAL_PARAM_COPY[key];
+  const priced = PRICING_TRIAL_PARAM_COPY[key];
+  if (pricing && help && priced) return { ...help, ...priced };
   return !hasBuyList && help && legacy ? { ...help, ...legacy } : help;
 }
+
+/** 有按设备优惠时这三项是默认值：改它们的确认框按所改的那一组数「一起变／不变」（PLAN 三.5）。 */
+export const PRICING_DEFAULT_GROUP: Record<string, "折扣" | "立减"> = { discountRate: "折扣", discountCapUSD: "折扣", earlyPurchaseDiscountUSD: "立减" };
 
 /** 常改参数，一屏约 6 项（DP-15）；其余可写的进高级设置。 */
 export const COMMON_TRIAL_PARAMS = ["trialProductId", "trialDays", "seatsLeftToday", "discountRate", "discountCapUSD", "trialOffsetCapUSD"] as const;

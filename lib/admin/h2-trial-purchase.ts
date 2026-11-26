@@ -1,5 +1,11 @@
 export type BuyListVersion = number;
 
+/**
+ * 按设备优惠（B125）：清单里每款两组单独设置，null 表示这一组跟随默认。
+ * 试用期折扣的比例和上限同有同空；比例是百分数字符串，"0.5" 即 0.5%。0 原样保存，表示这一项不减。
+ */
+export type BuyPricing = { discountRate: string | null; discountCapUSD: string | null; earlyPurchaseDiscountUSD: string | null };
+
 export type BuyDevice = {
   productNo: string;
   name: string | null;
@@ -13,6 +19,8 @@ export type BuyDevice = {
   selectable: boolean;
   unavailableReason: string | null;
   appState: "shown" | "hidden" | "soldOut";
+  /** 只在读取带「支持按设备优惠」标识时有：清单里的款才带，候选不带。 */
+  pricing?: BuyPricing;
 };
 
 export type BuyList = { version: BuyListVersion; items: BuyDevice[]; candidates: BuyDevice[] };
@@ -49,9 +57,23 @@ function nullableText(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
+const decimalText = (value: unknown): value is string | null => value === null || typeof value === "string" && /^\d+(\.\d+)?$/.test(value);
+
+/** 三项都在才算读到；比例和上限要同有同空（ST-37：缺字段、自相矛盾按读取失败）。 */
+function readPricing(row: Record<string, unknown>): BuyPricing | "invalid" | undefined {
+  // 读取回包里三项平铺在每款上；本地存的待确认记录（review.before）里是读过一次的 pricing 对象。
+  const { discountRate, discountCapUSD, earlyPurchaseDiscountUSD } = object(row.pricing) ?? row;
+  if ([discountRate, discountCapUSD, earlyPurchaseDiscountUSD].every((value) => value === undefined)) return;
+  if (!decimalText(discountRate) || !decimalText(discountCapUSD) || !decimalText(earlyPurchaseDiscountUSD)
+    || (discountRate === null) !== (discountCapUSD === null)) return "invalid";
+  return { discountRate, discountCapUSD, earlyPurchaseDiscountUSD };
+}
+
 function readDevice(raw: unknown): BuyDevice | undefined {
   const row = object(raw);
   if (!row) return;
+  const pricing = readPricing(row);
+  if (pricing === "invalid") return;
   const { productNo, name, productType, inventoryMode, priceUsdt, stock, status, listingAllowed,
     visibleToUser, selectable, unavailableReason } = row;
   if (typeof productNo !== "string" || !nullableText(name) || !nullableText(productType) || !nullableText(inventoryMode)
@@ -63,6 +85,7 @@ function readDevice(raw: unknown): BuyDevice | undefined {
   return {
     productNo, name, productType, inventoryMode, priceUsdt, stock, status, listingAllowed, visibleToUser, selectable, unavailableReason,
     appState: !visibleToUser ? "hidden" : inventoryMode === "FINITE" && stock === 0 ? "soldOut" : "shown",
+    ...(pricing ? { pricing } : {}),
   };
 }
 
@@ -92,9 +115,11 @@ function isBuyType(type: string | null) {
 }
 
 export function readH2TrialPurchase(raw: Record<string, unknown>) {
-  const { currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates } = raw;
+  const { currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates, purchaseOptionsPricing } = raw;
   if ([currentTrialProduct, writePermissionName, purchaseOptionsVersion, otherPurchaseProducts, purchaseCandidates]
     .every((value) => value === undefined)) return {};
+  // 「支持按设备优惠」标识和清单分开读：清单读不到时，改默认值的确认框仍要按新叫法写（画板 ⑥d）。
+  const pricing = purchaseOptionsPricing === true;
 
   const target = readDevice(currentTrialProduct);
   const items = readH2BuyDevices(otherPurchaseProducts);
@@ -104,13 +129,16 @@ export function readH2TrialPurchase(raw: Record<string, unknown>) {
     const candidate = byProductNo.get(item.productNo);
     return !candidate || sameDevice(item, candidate);
   });
+  // 有标识时清单每款都要带两组设置（跟随默认为 null）；没有标识时不认这几个字段。
+  const pricedRight = pricing ? items?.every((item) => item.pricing) : true;
   const buyList: BuyList | "invalid" = isBuyListVersion(purchaseOptionsVersion) && nonBlank(writePermissionName)
-    && (target || currentTrialProduct === null) && items && candidates && consistent
-    ? { version: purchaseOptionsVersion, items, candidates: candidates.filter((candidate) => isBuyType(candidate.productType)) }
+    && (target || currentTrialProduct === null) && items && candidates && consistent && pricedRight
+    ? { version: purchaseOptionsVersion, items: pricing ? items : items.map(({ pricing: _ignored, ...item }) => item), candidates: candidates.filter((candidate) => isBuyType(candidate.productType)) }
     : "invalid";
 
   return {
     buyList,
+    pricing,
     trialTarget: target && nonBlank(target.productNo) ? target : "invalid" as const,
     writePermissionName: nonBlank(writePermissionName) ? writePermissionName : undefined,
   };
