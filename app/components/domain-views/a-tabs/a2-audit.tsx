@@ -1856,9 +1856,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         {lead}
         <Fact k="审批单"><span data-mono>{w.id}</span></Fact>
         {!objectLead && <Fact k="对象">{objectNode(w)}</Fact>}
-        {/* 批准框和详情的判断要点同一个写法：理由一行，谁发起的写在下面一行（OP-69、DT-22）。 */}
+        {/* 批准框和详情的判断要点同一个样子：理由一行，谁发起的写在下面一行弱字（OP-69、DT-22）；这一行不用「 · 」，值里不像拼起来的几条记录（VS-109）。 */}
         {kind === "approve"
-          ? <Fact k="发起理由">{keepCodes(w.reason)}<span className="a2-fact-by">{`${w.operator} · ${roleText(w.operatorRole)}`}</span></Fact>
+          ? <Fact k="发起理由">{keepCodes(w.reason)}<span className="a2-fact-by">{`${w.operator}（${roleText(w.operatorRole)}）发起`}</span></Fact>
           : <Fact k="发起人">{`${w.operator} · ${roleText(w.operatorRole)}`}</Fact>}
         {kind === "approve" && ticketPermissionText(w) && <>
           <Fact k="谁来批">{approvalExecutorLabel(w)}</Fact>
@@ -2094,7 +2094,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       effect: <>{subject(name)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
-        : coverageMode === "onApproval" ? <>{approvalCoverageCopy(w)}</> : <>{a1StatusImpact(w)?.detail}{timing.note}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && backendChecksText("批准时", "。")}</>,
+        : coverageMode === "onApproval" ? <>{timing.note}{approvalCoverageCopy(w)}</> : <>{a1StatusImpact(w)?.detail}{timing.note}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && backendChecksText("批准时", "。")}</>,
       completionCopy: fund?.completion,
       // 派奖、结算：这一次的结果放在关键信息层（和发起人那边同一块），审批单信息放在后面。
       facts: fund?.lead ?? ticketFacts(w, "approve", fund?.facts),
