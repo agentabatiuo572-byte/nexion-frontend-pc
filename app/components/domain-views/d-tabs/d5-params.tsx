@@ -11,7 +11,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
  */
 import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fmtConfigPct } from "@/lib/format";
@@ -745,7 +745,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       }
       return next;
     } catch (err) {
-      if (id === requestId.current) setError(afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : errorText(err));
+      if (id === requestId.current) setError(afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : displayAdminReadError(err));
       return null;
     } finally {
       if (id === requestId.current) setLoading(false);

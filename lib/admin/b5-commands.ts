@@ -33,8 +33,9 @@ export const b5Commands = createPendingMutationStore<Saved>({
       const input = record.body ? JSON.parse(record.body) : null;
       const version = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
       const reason = (value: unknown) => typeof value === "string" && value.trim().length >= 8 && value.trim().length <= 200;
+      // 阈值理由由提交表单和服务端按可见字数校验。恢复时保留原请求，不用现行政策筛掉旧记录。
       if (record.kind === "threshold") return record.method === "PUT" && record.path === "/api/admin/risk/bankrun-thresholds"
-        && typeof input?.operator === "string" && reason(input.reason) && version(input.expectedVersion)
+        && typeof input?.operator === "string" && typeof input.reason === "string" && input.reason.trim() !== "" && version(input.expectedVersion)
         && typeof input.yellowPct === "number" && input.yellowPct >= 5 && input.yellowPct <= 50
         && typeof input.redPct === "number" && input.redPct >= 10 && input.redPct <= 80 && input.redPct > input.yellowPct
         && version(record.facts.version) && input.expectedVersion === record.facts.version && Number.isFinite(record.facts.yellowPct) && Number.isFinite(record.facts.redPct)

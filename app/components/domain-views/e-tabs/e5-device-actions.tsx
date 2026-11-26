@@ -88,7 +88,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
   }, []);
   usePendingReplayDeadline(nextRecoveryDeadline(records));
   const [phonePending, setPhonePending] = useState<E6Pending[]>([]);
-  const [old, setOld] = useState<{ commandKey: string; fingerprint: string }[]>([]);
+  const [old, setOld] = useState<ReturnType<typeof e5LegacyCommands>>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [readResults, setReadResults] = useState<Record<string, string>>({});
@@ -190,11 +190,11 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
   };
   const forgetDraft = (record: E5Command) => { e5Commands.forget(record.fingerprint, record.commandKey); sync(); };
   const items: RecoveryItem[] = [
-    ...phonePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
+    ...phonePending.map(r => ({ key: r.commandKey, object: r.label, createdAt: r.createdAt, tag: <StatusTag tone="warn">待核对</StatusTag>,
       line: "原操作在手机算力配置，到那里查询和处理。",
       actions: <Link className="rd-link" href="/devices/compute-config?tab=phones">手机算力配置</Link>,
       detail: <p>原操作在手机算力配置保留；相关设备或整个用户先暂停新操作。</p> })),
-    ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
+    ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", createdAt: row.createdAt, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
       actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
       detail: <Facts><Fact label="操作编号" value={row.commandKey} mono copy /></Facts> })),

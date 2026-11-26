@@ -108,6 +108,7 @@ export interface BRiskRadar {
   severity: Array<{ nm: string; count: number; c: string }>;
   volume: Array<{ label: string; count: number }>;
   bankRunRatio: number;
+  bankRunSeverity: "p0" | "p1" | "p2";
   bankRunYellowPct: number;
   bankRunRedlinePct: number;
 }
@@ -200,6 +201,7 @@ export const EMPTY_B_DOMAIN: BDomainDashboard = {
     severity: [],
     volume: [],
     bankRunRatio: 0,
+    bankRunSeverity: "p2",
     bankRunYellowPct: 20,
     bankRunRedlinePct: 40,
   },
@@ -494,6 +496,12 @@ function normalizeRiskFeed(raw: unknown, index: number): RiskFeedItem {
 }
 
 function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
+  const feed = requiredArr<unknown>(raw.feed, "riskRadar.feed").map(normalizeRiskFeed);
+  // OpsTreasuryService.dynamicCoverageFeed supplies the decision for this metric.
+  const bankRunSeverity = feed.find(item => item.href === "/overview/dual-ledger")?.sev;
+  if (bankRunSeverity !== "p0" && bankRunSeverity !== "p1" && bankRunSeverity !== "p2") {
+    throw new Error("B_DOMAIN_FIELD_INVALID:riskRadar.bankRunSeverity");
+  }
   const risk = {
     gates: requiredArr<Record<string, unknown>>(raw.gates, "riskRadar.gates").map((item, index) => {
       const rawState = text(item.state);
@@ -511,7 +519,7 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
       };
     }),
     trippedGateCount: requiredNum(raw.trippedGateCount, "riskRadar.trippedGateCount"),
-    feed: requiredArr<unknown>(raw.feed, "riskRadar.feed").map(normalizeRiskFeed),
+    feed,
     pressureSeries: requiredArr<unknown>(raw.pressureSeries, "riskRadar.pressureSeries").map((item, index) => requiredNum(item, `riskRadar.pressureSeries.${index}`)),
     pressureTightPct: requiredNum(raw.pressureTightPct, "riskRadar.pressureTightPct"),
     currentPressurePct: requiredNum(raw.currentPressurePct, "riskRadar.currentPressurePct"),
@@ -532,6 +540,7 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
       count: requiredNum(item.count ?? item.v, `riskRadar.volume.${index}.count`),
     })),
     bankRunRatio: requiredNum(raw.bankRunRatio, "riskRadar.bankRunRatio"),
+    bankRunSeverity,
     bankRunYellowPct: requiredNum(raw.bankRunYellowPct, "riskRadar.bankRunYellowPct"),
     bankRunRedlinePct: requiredNum(raw.bankRunRedlinePct, "riskRadar.bankRunRedlinePct"),
   };

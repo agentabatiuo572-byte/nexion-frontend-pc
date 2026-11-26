@@ -195,7 +195,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     }),
     ...e3Proposals.legacy.map(r => {
       const names = [...new Set(r.fingerprint.split("|")[1].split(",").map(keyName))];
-      return { key: r.commandKey, object: `${names.slice(0, 3).join("、")}${names.length > 3 ? ` 等 ${names.length} 项` : ""}`, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
+      return { key: r.commandKey, createdAt: r.createdAt, object: `${names.slice(0, 3).join("、")}${names.length > 3 ? ` 等 ${names.length} 项` : ""}`, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
         line: "早期提交缺原请求，只能查询，不能重试。",
         actions: E3_RECOVERY.legacy && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原操作</Button>,
         detail: <p>{businessStamp(r.createdAt)} 提交（{zone}）</p> };

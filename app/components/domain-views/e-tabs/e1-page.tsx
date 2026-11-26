@@ -47,7 +47,7 @@ const monthlyRecovery = createPendingRecovery({ ...e1MonthlyCommands, list: () =
 const recoveryFor = (original: E1Pending) => original.fingerprint.startsWith("sku|") ? monthlyRecovery : catalogRecovery;
 
 type Confirmation = McSpec & Partial<E1SkuReview> & { initialBusinessValues?: Record<string, string>; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
-type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
+type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; createdAt: number; reading?: boolean; readError?: string };
 const E1_SOURCES: readonly CatalogSource[] = ["products", "gates", "discount"];
 const ALL_SOURCES: readonly CatalogSource[] = [...E1_SOURCES, "early"];
 const SKU_EDIT_SOURCES: readonly CatalogSource[] = ["products", "gates"];
@@ -179,7 +179,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     setVerifiedDrafts(records.filter(row => row.verifiedNotExecuted));
     setReceipts(rows => [
       ...rows.filter(row => !records.some(record => record.ticket?.id === row.id)),
-      ...records.flatMap(row => row.ticket ? [{ ...row.spec, id: row.ticket.id, commandKey: row.commandKey, object: e1Object(row.spec), status: row.ticket.status }] : []),
+      ...records.flatMap(row => row.ticket ? [{ ...row.spec, id: row.ticket.id, commandKey: row.commandKey, object: e1Object(row.spec), status: row.ticket.status, createdAt: row.createdAt }] : []),
     ]);
     setLegacy(e1LegacyCommands(actor));
     setMedia(e1MediaCommands.list().filter(r => r.actorId === actor));
@@ -395,7 +395,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       store.remember(record.fingerprint, record.commandKey, { ...record, ticket: { id: result.id, status: "pending" } });
       if (result.status !== "pending") await check(record, { propagate: true, readback: false });
       toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
-      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
+      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status, createdAt: record.createdAt }]);
       closeOwnEditor();
       if (ownEditor) ownConfirmation?.afterSubmitted?.();
     } catch (failure) {
@@ -462,7 +462,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         const spec = full.spec;
         const object = e1Object(spec);
         if (row.status !== "pending" && readback) void reloadCatalog(proposalSources(spec), { readback: { commandKey: full.commandKey, object } });
-        setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, id: row.id, commandKey: record.commandKey, object, status: row.status }]);
+        setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, id: row.id, commandKey: record.commandKey, object, status: row.status, createdAt: full.createdAt }]);
         if (row.status === "pending") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, receivedTicketId: row.id, ticket: { id: row.id, status: "pending" } });
         else if (result?.conclusion === "rejected") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, ticket: undefined, verifiedNotExecuted: true });
         else recoveryFor(full).settleFromQuery(full, "succeeded");
@@ -621,7 +621,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择操作编号")); };
   const sent = (at: number) => `${formatBusinessTimeCompact(new Date(at).toISOString(), "—")} 提交`;
   const recovery: RecoveryItem[] = [
-    ...waitingReceipts.map(row => ({ key: `receipt:${row.id}`, object: row.action,
+    ...waitingReceipts.map(row => ({ key: `receipt:${row.id}`, object: row.action, createdAt: row.createdAt,
       tag: <StatusTag tone="warn">待审批</StatusTag>,
       line: row.reading ? "正在查询审批进度…" : RECOVERY_LINE.pending,
       note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
@@ -666,7 +666,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           <Button size="sm" onClick={() => discardRecovery.ask(() => { forgetE1(record); syncPending(); })}>放弃这份草稿</Button></>,
       };
     }),
-    ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留",
+    ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留", createdAt: record.createdAt,
       tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
       actions: canQuery ? <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => void check(record)}>查询原操作</Button> : undefined,
       detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),

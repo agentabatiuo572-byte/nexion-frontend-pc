@@ -314,7 +314,7 @@ export async function fetchJ3TamperConfigAlerts(): Promise<OpsDashboardAlert[]> 
   const response = await guardedFetch("/api/admin/emergency/tamper/config-alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `J3_ALERTS_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `J3_ALERTS_${response.status}`, "read")), { status: response.status });
   }
   if (!Array.isArray(payload.data.alerts)) {
     throw new Error("篡改告警数据不完整，请稍后重试。");
@@ -326,7 +326,7 @@ export async function fetchC2HighRiskAlerts(): Promise<OpsDashboardAlert[]> {
   const response = await guardedFetch("/api/admin/users/account-actions/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `C2_ALERTS_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `C2_ALERTS_${response.status}`, "read")), { status: response.status });
   }
   if (!Array.isArray(payload.data.alerts)) {
     throw new Error("C2_ALERTS_FIELD_REQUIRED:alerts");

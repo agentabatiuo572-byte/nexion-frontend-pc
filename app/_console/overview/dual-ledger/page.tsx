@@ -86,6 +86,7 @@ const WINDOWS = [{ value: "7d", label: "7 天" }, { value: "30d", label: "30 天
  */
 interface B1PendingCommand {
   commandKey: string;
+  createdAt: number;
   /** 操作和对象，一行写得下。 */
   object: string;
   tag: { tone: StateTone; label: string };
@@ -121,7 +122,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
       explain={`这些操作发出后没收到明确结果，可能已经生效。${recoveryInstruction}${retryNote}有结果前，红线和健康线不能再提交。`}
       foot={auditReachable ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : undefined}
       items={items.map((item): RecoveryItem => ({
-        key: item.commandKey, object: item.object, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
+        key: item.commandKey, object: item.object, createdAt: item.createdAt, tag: <StatusTag tone={item.tag.tone}>{item.tag.label}</StatusTag>, line: item.line,
         actions: <>
           {item.onQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={item.onQuery}>{item.queryLabel ?? "查询原操作"}</Button>}
           {item.queryHref && <Link className="rd-link" href={item.queryHref} prefetch={false}>{item.queryHrefLabel}</Link>}
@@ -576,6 +577,7 @@ export default function DualLedgerPage() {
     const injectionPage = injection && reach("/finance/pool");
     return {
       commandKey: record.commandKey,
+      createdAt: record.createdAt,
       object: record.kind === "threshold" ? "调整红线和健康线" : record.kind === "injection" ? "登记储备注入" : "标记覆盖率告警已处理",
       tag: { tone: "warn", label: expired ? "已过期" : "结果未知" },
       line: record.kind === "injection" ? `${expired ? RETRY_EXPIRED_TEXT : ""}${injectionNotes[record.commandKey] ?? (expired ? "" : canReadInjectionReceipt ? "可能已经登记，先查询原操作。" : "这个账号查不了原结果，请有权限的同事核对。")}`
@@ -600,6 +602,7 @@ export default function DualLedgerPage() {
     const verified = verifiedPendingKey === pendingApproval.commandKey;
     pendingItems.push({
       commandKey: pendingApproval.commandKey,
+      createdAt: pendingApproval.createdAt,
       object: "降低红线的审批",
       tag: verified ? { tone: "warn", label: "待审批" } : { tone: "warn", label: expired ? "已过期" : "结果未知" },
       line: verified ? "等另一位超级管理员批准，批准前红线不变。" : recovery.replayRejection ? "按原操作重试被拒绝" : expired ? RETRY_EXPIRED_TEXT : "可能已经提交，先查询原操作。",
@@ -623,7 +626,7 @@ export default function DualLedgerPage() {
     });
   };
   if (session) for (const draft of thresholdRecoveryDrafts("B1", session.adminId)) pendingItems.push({
-    commandKey: draft.commandKey, object: "降低红线的审批", tag: { tone: "neutral", label: "未执行" },
+    commandKey: draft.commandKey, object: "降低红线的审批", createdAt: draft.createdAt, tag: { tone: "neutral", label: "未执行" },
     line: "可重新确认原拟改值。", body: `红线 ${fmtConfigPct(draft.values.redlinePct)} · 健康线 ${fmtConfigPct(draft.values.healthyPct)}`,
     expired: false, note: "",
     onRestore: draft.b1Facts && canConfigureThresholds ? () => openThreshold(draft) : undefined,

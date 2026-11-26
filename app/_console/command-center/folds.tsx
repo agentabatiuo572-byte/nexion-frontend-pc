@@ -149,9 +149,9 @@ export function availableGates(risk: BRiskRadar) {
 
 export function pressureLevel(ledger: BLedger | null, risk: BRiskRadar | null) {
   if (!ledger || !risk) return { flow: "ok", backlog: "ok", worst: "ok" } as const;
-  const level = (pct: number) => (pct >= risk.bankRunRedlinePct ? "danger" : pct >= risk.bankRunYellowPct ? "warn" : "ok");
-  const flow = level(risk.bankRunRatio);
-  const backlog = level(ledger.pressureRatio * 100);
+  const flow = risk.bankRunSeverity === "p0" ? "danger" : risk.bankRunSeverity === "p1" ? "warn" : "ok";
+  const backlogPct = ledger.pressureRatio * 100;
+  const backlog = backlogPct >= risk.bankRunRedlinePct ? "danger" : backlogPct >= risk.bankRunYellowPct ? "warn" : "ok";
   return { flow, backlog, worst: flow === "danger" || backlog === "danger" ? "danger" : flow === "warn" || backlog === "warn" ? "warn" : "ok" } as const;
 }
 

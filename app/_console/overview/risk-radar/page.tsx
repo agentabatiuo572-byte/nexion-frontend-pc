@@ -32,7 +32,7 @@ import {
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { bankrunLightForRatio, type B5Signal } from "@/lib/admin/b5-radar-contract";
+import type { B5Signal } from "@/lib/admin/b5-radar-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { useB5Read } from "@/lib/admin/use-b5-read";
@@ -56,7 +56,6 @@ import { SignalList, type SignalListFilters, type SignalListPage, type SignalLis
 import { readSignalQuery, replaceSignalQuery, signalRequestQuery, signalReturnTo, SIGNAL_PAGE_SIZES } from "./signal-query";
 
 const THRESHOLD_SLOT = "bankrun-threshold";
-const THRESHOLD_REASON_MAX_UNITS = 200;
 const SUBSCRIPTION_SLOT = "alert-subscription";
 
 const TRIAGE = {
@@ -345,14 +344,10 @@ export default function RiskRadarPage() {
   const thresholdRule = useReasonRule(!!threshold && !thresholdOriginal && !approvalRecovery);
   const thresholdReason = reason.trim();
   const reasonLength = visibleReasonLength(thresholdReason);
-  // B5 的直接提交和审批均限制实际提交理由的 UTF-16 长度。
-  const reasonOverflow = Math.max(reasonLength - thresholdRule.max, thresholdReason.length - THRESHOLD_REASON_MAX_UNITS);
-  const reasonValid = thresholdRule.ready && reasonLength >= thresholdRule.min && reasonOverflow <= 0;
+  const reasonValid = thresholdRule.ready && reasonLength >= thresholdRule.min && reasonLength <= thresholdRule.max;
   const reasonHint = !thresholdRule.ready ? thresholdRule.error || "正在加载，稍候即可提交。"
     : reasonLength < thresholdRule.min ? `操作理由还差 ${thresholdRule.min - reasonLength} 字`
-      : reasonLength > thresholdRule.max ? `操作理由多了 ${reasonLength - thresholdRule.max} 字`
-        // 可见字数没超、提交长度超了（后端 B129 修好前的临时上限）：不写数字，免得和框角的可见字数对不上。
-        : reasonOverflow > 0 ? "表情、符号、空格和换行占得多，已超出上限，请删短一些" : undefined;
+      : reasonLength > thresholdRule.max ? `操作理由多了 ${reasonLength - thresholdRule.max} 字` : undefined;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
   usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
@@ -377,11 +372,6 @@ export default function RiskRadarPage() {
     : "";
   const currentPreview = preview?.key === previewKey ? preview : null;
   const previewReady = !!currentPreview && !previewError;
-  const previewPressure = threshold && currentPreview ? {
-    ratio24h: currentPreview.ratio24h,
-    light: currentPreview.ratio24h === null ? currentPreview.light
-      : bankrunLightForRatio(currentPreview.ratio24h, threshold.yellowPct, threshold.redPct),
-  } : null;
   const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now()) || !!(thresholdOriginal && isRetryExpired(thresholdOriginal));
   const thresholdLocked = savingThreshold || !!thresholdOriginal || !!approvalRecovery || lookupOnly;
   const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdOriginal
@@ -627,7 +617,7 @@ export default function RiskRadarPage() {
     if (!session || !threshold || !canSubmitThreshold) return;
     setSavingThreshold(true); setThresholdError("");
     let original = thresholdOriginal;
-    const facts = !original && !pendingApproval && previewPressure ? { ...threshold, ...previewPressure } : threshold;
+    const facts = !original && !pendingApproval ? latestThreshold ?? threshold : threshold;
     try {
       if (requiresApproval) {
         const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
@@ -1023,7 +1013,7 @@ export default function RiskRadarPage() {
           onStatus={(alert, target) => openSignalStatus(alert, target, true)} />
 
       {threshold && (() => {
-        const pressure = thresholdOriginal || approvalRecovery ? threshold : previewPressure ?? data?.bankrun ?? threshold;
+        const pressure = thresholdOriginal || approvalRecovery ? threshold : latestThreshold ?? threshold;
         const raising = redPct > threshold.redPct;
         const redDirection = !Number.isFinite(redPct) || redPct === threshold.redPct ? null : raising
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;

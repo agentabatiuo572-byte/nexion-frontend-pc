@@ -882,20 +882,22 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   let response: Response;
   const requestEpoch = adminAuthLifecycleEpoch();
   const localBankReadAuth = method === "GET" && init?.localBankReadAuth === true;
+  const signal = init?.signal ?? AbortSignal.timeout(30_000);
   try {
     const send = localBankReadAuth ? fetchAdminReadWithLocalAuth : guardedFetch;
     response = await send(`/api/admin/${base}${path}`, {
       ...init,
       headers,
-      signal: init?.signal ?? AbortSignal.timeout(30_000),
+      signal,
       cache: "no-store",
     });
-  } catch {
+  } catch (error) {
     assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
     const commandKey = headers.get("Idempotency-Key");
     if (commandKey && method !== "GET") {
       throw new DOutcomeUnknownError(commandKey);
     }
+    if (method === "GET" && base === "withdraw" && path === "/limits" && signal.reason?.name !== "TimeoutError") throw error;
     throw new Error("财务服务请求超时，请检查连接后重试");
   }
   assertD1BankManualAuthEpoch(init?.bankManualAuthEpoch);
