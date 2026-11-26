@@ -47,7 +47,7 @@ function pendingPolicyText(values?: Record<string, unknown>): string {
 }
 
 /** 共同充值规则的批准人（决定 13）。 */
-const APPROVAL_TEXT = "超级管理员批准后生效，超管发起的由另一位超管批准。批准前当前规则不变。已发现的交易保留原规则。";
+const APPROVAL_TEXT = "超级管理员批准后生效，超级管理员发起的由另一位超级管理员批准。批准前当前规则不变。已发现的交易保留原规则。";
 
 export type DepositProposalActivity = { unknown: number; awaitingApproval: number };
 

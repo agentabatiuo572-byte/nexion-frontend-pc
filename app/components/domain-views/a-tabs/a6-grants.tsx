@@ -262,7 +262,7 @@ export function GrantsEditorDrawer({ detail, menuTree, allPerms, onClose, onSubm
 
   return (
     <Drawer open wide title="改权限和菜单" sub={<>{detail.roleName} · <span data-mono>{detail.roleCode}</span></>} onClose={onClose}
-      explain="勾好后点「核对并提交」，在确认框里看加了哪些、去掉哪些，填理由提交审批。另一位管理员批准前，这个角色的权限和菜单都不变。"
+      explain="勾好后点「核对并提交」，在确认框里看加了哪些、去掉哪些，填理由提交审批。另一位超级管理员批准前，这个角色的权限和菜单都不变。"
       footer={<Decision note={changed ? `权限 ${changeText(permDiff.added.length, permDiff.removed.length)}，菜单 ${changeText(menuDiff.added.length, menuDiff.removed.length)}` : "还没有改动"}
         explain="提交的是勾选后的完整两组，一张审批单；批准后整组替换，批准前什么都不变。"
         others={<Button variant="secondary" onClick={onClose}>取消</Button>}

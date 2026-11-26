@@ -21,6 +21,8 @@ import {
   PageHeader, Pager, Panel, RdPage, ScaleBar, Stat, StatBand, StatusTag, StepBar, Table, TableMessage, Td, Th, Tr,
 } from "@/app/components/rd";
 import { OperationConfirmModal, PaginationExemption, useToast } from "../design-kit";
+import { ConfirmReadConflict } from "@/lib/admin/h-conflict-review";
+import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import {
   createG4GenesisTier,
   deleteG4GenesisTier,
@@ -261,19 +263,19 @@ function G4GenesisPage() {
   const [tierConfirm, setTierConfirm] = useState<{ epoch: number; change?: G4TierChange } | null>(null);
   const latest = useRef({ overview, loading, busyKey, refreshError, readFailed });
   latest.current = { overview, loading, busyKey, refreshError, readFailed };
-  function invalidateOverview() {
+  function invalidateOverview(keepConfirm = false) {
     latest.current.readFailed = true;
     setReadFailed(true);
     // Saved originals remain recoverable; confirmations built from the old read do not.
-    openActionConfirm(current => current && (current.getPendingReason?.() !== undefined
+    openActionConfirm(current => current && (keepConfirm || current.getPendingReason?.() !== undefined
       || session && listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === current.directObject)) ? current : null);
     setTierConfirm(current => session && (hasPendingG4TierApproval(session.adminId)
       || listG4DirectCommands(session.adminId).some(row => g4DirectObject(row) === "tiers")) ? current : null);
     setFirstDividend(current => session && pendingConfigApproval("G4", session.adminId) ? current : null);
   }
-  async function readCurrentOverview(keepPendingConfirm = false, writeConfirmed = false) {
-    invalidateOverview();
-    if (!keepPendingConfirm) openActionConfirm(null);
+  async function readCurrentOverview(keepConfirm: boolean | "current" = false, writeConfirmed = false) {
+    invalidateOverview(keepConfirm === "current");
+    if (!keepConfirm) openActionConfirm(null);
     try {
       const active = await fetchG4GenesisOverview(nodePageNo, nodePageSize);
       setOverview(active); setLockedParams({}); setReadFailed(false); setRefreshError(null);
@@ -367,6 +369,7 @@ function G4GenesisPage() {
         setRefreshError({ message: displayAdminReadError(result.reason), writeConfirmed: true });
       }
     } catch (err) {
+      if (err instanceof ConfirmReadConflict) throw err;
       if (key.startsWith("param:") && ["OBJECT_LOCKED_BY_A2", "OBJECT_ALREADY_PENDING"].includes(String((err as { backendMessage?: string })?.backendMessage))) {
         setLockedParams(rows => ({ ...rows, [key.slice(6)]: messageOf(err) }));
       }
@@ -724,7 +727,8 @@ function G4GenesisPage() {
     }
   };
 
-  const adjustParam = async (param: G4Param) => {
+  const adjustParam = async (param: G4Param, reviewed?: { overview: G4Overview; previousValue: string }) => {
+    const currentOverview = reviewed?.overview ?? overview;
     if (!allowed(paramAuthority(param.key)) && !paramApproval.record(param.key)) return;
     if (param.key === "dividend" && firstDividendEntry && !paramApproval.record(param.key)) {
       void openFirstDividend();
@@ -732,13 +736,13 @@ function G4GenesisPage() {
     }
     // 主人拍板(2026-08-06):阶梯档位在场时一级单价由档位派生、本参数只读,调价走档位卡
     // (OPS-G-07/G-13 仲裁)。入口已不渲染,这里是钱路径双保险。
-    if (param.key === "price" && overview.tierPrice.status !== "legacy") return;
+    if (param.key === "price" && currentOverview.tierPrice.status !== "legacy") return;
     const tighteningDividend = param.key === "dividend" && paramApproval.record(param.key)?.ticket?.status === "pending";
-    if (tighteningDividend && !canStartNew(paramAuthority(param.key))) return;
-    const original = tighteningDividend ? undefined : await paramApproval.open(param.key);
+    if (tighteningDividend && !reviewed && !canStartNew(paramAuthority(param.key))) return;
+    const original = tighteningDividend || reviewed ? undefined : await paramApproval.open(param.key);
     if (original === false) return;
     const numeric = !["divBase", "emissionCurve"].includes(param.key);
-    const bounds = param.key === "supply" ? { min: stats.sold, max: 100000, step: 1 }
+    const bounds = param.key === "supply" ? { min: currentOverview.stats.sold, max: 100000, step: 1 }
       : param.key === "price" ? { min: 0.01, max: 1000000, step: 0.01 }
         : param.key === "royalty" ? { min: 0, max: 20, step: 0.01 }
           : param.key === "airdropPct" ? { min: 0, max: 100, step: 0.01 }
@@ -754,7 +758,28 @@ function G4GenesisPage() {
     const pendingRaiseValue = pendingRaise?.request.command.params.value as string | undefined;
     const originalValue = original?.request.command.params.value as string | undefined;
     const directionTag = copy?.tighten ? `${copy.loosen}要批准 · ${copy.tighten}立即生效` : "改动都要批准";
-    const supplyHint = `${fmtNumber(stats.sold, 0)}–100,000 的整数`;
+    const supplyHint = `${fmtNumber(currentOverview.stats.sold, 0)}–100,000 的整数`;
+    const parameterConflict = () => {
+      latest.current.readFailed = true;
+      setReadFailed(true);
+      return new ConfirmReadConflict({
+        readLatest: async () => {
+          const fresh = await readCurrentOverview("current");
+          const updated = paramByKey(fresh, param.key);
+          if (!updated || param.key === "price" && fresh.tierPrice.status !== "legacy") {
+            throw new ConfirmReadConflict(undefined, "这项参数现在无法调整。请关闭后查看最新设置。", true);
+          }
+          if (param.key === "dividend" && Number(updated.value) === 0) {
+            throw new ConfirmReadConflict(undefined, "每日收益比例现在未配置。请关闭后按首次配置流程提交。", true);
+          }
+          await adjustParam(updated, { overview: fresh, previousValue: currentRaw });
+          return true;
+        },
+        renderNotice: (read) => <Notice tone="warn" action={<Button size="sm" onClick={read}>读取最新</Button>}>
+          这项参数已被修改，请读取最新值后重新核对。
+        </Notice>,
+      });
+    };
     const facts = (value?: string) => {
       const dir = original || tighteningDividend ? undefined : paramDirection(param.key, currentRaw, value);
       const nextText = value ? g4ParamValueText(param.key, value) : undefined;
@@ -762,6 +787,7 @@ function G4GenesisPage() {
         <div data-proof="g4-param-preview">
           <Facts>
             <Fact k="改的是">{name}</Fact>
+            {reviewed && reviewed.previousValue !== currentRaw && <Fact k="其他人改动"><Change from={g4ParamValueText(param.key, reviewed.previousValue)} to={currentText} /></Fact>}
             {original && <Fact k="原申请"><Change from={currentText} to={originalValue === undefined ? "—" : g4ParamValueText(param.key, originalValue)} /></Fact>}
             {pendingRaise && <Fact k="原调高申请" tone="warn"><Change from={currentText} to={pendingRaiseValue === undefined ? "—" : g4ParamValueText("dividend", pendingRaiseValue)} /> 待审批{pendingRaise.ticket ? `（${pendingRaise.ticket.id}）` : ""}</Fact>}
             <Fact k="什么时候生效" tone={dir === "loose" ? "warn" : undefined}>{original
@@ -783,7 +809,7 @@ function G4GenesisPage() {
             {dir === "loose" && !canPropose(param.key) && <Fact k="你的权限" tone="warn">这个账号没有发起审批的权限，这个方向会被拦下；请有提案权和这项修改权限的同事发起</Fact>}
             <Fact k="改了会怎样"><KeepText text={copy?.effect ?? operatorCopyText(param.note)} /></Fact>
             <Fact k="付不付钱"><KeepText text={copy?.money ?? "—"} /></Fact>
-            {dir === "loose" && <Fact k="兑付覆盖率（现在）" tone={overview.coverage.redlineBreached ? "danger" : undefined}>{g4Plain(cov)}%，红线 {g4Plain(String(overview.coverage.redlinePct))}%</Fact>}
+            {dir === "loose" && <Fact k="兑付覆盖率（现在）" tone={currentOverview.coverage.redlineBreached ? "danger" : undefined}>{g4Plain(currentOverview.coverage.coverageRatio.toFixed(1))}%，红线 {g4Plain(String(currentOverview.coverage.redlinePct))}%</Fact>}
           </Facts>
         </div>
       );
@@ -855,12 +881,20 @@ function G4GenesisPage() {
           return;
         }
         const currentParam = latest.current.overview!.params.find(row => row.key === param.key)!;
+        if ((state?.dividend ?? currentParam.value).trim() !== currentRaw.trim()) throw parameterConflict();
         await mutate(`param:${param.key}`, async () => {
-          const direct = () => updateG4GenesisParam(param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef);
+          const direct = async () => {
+            try {
+              return await updateG4GenesisParam(param.key, value, reason, OPERATOR(), businessValue?.decisionRef, currentRaw);
+            } catch (error) {
+              if (["G4_GENESIS_PARAM_STALE", "G4_DIVIDEND_STALE"].includes(explicitRejectionCode(error) ?? "")) throw parameterConflict();
+              throw error;
+            }
+          };
           const result = tighteningDividend
             ? { direct: await paramApproval.tightenDividend(state!.dividend, String(value), direct) }
-            : await paramApproval.run({ key: param.key, current: state?.dividend ?? currentParam.value, value: String(value), reason,
-            decisionRef: businessValue?.decisionRef, expectedRevision: state?.expectedRevision },
+            : await paramApproval.run({ key: param.key, current: currentRaw, value: String(value), reason,
+            decisionRef: businessValue?.decisionRef, expectedRevision: state?.expectedRevision, allowApprovalFallback: false },
             direct);
           if ("direct" in result) {
             toast(`${operatorCopyText(param.name)}已立即生效`);

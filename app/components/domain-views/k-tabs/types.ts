@@ -68,6 +68,7 @@ export type ActionConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type ConfirmReq = {
+  requireReleaseCheck?: boolean;
   initialError?: string;
   /** Only explicitly designated emergency shutdowns may use the default policy on read failure (Q-06). */
   reasonPolicyOptional?: boolean;

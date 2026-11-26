@@ -623,15 +623,15 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
         {tier === "low" && <span className="rd-keep">低优先级超过 48 小时的也会删。</span>}
       </>
     ),
-    effect: <StatusTag tone="progress" filled explain="另一位管理员在「操作记录与审批」批准后才执行；批准前上限不变。">批准后生效</StatusTag>,
-    completionCopy: "另一位管理员在「操作记录与审批」批准后执行；批准前上限不变。",
+    effect: <StatusTag tone="progress" filled explain="另一位超级管理员在「操作记录与审批」批准后才执行；批准前上限不变。">批准后生效</StatusTag>,
+    completionCopy: "另一位超级管理员在「操作记录与审批」批准后执行；批准前上限不变。",
     statedBrief: {
       impact: "调低：批准执行时立刻删掉每位用户这一档超出上限的旧通知，未读的也删。调高：以后多留，已删的不恢复。",
       check: "会删多少条这页读不到。",
     },
     facts: (
       <Facts>
-        <Fact k="谁来批">另一位有审批批准权限和通知保留上限调整权限的管理员，不能是提交人</Fact>
+        <Fact k="谁来批">另一位超级管理员（需有通知保留上限调整权限和审批批准权限），不能是提交人</Fact>
         <Fact k="提交人需有">提交审批权限和通知保留上限调整权限</Fact>
       </Facts>
     ),

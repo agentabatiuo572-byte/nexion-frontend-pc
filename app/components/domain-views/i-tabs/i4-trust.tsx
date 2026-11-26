@@ -117,8 +117,8 @@ function trustDraftUnchanged(editor: DraftEditor, fields: DraftEditor["fields"],
     baseline.some(row => row.key === field.key && row.label === field.label && row.value === field.value));
 }
 
-const APPROVER = "另一位管理员";
-const PENDING_REASON = "有申请等另一位管理员处理，批准、驳回、撤回或过期后才能再改";
+const APPROVER = "另一位超级管理员";
+const PENDING_REASON = "有申请等另一位超级管理员处理，批准、驳回、撤回或过期后才能再改";
 const APPROVED_READBACK_REQUIRED = "审批单已批准，请先重新读取当前版块。";
 const FINANCE_LABEL: Record<string, string> = { tvlOnChain: "链上资产总值", mrrValue: "月度收入", mrrDelta: "月度收入变化", activeAccountsValue: "活跃账户数", activeAccountsDelta: "活跃账户变化", devicesOnlineValue: "在线设备数", devicesOnlineDelta: "在线设备变化", payoutsProcessedValue: "累计处理付款", payoutsProcessedDelta: "付款金额变化", "footnote.zh": "中文数据说明", "footnote.vi": "越南语数据说明", "footnote.en": "英文数据说明" };
 
@@ -684,7 +684,7 @@ export function I4Trust({ ctx, errorText }: { ctx: ICtx; errorText?: string | nu
       detail: (
         <>
           <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
-          另一位管理员批准后才换成新版本，App 下次读取时显示。<b>发布核对</b>须{reviewCheck}。
+          另一位超级管理员批准后才换成新版本，App 下次读取时显示。<b>发布核对</b>须{reviewCheck}。
           {requiresDataSource(s) && <>财务数字 / UVT介绍必须填写可追溯的<b>财务/UVT 数据来源</b>。</>}
         </>
       ),

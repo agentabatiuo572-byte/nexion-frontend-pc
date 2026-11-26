@@ -27,7 +27,7 @@ import type { HCtx } from "./types";
 
 const DEFAULT_ZONE = "Asia/Ho_Chi_Minh";
 const ZONE_NAMES: Record<string, string> = { "Asia/Ho_Chi_Minh": "越南时间", "Asia/Shanghai": "中国时间", "Asia/Bangkok": "泰国时间", "Asia/Jakarta": "印尼西部时间", "Asia/Manila": "菲律宾时间", "Asia/Singapore": "新加坡时间", "Asia/Tokyo": "日本时间", "Asia/Seoul": "韩国时间" };
-export const REGION_APPROVER = "另一位管理员";
+export const REGION_APPROVER = "另一位超级管理员";
 
 /** Read policy/A2 authority and preserve the draft baseline until an explicit submission. */
 export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType<typeof h3WeeklyRegionPolicyParams>, reason: string, before: string, after: string, baseline: H3WeeklyRegionMapping[]) => Promise<void>,
@@ -137,7 +137,7 @@ export function useH3RegionPolicy(ctx: HCtx, submitProposal: (params: ReturnType
       </Facts>,
       statedBrief: { impact: "只改之后每个用户新一周的切换时区；已开始的一周、已发布的每周任务不重写。", check: "核对每个区号对应的时区；理由写清依据或工单号。" },
       confirmLabel: "提交审批",
-      coverageLead: "这项修改要另一位管理员批准",
+      coverageLead: "这项修改要另一位超级管理员批准",
       amplifies: true,
       run: async reason => {
         if (loading || error || reviewError || staleDraft || commandState().blocked) throw new Error("请先查询原操作并刷新地区规则，再发起新的修改。");

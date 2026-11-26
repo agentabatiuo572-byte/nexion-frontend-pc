@@ -442,7 +442,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
       <Fact k="谁来批">另一位超级管理员</Fact>
       <Fact k="需有权限">{fApprovalPermissionText(F_APPROVAL_PERMISSION_NAMES.network_f4_ambassador_approve)}</Fact>
     </Facts>,
-    detail: "驳回这一份申请，提交审批后由另一位有权限的管理员执行。",
+    detail: "驳回这一份申请，提交审批后由另一位超级管理员执行。",
   };
       break;
     }

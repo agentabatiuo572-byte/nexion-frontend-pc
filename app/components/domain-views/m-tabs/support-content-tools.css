@@ -47,3 +47,16 @@
 .support-phrase-row { display: flex; gap: 6px; align-items: center; }
 .support-phrase-row .support-content-result { flex: 1; min-width: 0; }
 .support-content-tools .sku-pop-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 群发框里选内容（inline）：同一个框里换成这块面板，不再叠一层弹窗（PG-38）。字号、间距用改版令牌（VS-50、VS-65）；列表随弹窗正文一起滚，不再套一层滚动（DT-17）。会话页的快捷内容弹层不走这里。 */
+.support-content-tools[data-inline] .support-content-trigger { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.support-content-panel { display: grid; gap: var(--rd-space-3); min-width: 0; }
+.support-content-panel:focus { outline: none; }
+.support-content-panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--rd-space-2); }
+/* 外层 .ui-support-workflow 给 h3 的旧外边距和字重压不过来，这里写全。 */
+.support-content-panel .support-content-panel-head > h3.support-content-panel-title { margin: 0; color: var(--rd-text); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: var(--rd-weight-medium); }
+.support-content-panel .support-content-body { padding: 0; }
+.rd-modal .support-content-panel .support-content-search .rd-form-field { margin-block: 0; }
+.support-content-panel :is(.support-content-meta, .support-content-state, .support-content-pager > span) { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.support-content-panel .support-content-result.l-btn { font-size: var(--rd-text-body); }
+.support-content-panel .sku-pop-list[data-short] { max-height: none; }

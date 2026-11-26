@@ -12,6 +12,7 @@ import { fetchA2ReasonPolicy, visibleReasonLength, type A2ReasonPolicy } from "@
 import { useEffect, useId, useState } from "react";
 import { Notice } from "@/app/components/rd/block-state";
 import { Button as RdButton } from "@/app/components/rd/button";
+import { useReleaseCheck } from "@/app/components/rd/overlay";
 import { useRdSurface } from "@/app/components/rd/surface";
 import { Modal, Btn, Chip, OperatorBriefBlock, usePendingConfirmRecovery } from "../design-kit";
 import type { ConfirmReq } from "./types";
@@ -20,6 +21,7 @@ const POLICY_LOADING = "正在加载，稍候即可提交。";
 const POLICY_FAILED = "理由规则加载失败，暂时无法提交。请关闭弹窗后重试。";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
+  const releaseCheck = useReleaseCheck(req.requireReleaseCheck ? req : null);
   const [pendingReason, setPendingReason] = useState(() => req.freezePendingInput ? req.getPendingReason?.() : undefined);
   const pendingRecovery = usePendingConfirmRecovery(pendingReason, req.getPendingRecovery);
   const [draftReason, setReason] = useState(pendingReason ?? req.initialReason ?? "");
@@ -64,7 +66,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const valueProblem = req.input?.validate?.(value);
   const pendingBlockReason = readConflict ? readConflict.review ? "请先读取最新" : displayAdminReadError(readConflict)
     : pendingRecovery?.blockedReason ?? (req.freezePendingInput ? req.getPendingBlockReason?.() : undefined);
-  const can = !pendingBlockReason && (replaying || !policyMessage && reasonOk && inputOk && !valueProblem);
+  const blockedReason = pendingBlockReason ?? (req.requireReleaseCheck ? releaseCheck.reason : undefined);
+  const can = !blockedReason && (replaying || !policyMessage && reasonOk && inputOk && !valueProblem);
   const reasonShort = reasonLength < reasonMin ? `还差 ${reasonMin - reasonLength} 字` : `已填写 ${reasonLength}/${reasonMax} 字`;
   const submit = async () => {
     if (!can || submitting) return;
@@ -151,7 +154,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               variant={req.confirmTone ?? "primary"}
               loading={submitting || readingConflict}
               loadingText={readingConflict ? "正在加载…" : "提交中…"}
-              disabledReason={can || submitting || readingConflict ? undefined : pendingBlockReason ?? policyMessage ?? [!inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
+              disabledReason={can || submitting || readingConflict ? undefined : blockedReason ?? policyMessage ?? [!inputOk ? `填写${req.input?.label}` : valueProblem, !reasonOk && (reasonLength < reasonMin ? `操作理由${reasonShort}` : `操作理由不能超过 ${reasonMax} 字`)].filter(Boolean).join("；")}
               onBlockedClick={() => setAttempted(true)}
               onClick={() => void submit()}
             >
@@ -255,6 +258,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
           <div className={surface ? "rd-form-error" : "tiny k-confirm-count"} data-ok={reasonOk ? "" : undefined}>{reasonShort}</div>
         )}
       </div>
+      {req.requireReleaseCheck && releaseCheck.check}
       </fieldset>}
     </Modal>
   );

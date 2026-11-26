@@ -217,7 +217,7 @@ export function SectionCard({ card }: { card: SectionCardModel }) {
       </div>
       {(card.draft || card.pending || card.problems.length > 0) && <div className="i4-card-tags">
         {card.problems.length > 0 && <StatusTag tone="danger" explain={`${card.problems.join("；")}。App 信任中心整页打不开。`}>{card.problems[0]}</StatusTag>}
-        {card.pending && <StatusTag tone="warn" explain="有申请等另一位管理员批准，批准或驳回前这一块不能改。批准前用户看到的不变。">等另一位批准</StatusTag>}
+        {card.pending && <StatusTag tone="warn" explain="有申请等另一位超级管理员批准，批准或驳回前这一块不能改。批准前用户看到的不变。">等另一位批准</StatusTag>}
         {card.draft && <StatusTag tone="neutral" explain="草稿只在后台，用户看不到；提交发布并批准后才公开。">草稿 {card.draft} 待发布</StatusTag>}
       </div>}
       <footer className="i4-card-foot">

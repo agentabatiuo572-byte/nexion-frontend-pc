@@ -76,7 +76,7 @@ function proposalSources({ before, command: { op, params } }: ProposeSpec): read
   }
 }
 
-const APPROVAL = "由另一位有批准及商品业务权限的管理员批准。批准前目录不变。";
+const APPROVAL = "由另一位超级管理员（需有商品业务权限和审批批准权限）批准。批准前目录不变。";
 // 商品新增、编辑只有超级管理员能批（AuditReplayBusinessPermissionGuard.isE1SuperAdminDecision），叫法同 A2 审批页。
 const SKU_APPROVAL = "由另一位超级管理员（需有商品修改权限）批准。批准前目录不变。";
 const approvalText = (op?: string) => op === "e1_sku_create" || op === "e1_sku_update" || op === "sku-save" ? SKU_APPROVAL : APPROVAL;

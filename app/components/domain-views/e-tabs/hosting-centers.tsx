@@ -52,7 +52,8 @@ const hostingRecords = createPendingMutationStore<HostingReceipt>({
 });
 
 const NAME_MAX = 128;
-const APPROVER = "另一位有审批权限和商品修改权限的管理员";
+const APPROVER = "另一位超级管理员（需有商品修改权限和审批批准权限）";
+const ROLE_GATE = "另一位有审批权限和商品修改权限的管理员";
 
 /** 后台错误码的中文说明；只在这页用到，接逻辑时可以并进 lib/admin/error-messages。 */
 const HOSTING_ERRORS: Record<string, string> = {
@@ -351,7 +352,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
 
   const confirmFacts = state && draft && <Facts>
     <Fact k="改后">{`${draftEnabled.length} 个启用 · 权重合计 ${draftTotal}`}</Fact>
-    <Fact k="谁来批">另一位管理员，不能是提交人</Fact>
+    <Fact k="谁来批">另一位超级管理员，不能是提交人</Fact>
     <Fact k="需有权限">审批权限和商品修改权限</Fact>
   </Facts>;
   const confirmChanges = state && draft && <div className="rd-impact">
@@ -428,7 +429,7 @@ export function HostingCentersPage({ onBack }: { onBack?: () => void } = {}) {
           request: {
             action: "调整托管机房清单", obj: "default", beforeValue: "托管机房当前清单", afterValue: "托管机房拟发布清单",
             operator: session.operator || session.username, operatorRole: roleLabel(session.role),
-            type: "param", amplifies: false, sos: false, roleGate: APPROVER, reason, sourceDomain: "E1",
+            type: "param", amplifies: false, sos: false, roleGate: ROLE_GATE, reason, sourceDomain: "E1",
             command: { domain: "E", op: HOSTING_OPERATION, params: {
               expectedRevision: baseline.revision,
               centers: draft.map(row => ({ ...row, name: row.name.trim(), weight: Number(row.weight) })),
