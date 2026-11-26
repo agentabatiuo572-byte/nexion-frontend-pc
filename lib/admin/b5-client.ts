@@ -216,7 +216,7 @@ export async function previewB5Thresholds(yellowPct: number, redPct: number, exp
   const ratioCalculable = bool(value.ratioCalculable, "preview.ratioCalculable");
   const state = text(value.light, "preview.light");
   const version = num(value.expectedVersion, "preview.expectedVersion");
-  if (!Number.isSafeInteger(version) || !["red", "yellow", "green", "unavailable"].includes(state)
+  if (version !== expectedVersion || !["red", "yellow", "green", "unavailable"].includes(state)
     || ratioCalculable !== (ratio24h !== null) || ratioCalculable && state === "unavailable"
     || !ratioCalculable && state !== "red" && state !== "unavailable") invalid("preview");
   return { ratio24h, ratioCalculable, light: state as Light | "unavailable", expectedVersion: version };

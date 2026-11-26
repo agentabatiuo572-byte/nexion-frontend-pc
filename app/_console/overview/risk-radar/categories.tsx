@@ -10,7 +10,7 @@ import Link from "next/link";
 import { ChevronRight, ListChecks } from "lucide-react";
 import { BlockState, Button, Notice, Panel, StatusTag } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { B5_PATH, isRiskConclusion, RISK_SEVERITIES, type RiskFeedItem, type RiskSev } from "@/lib/admin/risk-feed";
+import { B5_PATH, isRiskConclusion, RISK_SEVERITIES, scoreAccountsHref, type RiskFeedItem, type RiskSev } from "@/lib/admin/risk-feed";
 import { SEVERITY } from "./insights";
 
 type CategoryDisplay = {
@@ -62,7 +62,7 @@ export function riskCategoryRows(feed: readonly RiskFeedItem[], reach: (href: st
       rows.push({ ...item, href: undefined, kind: "signal", key: item.category, name: item.categoryName });
     } else if (item.href === "/risk/scoring" && item.band !== "HIGH" && reach(item.href)) {
       const key = item.band ?? "SCORE_UNAVAILABLE";
-      const href = item.band ? `${item.href}?view=accounts&band=${item.band}` : item.href;
+      const href = item.band ? scoreAccountsHref(item.band) : item.href;
       rows.push({ kind: "score", key, ...SCORE_BAND_NAME[key], sev: item.sev, count: item.count, href });
     } else if (item.href === "/overview/dual-ledger" && reach(B5_PATH)) {
       rows.push({ kind: "fund", key: "FUND", name: FUND_NAME[item.sev === "p0" ? "red" : "yellow"], sev: item.sev });

@@ -26,6 +26,7 @@ export const RISK_SEVERITIES = ["p0", "p1", "p2", "p3"] as const;
 export type RiskSev = typeof RISK_SEVERITIES[number];
 export const SCORE_BANDS = ["AUTO_REPORT", "HIGH_BELOW_AUTO", "MEDIUM", "STALE"] as const;
 export type ScoreBand = typeof SCORE_BANDS[number];
+export const TAMPER_SIGNAL_TYPE = "TAMPER_DETECTED";
 
 type SignalFeedFields = {
   category: SignalCategory;
@@ -39,13 +40,29 @@ type SignalFeedFields = {
 };
 
 export type RiskFeedItem = { sev: RiskSev; t: string; m: string; href: string } & (
-  SignalFeedFields & { band?: never }
-  | { category?: never; band: ScoreBand | "HIGH"; count: number }
-  | { category?: never; band?: never; count?: number; accountCount?: number; latestAt?: string; startAt?: string; endAt?: string }
+  SignalFeedFields & { band?: never; signalType?: never }
+  | { category?: never; band: ScoreBand | "HIGH"; count: number; signalType?: never }
+  | { category?: never; band?: never; signalType: typeof TAMPER_SIGNAL_TYPE;
+      count: number; accountCount: number; latestAt: string; startAt: string; endAt: string }
+  | { category?: never; band?: never; signalType?: never; count?: number; accountCount?: number; latestAt?: string; startAt?: string; endAt?: string }
 );
 
 export const B5_PATH = "/overview/risk-radar";
 export const B5_FROM_HOME = `${B5_PATH}?from=home&tab=signals#risk-signal-tabs`;
+export const SIGNAL_LIST_ANCHOR = "risk-signal-list";
+
+export function scoreAccountsHref(band: ScoreBand) {
+  return `/risk/scoring?view=accounts&band=${band}`;
+}
+
+export function riskBellHref(item: RiskFeedItem) {
+  if (item.signalType === TAMPER_SIGNAL_TYPE) {
+    const params = new URLSearchParams({ tab: "signals", signalType: item.signalType, startAt: item.startAt, endAt: item.endAt });
+    return `${B5_PATH}?${params}#${SIGNAL_LIST_ANCHOR}`;
+  }
+  if (item.href === "/risk/scoring" && item.band) return scoreAccountsHref(item.band === "HIGH" ? "HIGH_BELOW_AUTO" : item.band);
+  return item.href || B5_PATH;
+}
 
 /** True for absolute API date-times. Keep the original offset for subsequent queries. */
 export function isOffsetDateTime(value: unknown): value is string {

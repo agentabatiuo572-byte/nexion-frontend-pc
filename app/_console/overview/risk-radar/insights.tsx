@@ -238,12 +238,13 @@ const handlerText = (alert: SignalRow) => alert.handledBy ? maskAuditActor(alert
 const HANDLING_ICON: Record<Alert["handlingStatus"], LucideIcon | undefined> = { open: Clock3, handled: undefined, resolved: undefined };
 
 /** 名单和抽屉里同一个「去处理」：能记分诊的先记再跳；目标页进不了写「{页名} · 无权限」（ST-58）。 */
-function TriageLink({ alert, reach, canTriageTarget, onTriage, triageState, button }: {
+function TriageLink({ alert, reach, canTriageTarget, onTriage, triageState, actionBlocked, button }: {
   alert: SignalRow;
   reach: (path: string) => boolean;
   canTriageTarget: (path: string) => boolean;
   onTriage: (path: string) => boolean;
   triageState: (path: string) => "active" | "blocked" | undefined;
+  actionBlocked?: string;
   /** 抽屉底部用按钮的样子。 */
   button?: "primary" | "secondary";
 }) {
@@ -256,12 +257,14 @@ function TriageLink({ alert, reach, canTriageTarget, onTriage, triageState, butt
   const text = state === "active" ? "正在记录…" : button ? `去${page}` : page;
   return (
     <Link className={button ? "rd-btn" : "rd-link"} data-variant={button} data-size={button ? "md" : undefined} href={target} prefetch={false}
-      aria-disabled={state ? true : undefined} title={state === "blocked" ? "正在记录另一条分诊，记完再点" : undefined}
+      aria-disabled={!!(actionBlocked || state) || undefined} title={actionBlocked ?? (state === "blocked" ? "正在记录另一条分诊，记完再点" : undefined)}
+      onClick={actionBlocked ? event => event.preventDefault() : undefined}
+      onAuxClick={actionBlocked ? event => event.preventDefault() : undefined}
       onNavigate={(event) => { if (onTriage(target)) event.preventDefault(); }}>{button ? <span className="rd-btn-face">{text}</span> : text}</Link>
   );
 }
 
-export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, freezeHint, markBlocked, pendingSignalNos, updating, reach, canTriageTarget, selected, onOpen, onTriage, triageState, onStatus }: {
+export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, freezeHint, actionBlocked, pendingSignalNos, updating, reach, canTriageTarget, selected, onOpen, onTriage, triageState, onStatus }: {
   alerts: readonly SignalRow[];
   /** 名单筛成篡改风险时多一列被拦入口。 */
   showBlocked?: boolean;
@@ -270,8 +273,7 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, fr
   canTriage: boolean;
   /** 进度表头问号里冻结、解冻去哪办，按账号权限写（design-plan 板 2、risk5 核文字）。 */
   freezeHint: string;
-  /** 现在不能标记的原因（名单没刷新成功），按钮禁用并写这句。 */
-  markBlocked?: string;
+  actionBlocked?: string;
   pendingSignalNos: ReadonlySet<string>;
   updating: string;
   reach: (path: string) => boolean;
@@ -319,11 +321,11 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, fr
                   sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
                 {showBlocked && <Td><Cell main={alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span>} /></Td>}
                 <Td><Cell num main={stamp(alert.createdAt)} sub={alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)}` : isTamper(alert) ? "拦截 —" : undefined} /></Td>
-                <Td>{canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} />}</Td>
+                <Td>{canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} actionBlocked={actionBlocked} />}</Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
                     {next && (
-                      <Button size="sm" loading={updating === alert.signalNo} disabledReason={markBlocked ?? (pendingSignalNos.has(alert.signalNo) ? "请先核对这条的原操作" : undefined)} onClick={() => onStatus(alert, next)}>
+                      <Button size="sm" loading={updating === alert.signalNo} disabledReason={actionBlocked ?? (pendingSignalNos.has(alert.signalNo) ? "请先核对这条的原操作" : undefined)} onClick={() => onStatus(alert, next)}>
                         {next === "handled" ? "标记已处理" : "标记已解决"}
                       </Button>
                     )}
@@ -341,7 +343,7 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, fr
  * 一条风险信号的详情：开头 5 行判断要点（是什么事、被拦入口、哪个账户、什么时候、处理到哪），排查用的原文收进「技术信息」，
  * 决定按钮固定在底部（OP-149、OP-150）。去处理和标记进度用名单里同一套处理。
  */
-export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, markBlocked, userHref, actionsHref, updating, reach, canTriageTarget, onClose, onTriage, triageState, onStatus, readLoading, readError, staleNotice, onRetry }: {
+export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actionBlocked, pendingWrite, userHref, actionsHref, updating, reach, canTriageTarget, onClose, onTriage, triageState, onStatus, readLoading, readError, staleNotice, onRetry }: {
   alert: SignalRow | null;
   readLoading: boolean;
   readError: string | null;
@@ -354,8 +356,8 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, markB
   canFreeze: boolean;
   /** 能看「操作记录与审批」：不能时问号里写结果未知时找谁核对。 */
   canAudit: boolean;
-  /** 现在不能标记的原因（名单没刷新成功），按钮禁用并写这句。 */
-  markBlocked?: string;
+  actionBlocked?: string;
+  pendingWrite: boolean;
   /** 用户编号去用户详情、「查看账户操作」去账户操作的地址；目标进不了不传，只显示编号。 */
   userHref?: string;
   actionsHref?: string;
@@ -395,8 +397,8 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, markB
         <p>{canFreeze ? `冻结、解冻到「账户操作」办${triageShown ? `；排查到「${page}」看。` : "。"}` : "冻结、解冻要由有「账户操作」权限的同事办。"}</p>
         {!canAudit && canTriage && <p>你标记后结果未知时，请有「操作记录与审批」查看权限的同事按原操作核对。</p>}
       </>}
-        others={canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} button={next ? "secondary" : "primary"} />}
-        primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} disabledReason={markBlocked} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
+        others={canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} actionBlocked={actionBlocked} button={next ? "secondary" : "primary"} />}
+        primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} disabledReason={actionBlocked ?? (pendingWrite ? "请先核对这条的原操作" : undefined)} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
       {staleNotice}
       {unread ? <BlockState state={readError ? "error" : "loading"} title={readError ? "风险信号详情加载失败" : "正在加载风险信号详情…"} detail={readError ?? undefined} onRetry={readError ? onRetry : undefined} /> : <>
       <JudgmentPoints rows={rows} />

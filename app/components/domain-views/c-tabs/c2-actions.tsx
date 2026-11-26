@@ -413,9 +413,10 @@ function writeQuery(entries: Record<string, string | null>) {
 }
 
 /** 带来源进来的返回入口（PG-17、X08、SPM-03）：只接受后台内部地址。 */
-function backOf(returnTo: string) {
+function backOf(returnTo: string, reach: ReturnType<typeof useReach>) {
   if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return null;
   const path = returnTo.split(/[?#]/, 1)[0];
+  if ((path === "/overview/risk-radar" || path === "/risk/scoring") && !reach(path)) return null;
   const label = path === "/overview/risk-radar" ? "返回风险提醒"
     : path === "/risk/scoring" ? "返回风险评分规则"
       : path.startsWith("/users/search/") ? "返回用户详情"
@@ -525,7 +526,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const focusUserCode = (params?.get("userCode") ?? "").trim().toUpperCase();
   const source = params?.get("source") ?? "";
   const focusSource = Object.hasOwn(FOCUS_SOURCES, source) ? FOCUS_SOURCES[source] : undefined;
-  const back = backOf(params?.get("returnTo") ?? "");
+  const back = backOf(params?.get("returnTo") ?? "", reach);
 
   /* ── 页签和网址（ST-23、PG-33） ── */
   const readable = useMemo(() => TABS.filter((value) => value === "deletions" ? canReadDeletions : canReadC2), [canReadC2, canReadDeletions]);

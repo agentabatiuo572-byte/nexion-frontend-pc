@@ -32,12 +32,12 @@ import {
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
-import type { B5Signal } from "@/lib/admin/b5-radar-contract";
+import { bankrunLightForRatio, type B5Signal } from "@/lib/admin/b5-radar-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { useB5Read } from "@/lib/admin/use-b5-read";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { SIGNAL_CATEGORIES, isSignalCategory } from "@/lib/admin/risk-feed";
+import { SIGNAL_CATEGORIES, SIGNAL_LIST_ANCHOR, isSignalCategory } from "@/lib/admin/risk-feed";
 import { formatB5RiskLight } from "@/lib/admin/b5-display-labels";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -89,6 +89,7 @@ const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
 type SignalAction = keyof typeof STATUS_TEXT;
 type StatusDialog = { alert: B5Signal; target: SignalAction };
 type StatusRead = { state: "loading" | "ready" | "conflict" | "changed" } | { state: "error"; error: string };
+type StatusLookup = { state: "loading" } | { state: "ready"; signal: B5Signal } | { state: "error"; error: string };
 const matchesAction = (signal: B5Signal, target: SignalAction) =>
   signal.handlingStatus === (target === "handled" ? "open" : "handled");
 /** 只读说明点名角色页上显示的权限名，去掉页面编号（协调人定）。 */
@@ -176,7 +177,7 @@ export default function RiskRadarPage() {
   const [yellowInput, setYellowInput] = useState("");
   const [redInput, setRedInput] = useState("");
   const [reason, setReason] = useState("");
-  const [preview, setPreview] = useState<{ light: string; key: string } | null>(null);
+  const [preview, setPreview] = useState<(Awaited<ReturnType<typeof previewB5Thresholds>> & { key: string }) | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [thresholdError, setThresholdError] = useState("");
   const [otherThresholdChanges, setOtherThresholdChanges] = useState<string[]>([]);
@@ -205,7 +206,7 @@ export default function RiskRadarPage() {
   const [statusDialog, setStatusDialog] = useState<StatusDialog | null>(null);
   const [statusRead, setStatusRead] = useState<StatusRead>({ state: "loading" });
   const statusReadSequence = useRef(0);
-  const [statusCurrent, setStatusCurrent] = useState<B5Signal | null>(null);
+  const [statusLookup, setStatusLookup] = useState<StatusLookup | null>(null);
   const [statusReason, setStatusReason] = useState("");
   const [statusError, setStatusError] = useState("");
   const [statusUnknown, setStatusUnknown] = useState(false);
@@ -220,11 +221,13 @@ export default function RiskRadarPage() {
   const openSignal = selectedSignal?.signalNo ?? null;
   const readDetail = useCallback(() => fetchB5Signal(openSignal!), [openSignal]);
   const detail = useB5Read(`${sessionKey}|${openSignal ?? ""}`, readDetail, canReadSubscription && !!openSignal);
+  const listActionBlock = list.error ? STALE_MARK_REASON : list.loading ? "风险信号名单正在读取" : undefined;
+  const detailActionBlock = detail.error ? "详情没刷新成功，重试成功后再标记"
+    : detail.loading ? "正在加载风险信号详情…" : undefined;
   const signalList = list.data?.records ?? [];
   const signalIndex = signalList.findIndex(alert => alert.signalNo === openSignal);
   const signalTabs = useRef<HTMLElement>(null);
-  const homeLandingDone = useRef(false);
-  const scrollToTabs = () => signalTabs.current?.scrollIntoView({ block: "start" });
+  const initialLandingDone = useRef(false);
   const openDetail = (alert: B5Signal) => setOpenedSignal({ listKey, alert });
   const [triaging, setTriaging] = useState<keyof typeof TRIAGE | null>(null);
   const tabIds = useTabIds();
@@ -253,13 +256,16 @@ export default function RiskRadarPage() {
   }, [canReadCategories, categoryFeed.reload]);
 
   // Wait for the panels above and below the tabs to settle before positioning the first landing.
-  const homeLandingReady = !radar.loading && !list.loading
+  const initialLandingReady = !radar.loading && !list.loading
     && (!canReadCategories || categoryFeed.hasData || !!categoryFeed.error);
   useEffect(() => {
-    if (!fromHome || !homeLandingReady || homeLandingDone.current) return;
-    homeLandingDone.current = true;
-    signalTabs.current?.scrollIntoView({ block: "start" });
-  }, [fromHome, homeLandingReady]);
+    if (!initialLandingReady || initialLandingDone.current) return;
+    const target = fromHome ? signalTabs.current : window.location.hash === `#${SIGNAL_LIST_ANCHOR}`
+      ? document.getElementById(SIGNAL_LIST_ANCHOR) : null;
+    if (!target) return;
+    initialLandingDone.current = true;
+    target.scrollIntoView({ block: "start" });
+  }, [fromHome, initialLandingReady]);
 
   useEffect(() => {
     if (!list.data || list.error) return;
@@ -347,12 +353,16 @@ export default function RiskRadarPage() {
   }, [threshold, latestThreshold, thresholdOriginal, approvalRecovery, savingThreshold]);
   const thresholdChanged = !!threshold && (yellowPct !== threshold.yellowPct || redPct !== threshold.redPct);
   const thresholdVersion = threshold?.version;
-  const ratio24h = radar.data?.bankrun.ratio24h;
-  const withdraw24hUsdt = radar.data?.bankrun.withdraw24hUsdt;
-  const previewKey = thresholdValid && !staleThreshold && thresholdVersion !== undefined
-    ? JSON.stringify([yellowPct, redPct, thresholdVersion])
+  const previewKey = thresholdValid && !staleThreshold && !radar.loading && thresholdVersion !== undefined && radar.data
+    ? JSON.stringify([yellowPct, redPct, thresholdVersion, radar.data.generatedAt])
     : "";
-  const previewReady = !!preview && preview.key === previewKey && !previewError;
+  const currentPreview = preview?.key === previewKey ? preview : null;
+  const previewReady = !!currentPreview && !previewError;
+  const previewPressure = threshold && currentPreview ? {
+    ratio24h: currentPreview.ratio24h,
+    light: currentPreview.ratio24h === null ? currentPreview.light
+      : bankrunLightForRatio(currentPreview.ratio24h, threshold.yellowPct, threshold.redPct),
+  } : null;
   const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now()) || !!(thresholdOriginal && isRetryExpired(thresholdOriginal));
   const thresholdLocked = savingThreshold || !!thresholdOriginal || !!approvalRecovery || lookupOnly;
   const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdOriginal
@@ -391,7 +401,7 @@ export default function RiskRadarPage() {
     const timer = window.setTimeout(() => {
       previewB5Thresholds(yellowPct, redPct, thresholdVersion)
         .then((value) => {
-          if (alive && value.expectedVersion === thresholdVersion) setPreview({ light: value.light, key: previewKey });
+          if (alive) setPreview({ ...value, key: previewKey });
         })
         .catch((cause) => {
           if (alive) setPreviewError(displayAdminError(cause));
@@ -401,7 +411,7 @@ export default function RiskRadarPage() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [canThreshold, newWriteBlocked, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, ratio24h, withdraw24hUsdt]);
+  }, [canThreshold, newWriteBlocked, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct]);
 
   const subscriptionChannelsChanged = useMemo(
     () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
@@ -425,6 +435,7 @@ export default function RiskRadarPage() {
   const closeStatus = () => {
     statusReadSequence.current += 1;
     setStatusDialog(null);
+    setStatusLookup(null);
   };
 
   const loadStatus = async (dialog: StatusDialog, conflict = false) => {
@@ -436,7 +447,7 @@ export default function RiskRadarPage() {
       setStatusDialog({ ...dialog, alert });
       setStatusRead({ state: matchesAction(alert, dialog.target) ? "ready" : "changed" });
       if (conflict) setStatusReason("");
-      if (openSignal === alert.signalNo) detail.setData(alert);
+      if (conflict && openSignal === alert.signalNo) detail.setData(alert);
     } catch (cause) {
       if (sequence !== statusReadSequence.current) return;
       if (conflict) throw cause;
@@ -444,11 +455,12 @@ export default function RiskRadarPage() {
     }
   };
 
+  const signalActionBlock = (fromDetail: boolean) => listActionBlock ?? (fromDetail ? detailActionBlock : undefined);
   const changeSignalStatus = async () => {
     if (!statusDialog || !session || !canTriage || updatingSignal) return;
     const { alert, target } = statusDialog;
     const reason = statusReason.trim();
-    if (!statusOriginal && (statusRead.state !== "ready" || !list.data || list.error
+    if (!statusOriginal && (statusRead.state !== "ready" || signalActionBlock(openSignal === alert.signalNo)
       || pendingSignalNos.has(alert.signalNo) || !statusRule.ok(reason) || reason.length > 200)) return;
     let original = statusOriginal;
     setUpdatingSignal(alert.signalNo);
@@ -594,7 +606,7 @@ export default function RiskRadarPage() {
     if (!session || !threshold || !canSubmitThreshold) return;
     setSavingThreshold(true); setThresholdError("");
     let original = thresholdOriginal;
-    const facts = !original && !pendingApproval && data ? { ...threshold, ratio24h: data.bankrun.ratio24h, light: data.bankrun.light } : threshold;
+    const facts = !original && !pendingApproval && previewPressure ? { ...threshold, ...previewPressure } : threshold;
     try {
       if (requiresApproval) {
         const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
@@ -686,8 +698,19 @@ export default function RiskRadarPage() {
       setSubscriptionOriginal(record); setSubscription({ inApp: input.inApp, email: input.email, webhook: input.webhook, webhookUrl: input.webhookUrl });
       setSubscriptionUnknown(true); setSubscriptionOpen(true); setSubscriptionSaveError("");
     } else if (record.kind === "signal") {
-      setStatusOriginal(record); setStatusDialog({ alert: record.facts, target: input.targetStatus }); setStatusReason(input.reason); setStatusUnknown(true); setStatusError(""); setStatusCurrent(null);
+      setStatusOriginal(record); setStatusDialog({ alert: record.facts, target: input.targetStatus }); setStatusReason(input.reason); setStatusUnknown(true); setStatusError(""); setStatusLookup(null);
     } else void acknowledgeInbox(record.facts, record);
+  };
+  const readStatusCurrent = async () => {
+    if (!statusOriginal || updatingSignal || statusLookup?.state === "loading") return;
+    const sequence = ++statusReadSequence.current;
+    setStatusLookup({ state: "loading" });
+    try {
+      const signal = await fetchB5Signal(statusOriginal.facts.signalNo);
+      if (sequence === statusReadSequence.current) setStatusLookup({ state: "ready", signal });
+    } catch (cause) {
+      if (sequence === statusReadSequence.current) setStatusLookup({ state: "error", error: displayAdminReadError(cause) });
+    }
   };
   const queryWrite = async (record: ReturnType<typeof pendingB5Commands>[number]) => {
     if (!isB5Original(record)) { setToast("原审批内容不完整，请到操作记录核对。"); return; }
@@ -697,7 +720,6 @@ export default function RiskRadarPage() {
       else if (current.kind === "ack") { setInbox(current.data); setInboxError(""); setInboxLoading(false); setInboxNeedsRead(false); setInboxReadAt(new Date().toISOString()); }
       else if (current.kind === "signal") {
         if (openSignal === current.data.signalNo) detail.setData(current.data);
-        if (statusOriginal?.commandKey === record.commandKey) setStatusCurrent(current.data);
         setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。`, "warn");
         return;
       }
@@ -810,7 +832,8 @@ export default function RiskRadarPage() {
     const dimension = QUEUE_TRIAGE[target];
     return !!dimension && canTriageDimension(dimension);
   };
-  const queueTriage = (target: string) => {
+  const queueTriage = (target: string, fromDetail = false) => {
+    if (signalActionBlock(fromDetail)) return true;
     const dimension = QUEUE_TRIAGE[target];
     if (dimension && canTriageDimension(dimension)) void triage(dimension);
     return true;
@@ -820,34 +843,35 @@ export default function RiskRadarPage() {
     if (!triaging || !dimension || !canTriageDimension(dimension)) return undefined;
     return triaging === dimension ? "active" as const : "blocked" as const;
   };
-  const openSignalStatus = (alert: B5Signal, target: SignalAction) => {
-    if (!canTriage || !list.data || list.error || pendingSignalNos.has(alert.signalNo)) return;
+  const openSignalStatus = (alert: B5Signal, target: SignalAction, fromDetail = false) => {
+    if (!canTriage || signalActionBlock(fromDetail) || pendingSignalNos.has(alert.signalNo)) return;
     const dialog = { alert, target };
     setStatusOriginal(null);
     setStatusReason("");
     setStatusError("");
-    setStatusCurrent(null);
+    setStatusLookup(null);
     setStatusUnknown(false);
     setStatusDialog(dialog);
     void loadStatus(dialog);
   };
   const listState: SignalListState = list.data ? { state: "ready", rows: signalList, stale: list.stale }
     : list.error ? { state: "error", error: list.error } : { state: "loading" };
-  const clearFilters = () => replaceSignalQuery({ category: null, handlingStatus: null, startAt: null, endAt: null, page: 1 });
+  const clearFilters = () => replaceSignalQuery({ category: null, signalType: null, handlingStatus: null, startAt: null, endAt: null, page: 1 });
   const listFilters: SignalListFilters = {
-    category: query.category.join(","),
-    categoryLabel: query.category.length > 1 ? SIGNAL_CATEGORIES.filter(option => query.category.includes(option.value)).map(option => option.label).join("、") : undefined,
+    category: query.signalType ?? query.category.join(","),
+    categoryLabel: query.signalType ? "篡改拦截"
+      : query.category.length > 1 ? SIGNAL_CATEGORIES.filter(option => query.category.includes(option.value)).map(option => option.label).join("、") : undefined,
     status: query.handlingStatus ?? "",
     window: query.startAt ? "fixed" : "rolling",
     windowOptions: [
       { value: "rolling", label: "近 7 天" },
       ...(query.startAt && query.endAt ? [{ value: "fixed", label: `${stamp(query.startAt)} — ${stamp(query.endAt)}（${businessZone().label}）` }] : []),
     ],
-    onCategory: value => replaceSignalQuery({ category: isSignalCategory(value) ? value : null, page: 1 }),
+    onCategory: value => replaceSignalQuery({ category: isSignalCategory(value) ? value : null, signalType: null, page: 1 }),
     onStatus: value => replaceSignalQuery({ handlingStatus: value, page: 1 }),
     onWindow: value => { if (value === "rolling") replaceSignalQuery({ startAt: null, endAt: null, page: 1 }); },
     onClear: clearFilters,
-    canClear: !!(query.category.length || query.handlingStatus || query.startAt),
+    canClear: !!(query.category.length || query.signalType || query.handlingStatus || query.startAt),
     accountCount: list.data?.accountCount ?? null,
   };
   const listPage: SignalListPage | undefined = list.data ? {
@@ -863,10 +887,13 @@ export default function RiskRadarPage() {
   const selectedCategory = query.category.length === 1 ? query.category[0] : null;
   const selectCategory = (row: RiskCategoryRow) => {
     if (row.kind === "signal") {
-      replaceSignalQuery({ tab: "signals", category: row.key, handlingStatus: row.handlingStatus,
+      replaceSignalQuery({ tab: "signals", category: row.key, signalType: null, handlingStatus: row.handlingStatus,
         startAt: row.startAt, endAt: row.endAt, page: 1, pageSize: query.pageSize });
-      scrollToTabs();
-    } else if (row.kind === "fund") document.getElementById("b5-dim-bankrun")?.scrollIntoView({ block: "start" });
+      document.getElementById(SIGNAL_LIST_ANCHOR)?.scrollIntoView({ block: "start" });
+    } else if (row.kind === "fund") {
+      const target = document.getElementById("b5-dim-bankrun") ?? document.querySelector(".radarpage > .rd-block-state");
+      target?.scrollIntoView({ block: "start" });
+    }
   };
   const returnTo = signalReturnTo(query, fromHome);
   const detailUser = detail.data?.userNo;
@@ -932,7 +959,7 @@ export default function RiskRadarPage() {
               <div className="b5-signals-pane">
                 <RiskCategoryPanel data={categories} selectedKey={selectedCategory} onSelect={selectCategory} onRetry={() => void loadCategories()} />
                 <SignalList data={listState} filters={listFilters} page={listPage} onRetry={() => void list.reload()}
-                  table={{ canTriage, freezeHint, pendingSignalNos, updating: updatingSignal, reach: canCross, canTriageTarget, selected: openSignal, onOpen: openDetail,
+                  table={{ canTriage, freezeHint, actionBlocked: listActionBlock, pendingSignalNos, updating: updatingSignal, reach: canCross, canTriageTarget, selected: openSignal, onOpen: openDetail,
                     onTriage: queueTriage, triageState, onStatus: openSignalStatus }} />
               </div>
             ) : (
@@ -952,15 +979,15 @@ export default function RiskRadarPage() {
         <SignalDrawer alert={detail.data ?? selectedSignal} canTriage={canTriage} canFreeze={canFreeze} canAudit={canAudit}
           readLoading={detail.loading && !detail.data} readError={detail.error} onRetry={() => void detail.reload()}
           staleNotice={detail.stale && <StaleNotice stale={detail.stale} onRetry={() => void detail.reload()} />}
-          markBlocked={list.stale ? STALE_MARK_REASON : detail.stale ? "详情没刷新成功，重试成功后再标记"
-            : !list.data ? "风险信号名单正在读取" : openSignal && pendingSignalNos.has(openSignal) ? "请先核对这条的原操作" : undefined}
+          actionBlocked={signalActionBlock(true)} pendingWrite={!!openSignal && pendingSignalNos.has(openSignal)}
           userHref={userHref} actionsHref={actionsHref} updating={updatingSignal} reach={canCross} canTriageTarget={canTriageTarget}
           nav={{ hasPrev: signalIndex > 0, hasNext: signalIndex >= 0 && signalIndex < signalList.length - 1,
             onPrev: () => openDetail(signalList[signalIndex - 1]), onNext: () => openDetail(signalList[signalIndex + 1]) }}
-          onClose={() => setOpenedSignal(null)} onTriage={queueTriage} triageState={triageState} onStatus={openSignalStatus} />
+          onClose={() => setOpenedSignal(null)} onTriage={target => queueTriage(target, true)} triageState={triageState}
+          onStatus={(alert, target) => openSignalStatus(alert, target, true)} />
 
       {threshold && (() => {
-        const pressure = thresholdOriginal || approvalRecovery ? threshold : data?.bankrun ?? threshold;
+        const pressure = thresholdOriginal || approvalRecovery ? threshold : previewPressure ?? data?.bankrun ?? threshold;
         const raising = redPct > threshold.redPct;
         const redDirection = !Number.isFinite(redPct) || redPct === threshold.redPct ? null : raising
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
@@ -1005,7 +1032,7 @@ export default function RiskRadarPage() {
               </DiffField>
               <p className="b5-preview" role="status">
                 {recovering ? "提交时" : "现在"}的提现压力 {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，标「{formatB5RiskLight(pressure.light)}」{recovering ? "。" : "；"}
-                {recovering ? null : previewReady ? <>按新的线会标 <StatusTag tone={preview!.light === "red" ? "danger" : preview!.light === "yellow" ? "warn" : preview!.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(preview!.light)}</StatusTag></>
+                {recovering ? null : previewReady && currentPreview ? <>按新的线会标 <StatusTag tone={currentPreview.light === "red" ? "danger" : currentPreview.light === "yellow" ? "warn" : currentPreview.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(currentPreview.light)}</StatusTag></>
                   : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
               </p>
               <Notice tone="neutral">
@@ -1120,8 +1147,8 @@ export default function RiskRadarPage() {
             : statusRead.state === "error" ? "这条的当前进度没读到"
               : statusRead.state === "conflict" ? "这条已被别人改过"
                 : statusRead.state === "changed" ? "这条的当前进度已经变了，不能继续这次标记"
-                  : list.stale ? STALE_MARK_REASON : !list.data ? "风险信号名单正在读取"
-                    : !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : valid ? undefined : hint;
+                  : signalActionBlock(openSignal === alert.signalNo)
+                    ?? (!statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : valid ? undefined : hint);
         return (
           <Modal title={`标记${alert.category === "TAMPER" ? "篡改拦截" : signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty
             sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
@@ -1152,9 +1179,10 @@ export default function RiskRadarPage() {
                 <ConflictBar message="这条已被别人改过" onRead={() => loadStatus(statusDialog, true)} />
               </Notice>}
               {statusOriginal && statusUnknown ? <Notice tone="warn" title="结果未知，可能已经生效"
-                action={<Button size="sm" disabled={busy} onClick={() => void queryWrite(statusOriginal)}>读取当前值</Button>}>
+                action={<Button size="sm" disabled={busy} loading={statusLookup?.state === "loading"} onClick={() => void readStatusCurrent()}>读取当前值</Button>}>
                 <p>{`理由已锁住。「按原操作重试」用原单号重新发送，不会重复改；也可以点「读取当前值」看这一条现在的进度，读到已处理不等于是这次改的，${canAudit ? "到「操作记录与审批」核对。" : "请有「操作记录与审批」查看权限的同事按原操作核对。"}`}</p>
-                {statusCurrent && <p>当前进度：{HANDLING[statusCurrent.handlingStatus].text}</p>}
+                {statusLookup?.state === "ready" ? <p>当前进度：{HANDLING[statusLookup.signal.handlingStatus].text}</p>
+                  : statusLookup?.state === "error" ? <p>{statusLookup.error}</p> : null}
                 {replay?.expired && <p>{RETRY_EXPIRED_TEXT}</p>}
               </Notice> : statusError ? <Notice tone="danger" title="没有标记成功">{statusError}</Notice> : null}
             </div>

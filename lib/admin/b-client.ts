@@ -5,7 +5,7 @@ import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session"
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { f4Decimal } from "@/lib/admin/f4-money";
-import { isOffsetDateTime, isSignalCategory, RISK_SEVERITIES, SCORE_BANDS, type RiskFeedItem, type RiskSev, type ScoreBand } from "./risk-feed";
+import { isOffsetDateTime, isSignalCategory, RISK_SEVERITIES, SCORE_BANDS, TAMPER_SIGNAL_TYPE, type RiskFeedItem, type RiskSev, type ScoreBand } from "./risk-feed";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
@@ -481,6 +481,10 @@ function normalizeRiskFeed(raw: unknown, index: number): RiskFeedItem {
     if (band !== "HIGH" && !SCORE_BANDS.includes(band)) invalid();
     return { ...base, band, count: count("count") };
   }
+  if (item.signalType === TAMPER_SIGNAL_TYPE) {
+    return { ...base, signalType: TAMPER_SIGNAL_TYPE, count: count("count"), accountCount: count("accountCount"),
+      latestAt: time("latestAt"), startAt: time("startAt"), endAt: time("endAt") };
+  }
   return { ...base,
     ...(item.count === undefined ? {} : { count: count("count") }),
     ...(item.accountCount === undefined ? {} : { accountCount: count("accountCount") }),
@@ -714,7 +718,7 @@ export function useBDomainDashboard(enabled = true, mode: RiskFeedMode = "defaul
     key: string; read: DashboardRead | null; loading: boolean; error: string | null;
   }>();
 
-  const reload = useCallback(async (force = false) => {
+  const readDashboard = useCallback(async (force = false) => {
     if (!enabled) return;
     setSnapshot(current => ({
       key, read: cachedDashboards.get(key) ?? null, loading: true,
@@ -727,6 +731,8 @@ export function useBDomainDashboard(enabled = true, mode: RiskFeedMode = "defaul
         ? { ...current, loading: false, error: displayAdminError(cause) } : current);
     }
   }, [enabled, key, mode, sessionKey]);
+  // Explicit reads by default consumers can verify a write. Mounts may share an in-flight read.
+  const reload = useCallback((force = mode === "default") => readDashboard(force), [mode, readDashboard]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -734,12 +740,12 @@ export function useBDomainDashboard(enabled = true, mode: RiskFeedMode = "defaul
     const subscriber = (read: DashboardRead) => setSnapshot({ key, read, error: null, loading: false });
     subscribers.add(subscriber);
     dashboardSubscribers.set(key, subscribers);
-    void reload();
+    void readDashboard();
     return () => {
       subscribers.delete(subscriber);
       if (!subscribers.size) dashboardSubscribers.delete(key);
     };
-  }, [enabled, key, reload]);
+  }, [enabled, key, readDashboard]);
 
   const current = snapshot?.key === key ? snapshot : undefined;
   const read = enabled ? current?.read ?? cachedDashboards.get(key) ?? null : null;

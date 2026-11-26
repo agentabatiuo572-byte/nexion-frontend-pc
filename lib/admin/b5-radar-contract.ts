@@ -11,6 +11,11 @@ const ABNORMAL_CATEGORIES = ["multi-account", "arbitrage", "trial-cycle", "withd
 
 type Light = "green" | "yellow" | "red";
 
+export function bankrunLightForRatio(ratio: number, yellowPct: number, redPct: number): Light {
+  // Parse the lines in ratio units so an exact decimal match counts as reaching the line.
+  return ratio >= Number(`${redPct}e-2`) ? "red" : ratio >= Number(`${yellowPct}e-2`) ? "yellow" : "green";
+}
+
 /** Partial projections from the backend's identified producers, never raw evidence. */
 export type B5SignalFacts = {
   tamperPath?: string;
@@ -378,7 +383,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     if (ratio24h === null || bankrunLight === "unavailable") invalid("bankrun.ratio24h");
     // Legacy ratios rounded to four places; allow that half-unit plus J1's finer rounding.
     close(ratio24h, authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt), ratioReserveUsdt > 0 ? 0.000051 : 0.00000001, "bankrun.ratio24h");
-    const expectedBankrunLight = ratio24h * 100 >= redPct ? "red" : ratio24h * 100 >= yellowPct ? "yellow" : "green";
+    const expectedBankrunLight = bankrunLightForRatio(ratio24h, yellowPct, redPct);
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   }
   if (pressureCalculable) {
