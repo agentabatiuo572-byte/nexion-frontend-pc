@@ -89,6 +89,8 @@
 .cc-pending .rd-todo-item:only-child { grid-column: 1 / -1; }
 .cc-pending .rd-todo-row { height: 100%; }  /* 同一行两格等高 */
 .cc-pending .rd-todo-sub { white-space: normal; }  /* 两列窄时折行，审批详情这类长文字不切掉 */
+.cc-pending .cc-risk-part { white-space: nowrap; }  /* 风控合成行的副行：一类不拆开，折行时「·」在下一行开头 */
+.cc-pending .cc-pending-icon { flex: none; margin-right: 4px; vertical-align: -2px; }
 .cc-pending .rd-block-loading { display: flex; align-items: center; min-height: 48px; margin-top: 4px; padding: 0 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }  /* 读取中的占位和一行待处理一样高，读完不往下推 */
 .cc-pending-rest { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .cc-pending-rest a { color: var(--rd-text-2); }

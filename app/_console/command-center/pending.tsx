@@ -7,13 +7,15 @@
  */
 import Link from "next/link";
 import { Fragment, type ReactNode } from "react";
-import { Headset, ListChecks, Server, ShieldAlert, Wallet, type LucideIcon } from "lucide-react";
+import { Headset, ListChecks, Server, ShieldAlert, ShieldCheck, Wallet, type LucideIcon } from "lucide-react";
 import { InlineRetry, Panel, TodoFailed, TodoItem, TodoList, type DomainTone, type StateTone } from "@/app/components/rd";
 
 export type PendingRow = {
   key: string;
   title: string;
-  sub?: string;
+  sub?: ReactNode;
+  /** 标题前的状态图标：只给紧急的一行（风控合成行里有紧急的一类时）。 */
+  icon?: LucideIcon;
   owner: "财务" | "风控" | "客服" | "设备" | "内容" | "增长" | "审计" | "其他";
   /** 目标页不可达时不传：照样提醒，不能点（X03）。 */
   href?: string;
@@ -24,7 +26,7 @@ export type PendingFailure = { key: string; name: string; onRetry: () => void };
 
 const OWNER: Record<PendingRow["owner"], { icon?: LucideIcon; tone?: DomainTone }> = {
   财务: { icon: Wallet, tone: "money" },
-  风控: { icon: ShieldAlert, tone: "risk" },
+  风控: { icon: ShieldCheck, tone: "risk" },  // 和侧栏「风控与反作弊」同一个图标
   客服: { icon: Headset, tone: "users" },
   设备: { icon: Server, tone: "devices" },
   内容: {},
@@ -35,6 +37,34 @@ const OWNER: Record<PendingRow["owner"], { icon?: LucideIcon; tone?: DomainTone 
 
 const LIMIT = 5;
 
+/** 风控合成一行用的一类：严重度和后端给的标题（已换成运营叫法）。 */
+export type RiskSummaryItem = { sev: "p0" | "p1" | "p2" | "p3"; title: string };
+
+const SEV_RANK: Record<RiskSummaryItem["sev"], number> = { p0: 0, p1: 1, p2: 2, p3: 3 };
+
+/**
+ * 风控待处理合成一行（用户 2026-11-26 决定）：标题写有几类，第 6 行起只剩标题时也看得出量；
+ * 副行按严重度从高到低列前三类（同级保持后端顺序），多出写「等 N 类」；颜色取最严重的一类，紧急标红加警告图标。
+ * 副行折行时「·」放在下一行开头（V15）。
+ */
+export function riskSummaryRow(items: readonly RiskSummaryItem[], href: string | undefined): PendingRow | null {
+  if (!items.length) return null;
+  const sorted = [...items].sort((a, b) => SEV_RANK[a.sev] - SEV_RANK[b.sev]);
+  const shown = sorted.slice(0, 3);
+  const rest = sorted.length - shown.length;
+  const parts = [...shown.map((item) => item.title), ...(rest > 0 ? [`等 ${rest} 类`] : [])];
+  const urgent = sorted[0].sev === "p0";
+  return {
+    key: "risk",
+    title: `风控待处理 ${sorted.length} 类`,
+    sub: <span className="cc-risk-parts">{parts.map((part, index) => <Fragment key={part}>{index > 0 && " "}<span className="cc-risk-part">{index > 0 && "· "}{part}</span></Fragment>)}</span>,
+    owner: "风控",
+    href,
+    tone: urgent ? "danger" : undefined,
+    icon: urgent ? ShieldAlert : undefined,
+  };
+}
+
 export function PendingPanel({ rows, failures, loading, aside }: { rows: readonly (PendingRow | PendingFailure)[]; failures: number; loading: boolean; aside?: ReactNode }) {
   const shown = rows.slice(0, LIMIT);
   const rest = rows.slice(LIMIT);
@@ -44,7 +74,7 @@ export function PendingPanel({ rows, failures, loading, aside }: { rows: readonl
       <TodoList label="待处理">
         {shown.map((row) => isFailure(row)
           ? <TodoFailed key={row.key} title={`${row.name}读取失败`} onRetry={row.onRetry} />
-          : <TodoItem key={row.key} href={row.href} title={row.title} sub={row.sub} tone={row.tone} owner={row.owner} ownerIcon={OWNER[row.owner].icon} ownerTone={OWNER[row.owner].tone} />)}
+          : <TodoItem key={row.key} href={row.href} title={row.icon ? <><row.icon className="cc-pending-icon" size={14} strokeWidth={1.9} aria-hidden />{row.title}</> : row.title} sub={row.sub} tone={row.tone} owner={row.owner} ownerIcon={OWNER[row.owner].icon} ownerTone={OWNER[row.owner].tone} />)}
       </TodoList>
       {loading && <div className="rd-block-loading" role="status" aria-label="正在加载…"><span className="rd-skeleton" /></div>}
       {rest.length > 0 && (

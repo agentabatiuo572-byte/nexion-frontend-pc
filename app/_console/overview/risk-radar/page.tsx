@@ -10,7 +10,7 @@ import "./risk-radar.css";
 import Link from "next/link";
 import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BellRing, CheckCheck, Eye, FileText, LockOpen, Lock, Power, ShieldQuestion, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BellRing, Eye, FileText, LockOpen, Lock, Power, RefreshCw, ShieldCheck, ShieldQuestion, SlidersHorizontal } from "lucide-react";
 import {
   BlockState, Button, Change, Check, CheckGroup, Conclusion, DiffField, Explain, Fact, Facts, Field, Input, Modal, Notice, NumberInput,
   PageHeader, PageTabs, Panel, RdPage, ReleaseModal, StatusTag, Textarea, useTabIds,
@@ -42,7 +42,9 @@ import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
-import { AlertDistribution, HANDLING, InboxTable, PressureTrend, SEVERITY, SignalDrawer, SignalsTable, TabNote, TARGET_NAME, signalFacts, signalName, stamp } from "./insights";
+import { AlertDistribution, HANDLING, InboxTable, PressureTrend, SEVERITY, SignalDrawer, TabNote, levelTone, signalFacts, signalName, stamp } from "./insights";
+import { RiskCategoryPanel, type RiskCategoriesState } from "./categories";
+import { SignalList, type SignalListFilters, type SignalListPage, type SignalListState } from "./signal-list";
 
 const THRESHOLD_SLOT = "bankrun-threshold";
 const SUBSCRIPTION_SLOT = "alert-subscription";
@@ -76,6 +78,8 @@ const TRIAGE_LABEL: Record<DimensionKey, string> = {
 };
 
 const STATUS_TEXT = { handled: "已处理", resolved: "已解决" } as const;
+/** 只读说明点名角色页上显示的权限名，去掉页面编号（协调人定）。 */
+const READ_ONLY = "你只能查看；标记进度需要「风险雷达-分诊跳转」权限";
 
 /** 订阅写成人话：开了哪些渠道，外部通知带地址。 */
 const subscriptionChannels = (value: { inApp: boolean; webhook: boolean; webhookUrl: string }) =>
@@ -139,6 +143,8 @@ export default function RiskRadarPage() {
   const canReadSubscription = authorities.includes("overview_b5_read");
   const canSubscribe = authorities.includes("overview_b5_subscribe");
   const canTriage = authorities.includes("overview_b5_triage");
+  // 只决定问号和确认框里「冻结、解冻」写去哪办还是找同事（design-plan 板 2「单条怎么处置」）。
+  const canFreeze = authorities.includes("user_c2_account_freeze");
   const canCross = useReach();
   const [toastNode, setToast] = useToast();
   const [threshold, setThreshold] = useState<B5ThresholdFacts | null>(null);
@@ -361,7 +367,7 @@ export default function RiskRadarPage() {
       await executeB5Command(original, !!statusOriginal);
       await refreshAfterWrite();
       setStatusUnknown(false);
-      setToast(`已标记为${STATUS_TEXT[targetStatus]}：${original.facts.message}`);
+      setToast(`已标记为${STATUS_TEXT[targetStatus]}`);
     } catch (cause) {
       // 框还开着、红框里已写这句时不再弹；框已关或结果未知才弹。
       let shownInDialog = false;
@@ -399,8 +405,11 @@ export default function RiskRadarPage() {
   };
 
   const canJ1 = canCross("/emergency/kill-switch");
+  // TODO(B-wire): 从今日概览风控那一行带来源进来时为 true（design-plan 板 2「进入」，ST-60）。
+  const fromHome = false;
   const header = (meta?: ReactNode, actions?: ReactNode, readOnly?: ReactNode) => (
-    <PageHeader pageId="B5" title="风险提醒" summary="看五项风险有没有报警，报警的去哪页处理。" meta={meta} actions={actions} readOnly={readOnly} />
+    <PageHeader pageId="B5" title="风险提醒" summary="看五项风险有没有报警，报警的去哪页处理。" meta={meta} actions={actions} readOnly={readOnly}
+      back={fromHome ? <Link href="/" prefetch={false}><ArrowLeft size={14} aria-hidden /> 返回今日概览</Link> : undefined} />
   );
   // 页头直达紧急停用开关：只是导航，不记分诊（B5-L02）。
   const killSwitchLink = canJ1
@@ -683,23 +692,45 @@ export default function RiskRadarPage() {
       {radar.streamWarning && <span className="b5-muted"> · {radar.streamWarning.replace(/。$/, "")}</span>}
     </span>
   );
-  const headerActions = (killSwitchLink || canReadSubscription) ? (
+  // 页头刷新只重读本页（ST-50）：雷达、站内告警；告警订阅的框开着时不重读，不冲掉正在编辑的内容（ST-54）。
+  // TODO(B-wire): 同时重读类型列表、分页名单和正在看的单条，各按自己的回应更新（design-plan 板 2「刷新和读取失败」）。
+  const refreshAll = () => {
+    void radar.reload();
+    setInboxReload((value) => value + 1);
+    if (canReadSubscription && !subscriptionOpen) setSubscriptionReload((value) => value + 1);
+  };
+  const headerActions = (
     <>
+      <Button icon={<RefreshCw size={14} aria-hidden />} onClick={refreshAll}>刷新</Button>
       {canReadSubscription && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { const saved = pendingWrites.find(record => record.fingerprint === SUBSCRIPTION_SLOT); if (saved) { recoverWrite(saved); return; } setSubscriptionOriginal(null); setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
       {killSwitchLink}
     </>
-  ) : undefined;
-  const readOnly = !canThreshold && !canSubscribe && !canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : undefined;
+  );
+  const readOnly = !canThreshold && !canSubscribe && !canTriage ? READ_ONLY : undefined;
   const openCount = (data?.recentAlerts ?? []).filter((alert) => alert.handlingStatus === "open").length;
   const queueTriage = (target: string) => { const dimension = QUEUE_TRIAGE[target]; if (!dimension || !canTriageDimension(dimension)) return false; void triage(dimension); return true; };
   const triageState = (target: string) => { const dimension = QUEUE_TRIAGE[target]; if (!triaging || !dimension || !canTriageDimension(dimension)) return undefined; return triaging === dimension ? "active" as const : "blocked" as const; };
   const openSignalStatus = (alert: B5Radar["recentAlerts"][number], target: "handled" | "resolved") => { const saved = pendingWrites.find(record => record.fingerprint === `signal-status:${alert.signalNo}`); if (saved) { recoverWrite(saved); return; } if (newWriteBlocked) return; setStatusOriginal(null); setStatusReason(""); setStatusError(""); setStatusUnknown(false); setStatusDialog({ alert, target }); };
+  // TODO(B-wire): 名单改读 GET /risk/radar/signals（category、handlingStatus、startAt/endAt、pageNum/pageSize），抽屉的上一条下一条在当前页内走。
   const signalList = data?.recentAlerts ?? [];
   const signalIndex = signalList.findIndex((alert) => alert.signalNo === openSignal);
+  const listState: SignalListState = data && !radar.error ? { state: "ready", rows: signalList }
+    : radar.loading && !radar.error ? { state: "loading" } : { state: "error", error: radar.error ?? "" };
+  // TODO(B-wire): 类型、处理进度、时间范围三个筛选和结果数（服务端 accountCount），写进网址（ST-23）；没接上之前不画筛选。
+  const listFilters: SignalListFilters | undefined = undefined;
+  // TODO(B-wire): 服务端分页（total、pageNum、pageSize）；没接上之前不画分页。
+  const listPage: SignalListPage | undefined = undefined;
+  // TODO(B-wire): 读 /treasury/b-domain?riskFeed=OPEN_BY_CATEGORY 的 riskRadar.feed，按 RiskCategoryRow 传进来；
+  // 没有 overview_b1_read 时传 { state: "noperm" }。没接上之前这块不画。
+  const categories: RiskCategoriesState | null = null;
+  // TODO(B-wire): 下方名单正按哪一类筛（网址里的 category）；点信号类一行筛名单并滚到页签条，提现压力定位到上方提现压力卡。
+  const selectedCategory: string | null = null;
+  const selectCategory = () => undefined;
+  const retryCategories = () => undefined;
 
   return (
     <RdPage className="radarpage">
-        {header(meta, !data || radar.error ? killSwitchLink : headerActions, !data || radar.error ? undefined : readOnly)}
+        {header(meta, headerActions, !data || radar.error ? undefined : readOnly)}
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={canCross("/platform/audit")} />
         {pendingApproval && (
@@ -716,10 +747,10 @@ export default function RiskRadarPage() {
           </Notice>
         )}
         {!data || radar.error ? <>
-          <Conclusion state="unknown" icon={ShieldQuestion} hint={radar.loading && !radar.error ? undefined : "数据读到之前不判断有没有风险。"}>
-            {radar.loading && !radar.error ? "风险提醒：正在加载" : "风险提醒：读取失败，暂时无法判断"}
+          <Conclusion state="unknown" icon={ShieldQuestion}>
+            {radar.loading && !radar.error ? "风险提醒：正在加载" : "暂无法判断：风险数据没读到"}
           </Conclusion>
-          <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在加载五项风险…" : "风险数据读取失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
+          <BlockState state={radar.loading && !radar.error ? "loading" : "error"} title={radar.loading && !radar.error ? "正在加载五项风险…" : "风险数据加载失败"} detail={radar.error ?? undefined} onRetry={radar.loading && !radar.error ? undefined : radar.reload} retrying={radar.loading} />
         </> : <>
         {conclusion}
 
@@ -741,20 +772,26 @@ export default function RiskRadarPage() {
           <AlertDistribution data={data} />
         </div>
 
+        </>}
+
         <section className="b5-lists" aria-label="风险信号和站内告警">
           <PageTabs label="风险信号和站内告警" ids={tabIds} value={tab} onChange={setTab} items={[
-            { value: "signals", label: "最近风险信号", count: openCount },
+            { value: "signals", label: "最近风险信号" },
             { value: "inbox", label: "我的站内告警", count: inboxError || inboxLoading || inboxNeedsRead ? "—" : unacked ?? 0 },
           ]} />
           <div {...tabIds.panel(tab)} className="rd-tab-pane">
             {tab === "signals" ? (
-              <Panel flush data-testid="b5-recent-alert-feed" data-capability="b5-signal-disposition">
-                <TabNote label="最近风险信号的范围" explain="近 7 个业务日按时间倒序的最新 20 条，不分页；不代表这段时间只有这些。">
-                  近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理 · 北京时间
-                </TabNote>
-                <SignalsTable alerts={data.recentAlerts} canTriage={canTriage} updating={updatingSignal} reach={canCross}
-                  selected={openSignal} onOpen={(alert) => setOpenSignal(alert.signalNo)} onTriage={queueTriage} triageState={triageState} onStatus={openSignalStatus} />
-              </Panel>
+              <div className="b5-signals-pane">
+                {categories && <RiskCategoryPanel data={categories} selectedKey={selectedCategory} onSelect={selectCategory} onRetry={retryCategories} />}
+                <SignalList data={listState} filters={listFilters} page={listPage} onRetry={() => void radar.reload()}
+                  scopeNote={data && (
+                    <TabNote label="最近风险信号的范围" explain="近 7 个业务日按时间倒序的最新 20 条，不分页；不代表这段时间只有这些。">
+                      近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理 · 北京时间
+                    </TabNote>
+                  )}
+                  table={{ canTriage, updating: updatingSignal, reach: canCross, selected: openSignal, onOpen: (alert) => setOpenSignal(alert.signalNo),
+                    onTriage: queueTriage, triageState, onStatus: openSignalStatus }} />
+              </div>
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
                 <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
@@ -767,12 +804,11 @@ export default function RiskRadarPage() {
             )}
           </div>
         </section>
-        <SignalDrawer alert={tab === "signals" && signalIndex >= 0 ? signalList[signalIndex] : null} canTriage={canTriage} updating={updatingSignal} reach={canCross}
+        <SignalDrawer alert={tab === "signals" && signalIndex >= 0 ? signalList[signalIndex] : null} canTriage={canTriage} canFreeze={canFreeze} canAudit={canCross("/platform/audit")}
+          updating={updatingSignal} reach={canCross}
           nav={{ hasPrev: signalIndex > 0, hasNext: signalIndex >= 0 && signalIndex < signalList.length - 1,
             onPrev: () => setOpenSignal(signalList[signalIndex - 1]?.signalNo ?? null), onNext: () => setOpenSignal(signalList[signalIndex + 1]?.signalNo ?? null) }}
           onClose={() => setOpenSignal(null)} onTriage={queueTriage} triageState={triageState} onStatus={openSignalStatus} />
-
-        </>}
 
       {threshold && (() => {
         const pressure = thresholdOriginal || approvalRecovery ? threshold : data?.bankrun ?? threshold;
@@ -919,29 +955,33 @@ export default function RiskRadarPage() {
 
       {statusDialog && (() => {
         const { alert, target } = statusDialog;
-        const valid = statusReason.trim().length >= 8 && statusReason.trim().length <= 200;
+        const length = statusReason.trim().length;
+        const valid = length >= 8 && length <= 200;
+        const short = `操作理由还差 ${Math.max(8 - length, 1)} 字`;
         const busy = updatingSignal === alert.signalNo;
+        const line = signalFacts(alert).line;
+        const level = SEVERITY[alert.level];
         return (
-          <Modal title={target === "handled" ? "标记已处理" : "标记已解决"} icon={CheckCheck} busy={busy} dirty
+          <Modal title={`${target === "handled" ? "标记已处理" : "标记已解决"} · ${signalName(alert)}`} icon={ShieldCheck} busy={busy} dirty
             sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
             onClose={() => setStatusDialog(null)}
             footer={<>
               <Button disabled={busy} onClick={() => setStatusDialog(null)}>取消</Button>
-              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={!canTriage ? "你只能查看；分诊、调整黄线红线和告警订阅需要对应权限。" : statusOriginal && b5Recovery.state(statusOriginal).replayBlock ? b5Recovery.state(statusOriginal).expired ? RETRY_EXPIRED_TEXT : "原请求不能重试" : valid ? undefined : "理由要写 8–200 个字"}
+              <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={!canTriage ? READ_ONLY : statusOriginal && b5Recovery.state(statusOriginal).replayBlock ? b5Recovery.state(statusOriginal).expired ? RETRY_EXPIRED_TEXT : "原请求不能重试" : valid ? undefined : short}
                 onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原操作重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">
+              <p className="b5-line">不会解除风控，也不会放行提现；{canFreeze ? "冻结、解冻到「账户操作」办。" : "冻结、解冻要由有「账户操作」权限的同事办。"}</p>
               <Facts>
-                <Fact k="风险信号">{signalName(alert)}</Fact>
-                {signalFacts(alert).line && <Fact k="具体情况">{signalFacts(alert).line}</Fact>}
-                <Fact k="级别">{SEVERITY[alert.level].text}</Fact>
-                <Fact k="用户 · 信号号"><>{alert.userNo ?? `#${alert.userId}`} · <span data-mono>{alert.signalNo}</span></></Fact>
-                <Fact k="发生时间">{stamp(alert.createdAt)}</Fact>
+                <Fact k="风险信号">{signalName(alert)}{line ? ` · ${line}` : ""}</Fact>
+                <Fact k="级别"><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></Fact>
+                <Fact k="用户"><span data-mono>{alert.userNo ?? `#${alert.userId}`}</span></Fact>
+                <Fact k="信号号"><span className="b5-ref" data-mono tabIndex={0} title={alert.signalNo}>{alert.signalNo}</span></Fact>
+                <Fact k="记录时间">{stamp(alert.createdAt)}（北京时间）</Fact>
                 <Fact k="处理进度"><Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} /></Fact>
               </Facts>
-              <p className="b5-line">标成「{STATUS_TEXT[target]}」只记录进度，不会解除风控，也不会放行提现。真正的处置到「{TARGET_NAME[alert.target] ?? "对应页面"}」办。</p>
-              <Field label="处理理由" required error={statusReason && !valid ? "理由要写 8–200 个字" : undefined}>
-                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="8–200 字，例如：已核实、工单号" count={`${statusReason.trim().length} / 200`} onChange={(event) => setStatusReason(event.target.value)} />
+              <Field label="操作理由" required hint="至少 8 字" error={statusReason && !valid ? short : undefined}>
+                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="例如：已核对拦截记录、工单号" count={`${length}/200`} onChange={(event) => setStatusReason(event.target.value)} />
               </Field>
               {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果未知，可能已经生效" : "没有标记成功"}>
                 {statusUnknown ? "理由已锁住，只能按原操作重试；也可以关掉后点「读取当前值」，看这条的处理进度变了没有。" : statusError}
