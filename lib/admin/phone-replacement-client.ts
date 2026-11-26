@@ -203,10 +203,10 @@ const modelCommands = createPendingMutationStore<PendingModelLockCommand>({
 });
 export function modelLockCommandRecords(owner: number, userId: string) { return modelCommands.list().filter(row => row.owner === owner && row.userId === userId); }
 export function modelLockCommandBlocks(row: PendingModelLockCommand, installationId: string) {
-    return !row.rejection || row.installationId === installationId;
+    return row.installationId === installationId;
 }
 export async function submitModelLockCommand(owner: number, userId: string, lock: PhoneModelLock, reason: string, context?: { label: string; userNo: string }) {
-    if (modelLockCommandRecords(owner, userId).some(row => modelLockCommandBlocks(row, lock.installationId))) throw new Error("此用户有机型锁处置待核实，请先核对原解除结果。");
+    if (modelLockCommandRecords(owner, userId).some(row => modelLockCommandBlocks(row, lock.installationId))) throw new Error("此安装有机型锁处置待核实，请先核对原解除结果。");
     const commandKey = createA2CommandKey("phone-model-lock"), fingerprint = `${owner}|${userId}|${lock.installationId}`;
     const original = { owner, userId, installationId: lock.installationId, lock, ...context, receiptSupported: true as const,
         path: `${accountPath(userId)}/phone-model-locks/${segment(lock.installationId)}/release`,
