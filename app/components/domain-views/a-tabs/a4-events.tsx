@@ -1097,7 +1097,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
       actions: <>
         <Button size="sm" onClick={() => openRegistryRecovery()}>查询原操作</Button>
         {!expired && !pendingRegistry.received && <Button size="sm" disabledReason={registryRetryBlock} onClick={() => openRegistryRecovery(true)}>按原操作重试</Button>}
-        {registryRecoveryState?.replayRejection && !pendingRegistry.received && <Button size="sm" onClick={() => releaseRejectedRegistry(pendingRegistry.commandKey)}>解除原操作记录</Button>}
+        {registryRecoveryState?.replayRejection && !pendingRegistry.received && <Button size="sm" onClick={() => releaseRejectedRegistry(pendingRegistry.commandKey)}>核实后解除</Button>}
       </>,
     });
   }
@@ -1285,7 +1285,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
         <Button size="sm" disabledReason={recovery.expired ? RETRY_EXPIRED_TEXT
           : recovery.replayBlock ? "先查询原操作，查不到才能重试" : undefined}
           onClick={() => recoverOriginal(record)}>按原操作重试</Button>
-        {recovery.replayRejection && <Button size="sm" onClick={() => releaseDirect(record)}>解除原操作记录</Button>}
+        {recovery.replayRejection && <Button size="sm" onClick={() => releaseDirect(record)}>核实后解除</Button>}
       </>,
     };
   }));

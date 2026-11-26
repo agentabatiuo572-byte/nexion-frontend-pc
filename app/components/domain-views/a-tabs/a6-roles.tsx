@@ -697,7 +697,7 @@ export default function A6Roles() {
         <Button variant="ghost" onClick={() => void queryOriginal(record).catch(error => setToast(displayAdminReadError(error)))}>查询原操作</Button>
         {canInvestigateECommand("platform_a6_read") && rbacClosureConclusions(outcome, expired).length > 0 && <Button variant="danger-outline" onClick={() => setClosing(record)}>核查结案</Button>}
         {!expired && <Button variant="ghost" disabledReason={replayBlock(record)} onClick={() => restoreOriginal(record)}>按原操作重试</Button>}
-        {releasable && <Button variant="ghost" onClick={() => setReleasing(record)}>解除原操作记录</Button>}
+        {releasable && <Button variant="ghost" onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
     };
   });

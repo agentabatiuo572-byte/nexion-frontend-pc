@@ -13,7 +13,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import {
   BlockState, Button, Cell, ColumnPicker, Decision, Explain, Fact, Facts, Field, FilterBar, FilterField, InlineRetry, Input, KeepText, Modal, Notice, PageHeader,
   Pager, Panel, ReleaseBody, Segments, Select, Stat, StatBand, StatusTag, Table, TableLoading, TableMessage, Td, Textarea, Th, Tr,
-  useTableColumns, type StateTone,
+  useReleaseCheck, useTableColumns, type StateTone,
 } from "@/app/components/rd";
 import { InviterCell } from "@/app/components/invitation/invitation-view";
 import { inviterView } from "@/app/components/invitation/wiring";
@@ -351,6 +351,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
   const [pending, setPending] = useState<PendingExport | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const releaseCheck = useReleaseCheck(dialog?.mode === "release");
   const [reason, setReason] = useState("");
   const [reasonTouched, setReasonTouched] = useState(false);
   // 后端说理由不合格时理由框也标出来，改了就收起。
@@ -924,11 +925,11 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
 
     {dialog?.mode === "release" ? (
       // 解除在同一个框里换内容（PG-38）：「返回」回到原操作，× 关掉整个框。
-      <Modal title="解除原操作记录" icon={ShieldCheck} onClose={closeDialog} footer={<>
+      <Modal title="解除原操作记录" icon={ShieldCheck} dirty={releaseCheck.verified} onClose={closeDialog} footer={<>
         <Button autoFocus onClick={backToPending}>返回</Button>
-        <Button variant="primary" onClick={releasePending}>确认解除</Button>
+        <Button variant="primary" disabledReason={releaseCheck.reason} onClick={releasePending}>确认解除</Button>
       </>}>
-        <ReleaseBody label="导出用户名单" explain="先到操作记录与审批核对这次导出有没有记下。" />
+        <ReleaseBody label="导出用户名单" explain="先到操作记录与审批核对这次导出有没有记下。">{releaseCheck.check}</ReleaseBody>
       </Modal>
     ) : dialog && (
       <Modal title="导出用户名单" icon={Download} sub={<StatusTag tone="progress" filled>立即生效</StatusTag>} busy={exporting}
@@ -943,7 +944,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
             explain={<><p>按原操作重试：{RETRY_EXPLAIN}</p><p>原操作有结果前不能发起新导出。重试被明确拒绝后，核实原操作的结果，可以解除原操作记录。</p></>}
             others={<>
               <Button disabled={exporting} onClick={closeDialog}>稍后处理</Button>
-              {retryRejected && <Button ref={releaseButton} disabled={exporting} onClick={() => setDialog({ mode: "release" })}>解除原操作记录</Button>}
+              {retryRejected && <Button ref={releaseButton} disabled={exporting} onClick={() => setDialog({ mode: "release" })}>核实后解除</Button>}
             </>}
             primary={<Button variant="primary" loading={exporting} loadingText="生成中…" disabledReason={retryBlocked}
               onClick={() => void retryExport()}>按原操作重试</Button>} />

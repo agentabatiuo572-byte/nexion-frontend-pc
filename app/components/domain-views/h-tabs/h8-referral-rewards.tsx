@@ -612,7 +612,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     for (const record of commands) {
       const param = [ENABLED_PARAM, ...PARAMS].find(p => p.key === record.paramKey);
       const tag = record.ticket?.status === "pending"
-        ? record.kind === "param-approval" ? pendingTag() : pendingTag("批准后才发，批准前什么都不发。")
+        ? record.kind === "param-approval" ? pendingTag() : pendingTag("批准前什么都不发。批准时按那时的资格和名单核对，符合的才发；兑付覆盖率低于红线时整批不发。")
         : isRetryExpired(record) ? expiredTag(record.kind === "direct" ? "direct" : "approval") : unknownTag(record.kind === "direct" ? "direct" : "approval");
       if (param) recoveryByKey[param.key] = tag;
       const recover = () => param ? editParam(param, param.key === "enabled" ? record.value : undefined, record) : settle(undefined, record);
@@ -662,7 +662,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const releasingRow = releasing && recoveryRows.find(row => row.key === releasing.commandKey);
   const recoveryNotice = <>
     <H8RecoveryNotice rows={recoveryRows} />
-    {releasing && <ReleaseModal label={<>{releasingRow?.name ?? "原申请"}{releasingRow && <> · {releasingRow.change}</>}</>}
+    {releasing && <ReleaseModal label={<>{releasingRow?.name ?? "原申请"}{releasingRow && <> · <span className="h8-rel-change">{releasingRow.change}</span></>}</>}
       explain="先核实原操作结果。解除只清除本标签页的原记录，不发送请求，也不进入操作记录。"
       onCancel={() => setReleasing(null)} onConfirm={() => {
         const record = releasing;

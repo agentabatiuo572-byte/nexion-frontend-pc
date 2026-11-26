@@ -806,7 +806,7 @@ export function D3Treasury() {
             actions: <>
               <FundCheckButtons record={item.investigationRecord} outcome={investigationResults[item.commandKey]} expired={expired} onCheck={() => void verifyPending(item)} onClose={() => setClosing(item)} />
               <Button size="sm" disabledReason={expired ? RETRY_EXPIRED : item.allowed ? (unknownCommands.exports.some((record) => record.commandKey === item.commandKey) ? dataBlocked : undefined) : RETRY_NO_PERMISSION} onClick={() => setRetry(item)}>按原操作重试</Button>
-              {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>解除待确认</Button>}
+              {item.allowed && retryRejected.includes(item.commandKey) && <Button size="sm" onClick={() => setReleasing(item)}>核实后解除</Button>}
             </>,
             detail: <>
               <p>{found === "FAILED" ? "" : `${item.title}。`}{item.body}{expired ? "" : item.hint}</p>

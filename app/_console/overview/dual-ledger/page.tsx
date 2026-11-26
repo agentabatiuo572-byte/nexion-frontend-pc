@@ -128,7 +128,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B1PendingC
           {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
           {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
           {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
-          {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
+          {item.onRelease && <Button size="sm" onClick={item.onRelease}>核实后解除</Button>}
         </>,
         detail: <><p>{item.body}</p><p>{item.note}</p></>,
       }))} />

@@ -737,7 +737,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         <FundCheckButtons record={target} outcome={investigationResults[record.commandKey]} expired={expired} busy={!!recovering} checking={recovering === `verify:${record.commandKey}`}
           onCheck={() => void verifyDirect(record)} onClose={() => setDirectClosing(record)} />
         {!expired && <Button size="sm" disabled={!!recovering} loading={recovering === `retry:${record.commandKey}`} disabledReason={processing && !record.replayRejection ? WITHDRAWAL_COMMAND_PROCESSING.line : retryBlock} onClick={() => void retryDirect(record)}>按原操作重试</Button>}
-        {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>解除原操作记录</Button>}
+        {record.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "direct", record })}>核实后解除</Button>}
       </>,
       detail: <>
         <p>{failed ? "" : "可能已经生效，"}这组参数有结果前不能再改。{expired ? outcome ? "" : expiredNext(target) : canInvestigate && !retryBlock && !processing ? WITHDRAWAL_REPLAY_RESEND : ""}</p>
@@ -770,7 +770,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
           onCheck={() => void lookupApproval()} onClose={() => setClosing(true)} />}
         {!expired && !confirmed && <Button size="sm" disabled={!!recovering} disabledReason={retryDisabled} loading={recovering === "approval-retry"}
           onClick={() => void retryApproval()}>按原操作重试</Button>}
-        {!confirmed && approval.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "approval", commandKey: approval.commandKey })}>解除原操作记录</Button>}
+        {!confirmed && approval.replayRejection && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing({ kind: "approval", commandKey: approval.commandKey })}>核实后解除</Button>}
       </>,
       detail: <>
         <p>{confirmed ? "审批已提交，查到审批单状态后再提交放宽。"

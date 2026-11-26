@@ -538,13 +538,13 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         {!pending.proposal && <FundCheckButtons record={target} outcome={investigationResults[pending.commandKey]} expired={expired} busy={retrying}
           onCheck={() => void lookupDirect(pending)} onClose={() => setClosing(true)} />}
         {!expired && <Button size="sm" loading={retrying} disabledReason={blockedReason} onClick={() => void retryPending(pending)}>按原操作重试</Button>}
-        {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>解除原操作记录</Button>}
+        {retryRejected && <Button size="sm" disabled={retrying} onClick={() => setReleasing(true)}>核实后解除</Button>}
       </>,
       detail: <>
         <p>{failed ? "" : "这次修改可能已经提交，"}已停止展示旧的买入价{data ? "，下面是重新读到的值" : ""}。有结果前不能再改。</p>
         {expired && !outcome && (pending.proposal && !canQueryOriginal ? <p>{EXPIRED_NO_QUERY}</p> : !fundInvestigationAccess(target).unavailableReason && <p>{fundInvestigationAccess(target).canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER}</p>)}
         {!expired && !canManage && <p>{NO_WRITE}。</p>}
-        {retryRejected && <p>重试没有成功：{retryRejected} {pending.proposal ? APPROVAL_REPLAY_RELEASE : "「解除原操作记录」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
+        {retryRejected && <p>重试没有成功：{retryRejected} {pending.proposal ? APPROVAL_REPLAY_RELEASE : "「核实后解除」只清本页这条记录，不算核查结案；原操作没结案时系统仍会阻止新提交。"}</p>}
         {pendingNote && <p>{pendingNote}</p>}
       </>,
       tech: `原版本 ${pending.expectedVersion} ｜ 理由 ${pending.reason}` };

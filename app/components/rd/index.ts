@@ -25,7 +25,7 @@ export { LevelStrip, type Level } from "./level-strip";
 export { LocaleTabs } from "./locale-tabs";
 export { MoreMenu, type MoreMenuItem } from "./menu";
 export { NumberInput } from "./number-input";
-export { Decision, Drawer, Modal, ReleaseBody, ReleaseModal, type DrawerNav } from "./overlay";
+export { Decision, Drawer, Modal, RELEASE_CHECK_LABEL, RELEASE_CHECK_REASON, ReleaseBody, ReleaseModal, useReleaseCheck, type DrawerNav } from "./overlay";
 export { PageGuide } from "./page-guide";
 export { PageHeader } from "./page-header";
 export { Pager } from "./pager";

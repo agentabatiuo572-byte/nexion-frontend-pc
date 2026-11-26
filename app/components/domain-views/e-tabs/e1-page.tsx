@@ -646,7 +646,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         actions: <>
           {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原操作</Button>}
           {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原操作重试</Button>}
-          {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>解除原操作记录</Button>}
+          {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>核实后解除</Button>}
         </>,
         detail: <>
           <p>{sent(record.createdAt)}，理由：{record.spec.reason}</p>

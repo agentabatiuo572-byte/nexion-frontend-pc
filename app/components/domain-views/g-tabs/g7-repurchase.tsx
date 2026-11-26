@@ -220,10 +220,9 @@ function orderStatus(status: string) {
 /** 原申请记录的状态：标签、色调和气泡（G 域五页同一写法）。 */
 function recoveryTag(record: GParamRecovery) {
   if (record.replayRejection && !record.ticket) return rejectedTag();
-  if (record.status === "unknown") return unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
-  if (record.status === "pending") return pendingTag();
-  if (record.status === "expired") return expiredTag("approval");
-  return resolvedTag(record.status);
+  // 读到审批单就按审批单：在等批是待审批，批准、驳回、撤回、过期都是已有结论；没有审批单才是结果未知，过了 24 小时只是不能再重试。
+  if (record.ticket) return record.ticket.status === "pending" ? pendingTag() : resolvedTag(record.ticket.status);
+  return record.retryExpired ? expiredTag("approval") : unknownTag("approval", G_PARAM_APPROVAL_RECOVERY);
 }
 
 /** 订单号：放不下时中间省略，留尾段区分。 */
@@ -416,17 +415,16 @@ function G7RepurchasePage() {
       }),
     ];
     const waiting = directs.length === 0 && approvals.length > 0 && approvals.every((record) => record.ticket?.status === "pending");
-    // 标题和每行的标签同一个判断（recoveryTag）：重试被拒、过期也算结果未知，审批单有了结论算已有结论。
-    const shown = approvals.filter((record) => !(record.replayRejection && !record.ticket));
-    const waitingCount = shown.filter((record) => record.status === "pending").length;
-    const endedCount = shown.filter((record) => !["unknown", "pending", "expired"].includes(record.status)).length;
+    // 标题和每行的标签同一个判断（recoveryTag）：读到审批单的按审批单算在等审批或已有结论，没有审批单的才算结果未知。
+    const waitingCount = approvals.filter((record) => record.ticket?.status === "pending").length;
+    const endedCount = approvals.filter((record) => record.ticket && record.ticket.status !== "pending").length;
     return <GRecoveryNotice label="原参数操作" rows={rows}
       title={recoveryTitle(rows.length - waitingCount - endedCount, waitingCount, endedCount)}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
         : "走审批的先查询原操作，查无且符合条件才可重试。直接修改可读取当前配置核对。有结论前不能改成别的值，其他参数照常可改。"}
       explain={<>
-        <p>这里列你在这台电脑上提交过、还没有结论的参数修改。{G_PARAM_RECOVERY}现在的配置值证明不了原直接修改是否生效。</p>
+        <p>这里列你在这台电脑上提交过、还没处理完的参数修改：结果未知的、在等审批的、已有结论待读回的。{G_PARAM_RECOVERY}现在的配置值证明不了原直接修改是否生效。</p>
         <p>要改成别的值，等原操作有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
       </>} />;
   };

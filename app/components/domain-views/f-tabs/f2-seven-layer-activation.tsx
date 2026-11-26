@@ -21,7 +21,7 @@ import { f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "./f2-boots
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { F2_HISTORICAL_PARAM_NAMES } from "./f2-rates";
 import { FReleaseButton, F_PROPOSAL_CREATED_LINE, fProposalEndText } from "./f-release";
-import { useFreshFirst } from "../recovery-panel";
+import { recoveryTitle, useFreshFirst } from "../recovery-panel";
 import type { FViewCtx } from "./types";
 
 
@@ -213,7 +213,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
   }
   const open = attempts.filter((attempt) => attempt.ticket?.status !== "pending").length;
   return (
-    <div ref={box}><Notice tone="warn" title={<>{drafts.length ? attempts.length ? "原申请与草稿" : "原申请未执行的草稿" : open ? `有 ${attempts.length} 项原申请还没有结论` : `${attempts.length} 项申请在等批准`}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原操作；24 小时内可以按原操作重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
+    <div ref={box}><Notice tone="warn" title={<>{recoveryTitle(open - attempts.filter((attempt) => attempt.ticket?.status !== "pending" && attempt.received).length, attempts.length - open, drafts.length, 0, attempts.filter((attempt) => attempt.ticket?.status !== "pending" && attempt.received).length)}<Explain label="原申请怎么处理" content="原内容和理由保存在这台电脑上。先查询原操作；24 小时内可以按原操作重试，不会建第二张审批单。有结论前不要换个办法重做。" /></>}>
       <ul className="f2-recovery" aria-label="还没有结论的原申请">
         {(all ? ordered : ordered.slice(0, 3)).map(({ attempt }) => {
           const { name, change } = attemptLabel(attempt);
@@ -242,7 +242,7 @@ export function F2RecoveryNotice({ ctx, recovering, setRecovering, drafts }: { c
             <span className="f2-recovery-name">{name}</span>
             <span className="f2-recovery-change">{change}</span>
             <span className="f2-recovery-time">{businessStamp(original.createdAt)} 提交</span>
-            <span><StatusTag tone="neutral">原操作未执行</StatusTag></span>
+            <span><StatusTag tone="neutral">未执行</StatusTag></span>
             <span className="f2-actions">{edit ? <Button size="sm" disabled={recovering} onClick={edit}>继续修改</Button> : "请核对当前设置和操作权限"}</span>
           </li>;
         })}

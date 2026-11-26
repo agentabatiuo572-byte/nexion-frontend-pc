@@ -153,7 +153,7 @@ export function H8RecoveryNotice({ rows }: { rows: H8RecoveryRow[] }) {
   const timed = rows.some((row) => row.submittedAt !== undefined);
   return (
     <Notice tone="warn" title={<>{recoveryTitle(rows.filter(row => !row.settled && !row.waiting).length, rows.filter(row => row.waiting).length, rows.filter(row => row.settled).length)}<Explain label="原操作怎么处理" content={<>
-      <p>这里列你在这个浏览器标签页里提交过、还没收到确定结果的修改和结算申请。</p>
+      <p>这里列你在这个浏览器标签页里提交过、还没处理完的修改和结算申请：结果未知的、在等审批的、确认没执行留作草稿的。</p>
       <p>原操作有结论之前，这一项不能改成别的值。有参数审批在等批时，别的项也只能收紧、不能放大。别人提交的审批单不在这里，到「操作记录与审批」看。</p>
     </>} /></>}>
       <ul className="h8-rec" aria-label="原操作">

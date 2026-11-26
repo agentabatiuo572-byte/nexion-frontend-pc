@@ -8,6 +8,7 @@
  * 筛选/分页保留，配置确认框从保存的原快照恢复，成员分组见 f3-placements。
  */
 import { rebaseFValues, unchangedFNumber, useFReconfirmations } from "@/lib/admin/f-reconfirmation";
+import { recoveryTitle } from "../recovery-panel";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -354,7 +355,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const payoutDirects = F3_PAYOUT_KEYS.flatMap((key) => ctx.getF3PayoutControlPending(key).directWrite ?? []);
   const draftCount = proposalDrafts.length + writeDrafts.length;
   const recoveryCount = (settlePending ? 1 : 0) + configProposals.length + payoutDirects.length + (showPlacementRecovery ? 1 : 0);
-  const recoveryOpen = [...(settlePending ? [settlePending] : []), ...configProposals].some((row) => row.ticket?.status !== "pending") || payoutDirects.length > 0 || showPlacementRecovery;
+  // 标题和 proposalTag 同一个判断：在等批算在等审批，建过单没查到进度算审批进度待核对，其余算结果未知。
+  const recoveryWaiting = [...(settlePending ? [settlePending] : []), ...configProposals].filter((row) => row.ticket?.status === "pending").length;
+  const recoveryUnchecked = [...(settlePending ? [settlePending] : []), ...configProposals].filter((row) => row.ticket?.status !== "pending" && row.received).length;
   const payoutKey = (original: FDomainAttempt) => { const key = original.fingerprint.replace(/^f-config:/, ""); return isF3PayoutControlKey(key) ? key : undefined; };
   const CONFIG_NAMES: Record<string, string> = { "F.binary.threshold": "每组订单额门槛", "F.binary.matchRate": "匹配比例", "F.binary.spillover": "自动分组", "F.binary.paused": "发放状态", [F3_GV_RESET_PARAM_KEY]: "归零说明", [F3_BATCH_SLOT]: "结算周期和残额处理" };
   const configName = (original: FDomainAttempt) => payoutKey(original) ? F3_PAYOUT_NAMES[payoutKey(original)!] : original.f3Snapshot && original.spec
@@ -414,7 +417,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
     if (setting === "F.binary.paused") return () => setConfirm({ ...editor, draft: original });
   };
   const recovery = recoveryCount + draftCount > 0 && (
-    <Notice tone="warn" title={<>{draftCount ? recoveryCount ? "原操作与草稿" : "原操作未执行的草稿" : recoveryOpen ? `有 ${recoveryCount} 项原操作还没有结论` : `${recoveryCount} 项申请在等批准`}<Explain label="原操作怎么处理" content={<>
+    <Notice tone="warn" title={<>{recoveryTitle(recoveryCount - recoveryWaiting - recoveryUnchecked, recoveryWaiting, draftCount, 0, recoveryUnchecked)}<Explain label="原操作怎么处理" content={<>
       <p>原内容和理由只存在这个浏览器标签页，关掉标签页就没了。先查询原操作；24 小时内可以按原操作重试，不会建第二张审批单。</p>
       <p>查到审批单只说明申请登记了，不等于已经发钱。关闭自动发放、调低全平台封顶比例和成员分组是直接生效的，查询看原操作有没有执行。</p>
     </>} /></>}>
@@ -448,7 +451,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <span className="f3-recovery-name">{settle ? "手动结算" : configName(original)}</span>
             <span className="f3-recovery-change">{values ? `邀请人 ${values.ownerUserId} · 结算日 ${values.settlementDate}` : configChange(original)}</span>
             <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
-            <span className="f3-recovery-state"><StatusTag tone="neutral">原操作未执行</StatusTag></span>
+            <span className="f3-recovery-state"><StatusTag tone="neutral">未执行</StatusTag></span>
             <span className="f3-recovery-actions">{edit ? <Button size="sm" onClick={edit}>继续修改</Button> : "请核对当前设置和权限"}</span>
           </li>;
         })}
@@ -460,7 +463,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <span className="f3-recovery-name">{F3_PAYOUT_NAMES[key]}</span>
             <span className="f3-recovery-change">改为 {payoutValueText(key, value)}</span>
             <span className="f3-recovery-time">{businessStamp(original.createdAt)} 提交</span>
-            <span className="f3-recovery-state"><StatusTag tone="neutral">原操作未执行</StatusTag></span>
+            <span className="f3-recovery-state"><StatusTag tone="neutral">未执行</StatusTag></span>
             <span className="f3-recovery-actions">{edit ? <Button size="sm" onClick={edit}>继续修改</Button> : "请核对当前设置和权限"}</span>
           </li>;
         })}

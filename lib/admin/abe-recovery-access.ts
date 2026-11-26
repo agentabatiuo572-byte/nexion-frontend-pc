@@ -15,9 +15,9 @@ export function canReadOwnRecoveryProposal(authorities: readonly string[]) {
   return authorities.includes("platform_a2_read") || canCreateRecoveryProposal(authorities);
 }
 
-export const APPROVAL_REPLAY_RELEASE = "先到操作记录与审批核实有没有建单；「解除原操作记录」只清本页这条记录，已经建的审批单不受影响。";
+export const APPROVAL_REPLAY_RELEASE = "先到操作记录与审批核实有没有建单；「核实后解除」只清本页这条记录，已经建的审批单不受影响。";
 /** 看不了操作记录与审批的账号：让人找能看的同事核实，不指向进不去的页面（OP-126、ST-58）。 */
-export const APPROVAL_REPLAY_RELEASE_NO_AUDIT = "先请能看操作记录与审批的同事核实有没有建单；「解除原操作记录」只清本页这条记录，已经建的审批单不受影响。";
+export const APPROVAL_REPLAY_RELEASE_NO_AUDIT = "先请能看操作记录与审批的同事核实有没有建单；「核实后解除」只清本页这条记录，已经建的审批单不受影响。";
 
 export function recoveryQueryConclusion(state: string) {
   if (state === "NOT_FOUND") return "not-found";

@@ -115,7 +115,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
             {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
             {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
             {!item.expired && item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
-            {item.onRelease && <Button size="sm" onClick={item.onRelease}>解除原操作记录</Button>}
+            {item.onRelease && <Button size="sm" onClick={item.onRelease}>核实后解除</Button>}
             {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
           </span>}>
           <p>{item.body}</p>
@@ -706,7 +706,7 @@ export default function RiskRadarPage() {
           <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
             action={<span className="b5-row-actions">
               <Button size="sm" onClick={() => openThreshold()}>查询原操作</Button>
-              {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>解除原操作记录</Button>}
+              {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>核实后解除</Button>}
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
@@ -798,7 +798,7 @@ export default function RiskRadarPage() {
             onClose={() => setThreshold(null)}
             footer={<>
               <Button disabled={savingThreshold} onClick={() => setThreshold(null)}>取消</Button>
-              {approvalRecovery && approvalReleasable && <Button disabled={savingThreshold} onClick={() => { setThreshold(null); setReleasingApproval(true); }}>解除原操作记录</Button>}
+              {approvalRecovery && approvalReleasable && <Button disabled={savingThreshold} onClick={() => { setThreshold(null); setReleasingApproval(true); }}>核实后解除</Button>}
               {approvalRecovery && <Button variant={lookupOnly ? "primary" : "secondary"} loading={savingThreshold && lookupOnly} loadingText="查询中…" disabledReason={undefined} onClick={() => void submitThreshold(true)}>查询原操作</Button>}
               {!lookupOnly && <Button variant="primary" loading={savingThreshold} loadingText="提交中…" disabledReason={canSubmitThreshold ? undefined : blocked ?? "暂不能提交"} onClick={() => void submitThreshold()}>{submitLabel}</Button>}
             </>}>

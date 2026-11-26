@@ -10,6 +10,7 @@ import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass, RotateCcw } from "lucide-react";
 import { Button, Change, Decision, Fact, Facts, KeepText, Modal, Notice, StatusTag } from "@/app/components/rd";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { recoveryTitle } from "../recovery-panel";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -33,7 +34,7 @@ const UNIT: Record<string, string> = { purchaseL1Rate: "%", purchaseL2Rate: "%",
 const thresholdText = (field: string, raw: string | undefined) => raw === undefined || raw === "" ? "—" : raw === "NONE" ? "未设置" : `${formatF1ExactAmount(raw)}${UNIT[field] ?? ""}`;
 
 function stateTag(state: State, direct: boolean, canRetryProposal: boolean) {
-  if (state === "settled") return <StatusTag tone="neutral">原操作未执行</StatusTag>;
+  if (state === "settled") return <StatusTag tone="neutral">未执行</StatusTag>;
   if (state === "pending") return <StatusTag tone="warn" icon={Clock3} explain="在「操作记录与审批」等批准；批准前不生效。">待审批</StatusTag>;
   if (state === "received") return <StatusTag tone="warn" icon={CircleHelp} explain="原申请建过单，批没批准还没查到。继续查询原操作，不要重新提交。">已建单，未查到</StatusTag>;
   if (state === "expired") return <StatusTag tone="neutral" icon={Hourglass} explain={RETRY_EXPIRED_TEXT}>已过期</StatusTag>;
@@ -202,7 +203,7 @@ export function F1RecoveryNotice({ ctx, onOpenPolicy, onRankHowChecked, continue
     finally { setBusy(false); }
   };
   return <>
-    <div className="f1-recovery-wrap"><Notice tone="warn" title={open ? `逐条核对原操作（${rows.length} 项）` : `等批准的申请（${rows.length} 项）`}>
+    <div className="f1-recovery-wrap"><Notice tone="warn" title={recoveryTitle(rows.filter((row) => row.state === "unknown" || row.state === "expired").length, rows.filter((row) => row.state === "pending").length, rows.filter((row) => row.state === "settled").length, 0, rows.filter((row) => row.state === "received").length) || "原操作内容不完整"}>
       {policyBroken && <p>有一条门槛或奖励的原操作内容不完整，请到「操作记录与审批」核对。</p>}
       {rows.length > 0 && <ul className="f1-recovery" aria-label="还没有结论的原操作">
         {rows.map((row) => <li key={row.key} data-recovery-state={row.state}>

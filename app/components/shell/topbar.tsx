@@ -45,7 +45,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
     if (!canChangeAvatar) return;
     const read = () => {
       const record = selfAvatarCommands.list().find((row) => row.actorId === adminId);
-      setAvatarPending(record ? record.acknowledged ? "已保存待核对" : "结果待确认" : null);
+      setAvatarPending(record ? record.acknowledged ? "已保存待核对" : "结果未知" : null);
     };
     read();
     window.addEventListener("m1-pending-changed", read);

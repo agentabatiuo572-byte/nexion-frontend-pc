@@ -1374,7 +1374,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       actions: <>
         <Button size="sm" disabledReason={mutatingAction || busy ? "正在核对原操作，请稍候。" : undefined} onClick={() => void queryOriginal(record).catch(error => toast(errorMessage(error)))}>查询原操作</Button>
         {!record.ticket && !record.received && !expired && !replayRejection && capability !== "readback" && <Button size="sm" disabledReason={mutatingAction ? "正在提交，请稍候" : retryBlock} onClick={() => restoreOperation(record)}>按原操作重试</Button>}
-        {replayRejection && <Button size="sm" disabled={!!busy} onClick={() => confirmLocalRelease(record, name, () => a1Recovery.releaseRejectedReplay(record))}>解除原操作记录</Button>}
+        {replayRejection && <Button size="sm" disabled={!!busy} onClick={() => confirmLocalRelease(record, name, () => a1Recovery.releaseRejectedReplay(record))}>核实后解除</Button>}
       </>,
     };
   });
@@ -1415,7 +1415,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           disabledReason={!overviewReady || governanceFrozen ? errorMessage(new Error("A1_FRESH_OVERVIEW_REQUIRED")) : pendingReplayReason(status, errorMessage(new Error("A1_OPERATION_FORBIDDEN")))}
           onClick={open}>按原操作重试</Button>}
         {status.replayRejection && <Button size="sm" disabled={!!status.busy}
-          onClick={() => confirmLocalRelease(record, record.label, () => qualificationRecovery.releaseRejectedReplay(record))}>解除原操作记录</Button>}
+          onClick={() => confirmLocalRelease(record, record.label, () => qualificationRecovery.releaseRejectedReplay(record))}>核实后解除</Button>}
       </>,
     });
   }
@@ -1460,7 +1460,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           })().catch(error => toast(errorMessage(error)))}>按原操作重试</Button>
           : <Button size="sm" disabledReason={avatarRetryBlock} onClick={() => setAvatarRecovery(target)}>处理原头像</Button>)}
         {replay.replayRejection && <Button size="sm" disabled={!!replay.busy} onClick={() => confirmLocalRelease(cancellation ?? draft, name, () => cancellation
-          ? a1AvatarCancellationRecovery.releaseRejectedReplay(cancellation) : a1AvatarPreparationRecovery.releaseRejectedReplay(draft))}>解除原操作记录</Button>}
+          ? a1AvatarCancellationRecovery.releaseRejectedReplay(cancellation) : a1AvatarPreparationRecovery.releaseRejectedReplay(draft))}>核实后解除</Button>}
       </>,
     });
   }

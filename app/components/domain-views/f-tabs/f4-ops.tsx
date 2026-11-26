@@ -181,7 +181,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change: proposal ? `${proposal.before} → ${proposal.after}` : "大使申请规则",
       submittedAt: original.createdAt,
       settled: true,
-      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      tag: <StatusTag tone="neutral">未执行</StatusTag>,
       actions: quotaReady || current ? <Button size="sm" onClick={async () => {
         if (quotaReady) { setQuotaDraft(original as FDomainAttempt); return; }
         if (!current || !snapshot || !current.f4Snapshot) return;
@@ -220,7 +220,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
       change: `材料第 ${original.input.expectedMaterialRevision} 版 · ${original.input.decision === "PASSED" ? "通过" : "需补材料"}`,
       submittedAt: original.createdAt,
       settled: true,
-      tag: <StatusTag tone="neutral">原操作未执行</StatusTag>,
+      tag: <StatusTag tone="neutral">未执行</StatusTag>,
       actions: application && <Button size="sm" onClick={() => { setSection("quota"); setMaterialApplication(application); }}>打开申请</Button>,
     });
   }

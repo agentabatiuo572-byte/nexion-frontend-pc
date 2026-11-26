@@ -471,17 +471,36 @@ export function ReleaseModal({ label, explain, onCancel, onConfirm }: { label: R
   return (
     <Modal title="解除原操作记录" icon={ShieldCheck} dirty={verified} onClose={onCancel} footer={<>
       <Button onClick={onCancel}>取消</Button>
-      <Button variant="primary" disabledReason={verified ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={onConfirm}>确认解除</Button>
+      <Button variant="primary" disabledReason={verified ? undefined : RELEASE_CHECK_REASON} onClick={onConfirm}>确认解除</Button>
     </>}>
       <ReleaseBody label={label} explain={explain}>
-        <Check label="我已核实原操作的结果" checked={verified} onChange={(event) => setVerified(event.target.checked)} />
+        <Check label={RELEASE_CHECK_LABEL} checked={verified} onChange={(event) => setVerified(event.target.checked)} />
       </ReleaseBody>
     </Modal>
   );
 }
 
+/** 解除前的勾选，全站一句话：ReleaseModal、恢复行上「核实后解除」打开的框和原位解除框都用它。 */
+export const RELEASE_CHECK_LABEL = "我已核实原操作的结果";
+export const RELEASE_CHECK_REASON = `请先勾选「${RELEASE_CHECK_LABEL}」`;
+
 /**
- * ReleaseModal 的正文。原操作本来就开在一个弹窗里时，在同一个框里换成这块（标题「解除原操作记录」、盾牌图标、底栏「返回」「确认解除」），
+ * 原位解除框（同一个框换成 ReleaseBody）的勾选，和 ReleaseModal 同一个写法：check 放进正文最后，「确认解除」的不可用原因用 reason，框的 dirty 带上 verified。
+ * open 传这次要解除的记录（或 true）；关掉（falsy）或换了一条，勾选就清掉。
+ */
+export function useReleaseCheck(open: unknown) {
+  const [state, setState] = useState({ open, verified: false });
+  if (state.open !== open) setState({ open, verified: false });
+  const verified = !!open && state.open === open && state.verified;
+  return {
+    verified,
+    reason: verified ? undefined : RELEASE_CHECK_REASON,
+    check: <Check label={RELEASE_CHECK_LABEL} checked={verified} onChange={(event) => setState({ open, verified: event.target.checked })} />,
+  };
+}
+
+/**
+ * ReleaseModal 的正文。原操作本来就开在一个弹窗里时，在同一个框里换成这块（标题「解除原操作记录」、盾牌图标、底栏「返回」「确认解除」，勾选用 useReleaseCheck），
  * 不在框上再叠一个框（PG-38）。
  */
 export function ReleaseBody({ label, explain, children }: { label: ReactNode; explain?: ReactNode; children?: ReactNode }) {

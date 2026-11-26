@@ -68,8 +68,8 @@ export function expiredTag(kind: "direct" | "approval") {
     : "已超过 24 小时，不能再重试，只能查询原审批单。查不到也说明不了没提交。"}>已过期</StatusTag>;
 }
 
-export function resolvedTag(status: "approved" | "rejected" | "withdrawn") {
-  const label = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回" }[status];
+export function resolvedTag(status: "approved" | "rejected" | "withdrawn" | "expired") {
+  const label = { approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[status];
   return <StatusTag tone="done" explain="原审批单已有结论。点「查询原操作」，读到现在的值后这条记录会清掉。">{label}</StatusTag>;
 }
 
