@@ -902,9 +902,12 @@
 .e1-catalog-groups { display: grid; gap: var(--rd-section-gap); min-width: 0; }
 .e1-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: var(--rd-space-4); }
 .e1-product { --rd-track-w: 100%; display: flex; flex-direction: column; gap: var(--rd-space-2); min-width: 0; padding: var(--rd-space-3); background: var(--rd-panel); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-panel); color: var(--rd-text); }
-/* 卡片底色跟着商城状态走：在售（已过发布门）浅绿，已下架灰；草稿、上架受阻和待核实照常面板底。 */
+/* 卡片底色跟着商城状态走：在售（已过发布门）浅绿，已下架灰；草稿、上架受阻和待核实照常面板底。
+   有底色的卡里，没选的任务等级格描边换成弱文字色，对底色仍有 3:1（VS-05）；已下架卡的图片底换面板色，不和卡底混在一起。 */
 .e1-product[data-status="on"]:not([data-blocked]) { background: var(--rd-ok-bg); }
-.e1-product[data-status="off"] { background: var(--rd-done-bg); }
+.e1-product[data-status="off"] { background: var(--rd-done-pill); }
+:is(.e1-product[data-status="on"]:not([data-blocked]), .e1-product[data-status="off"]) .rd-levelstrip-cell:not([data-on]) > i { box-shadow: inset 0 0 0 1px var(--rd-text-3); }
+.e1-product[data-status="off"] .e1-product-media { background: var(--rd-panel); }
 .e1-product[data-hit] { border-color: var(--rd-progress); }
 .e1-product-identity { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: var(--rd-space-3); }
 .e1-product-media { position: relative; width: 64px; height: 64px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
@@ -987,7 +990,7 @@
 .e1-product-conditions > :is(.e1-card-warning, .e1-card-note):empty { display: none; }
 /* 卡片细节：带标签的小标题行和不带的等高；「售罄」和剩余数分开；购买条件图标和字同一行；受阻原因不折出孤字。 */
 .e1-product-levels > .e1-value-line { align-items: center; min-height: var(--rd-lh-body); }
-.e1-product-stock > .e1-value-line > .e1-muted { display: inline-flex; align-items: center; gap: var(--rd-space-2); white-space: nowrap; }
+.e1-product-stock > .e1-value-line > .e1-val { white-space: nowrap; }
 .e1-gate-trigger { display: inline-flex; align-items: center; gap: var(--rd-space-1); white-space: nowrap; }
 .e1-gate-trigger > svg { flex: none; }
 /* 审批状态抽屉底栏：两个按钮和链接靠左成一组，留间距。 */
