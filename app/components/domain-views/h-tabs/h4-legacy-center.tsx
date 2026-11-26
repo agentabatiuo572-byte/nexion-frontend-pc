@@ -1703,7 +1703,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
           {[pointsTiers.length ? `${pointsTiers.map((tier) => text(tier.tier)).join("、")} 是积分奖型，已停用：点「退役」后补足概率。` : "",
             probabilityOk ? "" : `概率合计 ${percentText(probabilitySum)}%，要在「调整概率」里补到 100%。`].filter(Boolean).map((line) => <p key={line}>{line}</p>)}
         </Notice>}
-        {wheelDailyUsageError && <Notice tone="warn" title="今天的用量没读到" action={<Button size="sm" onClick={() => void reloadWheelUsage()}>重试</Button>}>{wheelDailyUsageError} 已用次数和今天已发先显示「—」，不是 0；奖池其他内容照常。</Notice>}
+        {wheelDailyUsageError && <Notice tone="warn" title="今日用量加载失败" action={<Button size="sm" onClick={() => void reloadWheelUsage()}>重试</Button>}>{wheelDailyUsageError} 已用次数和今天已发先显示「—」，不是 0；奖池其他内容照常。</Notice>}
         <div className="h4l-wheel-figure">
           <WheelBar tiers={tiers} />
           <div className="h4l-wheel-foot"><WheelLegend /><span className="h4l-sum" data-tone={probabilityOk ? undefined : "danger"}>合计 <b className="h4-num">{percentText(probabilitySum)}%</b>{probabilityOk ? "" : " · 不等于 100%"}</span></div>
