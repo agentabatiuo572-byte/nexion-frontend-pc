@@ -10,6 +10,7 @@ import Link from "next/link";
 import { ChevronRight, ListChecks } from "lucide-react";
 import { BlockState, Button, Notice, Panel, StatusTag } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { fmtNum } from "@/lib/format";
 import { B5_PATH, isRiskConclusion, RISK_SEVERITIES, scoreAccountsHref, type RiskFeedItem, type RiskSev } from "@/lib/admin/risk-feed";
 import { SEVERITY } from "./insights";
 
@@ -50,8 +51,8 @@ export type RiskCategoriesState =
 const DEST: Record<RiskCategoryRow["kind"], string> = { signal: "下方名单", score: "风险评分规则", fund: "上方提现压力" };
 
 export function riskCategoryTitle(row: RiskCategoryRow) {
-  if (row.kind === "signal") return `${row.name} ${row.count} 条 · 涉及 ${row.accountCount} 个账户`;
-  return row.count === undefined ? row.name : `${row.name} ${row.count} 个账户`;
+  if (row.kind === "signal") return `${row.name} ${fmtNum(row.count)} 条 · 涉及 ${fmtNum(row.accountCount)} 个账户`;
+  return row.count === undefined ? row.name : `${row.name} ${fmtNum(row.count)} 个账户`;
 }
 
 export function riskCategoryRows(feed: readonly RiskFeedItem[], reach: (href: string) => boolean) {

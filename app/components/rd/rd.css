@@ -1043,7 +1043,7 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 :root[data-theme="light"] .rd-fact[data-lead][data-tone^="role-"] dd { color: var(--rd-text); }
 .rd-fact-unit { margin-left: 4px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; color: var(--rd-text-3); }
 .rd-fact[data-lead] .rd-fact-unit { font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }  /* 跟在大字后面的「个」13px 时读成箭头；和 DiffField 的单位同档 */
-:is(.rd-fact, .rd-point-value, .rd-point-reason, .rd-recipients) [data-mono] { font-family: var(--rd-font-mono); overflow-wrap: anywhere; }
+:is(.rd-fact, .rd-point-reason, .rd-recipients) [data-mono] { font-family: var(--rd-font-mono); overflow-wrap: anywhere; }
 
 /* ── 流程示意 ── */
 .rd-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--rd-text-3); }

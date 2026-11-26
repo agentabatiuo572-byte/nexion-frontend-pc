@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import { AlertTriangle, CalendarRange, Clock3, Info, ShieldAlert, TrendingUp, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CalendarRange, CircleDashed, CircleDot, Clock3, Info, ShieldAlert, TrendingUp, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, ColumnChart, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Panel, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, TrendLines,
   type DrawerNav, type JudgmentRow,
@@ -17,7 +17,7 @@ import type { StateTone } from "@/app/components/rd";
 import type { B5InboxItem, B5Radar } from "@/lib/admin/b5-client";
 import type { B5Signal } from "@/lib/admin/b5-radar-contract";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import type { SignalCategory } from "@/lib/admin/risk-feed";
+import { TAMPER_SIGNAL_TYPE, type SignalCategory } from "@/lib/admin/risk-feed";
 import { b5AmountDigits, b5AmountText } from "@/lib/admin/b5-money";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { summarizePressureHistory } from "@/lib/admin/b5-pressure-summary";
@@ -110,7 +110,9 @@ const usdt = (value: string) => `${b5AmountText(value, b5AmountDigits([value]))}
 
 /** 后端把这两类归在「其他风险信号」里；类型明确时换成运营的叫法，其余照后端给的类别。 */
 const TYPE_NAME: Record<string, string> = { user_frozen: "账户冻结", d1_chargeback_shortfall: "拒付追回有差额" };
-export const signalName = (alert: SignalRow) => alert.categoryName ?? ((alert.signalType && TYPE_NAME[alert.signalType.toLowerCase()]) || alert.message);
+/** 篡改大类里，真实拦截记录（精确类型 TAMPER_DETECTED）叫「篡改拦截」，和今日概览、篡改防御监控同名；手工登记的篡改类用后端的类别名。 */
+export const signalName = (alert: SignalRow) => alert.signalType?.toUpperCase() === TAMPER_SIGNAL_TYPE ? "篡改拦截"
+  : alert.categoryName ?? ((alert.signalType && TYPE_NAME[alert.signalType.toLowerCase()]) || alert.message);
 
 type SignalFact = { k: string; v: ReactNode };
 /**
@@ -153,8 +155,8 @@ export function signalFacts(alert: SignalRow): { line: string | null; tech: Sign
   return { line: parts.length ? parts.join(" · ") : null, tech };
 }
 
-/** 篡改类：有被拦入口这一项（后端没记时写「未记录」）。 */
-export const isTamper = (alert: SignalRow) => alert.category === "TAMPER" || alert.facts?.tamperPath !== undefined || /tamper/i.test(alert.signalType ?? "");
+/** 篡改拦截（精确类型 TAMPER_DETECTED，或带篡改项的旧记录）：有被拦入口和拦截时间，没记下时写「未记录」「拦截 —」。人工登记的篡改类没经过拦截，不写这两项。 */
+export const isTamper = (alert: SignalRow) => alert.signalType?.toUpperCase() === TAMPER_SIGNAL_TYPE || alert.facts?.tamperPath !== undefined;
 
 /** 已解决的行级别标签用灰（VS-24），待处理、已处理照常上色。 */
 export const levelTone = (alert: SignalRow): StateTone => (alert.handlingStatus === "resolved" ? "done" : SEVERITY[alert.level].tone);
@@ -163,7 +165,7 @@ export const levelTone = (alert: SignalRow): StateTone => (alert.handlingStatus 
  * 「去处理」只给后端分诊目标和这一类相符的：多账户、套利或刷量、提现、篡改。
  * 账户冻结、拒付追回有差额、其他风险信号的后端目标是风险评分规则页，和这类事无关，不显示（OpsRiskRadarService.java:318–337）。
  */
-const CATEGORY_TARGETS: Partial<Record<SignalCategory, string>> = {
+export const CATEGORY_TARGETS: Partial<Record<SignalCategory, string>> = {
   MULTI_ACCOUNT: "/risk/multi-account",
   ABUSE: "/risk/abuse",
   WITHDRAW: "/finance/withdrawals",
@@ -235,16 +237,27 @@ export function AlertDistribution({ data }: { data: B5Radar }) {
 /** 处理人和处理时间：只有标过进度的信号才有；没标过的不占位。 */
 const handlerText = (alert: SignalRow) => alert.handledBy ? maskAuditActor(alert.handledBy) : null;
 
-const HANDLING_ICON: Record<Alert["handlingStatus"], LucideIcon | undefined> = { open: Clock3, handled: undefined, resolved: undefined };
+/** 进度图标写明，名单筛成一种进度、颜色换成灰时图标不变（VS-21）。 */
+const HANDLING_ICON: Record<Alert["handlingStatus"], LucideIcon> = { open: Clock3, handled: CircleDashed, resolved: CircleDot };
+
+/**
+ * 「真正去哪办」（design-plan 板 2「单条怎么处置」）：排查去处只写这个账号在「去处理」里点得开的页（ST-58、ST-62），
+ * 冻结、解冻按「账户操作」的权限写；两件事各自判断。结果核对按「操作记录与审批」的权限另写一句。
+ */
+export function handlingHint(page: string | null, canFreeze: boolean) {
+  const freeze = canFreeze ? "冻结、解冻到「账户操作」办。" : "冻结、解冻要由有「账户操作」权限的同事办。";
+  return page ? `排查到「${page}」，${freeze}` : freeze;
+}
 
 /** 名单和抽屉里同一个「去处理」：能记分诊的先记再跳；目标页进不了写「{页名} · 无权限」（ST-58）。 */
-function TriageLink({ alert, reach, canTriageTarget, onTriage, triageState, actionBlocked, button }: {
+function TriageLink({ alert, reach, canTriageTarget, onTriage, triageState, blocked: actionBlocked, button }: {
   alert: SignalRow;
   reach: (path: string) => boolean;
   canTriageTarget: (path: string) => boolean;
   onTriage: (path: string) => boolean;
   triageState: (path: string) => "active" | "blocked" | undefined;
-  actionBlocked?: string;
+  /** 名单或详情没读好时不能去处理：去处理自己的一句原因。 */
+  blocked?: string;
   /** 抽屉底部用按钮的样子。 */
   button?: "primary" | "secondary";
 }) {
@@ -264,16 +277,21 @@ function TriageLink({ alert, reach, canTriageTarget, onTriage, triageState, acti
   );
 }
 
-export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, freezeHint, actionBlocked, pendingSignalNos, updating, reach, canTriageTarget, selected, onOpen, onTriage, triageState, onStatus }: {
+export function SignalsTable({ alerts, showBlocked = false, singleStatus = false, loadingRows, empty, canTriage, handlingHint, actionBlocked, triageBlocked, pendingSignalNos, updating, reach, canTriageTarget, selected, onOpen, onTriage, triageState, onStatus }: {
   alerts: readonly SignalRow[];
   /** 名单筛成篡改风险时多一列被拦入口。 */
   showBlocked?: boolean;
+  /** 名单已按一种进度筛：进度是这张表的默认状态，灰字加图标，颜色留给级别（VS-21）。 */
+  singleStatus?: boolean;
+  /** 换条件或翻页读取中：留表头，按上次的行数占位（ST-32）。 */
+  loadingRows?: number;
   /** 没有行时写什么：为什么空、下一步去哪（ST-33）。 */
   empty: ReactNode;
   canTriage: boolean;
-  /** 进度表头问号里冻结、解冻去哪办，按账号权限写（design-plan 板 2、risk5 核文字）。 */
-  freezeHint: string;
+  /** 进度表头问号里真正去哪办，按账号权限写（design-plan 板 2）。 */
+  handlingHint: string;
   actionBlocked?: string;
+  triageBlocked?: string;
   pendingSignalNos: ReadonlySet<string>;
   updating: string;
   reach: (path: string) => boolean;
@@ -292,10 +310,10 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, fr
           <tr>
             <Th>级别 · 风险信号</Th>
             <Th>处理进度 · 发送 <Explain label="处理进度和发送状态" content={<>
-              <p>待处理 → 已处理 → 已解决，只能按顺序往前推。标记只记录进度，不会解除风控、不会放行提现。{freezeHint}</p>
+              <p>待处理 → 已处理 → 已解决，只能按顺序往前推。标记只记录进度，不会解除风控、不会放行提现。{handlingHint}</p>
               <p>标过进度的写最近一次是谁标的。第二行是这条信号最近一次的发送状态，不一定是发给你的。</p>
             </>} /></Th>
-            {showBlocked && <Th>被拦入口 <Explain label="被拦入口的说明" content="系统在哪一步拦下了这次篡改，后端没记的写「未记录」。" /></Th>}
+            {showBlocked && <Th>被拦入口 <Explain label="被拦入口的说明" content="系统在哪一步拦下了这次篡改。没记下入口的写「未记录」，人工登记、没经过拦截的写「—」。" /></Th>}
             <Th>记录时间（{businessZone().label}）</Th>
             <Th>去处理 <Explain label="去处理的说明" content={<>
               <p>能记分诊的链接，点一下先记一条分诊记录再打开；没记上就留在这页，重新点一次。按住 Ctrl／Cmd 或用中键点，在新标签打开，不记分诊。</p>
@@ -305,7 +323,7 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, fr
           </tr>
         </thead>
         <tbody>
-          {alerts.length === 0 ? <TableMessage columns={columns}>{empty}</TableMessage> : alerts.map((alert) => {
+          {loadingRows !== undefined ? <TableLoading columns={columns} rows={loadingRows} /> : alerts.length === 0 ? <TableMessage columns={columns}>{empty}</TableMessage> : alerts.map((alert) => {
             const next = alert.handlingStatus === "open" ? "handled" : alert.handlingStatus === "handled" ? "resolved" : null;
             const { line } = signalFacts(alert);
             const handler = handlerText(alert);
@@ -317,11 +335,11 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, fr
                   main={<><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag><span className="b5-signal-name">{signalName(alert)}</span>{line && <span className="b5-signal-fact"> · {line}</span>}</>}
                   sub={<>用户 <span data-mono>{user}</span> · <SignalNo value={alert.signalNo} /></>} /></Td>
                 <Td><Cell title={handler ? `${handler}${alert.handledAt ? ` · ${stamp(alert.handledAt)}` : ""}` : undefined}
-                  main={<><StatusTag tone={HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>{handler && <span className="b5-handler">{handler}</span>}</>}
+                  main={<><StatusTag tone={singleStatus ? "neutral" : HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>{handler && <span className="b5-handler">{handler}</span>}</>}
                   sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
-                {showBlocked && <Td><Cell main={alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span>} /></Td>}
+                {showBlocked && <Td><Cell main={isTamper(alert) ? alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span> : <span className="b5-muted">—</span>} /></Td>}
                 <Td><Cell num main={stamp(alert.createdAt)} sub={alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)}` : isTamper(alert) ? "拦截 —" : undefined} /></Td>
-                <Td>{canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} actionBlocked={actionBlocked} />}</Td>
+                <Td>{canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} />}</Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
                     {next && (
@@ -343,7 +361,7 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, fr
  * 一条风险信号的详情：开头 5 行判断要点（是什么事、被拦入口、哪个账户、什么时候、处理到哪），排查用的原文收进「技术信息」，
  * 决定按钮固定在底部（OP-149、OP-150）。去处理和标记进度用名单里同一套处理。
  */
-export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actionBlocked, pendingWrite, userHref, actionsHref, updating, reach, canTriageTarget, onClose, onTriage, triageState, onStatus, readLoading, readError, staleNotice, onRetry }: {
+export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actionBlocked, triageBlocked, pendingWrite, userHref, actionsHref, updating, reach, canTriageTarget, onClose, onTriage, triageState, onStatus, readLoading, readError, staleNotice, onRetry }: {
   alert: SignalRow | null;
   readLoading: boolean;
   readError: string | null;
@@ -357,6 +375,7 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actio
   /** 能看「操作记录与审批」：不能时问号里写结果未知时找谁核对。 */
   canAudit: boolean;
   actionBlocked?: string;
+  triageBlocked?: string;
   pendingWrite: boolean;
   /** 用户编号去用户详情、「查看账户操作」去账户操作的地址；目标进不了不传，只显示编号。 */
   userHref?: string;
@@ -380,7 +399,7 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actio
   const rows: JudgmentRow[] = [
     { label: "是什么事", value: `${signalName(alert)}${line ? ` · ${line}` : ""}`, reason: alert.facts?.attackEffectSummary },
     ...(isTamper(alert) ? [{ label: "被拦入口", value: alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span> }] : []),
-    { label: "哪个账户", value: <>{userHref ? <Link className="rd-link" href={userHref} prefetch={false} data-mono="">{user}</Link> : <span data-mono>{user}</span>}
+    { label: "哪个账户", value: <>{userHref ? <Link className="rd-link b5-mono" href={userHref} prefetch={false} data-mono="">{user}</Link> : <span className="b5-mono" data-mono>{user}</span>}
       {actionsHref && <> · <Link className="rd-link" href={actionsHref} prefetch={false}>查看账户操作</Link></>}</> },
     { label: "什么时候", value: `记录 ${stamp(alert.createdAt)}`, reason: alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)} · ${businessZone().label}` : isTamper(alert) ? `拦截 — · ${businessZone().label}` : businessZone().label },
     { label: "处理到哪", value: <><StatusTag tone={HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>
@@ -388,19 +407,21 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actio
       reason: `最近一次发送：${deliveryStatusText(alert.deliveryStatus)}` },
   ];
   const triageShown = canTriage && !!target && canTriageTarget(target);
+  // 底部只在有决定时出现：能标记，或「去处理」有一格（链接或「· 无权限」）。已解决且没有排查页、或只读账号，没有要决定的事，不留一个孤零零的问号（OP-150）。
+  const hasDecision = canTriage && (!!next || (!!target && (!reach(target) || canTriageTarget(target))));
   const unread = !staleNotice && (readLoading || readError);
   return (
     <Drawer open onClose={onClose} title={signalName(alert)} icon={level.icon} tone={levelTone(alert)} nav={nav}
       sub={<><span className="rd-drawer-ref" data-mono>{alert.signalNo}</span><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></>}
-      footer={!unread && <Decision explain={<>
+      footer={!unread && hasDecision && <Decision explain={<>
         <p>标记为「{next === "resolved" ? "已解决" : "已处理"}」只记录进度，不会解除风控，也不会放行提现。</p>
-        <p>{canFreeze ? `冻结、解冻到「账户操作」办${triageShown ? `；排查到「${page}」看。` : "。"}` : "冻结、解冻要由有「账户操作」权限的同事办。"}</p>
+        <p>{handlingHint(triageShown ? page : null, canFreeze)}</p>
         {!canAudit && canTriage && <p>你标记后结果未知时，请有「操作记录与审批」查看权限的同事按原操作核对。</p>}
       </>}
-        others={canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} actionBlocked={actionBlocked} button={next ? "secondary" : "primary"} />}
+        others={canTriage && <TriageLink alert={alert} reach={reach} canTriageTarget={canTriageTarget} onTriage={onTriage} triageState={triageState} blocked={triageBlocked} button={next ? "secondary" : "primary"} />}
         primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} disabledReason={actionBlocked ?? (pendingWrite ? "请先核对这条的原操作" : undefined)} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
       {staleNotice}
-      {unread ? <BlockState state={readError ? "error" : "loading"} title={readError ? "风险信号详情加载失败" : "正在加载风险信号详情…"} detail={readError ?? undefined} onRetry={readError ? onRetry : undefined} /> : <>
+      {unread ? <BlockState compact state={readError ? "error" : "loading"} title={readError ? "风险信号详情加载失败" : "正在加载风险信号详情…"} detail={readError ?? undefined} onRetry={readError ? onRetry : undefined} /> : <>
       <JudgmentPoints rows={rows} />
       <Fold inset title="技术信息" summary={`${tech.length} 项，排查时用`}>
         <div className="rd-fold-flush">
