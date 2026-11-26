@@ -718,13 +718,11 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
   // 审批看不到或没读到时只说能确定的，不把未知当成没有（T09）。
   const queueUnknown = !canQueue || queueFailed || !queueRead;
   const queueLimit = queueUnknown ? (!canQueue ? "这个账号看不到待审批" : queueRead ? "待审批没读到" : "待审批还在读取") : undefined;
-  const unconfirmed = writes.unconfirmed((target) => target === "gate" || target.startsWith("jur:"));
   // 兑换受限是全平台阻断，比版本状态要紧：写进结论，版本状态挪到第二行（VS-23）。
   const exchangeAlso = exchangeRestricted ? "风险披露闸门也在阻断兑换" : undefined;
   const versionNote = unmapped.length ? `${unmapped.length} 个启用的适用范围还没有生效版本：${unmapped.map((item) => item.code).join("、")}` : effectiveCount === 0 ? "还没有适用范围配置生效版本" : undefined;
-  const conclusion = unconfirmed > 0 && !issues.size
-    ? <Conclusion state="warn" action={headActions} hint={exchangeAlso ? `到页面上方处理。${exchangeAlso}。` : "到页面上方处理。"}><b>{unconfirmed}</b> 项操作结果未知</Conclusion>
-    : issues.size
+  // 结果未知只在页面上方的恢复面板说（OP-93 第 1 项），结论句按版本状态写，不再写一遍（DT-12）。
+  const conclusion = issues.size
     ? <Conclusion state="danger" icon={ShieldAlert} action={headActions} hint={[todoHint, exchangeAlso].filter(Boolean).join(" · ") || undefined}><b>{issues.size}</b> 个适用范围的生效版本有问题，App 可能读不到披露</Conclusion>
     : exchangeRestricted
     ? <Conclusion state="warn" icon={ShieldAlert} action={headActions}

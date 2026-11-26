@@ -235,10 +235,11 @@ export function fullTitle(element: HTMLSpanElement | null) {
 /**
  * 行上常显的提交时间（OP-93 第 1 项）：写在结论句前面，对象一格放不下会被省略号截掉。资金面板的行也用它（同一个样子）。
  * 调用方的句子里已经写了同一个时间的（导出记录「… 发出后没收到结果」），不再写第二遍。时区在面板标题旁写一次（TX-25）。
+ * 没记下时间的旧记录，时间的位置写「—」（TX-26），不留空。
  * verb：时间后面的动词，消息写「发出」，其余「提交」。
  */
 export function sentLine(createdAt: number | undefined, line: string, verb = "提交") {
-  if (createdAt === undefined) return line;
+  if (createdAt === undefined) return line ? `— ${verb}，${line}` : `— ${verb}`;
   const stamp = businessStamp(createdAt);
   if (line.includes(stamp)) return line;
   return line ? `${stamp} ${verb}，${line}` : `${stamp} ${verb}`;
@@ -248,7 +249,7 @@ export type RecoveryItem = {
   key: string;
   /** 操作和对象，一行写得下。 */
   object: ReactNode;
-  /** 发出时间：常显在这一行的结论句前面；两分钟内发出的新记录排到最前（见 useFreshFirst）。 */
+  /** 发出时间：常显在这一行的结论句前面，旧记录没有时写「—」；两分钟内发出的新记录排到最前（见 useFreshFirst）。 */
   createdAt?: number;
   /** 状态标签（StatusTag），六个字以内。 */
   tag: ReactNode;

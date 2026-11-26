@@ -44,7 +44,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, b5Recovery, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
 import { bThresholdRecovery, discardThresholdRecoveryDraft, pendingThresholdConfigApproval, submitB5ThresholdApproval, thresholdRecoveryDrafts } from "@/lib/admin/withdrawal-config-approval";
-import { businessZone, formatBusinessTimeCompact, formatBusinessTimeFull } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
@@ -178,6 +178,7 @@ export default function RiskRadarPage() {
   const [reason, setReason] = useState("");
   const [preview, setPreview] = useState<(NonNullable<B5ThresholdFacts["preview"]> & { key: string }) | null>(null);
   const [previewError, setPreviewError] = useState("");
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [thresholdError, setThresholdError] = useState("");
   const [otherThresholdChanges, setOtherThresholdChanges] = useState<string[]>([]);
   const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(null);
@@ -420,7 +421,7 @@ export default function RiskRadarPage() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [canThreshold, newWriteBlocked, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct]);
+  }, [canThreshold, newWriteBlocked, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, previewAttempt]);
 
   const subscriptionChannelsChanged = useMemo(
     () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
@@ -1023,6 +1024,10 @@ export default function RiskRadarPage() {
         const outcome = recovering ? (thresholdOriginal?.facts ?? threshold).preview : previewReady ? currentPreview : null;
         const sameReading = outcome?.ratio24h === pressure.ratio24h;
         const sameDecision = sameReading && outcome?.light === pressure.light;
+        const pct = (value: number | null) => value === null ? "暂无法计算" : ratioPct(value);
+        const lightTag = (light: typeof pressure.light) => <StatusTag tone={light === "red" ? "danger" : light === "yellow" ? "warn" : light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(light)}</StatusTag>;
+        const readAt = (at: string | null | undefined, zone: boolean) => outcome && !sameReading && at
+          ? <span className="rd-keep">（{businessClock(parseBusinessTime(at))} 读到{zone ? `，${businessZone().label}` : ""}）</span> : null;
         const raising = redPct > threshold.redPct;
         const redDirection = !Number.isFinite(redPct) || redPct === threshold.redPct ? null : raising
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
@@ -1039,7 +1044,7 @@ export default function RiskRadarPage() {
         return (
           <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty={thresholdChanged || !!thresholdReason}
             sub={requiresApproval
-              ? <StatusTag tone="warn" icon={LockOpen} explain="提高红线要另一位超级管理员批准，自己不能批。批准前线被别人改过的，这张单会被拒。">批准后生效</StatusTag>
+              ? <StatusTag tone="progress" filled explain="提高红线要另一位超级管理员批准，自己不能批。批准前线被别人改过的，这张单会被拒。">批准后生效</StatusTag>
               : <StatusTag tone="progress" filled>立即生效</StatusTag>}
             onClose={() => setThreshold(null)}
             footer={<>
@@ -1050,7 +1055,6 @@ export default function RiskRadarPage() {
             </>}>
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
-              {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
               {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
                 ? approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原操作」；查不到时 24 小时内可以按原操作重试，不会建第二张单。"
                 : thresholdUnknown ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。" : thresholdError}</Notice>}
@@ -1064,16 +1068,18 @@ export default function RiskRadarPage() {
                 note={redDirection ? (raising ? "红线调高，自动暂停提现会更晚触发。" : "红线调低，自动暂停提现会更早触发，立即生效。") : undefined}>
                 {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
               </DiffField>
-              <p className="b5-preview" role="status">
-                {radarReadAt ? `${formatBusinessTimeFull(radarReadAt, "—")} 读到` : recovering ? "提交时的提现压力" : "现在的提现压力"} {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，
-                {sameDecision ? "按现在和新的线都标 " : `按${recovering ? "原" : "现在的"}线标「${formatB5RiskLight(pressure.light)}」。`}
-                {outcome ? <>
-                  {!sameDecision && `${formatBusinessTimeFull(outcome.readAt, "—")} ${sameReading ? "预览读数相同" : `按${recovering ? "提交前预览的" : "最新"}数据 ${outcome.ratio24h === null ? "暂无法计算" : ratioPct(outcome.ratio24h)}`}，`}
-                  {!sameDecision && "按新的线会标 "}
-                  <StatusTag tone={outcome.light === "red" ? "danger" : outcome.light === "yellow" ? "warn" : outcome.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(outcome.light)}</StatusTag>
-                </> : recovering ? null : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
-                {radarReadAt && `（${businessZone().label}）`}
-              </p>
+              {/* 两次读数各写一行，同一种说法：按哪条线、读到多少、标什么；读数不同才写各自的读取时间，时区跟第一个时间写一次（TX-25）。 */}
+              <div className="b5-preview" role="status">
+                {outcome && sameDecision
+                  ? <p>提现压力 {pct(pressure.ratio24h)}，按{recovering ? "原来" : "现在"}的线和新的线都标 {lightTag(outcome.light)}</p>
+                  : <>
+                    <p>按{recovering ? "原来" : "现在"}的线：{recovering && !radarReadAt ? "提交时" : ""}提现压力 {pct(pressure.ratio24h)}，标 {lightTag(pressure.light)}{readAt(radarReadAt, true)}</p>
+                    {outcome ? <p>按新的线：提现压力 {pct(outcome.ratio24h)}，会标 {lightTag(outcome.light)}{readAt(outcome.readAt, !radarReadAt)}</p>
+                      : !recovering && !previewError && <p>按新的线：{previewKey ? "正在计算…" : "填好两条线后显示会标什么"}</p>}
+                  </>}
+              </div>
+              {/* 预览只是读：失败时写成读取失败卡，原输入留着，只重读预览（ST-34、ST-35、OP-84）。 */}
+              {!recovering && previewError && <BlockState compact state="error" title="按新的线的预览加载失败" detail={previewError} onRetry={() => setPreviewAttempt(value => value + 1)} />}
               <Notice tone="neutral">
                 <p>和「紧急停用开关」共用，那边也跟着变。</p>
                 <p>两边看同一个提现压力，到红线那边自动暂停提现。</p>

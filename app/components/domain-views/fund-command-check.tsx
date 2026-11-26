@@ -34,7 +34,7 @@ export type FundRecoveryRow = {
   /** 支持查询的原记录；页面自己判断的记录（直接保存、待审批）不传。 */
   record?: FundCommandRecord;
   outcome?: FundInvestigationOutcome;
-  /** 发出时间；旧记录没有时不写。 */
+  /** 发出时间；旧记录没有时行上写「—」（TX-26）。 */
   createdAt?: number;
   expired: boolean;
   /** 现在这个账号能不能按原操作重试。 */

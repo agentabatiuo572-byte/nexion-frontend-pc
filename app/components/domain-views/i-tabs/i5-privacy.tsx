@@ -101,8 +101,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
   if (loading && !doc) return <Conclusion state="unknown">正在加载隐私政策…</Conclusion>;
 
   const conclusion = !doc ? null
-    : writes.isLocked("privacy") ? <Conclusion state="warn" hint="到页面上方处理。">隐私政策：有操作结果未知</Conclusion>
-      : doc.status === "PUBLISHED"
+    : doc.status === "PUBLISHED"
         ? <Conclusion state="ok" icon={FileCheck2} explain="中文、越南语用户看自己语言的版本，没有译文时看英语；其他语言的用户都看英语。">隐私政策：已发布，正文版本 {versionName(doc.version)}</Conclusion>
         : doc.status === "UNPUBLISHED"
           ? <Conclusion state="warn">隐私政策：已撤下公开版本，用户读不到</Conclusion>

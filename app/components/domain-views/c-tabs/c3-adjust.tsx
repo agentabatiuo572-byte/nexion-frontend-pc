@@ -1444,15 +1444,17 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           {refused && <Button size="sm" disabled={!!submitting} onClick={() => setReleasing(record)}>核实后解除</Button>}
         </>,
         detail: <p>
-          可能已经生效。
+          {/* 收起那一行已经写了「可能已经生效」时不再写（DT-12）。 */}
+          {refused || record.kind === "large" || expired ? "可能已经生效。" : ""}
           {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
         </p>,
-        tech: <p><Explain label="这次操作的技术信息" rows={[
-          { k: "操作编号", v: <span data-mono>{record.commandKey}</span> },
-          { k: "操作人", v: record.operator },
-          { k: "理由", v: record.reason ?? record.input?.reason },
-        ]}>技术信息</Explain></p>,
+        // 技术信息和商品管理、设备管理等页同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。
+        tech: <Fold inset title="技术信息" summary="操作编号、操作人和理由"><Facts>
+          <Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact>
+          <Fact k="操作人">{record.operator}</Fact>
+          <Fact k="理由">{record.reason ?? record.input?.reason}</Fact>
+        </Facts></Fold>,
       };
     })} />;
 

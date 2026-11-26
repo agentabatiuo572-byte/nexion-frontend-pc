@@ -652,7 +652,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         detail: <>
           <p>理由：{record.spec.reason}</p>
           <p>{state.more}</p>
-          {!canOpenAudit && <p>请把操作编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制操作编号")}>复制操作编号</Button></div></Fold> };
+          {!canOpenAudit && <p>请把操作编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary="原对象和操作编号"><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制操作编号")}>复制操作编号</Button></div></Fold> };
     }),
     ...verifiedDrafts.map(record => {
       const skuId = record.spec.command.op === "e1_sku_update" ? record.spec.obj : undefined;
@@ -668,7 +668,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留", createdAt: record.createdAt,
       tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
       actions: canQuery ? <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => void check(record)}>查询原操作</Button> : undefined,
-      detail: <><p>升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
+      detail: <><p>升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary="完整旧记录"><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
     ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
       actions: e1MediaHasOwner(record) ? <Button size="sm" disabledReason={readBlock({ op: "sku-save", target: record.skuId })} onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>

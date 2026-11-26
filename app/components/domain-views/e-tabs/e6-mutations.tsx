@@ -545,7 +545,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
           }}>准备新变更</Button>}
           {(refused && !r.ticketId) && <Button size="sm" disabled={!refused && m.isBusy(r.commandKey)} onClick={() => m.setRelease(r)}>核实后解除</Button>}
         </>,
-        detail: <><p>理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary={r.commandKey}>{technical(r)}</Fold> };
+        detail: <><p>理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary="操作编号、原对象和原请求">{technical(r)}</Fold> };
     }),
     ...m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => ({
       key: r.commandKey, object: "升级前的原提案", createdAt: r.createdAt, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,

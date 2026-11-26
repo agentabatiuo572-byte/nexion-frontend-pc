@@ -895,6 +895,9 @@
 .rd-table.a2-queue td:first-child:not([colspan]) .rd-cell-main { display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* 第二行写对象时名称只占一行，整格仍不超过两行（ST-04）。 */
 .rd-table.a2-queue td:first-child:not([colspan]) .rd-cell:has(> .rd-cell-sub) .rd-cell-main { -webkit-line-clamp: 1; }
+/* 本人发起的行：按钮下面常显一次为什么不能批（OP-126），和格子第二行同一档字，贴右对齐。 */
+.a2-own-actions { display: inline-grid; justify-items: end; }
+.a2-own-reason { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
 .a2-pending-check { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--rd-space-2); }
 
 /* A3 上方结果未知提示条：说明内容读回对不上时，每条一行。 */

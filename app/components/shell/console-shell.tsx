@@ -107,8 +107,10 @@ function AdminNoAccessPage({ pathname, landingPath }: { pathname: string; landin
 /** 确认框收到 403 后框已关，权限读回一变外壳里面还会重挂，所以提示单独放（OP-81、OP-132）。 */
 function PermissionDeniedToast() {
   useEffect(() => {
-    const onDenied = () => {
+    const onDenied = (event: Event) => {
       useUI.getState().dismissTimedToasts();
+      // 读取时被拒、这一页整页换成无权限页的（事件带的就是当前页）：页面已经写了没有权限，不再弹同一句（DT-12）。
+      if (event instanceof CustomEvent && event.detail === window.location.pathname) return;
       toast.warn(PERMISSION_DENIED_TEXT);
     };
     window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);

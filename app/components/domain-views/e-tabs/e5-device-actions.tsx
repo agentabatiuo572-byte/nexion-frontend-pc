@@ -229,7 +229,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
         </>,
         detail: <>
           <p>{record.device.user} · 理由：{record.reason}</p>
-          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="操作编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
+          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary="实例号、操作编号和原请求"><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="操作编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
     }),
   ];
   return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, setEditorOpen, forgetDraft, refresh, toast, writeBlock }}>

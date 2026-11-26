@@ -2461,7 +2461,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         {record.kind === "approve" && recordRule(record).backendChecks && <p>{backendChecksText("批准时", "。")}</p>}
         <p><Button size="sm" variant="ghost" onClick={() => showInRecords(record)}>在操作记录里查看</Button></p>
       </>,
-      tech: <Fold inset title="技术信息" summary={`操作编号 ${record.commandKey}`}>
+      tech: <Fold inset title="技术信息" summary="操作编号、操作人">
         <Facts><Fact k="操作编号"><span data-mono className="a2-long-code">{record.commandKey}</span></Fact><Fact k="操作人">{record.operator}</Fact></Facts>
       </Fold>,
     };
@@ -2474,13 +2474,19 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const rowCanAct = (w: A2OperationRow) => isMine(w) ? canWithdraw(w) : canDecide(w, "reject") || (!w.retiredOperation && canDecide(w, "approve"));
   const rowActions = (w: A2OperationRow) => {
     // 自己发起的单：有批准权的照样看到批准、驳回，禁用并写原因（OP-66，同抽屉）；行上最多露两个，驳回进「更多」，原因写在那一项下面（OP-05、OP-126）。
-    if (isMine(w) && canWithdraw(w)) return <>
-      <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>
-      {canApprove && <>
-        <Button size="sm" disabledReason={decideBlock(w, "approve")} onClick={() => confirmDecision(w, "approve")}>批准</Button>
-        <MoreMenu items={[{ key: "reject", label: "驳回", disabledReason: decideBlock(w, "reject"), onSelect: () => confirmDecision(w, "reject") }]} />
-      </>}
-    </>;
+    if (isMine(w) && canWithdraw(w)) {
+      const withdraw = <Button size="sm" disabledReason={decideBlock(w, "withdraw")} onClick={() => confirmDecision(w, "withdraw")}>撤回我的申请</Button>;
+      if (!canApprove) return withdraw;
+      // 批准、驳回灰着的原因在动作区常显一次，不只在按钮提示里（OP-126、OP-66）；布局不变：露两项，驳回在「更多」里。
+      return <span className="a2-own-actions">
+        <span className="rd-row-actions">
+          {withdraw}
+          <Button size="sm" disabledReason={decideBlock(w, "approve")} onClick={() => confirmDecision(w, "approve")}>批准</Button>
+          <MoreMenu items={[{ key: "reject", label: "驳回", disabledReason: decideBlock(w, "reject"), onSelect: () => confirmDecision(w, "reject") }]} />
+        </span>
+        <span className="a2-own-reason">{OWN_TICKET_REASON}</span>
+      </span>;
+    }
     if (!rowCanAct(w)) return <Cell main={<span className="rd-weak">{WAIT_OTHERS}</span>} />;
     return <>
       {canDecide(w, "reject") && <Button size="sm" disabledReason={decideBlock(w, "reject")} onClick={() => confirmDecision(w, "reject")}>驳回</Button>}
@@ -2827,12 +2833,16 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   // F4 派奖和结算、F5 提前解锁：被覆盖率挡住时单子留着，可以等恢复后再批，不只是驳回。
   const shownFund = shown ? fundTicket(shown) : undefined;
   const shownCover = shown ? coverageFacts(shown) : undefined;
-  const shownFundCheck = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "真实发钱，不能撤销。批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
-    : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "真实放钱，不能撤销。批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
-      : shownFund?.kind === "f5Reissue" ? `真实补发，不能撤销。${shownCover?.check ?? ""}`
-        : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? `会让平台多付钱。${K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"]}`
-        : enablesAutoPayout(shownFund) && shownCover ? `${shownCover.lead}。${shownCover.check}`
-        : `会让平台多付钱。${shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`}`;
+  // 放大类单的后果（lead）常显；批准时怎么查覆盖率（check）在覆盖率够红线时收进问号（DT-10、DP-06）。
+  const shownFundCopy = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? { lead: "真实发钱，不能撤销", check: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。" }
+    : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? { lead: "真实放钱，不能撤销", check: "批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。" }
+      : shownFund?.kind === "f5Reissue" ? { lead: "真实补发，不能撤销", check: shownCover?.check ?? "" }
+        : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? { lead: "会让平台多付钱", check: K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"] }
+        : enablesAutoPayout(shownFund) && shownCover ? { lead: shownCover.lead ?? "", check: shownCover.check }
+        : { lead: "会让平台多付钱", check: shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。` };
+  const shownFundCheck = `${shownFundCopy.lead}。${shownFundCopy.check}`;
+  // 和批准框同一条件、同一写法：读到覆盖率且没低于红线时是安静的一行，数字强其余弱，不带警告图标（VS-107、DP-05）。
+  const shownCoverageCalm = coverage && !(coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct) ? coverage : undefined;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
   const shownCanWithdraw = !!shown && shownOwn && canWithdraw(shown);
   // 自己发起的单：有批准权的照样看到批准、驳回，禁用，原因在按钮提示里（OP-66）；没有批准权的不显示（OP-124）。
@@ -2856,6 +2866,17 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     ? shownLog.bizNo || "—"
     : shownLog?.idempotencyKey || (needIdem ? "缺失" : "—");
   const shownLogObject = shownLog ? logObject(shownLog) : undefined;
+  const shownLogTech: { k: string; v: string; long?: boolean }[] = shownLog ? [
+    { k: "IP", v: shownLog.ip },
+    { k: "操作编号", v: requestNo },
+    // 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。
+    ...(logActionShown(shownLog).text !== shownLog.action || logActionShown(shownLog).raw ? [{ k: "原始动作码", v: shownLog.action }] : []),
+    ...(shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) ? [{ k: "对象原文", v: shownLogObject.raw, long: true }] : []),
+    { k: "角色码", v: shownLog.role },
+    ...(F_BATCH_DIGEST.test(shownLog.obj) ? [{ k: "对象摘要", v: shownLog.obj }] : []),
+    ...(fBatchLogItems(shownLog) ? [{ k: "各项配置键", v: fBatchLogItems(shownLog)!.map((item) => item.key).join("、"), long: true }] : []),
+    ...(fBatchLogItems(shownLog) || shownLogE1 || shownLogApproved?.price || shownLogDelta !== shownLog.delta ? [{ k: "前值 → 后值原文", v: shownLog.delta }] : []),
+  ] : [];
 
   /* 审批结果抽屉 */
   const shownHistory = historyShown.current;
@@ -2917,7 +2938,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           {pendingTicketIds.has(shown.id) && <Notice tone="warn">这张单有一次决定结果未知，先到页面上方「查询原操作」，查清前不要重复处理。</Notice>}
           <JudgmentPoints title={`判断要点 · 时间为${zone}`} rows={judgment} />
           {shownCoverageMode === "onApproval" && <Notice tone="warn">{approvalCoverageCopy(shown)}</Notice>}
-          {shownCoverageMode === "amplifies" && <Notice tone="warn">{shownFundCheck}</Notice>}
+          {shownCoverageMode === "amplifies" && (shownCoverageCalm ? <p className="rd-funding-calm">
+            <KeepText text={`${shownFundCopy.lead}。`} />
+            <span className="rd-keep">兑付覆盖率 <b>{fmtPct(shownCoverageCalm.coverageRatio)}</b>，红线 <b>{shownCoverageCalm.redlinePctText !== undefined ? `${shownCoverageCalm.redlinePctText}%` : fmtConfigPct(shownCoverageCalm.redlinePct)}</b>
+              <Explain label="这项操作对资金的影响" content={<><p>{shownFundCopy.check}</p>{shownCoverageCalm.healthyPct !== undefined && <p>健康线 {fmtConfigPct(shownCoverageCalm.healthyPct)}。</p>}</>} /></span>
+          </p> : <Notice tone="warn">{shownFundCheck}</Notice>)}
           {/* J4 逐步执行，中途失败时前面的步骤不回滚，不能写「失败不改原值」（M3）。 */}
           {shown.sos && <Notice tone="danger">{isJ4Execution(shown)
             ? "应急预案逐步执行：中途失败时，前面的步骤可能已经生效。批准前核对值班授权和影响范围，失败后到「监管要求应急处理」的执行追溯里核对每一步。"
@@ -2972,18 +2997,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           ]} />
           {fBatchLogItems(shownLog) && <A2BatchReview items={fBatchLogItems(shownLog)!} />}
           {shownLogE1 && <A2ChangeReview before={shownLogE1.before} after={shownLogE1.after} operationCode={shownLogE1.operationCode} />}
-          <Fold inset title="技术信息" summary={`操作编号 ${requestNo}`}>
-            <Facts>
-              <Fact k="IP"><span data-mono>{shownLog.ip}</span></Fact>
-              <Fact k="操作编号"><span data-mono>{requestNo}</span></Fact>
-              {/* 没翻成中文时「动作」已经是原码，不再写一遍（建议 8）。 */}
-              {logActionShown(shownLog).text !== shownLog.action || logActionShown(shownLog).raw ? <Fact k="原始动作码"><span data-mono>{shownLog.action}</span></Fact> : null}
-              {shownLogObject?.raw && !F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象原文"><span data-mono className="a2-long-code">{shownLogObject.raw}</span></Fact>}
-              <Fact k="角色码"><span data-mono>{shownLog.role}</span></Fact>
-              {F_BATCH_DIGEST.test(shownLog.obj) && <Fact k="对象摘要"><span data-mono>{shownLog.obj}</span></Fact>}
-              {fBatchLogItems(shownLog) && <Fact k="各项配置键"><span data-mono className="a2-long-code">{fBatchLogItems(shownLog)!.map((item) => item.key).join("、")}</span></Fact>}
-              {(fBatchLogItems(shownLog) || shownLogE1 || shownLogApproved?.price || shownLogDelta !== shownLog.delta) && <Fact k="前值 → 后值原文"><span data-mono>{shownLog.delta}</span></Fact>}
-            </Facts>
+          {/* 折叠关着时摘要只写里面有哪几项，不露编号（OP-154、DP-30、DP-04）。 */}
+          <Fold inset title="技术信息" summary={shownLogTech.map(({ k }) => k).join("、")}>
+            <Facts>{shownLogTech.map(({ k, v, long }) => <Fact key={k} k={k}><span data-mono className={long ? "a2-long-code" : undefined}>{v}</span></Fact>)}</Facts>
           </Fold>
         </>}
       </Drawer>

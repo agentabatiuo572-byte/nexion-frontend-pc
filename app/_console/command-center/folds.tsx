@@ -218,7 +218,7 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                     label="提现压力和黄线、红线"
                     rows={[
                       { key: "flow", label: "近 24 小时提现申请占储备", value: risk.bankRunRatio, text: fmtPct(risk.bankRunRatio), tone: pressure.flow },
-                      { key: "backlog", label: "待提现总额占储备", value: (ledger.pressureRatio ?? 0) * 100, text: ledger.pressureRatio === null ? "不可计算" : fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
+                      { key: "backlog", label: "待提现总额占储备", value: (ledger.pressureRatio ?? 0) * 100, text: ledger.pressureRatio === null ? "储备为 0" : fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
                     ]}
                     marks={[
                       { key: "yellow", text: `黄线 ${fmtConfigPct(risk.bankRunYellowPct)}`, value: risk.bankRunYellowPct, tone: "warn" },

@@ -21,7 +21,6 @@ import { BlockState, Button, Conclusion, ConfigList, ConfigRow, Explain, Fact, F
 import type { EViewCtx, McSpec } from "./types";
 import { E3Manual } from "./e3-manual";
 import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
-import { TechInfo } from "../recovery-panel";
 import { amountDisplay } from "@/lib/format";
 
 /** 批准资格的真实路径（后端 A2：不同于发起人、有批准权、能访问 E 域；单项另要 E3 读权）。 */
@@ -198,8 +197,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       return { key: r.commandKey, createdAt: r.createdAt, object: `${names.slice(0, 3).join("、")}${names.length > 3 ? ` 等 ${names.length} 项` : ""}`, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
         line: "早期提交缺原请求，只能查询，不能重试。",
         actions: E3_RECOVERY.legacy && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={e3Loading} onClick={() => void E3_RECOVERY.legacy!(r)}>查询原操作</Button>,
-        // 展开后和商品管理的旧记录一样只有技术信息（操作编号，OP-154）；提交时间已常显在行上。
-        tech: <p className="fund-row-tech"><TechInfo commandKey={r.commandKey} /></p> };
+        // 展开后和商品管理、设备管理、算力配置一样：技术信息是底部的折叠，摘要不露编号（OP-154、DT-22）；提交时间已常显在行上。
+        tech: <Fold inset title="技术信息" summary="操作编号"><Facts><Fact k="操作编号"><span data-mono>{r.commandKey}</span></Fact></Facts></Fold> };
     }),
   ];
   const recovery = <>
