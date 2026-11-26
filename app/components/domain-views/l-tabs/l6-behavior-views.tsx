@@ -232,11 +232,12 @@ export function HeatTable({ rows, activeKey, onPick, sort, sortDir, onSort, onFl
           <tbody>
             {rows.length ? rows.map((r) => {
               const noView = r.pv === 0;
+              const name = behaviorPageTitle(r);
               return (
                 <Tr key={r.key} selected={r.key === activeKey} onOpen={() => onPick(r.key)}>
                   <Td>
-                    <Cell main={behaviorPageTitle(r)} title={r.key}
-                      sub={<>{levelName(r)}{r.pageCount > 1 ? ` · 一组 ${r.pageCount} 页` : ""} · <span className="l6-route">{r.key.replace(/^\/?pages\//, "")}</span></>} />
+                    <Cell main={name} title={name}
+                      sub={<>{levelName(r)}{r.pageCount > 1 ? ` · 一组 ${r.pageCount} 页` : ""}</>} />
                   </Td>
                   <Td align="right"><HeatCell level={activityLevel(r.pv, maxPv)} zero={r.pv === 0}>{n(r.pv)}</HeatCell></Td>
                   <Td align="right"><HeatCell level={activityLevel(r.uv, maxUv)} zero={r.uv === 0}>{n(r.uv)}</HeatCell></Td>
@@ -401,7 +402,7 @@ export function ScopeFold({ data }: { data: L6BehaviorHeatmapData }) {
         <Fact k="这页能做什么">只能查看和导出，不改页面目录、采集设置和任何业务规则；每次导出留一条操作记录</Fact>
       </Facts>
       {excluded.length > 0 && <Fold inset title={`被排除的 ${n(excluded.length)} 个页面`} summary="热力表不列，点开看名字">
-        <ul className="l6-excluded">{excluded.map((page) => <li key={page.route}>{page.titleZh || page.route}{page.titleZh && <span className="l6-excluded-route" data-mono>{page.route}</span>}</li>)}</ul>
+        <ul className="l6-excluded">{excluded.map((page) => <li key={page.route}>{behaviorPageTitle(page)}</li>)}</ul>
       </Fold>}
     </Fold>
   );

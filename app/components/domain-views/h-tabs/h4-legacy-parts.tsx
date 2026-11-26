@@ -266,6 +266,9 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
   // App 上的奖励文字有后端给的事实（appRewardNames）时原样照它写，不换旧名、不改格式；旧数据没有时照旧按填的奖项名推。
   const appReward = event.appRewardNames ? { text: event.appRewardNames.zh } : null;
   const name = pick("name"), description = pick("description"), rewardName = event.appUsesAuthoredRewardName === false ? null : pick("rewardName");
+  const descriptionText = event.id === "evt-refer-5-get-pro" && zh.description
+    ? zh.description.replace(/正常\s*ACTIVE\s*[、，,]\s*非\s*sandbox\b/gi, "状态正常、非沙盒")
+    : description?.text;
   // 一张卡只标一次，标在第一处用了英文的地方；原文也一样。
   const firstEn = ([["name", name], ["description", description], ["rewardName", rewardName]] as const).find(([, value]) => value?.en)?.[0];
   const enTag = (field: ContentField) => firstEn === field ? <> <StatusTag tone="neutral" icon={Languages} explain={field === "rewardName" && rewardFromRule && !appReward ? "中文没填，这里显示的是英文那一份；App 中文显示玩法规则摘要。" : field === "rewardName" && appReward ? "中文没填，App 中文显示英文那一份。" : "中文没填，这里显示的是英文那一份。"}>英文</StatusTag></> : null;
@@ -287,7 +290,7 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
         </span>
       </header>
       <p className="h4l-desc" data-empty={description ? undefined : ""} data-user-content={description ? "" : undefined} data-clamp={description?.original ? "" : undefined} title={description?.original ? description.text : undefined}>
-        {originalFields[0] === "description" && <>{originalTag} </>}{description?.text ?? "说明未配置"}{enTag("description")}</p>
+        {originalFields[0] === "description" && <>{originalTag} </>}{descriptionText ?? "说明未配置"}{enTag("description")}</p>
       <dl className="h4l-facts">
         <div><dt><Gift size={14} aria-hidden />奖励</dt><dd>
           {wheel ? <span className="h4-dim">按转盘奖池</span> : <>{shownReward && shownReward !== "—" ? shownReward : <span className="h4-dim">—</span>}{legacyReward && <LegacyNameTag where="奖励文字" />}</>}

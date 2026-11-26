@@ -20,7 +20,7 @@ import {
   type L2FunnelQuery,
   type L2TrialFunnel,
 } from "@/lib/admin/l-client";
-import { lowestConversionIndex } from "@/lib/admin/funnel-conversion";
+import { funnelEventText, lowestConversionIndex } from "@/lib/admin/funnel-conversion";
 import { businessZone } from "@/lib/admin/business-time";
 import { findByPath } from "@/lib/nav/console-nav";
 import { l2ScopeText as scopeText } from "./l2-scope-text";
@@ -727,7 +727,7 @@ export function L2Funnel({ ctx, title, summary }: { ctx: LCtx; title: ReactNode;
   const stepPanel = (
     <Panel id={DETAIL_ID} role="tabpanel" aria-labelledby={`l2-step-${safeStage}`}
       title={`第 ${safeStage + 1} 步 · ${s.stage}`} icon={Hourglass} tone="role-3"
-      explain={<><p>这一步怎么算：{STEP_RULE[safeStage]}</p><p>对应事件：{STAGE_EV[safeStage] ?? s.ev}；用户阶段：{s.lc}。</p></>}
+      explain={<><p>这一步怎么算：{STEP_RULE[safeStage]}</p><p>对应事件：{funnelEventText(STAGE_EV[safeStage] ?? s.ev)}；用户阶段：{s.lc}。</p></>}
       sub={s.suppressed ? SMALL_SAMPLE_LABEL : s.users == null ? undefined : `${people(s.users)} 人`}
       actions={<Button size="sm" variant="ghost" loading={queryLoading} onClick={() => void applySlice(L2_STAGE_EVENTS[safeStage])}>刷新这一步</Button>}>
       <div className="rd-stack">

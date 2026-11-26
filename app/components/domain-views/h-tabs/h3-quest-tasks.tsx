@@ -1615,12 +1615,16 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               {bindings.map((binding) => {
                 const enabled = Number(binding.status) === 1;
                 const task = bindingTaskName(binding.questCode);
+                const eventLabel = H3_BINDING_EVENT_LABELS[binding.eventType];
+                const event = typeof eventLabel === "string" ? eventLabel : "未识别的完成事件";
+                const producer = producerText(binding.producer);
+                const source = /[\u3400-\u9fff]/.test(producer) ? producer : "来源待核对";
                 return <Tr key={binding.bindingCode} mark={enabled && missingBindingTarget(binding, !!task) ? "danger" : undefined}>
-                  <Td grow><Cell main={bindingEventText(binding)} title={`${binding.bindingCode} · ${producerText(binding.producer)} · ${binding.eventType}`} sub={<><span data-mono="">{binding.bindingCode}</span>{` · ${producerText(binding.producer)} · `}<span data-mono="">{binding.eventType}</span></>} /></Td>
+                  <Td grow><Cell main={event} title={`${event} · ${source}`} sub={source} /></Td>
                   <Td>{task
-                    ? <Cell main={task} sub={<span data-mono="">{binding.questCode}</span>} />
-                    : <Cell main={binding.targetActiveInTaskCatalog === true && binding.targetInTaskCatalog === true ? bindingTargetGap(binding) : <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />{bindingTargetGap(binding)}</span>} sub={<span data-mono="">{binding.questCode}</span>} />}</Td>
-                  <Td><Cell main={H3_BINDING_USER_FIELD_LABELS[binding.userIdField] ?? binding.userIdField} sub={<span data-mono="">{binding.userIdField}</span>} /></Td>
+                    ? <Cell main={task} sub={<span aria-hidden="true">&nbsp;</span>} />
+                    : <Cell main={binding.targetActiveInTaskCatalog === true && binding.targetInTaskCatalog === true ? bindingTargetGap(binding) : <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />{bindingTargetGap(binding)}</span>} sub={<span aria-hidden="true">&nbsp;</span>} />}</Td>
+                  <Td><Cell main={H3_BINDING_USER_FIELD_LABELS[binding.userIdField] ?? "归属待核对"} sub={<span aria-hidden="true">&nbsp;</span>} /></Td>
                   <Td>{enabled ? <StatusTag tone="ok" icon={CircleCheck}>已启用</StatusTag> : <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>}</Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
                     <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改 ${binding.bindingCode}`} onClick={conflictDraft.register(JSON.stringify(["openBindingEdit:1", binding.bindingCode]), () => openBindingEdit(binding))}>修改</Button>
@@ -1740,14 +1744,14 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         {dayOne.length === 0
           ? <p className="h3-empty-line">还没有新手任务。</p>
           : <Table label="新手任务的完成记录口径">
-            <thead><tr><Th>任务</Th><Th>任务编号</Th><Th align="right">{completedBasis ? "过去 24 小时完成" : "过去一天新建的任务记录"}</Th><Th align="right">{completedBasis ? "新建记录的异常占比" : "异常占比"}</Th><Th>转化和留存（默认设置）</Th></tr></thead>
+            <thead><tr><Th>任务</Th><Th>统计依据</Th><Th align="right">{completedBasis ? "过去 24 小时完成" : "过去一天新建的任务记录"}</Th><Th align="right">{completedBasis ? "新建记录的异常占比" : "异常占比"}</Th><Th>转化和留存（默认设置）</Th></tr></thead>
             <tbody>
               {dayOne.map((task, index) => {
                 const contract = contractForTask(task, model.taskContracts);
                 const sample = contract.completed24h === undefined ? contract.sample24h : contract.completed24h;
                 return <Tr key={`${text(task.id, String(index))}-${text(contract.taskKey, String(index))}`}>
-                  <Td><Cell main={nameOf(task)} title={`${nameOf(task)} · ${text(contract.taskKey, "—")}`} /></Td>
-                  <Td><Cell main={<span data-mono="">{text(contract.missionCode ?? contract.serverEvent, "—")}</span>} /></Td>
+                  <Td><Cell main={nameOf(task)} title={nameOf(task)} /></Td>
+                  <Td><Cell main={<span data-mono="">{contract.missionCode || contract.serverEvent ? "任务记录" : "—"}</span>} /></Td>
                   <Td align="right"><Cell num main={sample == null || sample === "" ? "—" : numericValue(sample).toLocaleString("en-US")} /></Td>
                   <Td align="right"><Cell num main={text(contract.anomalyPct, "—")} /></Td>
                   <Td grow><Cell title={`后续业务 ${text(contract.downstream, "—")} · 七天 ${text(contract.day7, "—")} · 报表项 ${text(contract.bi, "—")}`} main={`默认：${boolValue(contract.b3Default === undefined ? contract.b3 : contract.b3Default) ? "计入转化" : "不计入转化"} · ${boolValue(contract.retentionOnlyDefault === undefined ? contract.retentionOnly : contract.retentionOnlyDefault) ? "仅留存" : "不只算留存"}`}

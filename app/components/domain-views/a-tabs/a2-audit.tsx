@@ -691,6 +691,9 @@ const INTERNAL_OBJECT_ID = /^\/|^[A-Za-z][\w-]*(?:\.[\w-]+)+$|^[A-Z]+(?:_[A-Z0-9
  * 换掉或藏起来的原文带在 raw 里，进抽屉的技术信息。后端写了对象说明的照原样。
  */
 function logObject(l: A2AuditLogRow): { kind?: string; id?: string; raw?: string } {
+  if (l.action === "I2_NOVA_SOCIAL_EVENTS_SYNCED" && (l.resourceId === "social-events" || l.obj === "social-events")) {
+    return { kind: "消息推送", raw: l.obj };
+  }
   if (l.approvalAction?.startsWith("兑换参数调整 · ")) {
     const name = objectText({ action: l.approvalAction, obj: l.obj });
     if (name !== l.obj) return { id: name, raw: l.obj };

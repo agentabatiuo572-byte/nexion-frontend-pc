@@ -1273,13 +1273,18 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
             <Table label="系统登记的左滑说明" className="i3-route-table">
               <thead><tr><Th>通知类型</Th><Th>写的跳转</Th><Th>说明</Th></tr></thead>
               <tbody>
-                {SWIPE_ROWS.map((r) => (
-                  <Tr key={r.kind}>
-                    <Td>{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? `类型未知（${r.kind}）`}</Td>
-                    <Td>{r.to.trim() === "-" || r.to.startsWith("—") ? <span className="i3-weak">不跳转</span> : <span data-mono="">{r.to}</span>}</Td>
-                    <Td grow>{operatorCopyText(r.note).replace(/\s*-\s*system kind\s*/i, "：系统通知").replace(/\s*->\s*/g, " → ")}</Td>
-                  </Tr>
-                ))}
+                {SWIPE_ROWS.map((r) => {
+                  const route = r.to.trim();
+                  const destination = ctaLabelOf(route);
+                  return (
+                    <Tr key={r.kind}>
+                      <Td>{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? "未识别的通知类型"}</Td>
+                      <Td>{!route || route === "-" || route.startsWith("—") ? <span className="i3-weak">不跳转</span>
+                        : <span data-mono="">{destination === route ? "跳转待核对" : destination.replace(/\bGenesis\b/g, "创世节点")}</span>}</Td>
+                      <Td grow>{operatorCopyText(r.note).replace(/\s*-\s*system kind\s*/i, "：系统通知").replace(/\s*->\s*/g, " → ")}</Td>
+                    </Tr>
+                  );
+                })}
               </tbody>
             </Table>
           </section>

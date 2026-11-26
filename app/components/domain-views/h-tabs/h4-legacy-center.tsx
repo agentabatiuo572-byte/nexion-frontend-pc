@@ -1711,7 +1711,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
         <div id="h4l-tiers">
           {tiers.length === 0 ? <BlockState state="empty" title="奖池里还没有奖项" detail="点「新建奖项」添加；至少 2 档才能抽。" /> : <Table label="转盘奖项">
             <thead><tr><Th>奖项</Th><Th>奖品</Th><Th className="h4l-kind-col">类型</Th><Th align="right">每次发放</Th><Th align="right">概率</Th><Th align="right" className="h4l-per1k">每 1000 次约中</Th><Th align="right">今天已用 / 库存<Explain label="今天已用怎么算" content={<><p>每档今天实际发出的次数，改发的安慰奖算在安慰奖那一档。库存用完的档改发 UVT 安慰奖。已移出奖池的奖项今天抽到的次数列在表下方。</p><p>{USAGE_DAY}</p></>} /></Th><Th sticky="end">操作</Th></tr></thead>
-            <tbody>{tiers.map((tier) => {
+            <tbody>{tiers.map((tier, index) => {
               const name = legacyName(tier.reward);
               const kindKey = text(tier.kind, "").toLowerCase();
               const unit = wheelUnit(tier);
@@ -1721,7 +1721,7 @@ export default function H4LegacyCenter({ ctx, section: sub, onSection }: { ctx: 
               /** 1024 宽时类型列收起，奖品格第二行只留要人注意的标签（奖品名已带币种）。 */
               const kindTag = wheelPointsTier(tier) || wheelLegacyNexTier(tier) ? kindNode : boolValue(tier.real) ? <StatusTag tone="warn" explain="这一档发真钱（USDT）：抽中前还要过真钱奖开关、覆盖率和每日预算，不过就改发 UVT 安慰奖。">发真钱</StatusTag> : null;
               return <Tr key={text(tier.tier)}>
-                <Td><span data-mono="" className="h4l-nowrap">{text(tier.tier)}</span></Td>
+                <Td><span data-mono="" className="h4l-nowrap">第 {index + 1} 档</span></Td>
                 <Td><span className="h4l-reward"><span className="h4l-nowrap">{name.text}</span>{name.legacy && <LegacyNameTag where="奖项名称" />}</span>{kindTag && <span className="h4l-kind-sub">{kindTag}</span>}</Td>
                 <Td className="h4l-kind-col">{kindNode}</Td>
                 <Td align="right">{kindKey === "coupon" ? <span className="h4l-voucher"><span className="h4l-nowrap">1 张</span><small className="h4-dim" title={text(tier.voucherId, "未配券")}>{text(tier.voucherId, "未配券")}</small></span> : <span className="h4-num h4l-nowrap">{amountText(text(tier.amount, ""))} {unit}</span>}</Td>

@@ -1329,7 +1329,7 @@ export function I1CopyAb({ ctx, errorText }: { ctx: ICtx; errorText?: string | n
           return (
             <PositionCard key={position.positionKey}
               title={position.name}
-              sub={<>{moduleLabel(surface)} · <span data-mono="">{position.positionKey}</span></>}
+              sub={moduleLabel(surface)}
               statusTag={inactive ? <StatusTag tone="done">已停用</StatusTag> : undefined}
               surface={surface}
               copies={copies.map(toCard)}

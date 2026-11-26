@@ -150,7 +150,6 @@ export function PositionCard({ title, sub, statusTag, surface, copies, problem, 
             <div className="i1-pos-main">
               <div className="i1-pos-line">
                 <span className="i1-pos-name">{copy.name}</span>
-                <span className="i1-key" data-mono="">{copy.key}</span>
                 <StatusTag tone={status.tone} explain={status.explain}>{status.text}</StatusTag>
               </div>
               {copy.texts

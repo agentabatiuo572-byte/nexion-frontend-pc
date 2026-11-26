@@ -99,6 +99,10 @@ const PAGE_LABELS: Record<string,string> = {
 };
 
 export function behaviorPageTitle(page: { route?: string; key?: string; titleZh: string }): string {
-  const title = /[\u3400-\u9fff]/.test(page.titleZh) ? page.titleZh : PAGE_LABELS[page.route ?? page.key ?? ""] ?? page.titleZh;
-  return nexGridBrandText(title);
+  const route = page.route ?? page.key ?? "";
+  // 旧目录把不同的团队说明页都登记成「团队」，用各页的中文名称区分。
+  const genericTeamTitle = page.titleZh === "团队" && route.startsWith("/pages/team/");
+  const localizedTitle = /[\u3400-\u9fff]/.test(page.titleZh) && !genericTeamTitle;
+  const title = localizedTitle ? page.titleZh : PAGE_LABELS[route] ?? page.titleZh;
+  return title && title !== route ? nexGridBrandText(title) : "未命名页面";
 }
