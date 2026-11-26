@@ -15,9 +15,6 @@ export type K4AccountListState =
   | { kind: "error"; message: string }
   | { kind: "ready"; page: K4AccountPage };
 
-/** 从名单点进单人评分时记下的来源：页头返回回到这一档这一页，并高亮刚看的账户。 */
-export type K4ListSource = { band: K4AccountBand; page: number; userNo: string };
-
 type Lines = { bandLowMax: number; bandHighMin: number; autoEscalateScore: number };
 
 export const K4_BAND_NAME: Record<K4AccountBand, string> = {

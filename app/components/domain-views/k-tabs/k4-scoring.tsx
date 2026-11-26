@@ -34,7 +34,7 @@ import { isPendingCommandOwnedBy, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/l
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { k4Commands, k4Slot, k4Target, saveK4Operation, type K4Attempt, type K4Operation, type K4PendingCommand, type K4Snapshot } from "@/lib/admin/k4-command";
 import { openK4Confirmation } from "./k4-confirmations";
-import { K4AccountList, K4_BAND_NAME, type K4AccountListState, type K4ListSource } from "./k4-accounts";
+import { K4AccountList, K4_BAND_NAME, type K4AccountListState } from "./k4-accounts";
 import { expiredTag, KRecoveryNotice, MidId, unknownTag, type KRecoveryRow } from "./k-recovery";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -52,10 +52,10 @@ function errorText(error: unknown) {
 type K4Tab = "model" | "accounts" | "users" | "alerts";
 const ACCOUNT_PAGE_SIZES = [5, 10, 20, 50];
 
-function writeAccountQuery(params: URLSearchParams, band: K4AccountBand, page: number, pageSize: number) {
+function writeAccountQuery(params: URLSearchParams, band: K4AccountBand, page: number, pageSize: number, includeDefaultSize = false) {
   params.set("band", band);
   params.set("page", String(page));
-  if (pageSize === 10) params.delete("pageSize");
+  if (pageSize === 10 && !includeDefaultSize) params.delete("pageSize");
   else params.set("pageSize", String(pageSize));
 }
 
@@ -145,15 +145,26 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const [alertsReading, setAlertsReading] = useState(false);
   const [alertBusy, setAlertBusy] = useState<string | null>(null);
   const [alertUnknown, setAlertUnknown] = useState<string[]>([]);
-  const accountsBand = K4_ACCOUNT_BANDS.find((band) => band === searchParams?.get("band")) ?? "AUTO_REPORT";
+  const bandParam = searchParams?.get("band");
+  const queryBand = K4_ACCOUNT_BANDS.find((band) => band === bandParam);
   const pageParam = searchParams?.get("page") ?? "";
-  const accountsPage = /^\d{1,10}$/.test(pageParam) && Number(pageParam) > 0 && Number(pageParam) <= 2147483647 ? Number(pageParam) : 1;
-  const accountsPageSize = ACCOUNT_PAGE_SIZES.find((size) => String(size) === searchParams?.get("pageSize")) ?? 10;
-  const [listSource, setListSource] = useState<K4ListSource | null>(null);
+  const pageNumber = Number(pageParam);
+  const queryPage = /^\d{1,10}$/.test(pageParam) && pageNumber > 0 && pageNumber <= 2147483647 ? pageNumber : null;
+  const sizeParam = searchParams?.get("pageSize");
+  const queryPageSize = ACCOUNT_PAGE_SIZES.find((size) => String(size) === sizeParam);
+  const accountsBand = queryBand ?? "AUTO_REPORT";
+  const accountsPage = queryPage ?? 1;
+  const accountsPageSize = queryPageSize ?? 10;
+  const listSource = tab === "users" && userCode && !inboundError && returnTo === null
+    && searchParams?.get("source") === "accounts" && queryBand && queryPage && queryPageSize
+    && ["source", "band", "page", "pageSize"].every((key) => searchParams.getAll(key).length === 1)
+    ? { band: queryBand, page: queryPage, pageSize: queryPageSize, userNo: userCode } : null;
   const [accountsHighlight, setAccountsHighlight] = useState<string | null>(null);
   const [accountsRead, setAccountsRead] = useState(0);
   const [accountsResult, setAccountsResult] = useState<{ key: string; state: K4AccountListState } | null>(null);
-  const accountsKey = `${session?.adminId}:${activeModelVersion}:${accountsBand}:${accountsPage}:${accountsPageSize}:${accountsRead}`;
+  const accountsKey = `${session?.adminId}:${activeModelVersion}:${accountsBand}:${accountsPage}:${accountsPageSize}`;
+  // 跟随等待档的概览回读，包括停止轮询前队列归零的回包。
+  const staleAccountsOverview = accountsBand === "STALE" ? overview : null;
   const accountList: K4AccountListState = accountsResult?.key === accountsKey ? accountsResult.state : { kind: "loading" };
   const reloadAccounts = () => setAccountsRead((read) => read + 1);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -179,7 +190,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   useEffect(() => {
     if (tab !== "accounts" || activeModelVersion === undefined || ctx.contentError || ctx.contentLoading) return;
     let alive = true;
-    setAccountsResult(null);
+    setAccountsResult((current) => current?.key === accountsKey && current.state.kind === "ready" ? current : null);
     fetchK4ScoringAccounts({ band: accountsBand, pageNum: accountsPage, pageSize: accountsPageSize }).then((page) => {
       if (!alive) return;
       const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
@@ -195,7 +206,8 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       setAccountsResult({ key: accountsKey, state: { kind: "error", message } });
     });
     return () => { alive = false; };
-  }, [tab, activeModelVersion, accountsBand, accountsPage, accountsPageSize, accountsKey, ctx.contentError, ctx.contentLoading]);
+  }, [tab, activeModelVersion, accountsBand, accountsPage, accountsPageSize, accountsKey, accountsRead,
+    staleAccountsOverview, ctx.contentError, ctx.contentLoading]);
 
   const sourceModel = overview ? (overview.draft ?? overview.model) : null;
   const sourceSignature = sourceModel
@@ -485,10 +497,11 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     lookupUser?.userNo, lookupModelVersion]);
 
   useEffect(() => {
-    if (tab !== "users") {
+    if (userCode === null && !inboundError) {
       inboundLoaded.current = null;
       return;
     }
+    if (tab !== "users") return;
     const key = JSON.stringify([userCode, returnTo, inboundError]);
     if (inboundLoaded.current === key) return;
     inboundLoaded.current = key;
@@ -538,9 +551,9 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const setTab = (next: K4Tab) => {
     if (next === tab) return;
-    setListSource(null);
     writeScoringLocation((params) => {
       params.set("view", next);
+      if (params.get("source") === "accounts") params.delete("source");
       if (next === "accounts") {
         params.delete("userCode");
         params.delete("returnTo");
@@ -549,9 +562,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     });
   };
 
-  // 名单 → 单人评分 → 返回：来源只在这一页里记，页头返回回到同一档同一页，刚看的账户高亮。
   const openFromList = (userNo: string) => {
-    setListSource({ band: accountsBand, page: accountsPage, userNo });
     setAccountsHighlight(userNo);
     setLookupUser(null);
     setLookupError(null);
@@ -560,14 +571,25 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     writeScoringLocation((params) => {
       params.set("view", "users");
       params.set("userCode", userNo);
+      params.set("source", "accounts");
+      writeAccountQuery(params, accountsBand, accountsPage, accountsPageSize, true);
       params.delete("returnTo");
     }, true);
   };
-  const backToList = () => window.history.back();
+  const backToList = () => {
+    if (!listSource) return;
+    setAccountsHighlight(listSource.userNo);
+    writeScoringLocation((params) => {
+      params.set("view", "accounts");
+      params.delete("userCode");
+      params.delete("source");
+      writeAccountQuery(params, listSource.band, listSource.page, listSource.pageSize);
+    });
+  };
 
   const header = (
     <PageHeader pageId="K4" title="风险评分规则" summary="维护给用户打风险分的模型，查单个用户为什么是这个分。"
-      back={tab === "users" && listSource && listSource.userNo === userCode ? <button type="button" className="k4-back" onClick={backToList}><ArrowLeft size={14} aria-hidden />返回{K4_BAND_NAME[listSource.band]}名单 · 第 {listSource.page} 页</button> : undefined}
+      back={listSource ? <button type="button" className="k4-back" onClick={backToList}><ArrowLeft size={14} aria-hidden />返回{K4_BAND_NAME[listSource.band]}名单 · 第 {listSource.page} 页</button> : undefined}
       meta={readAt && overview?.model && !ctx.contentError ? `读取于 ${formatBusinessTimeCompact(new Date(readAt).toISOString())}（${businessZone().label}）· 待重新计算时每 1.5 秒自动刷新，其余手动刷新` : undefined}
       readOnly={canModelWrite || canOverride || canRecompute ? undefined : isSuperAdmin ? "当前账号只能查看评分，提现升级告警可以标为已读" : "你只能查看；改分需要「单用户人工覆盖评分」权限，恢复系统评分需要「重算回模型分」权限，请联系管理员在「角色管理」里开通。"}
       actions={<Button icon={<RefreshCw size={14} aria-hidden />} loading={ctx.contentLoading && Boolean(overview)} onClick={() => void reloadCurrentScoring().catch(() => undefined)}>刷新</Button>} />
