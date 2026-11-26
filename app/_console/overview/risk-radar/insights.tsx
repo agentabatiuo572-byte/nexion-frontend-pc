@@ -6,7 +6,8 @@
  * 原来的 data-testid 和 data-capability 标识照旧挂在对应的块上。
  */
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { AlertTriangle, CalendarRange, Clock3, Info, ShieldAlert, TrendingUp, type LucideIcon } from "lucide-react";
 import {
   BlockState, Button, Cell, ColumnChart, Decision, Drawer, Explain, Fact, Facts, Fold, JudgmentPoints, Panel, StatusDistributionBar, StatusTag, Table, TableLoading, TableMessage, Td, Th, Tr, TrendLines,
@@ -62,6 +63,39 @@ export const SEVERITY: Record<Alert["level"], { text: string; tone: StateTone; i
  */
 export function SignalNo({ value }: { value: string }) {
   return <span data-mono>{value}</span>;
+}
+
+/** 名单没刷新成功（保留旧值）时，标记按钮禁用的原因（ST-36、OP-128）。 */
+export const STALE_MARK_REASON = "名单没刷新成功，重试成功后再标记";
+
+/**
+ * 确认框里放不下的信号号：末尾省略，被切时能用 Tab 聚焦，聚焦和悬停都看全号（ST-04、TX-28）；
+ * 字一个不少，复制拿到全号。气泡和表格格子（Cell）同一个样子。
+ */
+export function RefText({ value }: { value: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [cut, setCut] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const measure = () => setCut(box.scrollWidth > box.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [value]);
+  return (
+    <Tooltip.Provider>
+      <Tooltip.Root open={cut && focused}>
+        <Tooltip.Trigger asChild>
+          <span ref={ref} className="b5-ref" data-mono title={value} tabIndex={cut ? 0 : undefined}
+            onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}>{value}</span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal><Tooltip.Content className="rd-tip rd-cell-tip" sideOffset={6}>{value}</Tooltip.Content></Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
+  );
 }
 
 export const HANDLING: Record<Alert["handlingStatus"], { text: string; tone: StateTone }> = {
@@ -243,13 +277,17 @@ function TriageLink({ alert, reach, onTriage, triageState, button }: {
   );
 }
 
-export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, updating, reach, selected, onOpen, onTriage, triageState, onStatus }: {
+export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, freezeHint, markBlocked, updating, reach, selected, onOpen, onTriage, triageState, onStatus }: {
   alerts: readonly SignalRow[];
   /** 名单筛成篡改风险时多一列被拦入口。 */
   showBlocked?: boolean;
   /** 没有行时写什么：为什么空、下一步去哪（ST-33）。 */
   empty: ReactNode;
   canTriage: boolean;
+  /** 进度表头问号里冻结、解冻去哪办，按账号权限写（design-plan 板 2、risk5 核文字）。 */
+  freezeHint: string;
+  /** 现在不能标记的原因（名单没刷新成功），按钮禁用并写这句。 */
+  markBlocked?: string;
   updating: string;
   reach: (path: string) => boolean;
   selected: string | null;
@@ -266,7 +304,7 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, up
           <tr>
             <Th>级别 · 风险信号</Th>
             <Th>处理进度 · 发送 <Explain label="处理进度和发送状态" content={<>
-              <p>待处理 → 已处理 → 已解决，只能按顺序往前推。标记只记录进度，不会解除风控、不会放行提现。</p>
+              <p>待处理 → 已处理 → 已解决，只能按顺序往前推。标记只记录进度，不会解除风控、不会放行提现。{freezeHint}</p>
               <p>标过进度的写最近一次是谁标的。第二行是这条信号最近一次的发送状态，不一定是发给你的。</p>
             </>} /></Th>
             {showBlocked && <Th>被拦入口 <Explain label="被拦入口的说明" content="系统在哪一步拦下了这次篡改，后端没记的写「未记录」。" /></Th>}
@@ -294,12 +332,12 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, up
                   main={<><StatusTag tone={HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>{handler && <span className="b5-handler">{handler}</span>}</>}
                   sub={deliveryStatusText(alert.deliveryStatus)} /></Td>
                 {showBlocked && <Td><Cell main={alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span>} /></Td>}
-                <Td><Cell num main={stamp(alert.createdAt)} sub={alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)}` : undefined} /></Td>
+                <Td><Cell num main={stamp(alert.createdAt)} sub={alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)}` : isTamper(alert) ? "拦截 —" : undefined} /></Td>
                 <Td><TriageLink alert={alert} reach={reach} onTriage={onTriage} triageState={triageState} /></Td>
                 {canTriage && (
                   <Td align="right" data-fit="">
                     {next && (
-                      <Button size="sm" loading={updating === alert.signalNo} onClick={() => onStatus(alert, next)}>
+                      <Button size="sm" loading={updating === alert.signalNo} disabledReason={markBlocked} onClick={() => onStatus(alert, next)}>
                         {next === "handled" ? "标记已处理" : "标记已解决"}
                       </Button>
                     )}
@@ -317,7 +355,7 @@ export function SignalsTable({ alerts, showBlocked = false, empty, canTriage, up
  * 一条风险信号的详情：开头 5 行判断要点（是什么事、被拦入口、哪个账户、什么时候、处理到哪），排查用的原文收进「技术信息」，
  * 决定按钮固定在底部（OP-149、OP-150）。去处理和标记进度用名单里同一套处理。
  */
-export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, userHref, actionsHref, updating, reach, onClose, onTriage, triageState, onStatus }: {
+export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, markBlocked, userHref, actionsHref, updating, reach, onClose, onTriage, triageState, onStatus }: {
   alert: SignalRow | null;
   nav: DrawerNav;
   canTriage: boolean;
@@ -325,6 +363,8 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, userH
   canFreeze: boolean;
   /** 能看「操作记录与审批」：不能时问号里写结果未知时找谁核对。 */
   canAudit: boolean;
+  /** 现在不能标记的原因（名单没刷新成功），按钮禁用并写这句。 */
+  markBlocked?: string;
   /** 用户编号去用户详情、「查看账户操作」去账户操作的地址；目标进不了不传，只显示编号。TODO(B-wire): 带 returnTo，按目标菜单和读权判断。 */
   userHref?: string;
   actionsHref?: string;
@@ -349,7 +389,7 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, userH
     ...(isTamper(alert) ? [{ label: "被拦入口", value: alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span> }] : []),
     { label: "哪个账户", value: <>{userHref ? <Link className="rd-link" href={userHref} prefetch={false} data-mono="">{user}</Link> : <span data-mono>{user}</span>}
       {actionsHref && <> · <Link className="rd-link" href={actionsHref} prefetch={false}>查看账户操作</Link></>}</> },
-    { label: "什么时候", value: `记录 ${stamp(alert.createdAt)}`, reason: alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)} · 北京时间` : "北京时间" },
+    { label: "什么时候", value: `记录 ${stamp(alert.createdAt)}`, reason: alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)} · 北京时间` : isTamper(alert) ? "拦截 — · 北京时间" : "北京时间" },
     { label: "处理到哪", value: <><StatusTag tone={HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>
       {handler && <span className="b5-handler"> {handler}{alert.handledAt && <span className="b5-muted"> {stamp(alert.handledAt)}</span>}</span>}</>,
       reason: `最近一次发送：${deliveryStatusText(alert.deliveryStatus)}` },
@@ -364,7 +404,7 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, userH
         {!canAudit && canTriage && <p>你标记后结果未知时，请有「操作记录与审批」查看权限的同事按原操作核对。</p>}
       </>}
         others={<TriageLink alert={alert} reach={reach} onTriage={onTriage} triageState={triageState} button={next && canTriage ? "secondary" : "primary"} />}
-        primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
+        primary={canTriage && next ? <Button variant="primary" loading={updating === alert.signalNo} disabledReason={markBlocked} onClick={() => onStatus(alert, next)}>{next === "handled" ? "标记已处理" : "标记已解决"}</Button> : undefined} />}>
       <JudgmentPoints rows={rows} />
       <Fold inset title="技术信息" summary={`${tech.length} 项，排查时用`}>
         <div className="rd-fold-flush">
@@ -377,7 +417,7 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, userH
 
 /** 后端真实的发送状态（含 SENDING，B5-D09）。认不出的写待核实，不猜。 */
 export const deliveryStatusText = (value: string) => ({
-  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "尚未加入发送队列",
+  PENDING: "待发送", SENDING: "发送中", PROCESSING: "发送中", DELIVERED: "已送达", SANDBOX_DELIVERED: "测试送达", NOT_QUEUED: "还没发出",
   FAILED_RETRY: "发送失败，等待重试", DEAD: "发送已终止", SENT: "已发送", FAILED: "发送失败",
 } as Record<string, string>)[value.toUpperCase()] ?? "发送状态待核实";
 

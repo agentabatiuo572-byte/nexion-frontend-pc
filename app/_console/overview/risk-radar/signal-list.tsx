@@ -8,7 +8,7 @@
 import type { ReactNode } from "react";
 import { BlockState, Button, FilterBar, FilterField, Panel, Pager, Select, type SelectOption } from "@/app/components/rd";
 import { StaleNotice, type StaleRead } from "./categories";
-import { SIGNAL_CATEGORIES, SignalsTable, type SignalRow } from "./insights";
+import { SIGNAL_CATEGORIES, STALE_MARK_REASON, SignalsTable, type SignalRow } from "./insights";
 
 export interface SignalListFilters {
   /** 后端 category，空串是全部类型。 */
@@ -42,7 +42,7 @@ export type SignalListState =
   | { state: "error"; error: string }
   | { state: "ready"; rows: readonly SignalRow[]; stale?: StaleRead };
 
-type TableProps = Omit<Parameters<typeof SignalsTable>[0], "alerts" | "showBlocked" | "empty">;
+type TableProps = Omit<Parameters<typeof SignalsTable>[0], "alerts" | "showBlocked" | "empty" | "markBlocked">;
 
 const STATUS_OPTIONS: SelectOption[] = [
   { value: "", label: "全部进度" }, { value: "open", label: "待处理" }, { value: "handled", label: "已处理" }, { value: "resolved", label: "已解决" },
@@ -80,7 +80,7 @@ export function SignalList({ data, filters, page, scopeNote, legacyEmpty, onRetr
       {data.state === "ready" && (
         <>
           {data.stale && <div className="b5-list-stale"><StaleNotice stale={data.stale} onRetry={onRetry} /></div>}
-          <SignalsTable {...table} alerts={data.rows} showBlocked={filters?.category === "TAMPER"} empty={empty} />
+          <SignalsTable {...table} alerts={data.rows} showBlocked={filters?.category === "TAMPER"} empty={empty} markBlocked={data.stale ? STALE_MARK_REASON : undefined} />
           {page && <Pager label="风险信号" total={page.total} page={page.pageNum} pageSize={page.pageSize} sizes={page.sizes} loading={page.loading} onPage={page.onPage} onPageSize={page.onPageSize} />}
         </>
       )}

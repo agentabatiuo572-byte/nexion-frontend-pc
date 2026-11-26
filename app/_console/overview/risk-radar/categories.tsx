@@ -46,7 +46,7 @@ export const SCORE_BAND_NAME: Record<"AUTO_REPORT" | "HIGH_BELOW_AUTO" | "MEDIUM
 export const FUND_NAME = { yellow: "提现压力已到黄线", red: "提现压力已到红线" } as const;
 
 /** 同条件后续读取失败时保留上次成功的值：at 是这个来源自己上次成功的时间；auto 是 30 秒自动重读连续失败（ST-36、ST-51）。 */
-export type StaleRead = { at: string; auto: boolean };
+export type StaleRead = { at: string; auto: boolean; /** 刚标记成功、之后重读失败：写进这一句，写入结果不说成失败（OP-87）。 */ afterMark?: "handled" | "resolved" };
 
 export type RiskCategoriesState =
   | { state: "loading" }
@@ -66,7 +66,8 @@ export function StaleNotice({ stale, onRetry }: { stale: StaleRead; onRetry: () 
   const at = `${formatBusinessTimeCompact(stale.at, "—")}（${businessZone().label}）`;
   return (
     <Notice tone="warn" action={<Button size="sm" onClick={onRetry}>重试</Button>}>
-      {stale.auto ? `自动刷新失败，下面是 ${at} 的数据` : `以下是 ${at} 的数据，刷新失败`}
+      {stale.afterMark ? `已标记为${stale.afterMark === "handled" ? "已处理" : "已解决"}，名单没刷新成功，下面是 ${at} 的数据`
+        : stale.auto ? `自动刷新失败，下面是 ${at} 的数据` : `以下是 ${at} 的数据，刷新失败`}
     </Notice>
   );
 }

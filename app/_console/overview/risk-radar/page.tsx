@@ -42,7 +42,7 @@ import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
 import { fmtConfigPct } from "@/lib/format";
 import { buildDimensions, IssueCard, QuietRow, ratioPct, type BuiltDimension, type DimensionKey } from "./dimensions";
-import { AlertDistribution, HANDLING, InboxTable, PressureTrend, SEVERITY, SignalDrawer, TabNote, levelTone, signalFacts, signalName, stamp } from "./insights";
+import { AlertDistribution, HANDLING, InboxTable, PressureTrend, RefText, SEVERITY, STALE_MARK_REASON, SignalDrawer, TabNote, levelTone, signalFacts, signalName, stamp } from "./insights";
 import { RiskCategoryPanel, type RiskCategoriesState } from "./categories";
 import { SignalList, type SignalListFilters, type SignalListPage, type SignalListState } from "./signal-list";
 
@@ -145,6 +145,7 @@ export default function RiskRadarPage() {
   const canTriage = authorities.includes("overview_b5_triage");
   // 只决定问号和确认框里「冻结、解冻」写去哪办还是找同事（design-plan 板 2「单条怎么处置」）。
   const canFreeze = authorities.includes("user_c2_account_freeze");
+  const freezeHint = canFreeze ? "冻结、解冻到「账户操作」办。" : "冻结、解冻要由有「账户操作」权限的同事办。";
   const canCross = useReach();
   const [toastNode, setToast] = useToast();
   const [threshold, setThreshold] = useState<B5ThresholdFacts | null>(null);
@@ -789,7 +790,7 @@ export default function RiskRadarPage() {
                       近 7 个业务日最新 {data.recentAlerts.length} 条 · {openCount} 条待处理 · 北京时间
                     </TabNote>
                   )}
-                  table={{ canTriage, updating: updatingSignal, reach: canCross, selected: openSignal, onOpen: (alert) => setOpenSignal(alert.signalNo),
+                  table={{ canTriage, freezeHint, updating: updatingSignal, reach: canCross, selected: openSignal, onOpen: (alert) => setOpenSignal(alert.signalNo),
                     onTriage: queueTriage, triageState, onStatus: openSignalStatus }} />
               </div>
             ) : (
@@ -805,6 +806,7 @@ export default function RiskRadarPage() {
           </div>
         </section>
         <SignalDrawer alert={tab === "signals" && signalIndex >= 0 ? signalList[signalIndex] : null} canTriage={canTriage} canFreeze={canFreeze} canAudit={canCross("/platform/audit")}
+          markBlocked={listState.state === "ready" && listState.stale ? STALE_MARK_REASON : undefined}
           updating={updatingSignal} reach={canCross}
           nav={{ hasPrev: signalIndex > 0, hasNext: signalIndex >= 0 && signalIndex < signalList.length - 1,
             onPrev: () => setOpenSignal(signalList[signalIndex - 1]?.signalNo ?? null), onNext: () => setOpenSignal(signalList[signalIndex + 1]?.signalNo ?? null) }}
@@ -971,20 +973,20 @@ export default function RiskRadarPage() {
                 onClick={() => void changeSignalStatus(alert, target, statusReason)}>{statusUnknown ? "按原操作重试" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">
-              <p className="b5-line">不会解除风控，也不会放行提现；{canFreeze ? "冻结、解冻到「账户操作」办。" : "冻结、解冻要由有「账户操作」权限的同事办。"}</p>
+              <p className="b5-line">不会解除风控，也不会放行提现；{freezeHint}</p>
               <Facts>
                 <Fact k="风险信号">{signalName(alert)}{line ? ` · ${line}` : ""}</Fact>
                 <Fact k="级别"><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></Fact>
                 <Fact k="用户"><span data-mono>{alert.userNo ?? `#${alert.userId}`}</span></Fact>
-                <Fact k="信号号"><span className="b5-ref" data-mono tabIndex={0} title={alert.signalNo}>{alert.signalNo}</span></Fact>
+                <Fact k="信号号"><RefText value={alert.signalNo} /></Fact>
                 <Fact k="记录时间">{stamp(alert.createdAt)}（北京时间）</Fact>
                 <Fact k="处理进度"><Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} /></Fact>
               </Facts>
               <Field label="操作理由" required hint="至少 8 字" error={statusReason && !valid ? short : undefined}>
-                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="例如：已核对拦截记录、工单号" count={`${length}/200`} onChange={(event) => setStatusReason(event.target.value)} />
+                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={200} rows={3} placeholder="例如：已核对拦截记录，账户安全设置未改变" count={`${length}/200`} onChange={(event) => setStatusReason(event.target.value)} />
               </Field>
               {statusError && <Notice tone={statusUnknown ? "warn" : "danger"} title={statusUnknown ? "结果未知，可能已经生效" : "没有标记成功"}>
-                {statusUnknown ? "理由已锁住，只能按原操作重试；也可以关掉后点「读取当前值」，看这条的处理进度变了没有。" : statusError}
+                {statusUnknown ? `理由已锁住。「按原操作重试」用原单号重新发送，不会重复改；也可以点「读取当前值」看这一条现在的进度，读到已处理不等于是这次改的，${canCross("/platform/audit") ? "到「操作记录与审批」核对。" : "请有「操作记录与审批」查看权限的同事按原操作核对。"}` : statusError}
               </Notice>}
             </div>
           </Modal>
