@@ -4058,6 +4058,7 @@ const ADMIN_READ_ERROR_MESSAGES: Record<string, string> = {
   CONTENT_BACKEND_UNAVAILABLE: SERVICE_DOWN_READ,
   PLATFORM_BACKEND_TIMEOUT: SERVICE_DOWN_READ,
   H4_RESPONSE_INVALID: "收到的活动数据不完整，已停止显示。请重新读取。",
+  G7_RESPONSE_INVALID: "收到的锁定计划数据不完整，请重试。",
   J4_RESPONSE_INVALID: "收到的预案数据不完整，已停止显示。请重新读取。",
   EVENT_NOT_FOUND: "找不到这项活动，请重新读取活动列表。",
   WEEKLY_REGION_POLICY_UNAVAILABLE: "每周地区规则暂时读不到，请稍后重新读取。",

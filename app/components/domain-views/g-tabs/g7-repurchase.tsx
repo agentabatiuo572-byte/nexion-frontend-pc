@@ -145,6 +145,9 @@ function messageOf(error: unknown) {
   return displayAdminError(error);
 }
 
+/** The page owns feedback for this read; the original ticket remains recoverable. */
+class G7OverviewReadError extends Error {}
+
 /** 金额按全站写法（amountDisplay）：去掉末尾 0、整数不写小数点，带千分位；不舍入。数字保留原来的上限 6 位。 */
 function amount(value: number | string) {
   return typeof value === "number" ? amountDisplay(value, 6, "fixed") : amountDisplay(value.trim());
@@ -256,35 +259,52 @@ function G7RepurchasePage() {
   const [overviewSnapshot, setOverviewSnapshot] = useState<{ data: G7Overview; readAt: number } | null>(null);
   const overview = overviewSnapshot?.data;
   const [overviewError, setOverviewError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [readFailed, setReadFailed] = useState(false);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const latest = useRef({ overview, loading, busyKey, readFailed });
+  latest.current = { overview, loading, busyKey, readFailed };
+  const overviewGeneration = useRef(0);
   const applyOverview = useCallback((data: G7Overview) => {
     setOverviewSnapshot({ data, readAt: Date.now() });
     setOverviewError("");
     setReadFailed(false);
   }, []);
-  const [orders, setOrders] = useState<G7Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [readFailed, setReadFailed] = useState(false);
+  const readOverview = useCallback(async (read = fetchG7RepurchaseOverview) => {
+    const generation = ++overviewGeneration.current;
+    latest.current.readFailed = true;
+    setReadFailed(true);
+    setLoading(true);
+    setError("");
+    try {
+      const current = await read();
+      if (generation !== overviewGeneration.current) throw new G7OverviewReadError();
+      applyOverview(current);
+    } catch (err) {
+      const message = displayAdminReadError(err);
+      if (generation === overviewGeneration.current) setOverviewError(message);
+      throw new G7OverviewReadError(message, { cause: err });
+    } finally {
+      if (generation === overviewGeneration.current) setLoading(false);
+    }
+  }, [applyOverview]);
+  const reloadOverview = useCallback(() => readOverview().catch(() => undefined), [readOverview]);
   useSyncExternalStore(subscribeG7DirectCommands, g7DirectCommandVersion, () => 0);
   const directRecord = (key: string) => session ? listG7DirectCommands(session.adminId).find(record => record.paramKey === key) : undefined;
   const approval = useGParamApproval("G7", toast, setError, async () => {
-    // Terminal proposal results invalidate every confirmation based on the old
-    // overview, including dialogs opened while the receipt lookup was pending.
+    // A terminal result invalidates confirmations based on the older overview.
     openActionConfirm(null);
-    latest.current.readFailed = true;
-    setReadFailed(true);
-    try {
-      applyOverview(await fetchG7RepurchaseOverview());
-    } catch (err) {
-      setOverviewError(displayAdminReadError(err));
-      throw err;
-    }
+    await readOverview();
   });
-  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [recoverBusy, setRecoverBusy] = useState(false);
   /** 只用于显示：这些错误句已经由原操作提醒里的一行承接，不再在「操作提示」里重复。 */
   const coveredErrors = useRef(new Set<string>());
   const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [orders, setOrders] = useState<G7Order[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersError, setOrdersError] = useState("");
+  const [moreError, setMoreError] = useState("");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   /** 当前读取的待审锁；旧后端缺投影时保留提交被拒后观察到的锁。 */
@@ -304,32 +324,24 @@ function G7RepurchasePage() {
       return next;
     });
   }, [overview, loading, readFailed, authorities]);
-  const requestGeneration = useRef(0);
+  const ordersGeneration = useRef(0);
   const moreInFlight = useRef(false);
-  const latest = useRef({ overview, loading, busyKey, readFailed });
-  latest.current = { overview, loading, busyKey, readFailed };
-  const reload = useCallback(async (silent = false) => {
-    const generation = ++requestGeneration.current;
-    moreInFlight.current = false;
-    setLoadingMore(false);
-    if (!silent) setLoading(true);
-    setReadFailed(true);
-    setError("");
+  const reloadOrders = useCallback(async () => {
+    const generation = ++ordersGeneration.current;
+    setOrdersLoading(true);
+    setOrdersError("");
     try {
-      const [nextOverview, nextOrders] = await Promise.all([
-        fetchG7RepurchaseOverview(), fetchG7RepurchaseOrders(),
-      ]);
-      if (generation !== requestGeneration.current) return;
-      applyOverview(nextOverview);
+      const nextOrders = await fetchG7RepurchaseOrders();
+      if (generation !== ordersGeneration.current) return;
       setOrders(nextOrders.orders);
       setNextCursor(nextOrders.nextCursor);
       setHasMore(nextOrders.hasMore);
     } catch (err) {
-      if (generation === requestGeneration.current) setOverviewError(displayAdminReadError(err));
+      if (generation === ordersGeneration.current) setOrdersError(displayAdminReadError(err));
     } finally {
-      if (generation === requestGeneration.current && !silent) setLoading(false);
+      if (generation === ordersGeneration.current) setOrdersLoading(false);
     }
-  }, [applyOverview]);
+  }, []);
 
   const paramApproval = {
     ...approval,
@@ -343,9 +355,7 @@ function G7RepurchasePage() {
       } catch (err) {
         if (original && !approval.record(key)) {
           openActionConfirm(null);
-          latest.current.readFailed = true;
-          setReadFailed(true);
-          await reload(true);
+          await reloadOverview();
         }
         throw err;
       }
@@ -356,15 +366,11 @@ function G7RepurchasePage() {
     // An expired original or a writer whose authority was removed can still
     // read current state. This GET is never a receipt and never clears it.
     openActionConfirm(null);
-    latest.current.readFailed = true;
-    setReadFailed(true);
-    try {
+    await readOverview(async () => {
       const result = await queryG7DirectCommand(direct.adminId, direct.commandKey);
-      applyOverview(result.overview);
       setError(result.message);
-    } catch (err) {
-      setOverviewError(displayAdminReadError(err));
-    }
+      return result.overview;
+    }).catch(() => undefined);
   };
 
   /**
@@ -380,7 +386,7 @@ function G7RepurchasePage() {
         if (retry) await paramApproval.retry(obj);
         else if (!await paramApproval.query(obj)) toast("暂未查到原审批单，原记录继续保留。");
       } catch (err) {
-        toast(gParamApprovalFeedback(err) ?? displayAdminError(err));
+        if (!(err instanceof G7OverviewReadError)) toast(gParamApprovalFeedback(err) ?? displayAdminError(err));
       } finally {
         setRecoverBusy(false);
       }
@@ -439,21 +445,28 @@ function G7RepurchasePage() {
   };
 
   useEffect(() => {
-    void reload();
+    void reloadOverview();
     return () => {
-      requestGeneration.current += 1;
+      overviewGeneration.current += 1;
     };
-  }, [reload]);
+  }, [reloadOverview]);
+
+  useEffect(() => {
+    void reloadOrders();
+    return () => {
+      ordersGeneration.current += 1;
+    };
+  }, [reloadOrders]);
 
   const loadMore = async () => {
-    if (loading || moreInFlight.current || !hasMore || nextCursor === null) return;
+    if (ordersLoading || moreInFlight.current || !hasMore || nextCursor === null) return;
     moreInFlight.current = true;
     setLoadingMore(true);
-    setError("");
-    const generation = requestGeneration.current;
+    setMoreError("");
+    const generation = ordersGeneration.current;
     try {
       const page = await fetchG7RepurchaseOrders("", nextCursor);
-      if (generation !== requestGeneration.current) return;
+      if (generation !== ordersGeneration.current) return;
       setOrders((current) => {
         const seen = new Set(current.map((order) => order.orderNo));
         return [...current, ...page.orders.filter((order) => {
@@ -465,9 +478,9 @@ function G7RepurchasePage() {
       setNextCursor(page.nextCursor);
       setHasMore(page.hasMore);
     } catch (err) {
-      if (generation === requestGeneration.current) setError(messageOf(err));
+      if (generation === ordersGeneration.current) setMoreError(displayAdminReadError(err));
     } finally {
-      if (generation === requestGeneration.current) {
+      if (generation === ordersGeneration.current) {
         moreInFlight.current = false;
         setLoadingMore(false);
       }
@@ -664,6 +677,7 @@ function G7RepurchasePage() {
             toast(`${label} 已生效`);
           }
         } catch (err) {
+          if (err instanceof G7OverviewReadError) return;
           const code = (err as { backendMessage?: string } | null)?.backendMessage;
           if (code === "OBJECT_LOCKED_BY_A2" || code === "OBJECT_ALREADY_PENDING") {
             const lock = (err as { pendingApproval?: { pending: true; operationId: string | null } }).pendingApproval;
@@ -678,9 +692,7 @@ function G7RepurchasePage() {
         } finally {
           if (savedDirect && !directRecord(param.key)) {
             openActionConfirm(null);
-            latest.current.readFailed = true;
-            setReadFailed(true);
-            await reload(true);
+            await reloadOverview();
           }
           setBusyKey(null);
         }
@@ -694,6 +706,7 @@ function G7RepurchasePage() {
         {header}
         {recoveryNotice()}
         <BlockState state="loading" title="正在加载锁定计划…" />
+        {renderOrders()}
         {confirmModal}
       </>
     );
@@ -706,7 +719,8 @@ function G7RepurchasePage() {
         {recoveryNotice()}
         <BlockState state="error" title="锁定计划数据加载失败"
           detail={overviewError || error || "没有收到数据。"}
-          onRetry={() => void reload()} />
+          onRetry={() => void reloadOverview()} />
+        {renderOrders()}
         {confirmModal}
       </>
     );
@@ -801,7 +815,6 @@ function G7RepurchasePage() {
           {openCount > 0 ? `还有 ${fmtCount(openCount)} 单锁定计划没有结束` : "没有未结束的锁定计划订单"}</Conclusion>;
 
   const distRows = distributionRows(overview.amountDistribution);
-  const reinvest = stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—";
   const phaseHref = reach("/growth/phase");
   const phase = phaseMultiplier(overview.phaseGate.value);
 
@@ -809,9 +822,9 @@ function G7RepurchasePage() {
     <>
       {header}
       {confirmModal}
-      {error && !mc && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^(提交结果未知|结果未知，可能已经提交)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
+      {error && error !== overviewError && !mc && !Object.values(lockedParams).some(lock => lock.message === error) && !coveredErrors.current.has(error) && !/^(提交结果未知|结果未知，可能已经提交)/.test(error) && <Notice tone="warn" title="操作提示">{error}</Notice>}
       {overviewError && <Notice tone="warn" title="概览读取失败"
-        action={<Button size="sm" disabled={loading || recoverBusy || busy} onClick={() => void reload()}>重试</Button>}>
+        action={<Button size="sm" disabled={loading || recoverBusy || busy} onClick={() => void reloadOverview()}>重试</Button>}>
         <p>{overviewError} 下面是 {businessStamp(overviewSnapshot.readAt)}（{businessZone().label}）读到的数据，重新读取成功前暂不能修改。</p>
       </Notice>}
       {conclusion}
@@ -912,48 +925,7 @@ function G7RepurchasePage() {
         {moreRows.length > 0 && <ConfigList label="抽奖券和快捷金额">{moreRows.map(paramRow)}</ConfigList>}
       </Fold>
 
-      <Panel title="锁定计划订单" icon={ListOrdered} tone="role-3"
-        sub={`已显示 ${fmtCount(orders.length)} 单${hasMore ? " · 还有更早的" : ""} · 金额单位 USDT · 时间为${businessZone().label}`}
-        explain={<>
-          <p>全部锁定计划订单，从新到旧，每次读 20 单，点「加载更多」接着读更早的。这页只能查看，不能领取、提前解锁或退款。</p>
-          <p>每单的年奖励率、期限和预计奖励是下单时记下的，改规则不会重算。</p>
-        </>}>
-        <div className="g7x-orders-head">
-          <StatusDistributionBar label="订单状态分布（全部历史，单数和本金）"
-            segments={overview.statusBreakdown.map((row) => ({
-              key: row.status,
-              label: STATE_NAME[row.status.toLowerCase()] ?? operatorCopyText(row.label),
-              value: row.count,
-              text: `${fmtCount(row.count)} 单 · ${amount(row.principalUsd)} USDT`,
-              tone: DIST_TONE[row.status.toLowerCase()] ?? "role-other",
-            }))}
-            emptyText="还没有锁定计划订单" />
-          <span className="g7x-relock">再次锁定率<Explain label="再次锁定率怎么算" content={stats.reinvestRateAvailable ? "到期后再次参与锁定计划的比例。" : "这项数据现在没有，不代表没人再次锁定。"} /><b data-empty={stats.reinvestRateAvailable ? undefined : ""}>{reinvest}</b></span>
-        </div>
-        <Table label="锁定计划订单" className="g7x-order-table" data-tight="">
-          <thead>
-            <tr><Th>订单号</Th><Th>用户</Th><Th align="right">金额 / 预计奖励</Th><Th>下单时规则</Th><Th>状态</Th><Th>开始 / 到期</Th></tr>
-          </thead>
-          <tbody>
-            {orders.length === 0 && <TableMessage columns={6}>暂无锁定计划订单</TableMessage>}
-            {orders.map((order) => (
-              <tr key={order.orderNo}>
-                <Td><Cell main={<OrderNo value={order.orderNo} />} sub={order.billCorrelationPrefix === order.orderNo
-                  ? "账单流水：单号-*"
-                  : <>账单流水：<span data-mono>{order.billCorrelationPrefix}-*</span></>} /></Td>
-                <Td><Cell main={order.userNo} sub={operatorNicknameText(order.nickname)} title={`${order.userNo} · ${operatorNicknameText(order.nickname)}`} /></Td>
-                <Td align="right"><Cell num main={amount(order.amountUsdt)} sub={`奖励 ${amount(order.estimatedInterestUsdt)}`} /></Td>
-                <Td><Cell num main={`${plain(order.apyPct)}% / 年`} sub={`锁 ${order.lockDays} 天`} /></Td>
-                <Td>{orderStatus(order.status)}</Td>
-                <Td><Cell num main={timeText(order.lockedAt)} sub={timeText(order.unlockAt)} /></Td>
-              </tr>
-            ))}
-          </tbody>
-        </Table>
-        {hasMore && nextCursor !== null && <div className="g7x-more">
-          <Button size="sm" loading={loadingMore} loadingText="正在加载…" disabledReason={loading ? "正在重新读取" : undefined} onClick={() => void loadMore()}>加载更多</Button>
-        </div>}
-      </Panel>
+      {renderOrders()}
 
       <Fold title="未结束订单的金额分布" icon={PieChart} tone="role-other"
         summary={distRows === null ? "见展开" : distRows.length ? `${fmtCount(distRows.length)} 个金额` : "暂无"}
@@ -974,4 +946,58 @@ function G7RepurchasePage() {
       </Fold>
     </>
   );
+  function renderOrders() {
+    const stats = overview?.stats;
+    const reinvest = stats?.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—";
+    return (
+      <Panel title="锁定计划订单" icon={ListOrdered} tone="role-3"
+        sub={ordersLoading || ordersError ? undefined : `已显示 ${fmtCount(orders.length)} 单${hasMore ? " · 还有更早的" : ""} · 金额单位 USDT · 时间为${businessZone().label}`}
+        explain={<>
+          <p>全部锁定计划订单，从新到旧，每次读 20 单，点「加载更多」接着读更早的。这页只能查看，不能领取、提前解锁或退款。</p>
+          <p>每单的年奖励率、期限和预计奖励是下单时记下的，改规则不会重算。</p>
+        </>}>
+        {overview && <div className="g7x-orders-head">
+          <StatusDistributionBar label="订单状态分布（全部历史，单数和本金）"
+            segments={overview.statusBreakdown.map((row) => ({
+              key: row.status,
+              label: STATE_NAME[row.status.toLowerCase()] ?? operatorCopyText(row.label),
+              value: row.count,
+              text: `${fmtCount(row.count)} 单 · ${amount(row.principalUsd)} USDT`,
+              tone: DIST_TONE[row.status.toLowerCase()] ?? "role-other",
+            }))}
+            emptyText="还没有锁定计划订单" />
+          <span className="g7x-relock">再次锁定率<Explain label="再次锁定率怎么算" content={overview.stats.reinvestRateAvailable ? "到期后再次参与锁定计划的比例。" : "这项数据现在没有，不代表没人再次锁定。"} /><b data-empty={overview.stats.reinvestRateAvailable ? undefined : ""}>{reinvest}</b></span>
+        </div>}
+        {ordersLoading ? <BlockState state="loading" compact title="正在加载锁定计划订单…" />
+          : ordersError ? <BlockState state="error" compact title="锁定计划订单加载失败"
+              detail={ordersError} onRetry={() => void reloadOrders()} />
+          : <>
+            <Table label="锁定计划订单" className="g7x-order-table" data-tight="">
+              <thead>
+                <tr><Th>订单号</Th><Th>用户</Th><Th align="right">金额 / 预计奖励</Th><Th>下单时规则</Th><Th>状态</Th><Th>开始 / 到期</Th></tr>
+              </thead>
+              <tbody>
+                {orders.length === 0 && <TableMessage columns={6}>暂无锁定计划订单</TableMessage>}
+                {orders.map((order) => (
+                  <tr key={order.orderNo}>
+                    <Td><Cell main={<OrderNo value={order.orderNo} />} sub={order.billCorrelationPrefix === order.orderNo
+                      ? "账单流水：单号-*"
+                      : <>账单流水：<span data-mono>{order.billCorrelationPrefix}-*</span></>} /></Td>
+                    <Td><Cell main={order.userNo} sub={operatorNicknameText(order.nickname)} title={`${order.userNo} · ${operatorNicknameText(order.nickname)}`} /></Td>
+                    <Td align="right"><Cell num main={amount(order.amountUsdt)} sub={`奖励 ${amount(order.estimatedInterestUsdt)}`} /></Td>
+                    <Td><Cell num main={`${plain(order.apyPct)}% / 年`} sub={`锁 ${order.lockDays} 天`} /></Td>
+                    <Td>{orderStatus(order.status)}</Td>
+                    <Td><Cell num main={timeText(order.lockedAt)} sub={timeText(order.unlockAt)} /></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            {hasMore && nextCursor !== null && <div className="g7x-more">
+              {moreError && <Notice tone="warn" title="更早的锁定计划订单加载失败">{moreError}</Notice>}
+              <Button size="sm" loading={loadingMore} loadingText="正在加载…" onClick={() => void loadMore()}>加载更多</Button>
+            </div>}
+          </>}
+      </Panel>
+    );
+  }
 }
