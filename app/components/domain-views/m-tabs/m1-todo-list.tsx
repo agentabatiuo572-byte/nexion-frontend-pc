@@ -13,7 +13,7 @@ import { SupportAvatar } from "./support-avatar";
 import "./m1-todo-list.css";
 
 /** 待办原因筛选：全部待办和三种原因，取值就是接口的 filter。 */
-export type TodoFilter = "TODO" | "WAITING_REPLY" | "FIRST_CONTACT" | "DUE";
+import { TODO_PAGE_SIZES, type TodoFilter } from "@/lib/admin/support-todo-route";
 /** 名单一行。三种原因按后端判断给（首次待联系、待维护已含「维护开启」），起点和判断时刻是 B116 的四个时间，没有时传 null。 */
 export type TodoRow = {
   customerId: string;
@@ -29,19 +29,20 @@ export type TodoRow = {
   due: boolean;
   maintenanceDueAt: string | null;
   /** 这一行的判断时刻（B116 行 evaluatedAt），时长都算到它。 */
-  evaluatedAt: string | null;
+  evaluatedAt: string;
   /** 客户上次交互式登录（lastEffectiveAt，后端只记登录）。 */
   lastLoginAt: string | null;
 };
 /** 名单读取的结果。unconfigured：选了「待维护」而主动维护间隔天数没配置（接口回 available=false），不是 0。 */
 export type TodoListRead =
   | { state: "loading" }
-  | { state: "error"; detail?: string }
+  | { state: "error" | "denied" | "missing"; detail: string }
   | { state: "unconfigured" }
   | { state: "ready"; rows: TodoRow[]; total: number; evaluatedAt: string };
 /** 副标题里的范围：超管全部客服、主管负责组 N 个，或已选的组、客服。 */
-export type TodoScope = { kind: "all" } | { kind: "managed"; groups: number } | { kind: "group"; name: string } | { kind: "agent"; name: string };
-export type TodoOption = { value: string; label: string };
+export type TodoScope = { kind: "all" } | { kind: "managed"; groups: number | null } | { kind: "group"; name: string } | { kind: "agent"; name: string };
+type TodoOption = { value: string; label: string };
+export type TodoOptions = TodoOption[] | { unavailable: string };
 /** 行和抽屉里的动作。reply：有回复权（发起会话）；read：只有会话页查看权（查看会话记录）；none：只给查看资料。 */
 export type TodoAccess = "reply" | "read" | "none";
 /** 「服务规则与话术」的入口：能改写「配置」，只能看写「查看」，不可达不传。 */
@@ -55,10 +56,8 @@ const FILTER_ITEMS: { value: TodoFilter; label: string }[] = [
   { value: "DUE", label: "待维护" },
 ];
 
-function since(from: string | null, to: string | null): string | null {
-  if (!from || !to) return null;
-  const ms = parseBusinessTime(to) - parseBusinessTime(from);
-  return Number.isFinite(ms) ? durationText(ms) : null;
+function since(from: string | null, to: string): string | null {
+  return from === null ? null : durationText(parseBusinessTime(to) - parseBusinessTime(from));
 }
 /** 一行的原因：只有待回复写「等了」，首次待联系写「已分配」，待维护写「超期」；首次待联系和待维护起点相同时合写一次。 */
 export function todoReasons(row: TodoRow): { key: keyof typeof REASON_ICON; text: string }[] {
@@ -88,12 +87,12 @@ export function TodoReasons({ row, quietReply = false }: { row: TodoRow; quietRe
 const asOf = (value: string) => "截至 " + formatBusinessTimeCompact(value, "—") + "（" + businessZone().label + "）";
 
 function scopeText(scope: TodoScope): string {
-  return scope.kind === "all" ? "全部客服" : scope.kind === "managed" ? "负责组 " + scope.groups + " 个" : scope.kind === "group" ? "负责组 " + scope.name : "客服 " + scope.name;
+  return scope.kind === "all" ? "全部客服" : scope.kind === "managed" ? "负责组 " + (scope.groups ?? "—") + " 个" : scope.kind === "group" ? "负责组 " + scope.name : "客服 " + scope.name;
 }
 
-export function TodoRowActions({ row, access, checking, onStart, onRead, onProfile }: { row: TodoRow; access: TodoAccess; checking: boolean; onStart: () => void; onRead: () => void; onProfile?: () => void }) {
+export function TodoRowActions({ row, access, checking, refreshing, onStart, onRead, onProfile }: { row: TodoRow; access: TodoAccess; checking: boolean; refreshing: boolean; onStart: () => void; onRead: () => void; onProfile?: () => void }) {
   return <span className="m1-todo-actions">
-    {access === "reply" && <Button size="sm" loading={checking} onClick={onStart}>发起会话</Button>}
+    {access === "reply" && <Button size="sm" loading={checking} disabled={refreshing} onClick={onStart}>发起会话</Button>}
     {access === "read" && <Button size="sm" onClick={onRead}>查看会话记录</Button>}
     {onProfile && <Button size="sm" variant="ghost" aria-label={"查看资料：" + row.name} onClick={onProfile}>查看资料</Button>}
   </span>;
@@ -114,16 +113,17 @@ export type TodoPanelProps = {
   onSubmit: () => void;
   /** 更多筛选：负责组、客服。选项读不到时传 unavailable 写原因，名单照常。 */
   groupValue: string;
-  groupOptions: TodoOption[] | { unavailable: string };
+  groupOptions: TodoOptions;
   onGroup: (groupId: string) => void;
   agentValue: string;
-  agentOptions: TodoOption[] | { unavailable: string };
+  agentOptions: TodoOptions;
   onAgent: (agentId: string) => void;
   applied: { key: string; label: string; onRemove: () => void }[];
   moreCount: number;
   canClear: boolean;
   onClear: () => void;
   querying: boolean;
+  noGroups: boolean;
   onRetry: () => void;
   configLink?: TodoConfigLink;
   page: number;
@@ -140,8 +140,8 @@ export type TodoPanelProps = {
   notice?: ReactNode;
 };
 
-function optionsOf(options: TodoOption[] | { unavailable: string }, all: string): { list: TodoOption[]; reason?: string } {
-  return Array.isArray(options) ? { list: [{ value: "", label: all }, ...options] } : { list: [{ value: "", label: all }], reason: options.unavailable };
+function optionsOf(options: TodoOptions, all: string): { list: TodoOption[]; disabled?: boolean; reason?: string } {
+  return Array.isArray(options) ? { list: [{ value: "", label: all }, ...options] } : { list: [{ value: "", label: all }], disabled: true, reason: options.unavailable };
 }
 
 export function M1TodoPanel(props: TodoPanelProps) {
@@ -156,15 +156,17 @@ export function M1TodoPanel(props: TodoPanelProps) {
     <FilterBar onSubmit={props.onSubmit} querying={props.querying} onClear={props.onClear} canClear={props.canClear} moreCount={props.moreCount} applied={props.applied}
       scope={<FilterField><div className="rd-field"><span aria-hidden="true">待办原因</span><Segments label="待办原因" value={filter} items={FILTER_ITEMS} onChange={props.onFilter} /></div></FilterField>}
       more={<>
-        <FilterField label="负责组"><Select aria-label="负责组" value={props.groupValue} options={groups.list} disabled={Boolean(groups.reason)} onChange={props.onGroup} /></FilterField>
-        <FilterField label="客服"><Select aria-label="客服" value={props.agentValue} options={agents.list} disabled={Boolean(agents.reason)} onChange={props.onAgent} /></FilterField>
+        <FilterField label="负责组"><Select aria-label="负责组" value={props.groupValue} options={groups.list} disabled={groups.disabled} onChange={props.onGroup} /></FilterField>
+        <FilterField label="客服"><Select aria-label="客服" value={props.agentValue} options={agents.list} disabled={agents.disabled} onChange={props.onAgent} /></FilterField>
         {(groups.reason || agents.reason) && <p className="m1-todo-more-note">{groups.reason ?? agents.reason}</p>}
       </>}>
       <FilterField label="客户" grow><Input value={props.keyword} maxLength={200} onChange={event => props.onKeyword(event.target.value)} placeholder="客户名称、用户编码或手机号" aria-label="查询客户名称、用户编码或手机号" /></FilterField>
     </FilterBar>
     {props.notice}
     {read.state === "loading" && <BlockState state="loading" title="正在加载…" />}
-    {read.state === "error" && <BlockState state="error" title="待跟进客户加载失败" detail={read.detail ?? "这次没读到名单，筛选条件还在。"} onRetry={props.onRetry} />}
+    {read.state === "error" && <BlockState state="error" title="待跟进客户加载失败" detail={read.detail} onRetry={props.onRetry} retrying={props.querying} />}
+    {read.state === "missing" && <BlockState state="error" title="待跟进客户加载失败" detail={read.detail} />}
+    {read.state === "denied" && <BlockState state="denied" title="无权限访问" detail={read.detail} />}
     {read.state === "unconfigured" && <div className="m1-todo-unconfigured" role="status">
       <p className="m1-todo-unconfigured-title"><b>主动维护间隔天数</b><StatusTag tone="neutral" icon={Info}>未配置</StatusTag></p>
       <p>配好之前查不了待维护，这不代表没有要维护的客户。</p>
@@ -172,7 +174,7 @@ export function M1TodoPanel(props: TodoPanelProps) {
     </div>}
     {ready && ready.rows.length === 0 && (filtered
       ? <BlockState state="empty" title="没有符合条件的待跟进客户" detail={<>换个待办原因或客服再看。<span className="m1-todo-empty-action"><Button size="sm" onClick={props.onClear}>清除筛选</Button></span></>} />
-      : <BlockState state="empty" title="暂无待跟进客户" detail="客户发来消息、新分给专属客服或到了维护时间，会出现在这里。" />)}
+      : props.noGroups ? <TodoNoGroups /> : <BlockState state="empty" title="暂无待跟进客户" detail="客户发来消息、新分给专属客服或到了维护时间，会出现在这里。" />)}
     {ready && ready.rows.length > 0 && <>
       <Table label="待跟进客户" className="m1-todo-table">
         <colgroup><col /><col /><col /><col /><col /></colgroup>
@@ -182,26 +184,30 @@ export function M1TodoPanel(props: TodoPanelProps) {
           <Td><span className="m1-todo-nowrap">{row.agentName ?? "—"}</span></Td>
           <Td><TodoReasons row={row} quietReply={filter === "WAITING_REPLY"} /></Td>
           <Td><span className="m1-todo-nowrap">{row.lastLoginAt ? formatBusinessTimeCompact(row.lastLoginAt, "—") : "—"}</span></Td>
-          <Td sticky="end"><TodoRowActions row={row} access={props.access} checking={props.checkingId === row.customerId} onStart={() => props.onStart(row)} onRead={() => props.onRead(row)} onProfile={() => props.onProfile(row)} /></Td>
+          <Td sticky="end"><TodoRowActions row={row} access={props.access} checking={props.checkingId === row.customerId} refreshing={props.querying} onStart={() => props.onStart(row)} onRead={() => props.onRead(row)} onProfile={() => props.onProfile(row)} /></Td>
         </Tr>)}</tbody>
       </Table>
-      <Pager label="待跟进客户" total={ready.total} page={props.page} pageSize={props.pageSize} sizes={[10, 20, 50]} loading={props.querying} onPage={props.onPage} onPageSize={props.onPageSize} />
+      <Pager label="待跟进客户" total={ready.total} page={props.page} pageSize={props.pageSize} sizes={TODO_PAGE_SIZES} loading={props.querying} onPage={props.onPage} onPageSize={props.onPageSize} />
     </>}
   </Panel>;
+}
+
+export function TodoNoGroups() {
+  return <BlockState state="empty" title="你还没有负责的客服组" detail="请超级管理员在「客服与分组」给你设置负责组。" />;
 }
 
 /**
  * 资料抽屉（来源 M1）：开头写这位客户为什么在名单里、算到什么时候；资料本身是现有的管理版客户资料（children）。
  * 上一条、下一条只在当前页内切；发起会话的结果写在抽屉里、底部动作上方。
  */
-export function TodoProfileDrawer({ row, evaluatedAt, access, checking, nav, holdNotice, onStart, onRead, onClose, children }: {
-  row: TodoRow; evaluatedAt: string; access: TodoAccess; checking: boolean;
+export function TodoProfileDrawer({ row, access, checking, refreshing, nav, holdNotice, onStart, onRead, onClose, children }: {
+  row: TodoRow; access: TodoAccess; checking: boolean; refreshing: boolean;
   nav: { onPrev: () => void; onNext: () => void; hasPrev: boolean; hasNext: boolean };
   holdNotice?: ReactNode; onStart: () => void; onRead: () => void; onClose: () => void; children: ReactNode;
 }) {
   return <Drawer open title="客户资料" sub={row.name + " · " + row.customerCode} nav={nav} onClose={onClose}
     footer={<>{holdNotice}<div className="m1-todo-drawer-actions">
-      {access === "reply" && <Button variant="primary" loading={checking} onClick={onStart}>发起会话</Button>}
+      {access === "reply" && <Button variant="primary" loading={checking} disabled={refreshing} onClick={onStart}>发起会话</Button>}
       {access === "read" && <Button onClick={onRead}>查看会话记录</Button>}
       <Button onClick={onClose}>关闭</Button>
     </div></>}>
@@ -209,7 +215,7 @@ export function TodoProfileDrawer({ row, evaluatedAt, access, checking, nav, hol
     <section className="m1-todo-points" aria-label="待办">
       <h4>待办</h4>
       <TodoReasons row={row} />
-      <p className="m1-todo-points-asof">{asOf(row.evaluatedAt ?? evaluatedAt)}</p>
+      <p className="m1-todo-points-asof">{asOf(row.evaluatedAt)}</p>
     </section>
     {children}
   </Drawer>;

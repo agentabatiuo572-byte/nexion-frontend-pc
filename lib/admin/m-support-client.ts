@@ -39,7 +39,7 @@ export type SupportOverview = {
 export type PerformanceMetric = "EXECUTION" | "SUCCESSFUL_CYCLE";
 export type PerformanceFact = { id: string; customerId: string; agentId: string; assignmentId: string; cycleId: string; sourceId: string | null; eventAt: string };
 export type PerformanceDetails = SupportPage<PerformanceFact> & { visibleCount: number; restrictedCount: number; windowFrom: string; windowTo: string; timeZone: string; queryVersion: string };
-export type SupportWorkbenchSnapshot = { overview: SupportOverview; customers: SupportPage<SupportCustomer>; completeness: { unknownCount: number; unknownWindowCount: number; coverageStartAt: string; observedThroughAt: string; observationLagMillis: number; activitySource: "INTERACTIVE_LOGIN" } };
+export type SupportWorkbenchSnapshot = { overview: SupportOverview; customers: SupportPage<SupportCustomer> & { evaluatedAt: string; available: boolean; filter: SupportCustomerFilter }; completeness: { unknownCount: number; unknownWindowCount: number; coverageStartAt: string; observedThroughAt: string; observationLagMillis: number; activitySource: "INTERACTIVE_LOGIN" } };
 export type SupportCustomer = {
   customerId: string;
   assignmentId: string | null;
@@ -64,11 +64,11 @@ export type SupportCustomer = {
   pendingReplyCount: number;
   pendingConversationNo: string | null;
   pendingThroughMessageId: number | null;
-  /** B116：三种待办原因的起点和这一行的判断时刻（UTC）。旧回包没有这几个键。TODO(B-wire)：接入时按契约收紧。 */
-  waitingReplySinceAt?: string | null;
-  firstContactSinceAt?: string | null;
-  maintenanceDueAt?: string | null;
-  evaluatedAt?: string;
+  /** B116：三种待办原因的起点和这一行的判断时刻（UTC）。 */
+  waitingReplySinceAt: string | null;
+  firstContactSinceAt: string | null;
+  maintenanceDueAt: string | null;
+  evaluatedAt: string;
 };
 export type SupportCustomerDetail = SupportCustomer & { effectiveLanguage: string; agentAdminId: number; maintenanceEnabled: boolean; maintenanceVersion: number; profile?: Record<string, unknown> };
 export type SupportMaintenanceRecord = { id: string; agentAdminId: string | null; kind: string; occurredAt: string; state?: string };
@@ -356,10 +356,10 @@ function customer(value: unknown): SupportCustomer {
     pendingReplyCount: count(row.pendingReplyCount, "customer.pendingReplyCount"),
     pendingConversationNo: nullableString(row.pendingConversationNo, "customer.pendingConversationNo"),
     pendingThroughMessageId: row.pendingThroughMessageId === null ? null : positive(row.pendingThroughMessageId, "customer.pendingThroughMessageId"),
-    ...(row.waitingReplySinceAt === undefined ? {} : { waitingReplySinceAt: nullableTimestamp(row.waitingReplySinceAt, "customer.waitingReplySinceAt") }),
-    ...(row.firstContactSinceAt === undefined ? {} : { firstContactSinceAt: nullableTimestamp(row.firstContactSinceAt, "customer.firstContactSinceAt") }),
-    ...(row.maintenanceDueAt === undefined ? {} : { maintenanceDueAt: nullableTimestamp(row.maintenanceDueAt, "customer.maintenanceDueAt") }),
-    ...(row.evaluatedAt === undefined ? {} : { evaluatedAt: timestamp(row.evaluatedAt, "customer.evaluatedAt") }),
+    waitingReplySinceAt: nullableTimestamp(row.waitingReplySinceAt, "customer.waitingReplySinceAt") ?? null,
+    firstContactSinceAt: nullableTimestamp(row.firstContactSinceAt, "customer.firstContactSinceAt") ?? null,
+    maintenanceDueAt: nullableTimestamp(row.maintenanceDueAt, "customer.maintenanceDueAt") ?? null,
+    evaluatedAt: timestamp(row.evaluatedAt, "customer.evaluatedAt"),
   };
 }
 const EFFECTIVE_SUPPORT_LANGUAGES = new Set(["en-US", "zh-CN", "vi-VN", "id-ID", "ms-MY", "fil-PH", "ru-RU", "kk-KZ", "uz-UZ"]);
@@ -434,8 +434,9 @@ function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
     activityWindowDays: nullablePositive(rules.activityWindowDays, "workbench.rules.activityWindowDays"),
     performance: { executionCount: count(performance.executionCount, "workbench.performance.executionCount"), successfulCycleCount: count(performance.successfulCycleCount, "workbench.performance.successfulCycleCount"), successfulCustomerCount: count(performance.successfulCustomerCount, "workbench.performance.successfulCustomerCount"), from: timestamp(performance.from, "workbench.performance.from"), to: timestamp(performance.to, "workbench.performance.to"), timeZone: nonempty(performance.timeZone, "workbench.performance.timeZone"), scopeVersion: performance.scopeVersion == null ? null : nonempty(performance.scopeVersion, "workbench.performance.scopeVersion"), trend },
   };
-  const customers = { ...page(rawPage, customer), available: bool(rawPage.available, "workbench.customers.available"), filter: enumValue(rawPage.filter, FILTERS, "workbench.customers.filter") };
-  if (!customers.available && customers.records.length) malformed("workbench.customers.records");
+  const customers = { ...page(rawPage, customer), evaluatedAt: overview.evaluatedAt, available: bool(rawPage.available, "workbench.customers.available"), filter: enumValue(rawPage.filter, FILTERS, "workbench.customers.filter") };
+  if (!customers.available && (customers.total !== 0 || customers.records.length !== 0)) malformed("workbench.customers.records");
+  if (!customers.available && ["TODO", "WAITING_REPLY", "FIRST_CONTACT"].includes(customers.filter)) malformed("workbench.customers.available");
   const completenessValue = {
     unknownCount: count(completeness.unknownCount, "workbench.completeness.unknownCount"),
     unknownWindowCount: count(completeness.unknownWindowCount, "workbench.completeness.unknownWindowCount"),
@@ -554,6 +555,7 @@ export const supportClient = {
     request(`/support-workbench/customers${query({ pageNum: positive(options.pageNum, "pageNum"), pageSize: positive(options.pageSize, "pageSize"), keyword: options.keyword, filter: options.filter, agentId: options.agentId, mode: options.mode === undefined ? undefined : enumValue(options.mode, ["PERSONAL", "MANAGED", "ALL"] as const, "mode"), groupId: options.groupId === undefined ? undefined : positive(options.groupId, "groupId"), from: options.from, to: options.to })}`, value => {
       const result = workbenchSnapshot(value);
       if (options.mode !== undefined && result.overview.scope.mode !== options.mode) malformed("workbench.scope.modeMismatch");
+      if (result.customers.filter !== (options.filter ?? "ALL")) malformed("workbench.customers.filter");
       return result;
     }, { signal: options.signal }),
   overview: async (options: { from?: string; to?: string; mode?: SupportReadMode; groupId?: number; agentId?: number; signal?: AbortSignal } = {}) =>

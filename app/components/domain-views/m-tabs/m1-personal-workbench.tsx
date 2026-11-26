@@ -170,7 +170,19 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   }, [authEpoch]);
 
   const personalSearchKey = `nexion-m1-personal-keyword:${adminId}`;
-  useEffect(() => { try { const saved = sessionStorage.getItem(personalSearchKey) ?? ""; setKeyword(saved); setKeywordDraft(saved); } catch { /* Search still works without memory. */ } }, [personalSearchKey]);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const freshTodo = url.searchParams.get("view") === "my-customers" && url.searchParams.get("entry") === "overview";
+    if (freshTodo) {
+      url.searchParams.delete("entry");
+      window.history.replaceState(null, "", url);
+    }
+    try {
+      if (freshTodo) sessionStorage.removeItem(personalSearchKey);
+      const saved = freshTodo ? "" : sessionStorage.getItem(personalSearchKey) ?? "";
+      setKeyword(saved); setKeywordDraft(saved);
+    } catch { /* Search still works without memory. */ }
+  }, [personalSearchKey]);
   useEffect(() => {
     if (!active || view !== "customers") return;
     const url = new URL(window.location.href);

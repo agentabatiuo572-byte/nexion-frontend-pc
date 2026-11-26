@@ -9,6 +9,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { todoSessionReturnHref } from "@/lib/admin/support-todo-route";
+import { canAccessResolvedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { DomainModuleLoading } from "./domain-module-state";
 import "./m-domain.css";
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
@@ -117,9 +120,8 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
   const authEpoch = useAdminAuth((state) => state.authEpoch);
   const session = useAdminAuth((state) => state.session);
-  // M3 opened from the 客户 list (发起会话) links back to that list with its filters and page.
-  const [fromCustomers, setFromCustomers] = useState(false);
-  useEffect(() => { setFromCustomers(tab === "M3" && new URLSearchParams(window.location.search).get("from") === "customers"); }, [tab]);
+  const search = useSearchParams();
+  const fromList = tab === "M3" ? search.get("from") : null;
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [faqDeleteBlock, setFaqDeleteBlock] = useState<string>();
   const actionConfirmRunRef = useRef<ActionConfirmReq | null>(null);
@@ -672,7 +674,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [tab, mergedParams]);
   // M-44: only a live figure earns header space; the fixed descriptive tags repeated the page summary.
   const right = liveCount ? <span className="f-live"><span className="dot" />{liveCount}</span> : null;
-  const backToCustomers = fromCustomers ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link> : undefined;
+  const canReturnToTodo = fromList === "todo" && session && session.supportReadModes?.some(mode => mode === "ALL" || mode === "MANAGED")
+    && canAccessResolvedPath(resolveVisibleDomains(session), "/service/overview");
+  const backToList = fromList === "customers"
+    ? <Link className="m-back-link" href="/service/overview?view=customers&restore=customers">‹ 返回负责组客户</Link>
+    : canReturnToTodo ? <Link className="m-back-link" href={todoSessionReturnHref(search.get("returnTo"))}>‹ 返回待跟进</Link> : undefined;
   // 这三条提醒说的是整页的数据，放在专属会话的页头下面。
   const shownOperationNotice = operationNotice?.adminId === session?.adminId ? operationNotice?.text : "";
   useSendJournalRevision();
@@ -697,9 +703,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const page = (
     <>
-      {tab !== "M3" && tab !== "M1" && tab !== "M4" && tab !== "M5" && <DomainHeader {...meta} right={right} back={backToCustomers} />}
+      {tab !== "M3" && tab !== "M1" && tab !== "M4" && tab !== "M5" && <DomainHeader {...meta} right={right} back={backToList} />}
       {tab !== "M3" && shownOperationNotice && <Notice tone={operationNotice?.tone ?? "danger"} action={<>{operationNotice?.tone === "danger" && <Link className="rd-link" href="/service/sessions">去专属会话处理 →</Link>}<Button size="sm" onClick={() => { lastOperationNotice = null; setOperationNotice(null); }}>知道了</Button></>}>{shownOperationNotice}</Notice>}
-      {tab === "M3" && !safeMData && !hasM3Recovery && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToCustomers} />}
+      {tab === "M3" && !safeMData && !hasM3Recovery && <PageHeader pageId="M3" title="专属会话" summary={M3_SUMMARY} back={backToList} />}
 
       {tab !== "M3" && tab !== "M4" && tab !== "M5" && mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -731,7 +737,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       ) : (safeMData || hasM3Recovery) && (
         <>
           {tab === "M2" && <p>工单服务已下线，请通过客户会话继续联系。</p>}
-          {tab === "M3" && <M3DedicatedChat ctx={ctx} snapshotRevision={conversationSnapshotRevision} back={backToCustomers} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnecting={conversationReconnecting} reconnectExhausted={reconnectExhausted} />}
+          {tab === "M3" && <M3DedicatedChat ctx={ctx} snapshotRevision={conversationSnapshotRevision} back={backToList} summary={M3_SUMMARY} banner={m3Banner} streamReady={conversationStreamReady} reconnecting={conversationReconnecting} reconnectExhausted={reconnectExhausted} />}
         </>
       )}
 
