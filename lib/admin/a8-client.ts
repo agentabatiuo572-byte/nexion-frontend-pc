@@ -55,7 +55,7 @@ async function a8Request<T>(path: string): Promise<T> {
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     const status = response.ok ? result?.code ?? response.status : response.status;
-    throw new PlatformReadError(formatAdminApiError(result?.message, `A8_REQUEST_FAILED_${response.status}`), status);
+    throw new PlatformReadError(formatAdminApiError(result?.message, `A8_REQUEST_FAILED_${response.status}`, "read"), status);
   }
   return result.data as T;
 }

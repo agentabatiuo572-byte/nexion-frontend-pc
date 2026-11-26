@@ -199,7 +199,7 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
     : (path === "/quest-events/events-overview" || path === "/quest-events/wheel-daily-usage") ? response.text().then(parseH4StatisticsJson) : response.json()).catch(() => null)) as ApiResult<T> | null;
   const unknownOutcome = strictOutcome && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown";
   if (!response.ok || !result || result.code !== 0 || unknownOutcome) {
-    const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`, "write", result?.data));
+    const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data));
     // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
     // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
     // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。

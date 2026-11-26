@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { FileCheck2, FilePen, FileText, History, Scale } from "lucide-react";
 import { BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Field, FilterField, Fold, Input, IrreversibleTag, MoreMenu, Notice, Panel, RecordList, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr, type StateTone } from "@/app/components/rd";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchLegalTermsAdmin, type LegalTermsSection, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { currentLegalTermsDateTime, normalizeLegalTermsDateTime } from "@/lib/admin/legal-terms-contract";
 import type { TabHead } from "./i5-disclosures";
@@ -80,7 +80,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
       }
       return value;
     } catch (cause) {
-      if (sequence === requestSequence.current) setError(displayAdminError(cause));
+      if (sequence === requestSequence.current) setError(displayAdminReadError(cause));
     } finally {
       if (sequence === requestSequence.current) setBusy(false);
     }
@@ -139,7 +139,7 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
     try {
       base = await findDraftBase();
     } catch (cause) {
-      toast(`现行条款没读到，这次没有新建：${displayAdminError(cause)}`, "error");
+      toast(`现行条款没读到，这次没有新建：${displayAdminReadError(cause)}`, "error");
       return;
     }
     leaveEditor(() => {
@@ -372,7 +372,7 @@ function LegalEditor({ initial, latest, base, sectionsBlocked, canPublish, block
   const publishBlocked = blockedReason ?? (isNew || dirty ? "先保存草稿，发布只发已保存的内容" : sectionsBlocked(form));
   const close = guard.askClose;
   return <>
-    <Drawer open wide onClose={close} title="法律条款草稿" sub={`${form.version} · ${localeName(form.locale)} · ${form.jurisdiction}`} icon={FilePen} tone="role-1"
+    <Drawer open wide onClose={close} onInteractOutside={guard.keepDraftForLeaveLink} title="法律条款草稿" sub={`${form.version} · ${localeName(form.locale)} · ${form.jurisdiction}`} icon={FilePen} tone="role-1"
       footer={<Decision explain="保存草稿不改变用户看到的条款。发布立即生效，不走审批。" others={<>
         <Button onClick={close}>取消</Button>
         <Button variant={canPublish ? "secondary" : "primary"} disabledReason={saveBlocked} onClick={() => onSave(form)}>保存草稿</Button>

@@ -83,7 +83,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const error = new AccountDeletionRequestError(
       response.status,
       result?.code,
-      formatAdminApiError(result?.message, `ACCOUNT_DELETION_REQUEST_FAILED_${response.status}`),
+      formatAdminApiError(result?.message, `ACCOUNT_DELETION_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"),
       result?.message,
     );
     throw error;

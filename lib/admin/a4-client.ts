@@ -332,7 +332,7 @@ async function a4Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    throw Object.assign(new Error(formatAdminApiError(result?.message, `A4_REQUEST_FAILED_${response.status}`)), {
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A4_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read")), {
       status: response.ok && typeof result?.code === "number" && result.code !== 0 ? result.code : response.status,
       httpStatus: response.status, apiCode: result?.code, reasonCode: result?.message,
     });

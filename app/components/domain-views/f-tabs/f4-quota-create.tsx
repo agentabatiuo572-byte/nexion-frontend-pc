@@ -12,7 +12,7 @@ import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fConfirmRecovery } from "./f-recovery-state";
 import { fetchE1Products } from "@/lib/admin/e1-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { Explain, Fact, Facts, Notice, StatusTag } from "@/app/components/rd";
 import { OperationConfirmModal } from "../design-kit";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
@@ -70,7 +70,7 @@ export function F4QuotaCreate({ data, ctx, onClose, original, draft }: { data?: 
     if (original) return;
     let active = true;
     void fetchE1Products().then(({ skus }) => { if (active) setProducts(skus); }).catch(error => {
-      if (active) setCatalogError(displayAdminError(error));
+      if (active) setCatalogError(displayAdminReadError(error));
     });
     return () => { active = false; };
   }, [original]);

@@ -93,7 +93,7 @@ export async function requestUpdates(platform: Platform, command?: { action: Act
   } : { cache: "no-store" });
   const result = await response.json().catch(() => null);
   if (!response.ok || result?.code !== 0) {
-    throw new UpdateError(formatAdminApiError(result?.message, "版本策略读取或保存失败，请重新读取当前记录。"), response.ok ? result?.code ?? 502 : response.status);
+    throw new UpdateError(formatAdminApiError(result?.message, "版本策略读取或保存失败，请重新读取当前记录。", command ? "write" : "read"), response.ok ? result?.code ?? 502 : response.status);
   }
   const data: PlatformUpdates | undefined = result.data;
   if (!data || data.platform !== platform || !Number.isSafeInteger(data.revision)

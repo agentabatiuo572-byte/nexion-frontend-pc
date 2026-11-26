@@ -106,7 +106,7 @@ async function request(path: string, body?: unknown): Promise<unknown> {
     ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   });
   const envelope = await response.json().catch(() => null);
-  if (!response.ok || !envelope || envelope.code !== 0) throw new Error(formatAdminApiError(envelope?.message,"手机校准配置读取失败"));
+  if (!response.ok || !envelope || envelope.code !== 0) throw new Error(formatAdminApiError(envelope?.message, "手机校准配置读取失败", body === undefined ? "read" : "write"));
   return envelope.data;
 }
 export async function fetchPhoneCalibration(): Promise<PhoneCalibrationOverview> {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Drawer } from "./design-kit";
 import { createA2CommandKey, fetchA2ReasonPolicy } from "@/lib/admin/a2-client";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchTrustDocumentFile, fetchTrustDocuments, restoreTrustDocument, uploadTrustDocument,
@@ -36,7 +36,7 @@ export function TrustDocumentsCard() {
     if (!canRead) return;
     setLoading(true); setError(null);
     try { setDocuments(await fetchTrustDocuments()); }
-    catch (cause) { setError(displayAdminError(cause)); }
+    catch (cause) { setError(displayAdminReadError(cause)); }
     finally { setLoading(false); }
   }, [canRead]);
   useEffect(() => { void refresh(); }, [refresh]);

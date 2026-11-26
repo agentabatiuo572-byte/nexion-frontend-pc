@@ -131,7 +131,7 @@ async function e6Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const response = await guardedFetch(`/api/admin/devices${path}`, { ...init, headers, cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
-    throw Object.assign(new Error(formatAdminApiError(result?.message, `E6_REQUEST_FAILED_${response.status}`)), {
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `E6_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read")), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
     });
   }

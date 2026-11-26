@@ -261,7 +261,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1BundleDiscount(snapshot.bundleDiscount);
     } catch (error) {
       // 只有页级契约坏了(响应根本不是分页形状)才清空:此时没有任何可信的行可展示。
-      setE1Error(displayAdminError(error));
+      setE1Error(displayAdminReadError(error));
       setE1Skus([]);
       setE1InvalidSkus([]);
       setE1Gates(null);
@@ -312,7 +312,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     } else {
       setTasks([]);
       setE2TaskCatalogReady(false);
-      errors.push(`任务目录：${displayAdminError(tasksResult.reason)}`);
+      errors.push(`任务目录：${displayAdminReadError(tasksResult.reason)}`);
     }
     if (phoneResult.status === "fulfilled") {
       setPhoneTiers(phoneResult.value.tiers);
@@ -320,7 +320,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     } else {
       setPhoneTiers([]);
       setYieldComparisons([]);
-      errors.push(`手机档位：${displayAdminError(phoneResult.reason)}`);
+      errors.push(`手机档位：${displayAdminReadError(phoneResult.reason)}`);
     }
     setE2Error(errors.length ? errors.join("；") : null);
     setE2Loading(false);
@@ -425,7 +425,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       if (e4Query.page > lastPage) setE4Query((current) => ({ ...current, page: lastPage }));
     } catch (error) {
       if (seq !== e4ListSeq.current) return;
-      setE4Error(displayAdminError(error));
+      setE4Error(displayAdminReadError(error));
       setOrders([]);
       setE4Total(0);
     } finally {
@@ -475,7 +475,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (seq !== e4DetailSeq.current) return;
       setE4Detail(null);
-      setE4DetailError(displayAdminError(error));
+      setE4DetailError(displayAdminReadError(error));
     } finally {
       // 序号已经顶掉还在读的 openOrder，它的加载状态由这里收。
       if (seq === e4DetailSeq.current) {
@@ -511,7 +511,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       const detail = await fetchE4OrderDetail(order.id);
       if (seq === e4DetailSeq.current) setE4Detail(detail);
     } catch (error) {
-      if (seq === e4DetailSeq.current) setE4DetailError(displayAdminError(error));
+      if (seq === e4DetailSeq.current) setE4DetailError(displayAdminReadError(error));
     } finally {
       if (seq === e4DetailSeq.current) setE4DetailLoading(false);
     }
@@ -826,7 +826,7 @@ function ELegacyDomainView({ meta }: { meta: DomainViewMeta }) {
       setE6Config(await fetchE6ComputeConfig());
       return true;
     } catch (error) {
-      setE6Error(displayAdminError(error));
+      setE6Error(displayAdminReadError(error));
       setE6Config(null);
       return false;
     } finally {

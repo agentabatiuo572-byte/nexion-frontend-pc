@@ -575,7 +575,7 @@ export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `B_DOMAIN_${response.status}`));
+    throw new Error(formatAdminApiError(result?.message, `B_DOMAIN_${response.status}`, "read"));
   }
   if (!result.data) {
     throw new Error("B_DOMAIN_EMPTY_RESPONSE");

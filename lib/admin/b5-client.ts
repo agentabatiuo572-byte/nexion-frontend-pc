@@ -160,7 +160,7 @@ async function request<T>(endpoint: string, init?: RequestInit, preserveRejectio
   if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
     || !result || typeof result.code !== "number")) throw new B5OutcomeUnknownError(commandKey);
   if (!response.ok || !result || result.code !== 0 || result.data == null) {
-    const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`),
+    const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"),
       response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code ?? response.status, message);
     if (commandKey && !preserveRejections && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);
     throw error;
