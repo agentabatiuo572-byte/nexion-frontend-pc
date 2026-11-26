@@ -13,7 +13,8 @@ import { ChevronDown, Download, ListChecks, RefreshCw, ShieldAlert, ShieldCheck 
 import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, Notice, PageHeader, RdPage, StatusTag } from "@/app/components/rd";
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import { a2ActionText, a2ObjectText } from "@/lib/admin/operator-copy";
+import { a2ActionText } from "@/lib/admin/operator-copy";
+import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
 import { B0_BANK_REVIEW_PATH, b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
 import { fetchB0Business, fetchB0Devices, fetchB0ExchangeQueue, fetchB0PromotionUnfulfilled, fetchB0ReferralPending } from "@/lib/admin/b0-client";
@@ -63,8 +64,7 @@ function approvalOwner(row: A2OperationRow): PendingRow["owner"] {
 }
 
 function approvalDetail(row: A2OperationRow) {
-  const change = row.before !== "—" || row.after !== "—" ? `${row.before} → ${row.after}` : row.reason;
-  return [a2ActionText(row.action), a2ObjectText(row), change].filter((part) => part && part !== "—").join(" · ");
+  return `${a2ActionText(row.action)} · ${approvalChangeSummary(row)}`;
 }
 
 export default function CommandCenter() {
