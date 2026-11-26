@@ -1330,6 +1330,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   }, [currentAdminId, overview]);
   const confirmLocalRelease = (record: { createdAt: number }, name: React.ReactNode, release: () => boolean) => ctx.openConfirm({
     briefKind: "security", action: "解除原操作记录", title: "解除原操作记录", reason: false,
+    requireReleaseCheck: true,
     detail: "请先核实原操作的实际结果。",
     statedBrief: {
       impact: "确认后解除这个标签页里的原操作记录。",

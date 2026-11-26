@@ -115,7 +115,11 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
       const params = record.request.command.params as { value?: unknown; expectedValue?: unknown };
       const name = batch ? "补发收益" : G4_PARAM_NAME[obj] ?? obj;
       const to = typeof params.value === "string" ? g4ParamValueText(obj, params.value) : "—";
-      const from = typeof params.expectedValue === "string" ? g4ParamValueText(obj, params.expectedValue) : undefined;
+      // A2 exposes the bound G4 snapshot as "series · parameter = value" or "series=…; dividend=value".
+      const ticketBefore = obj === "dividend" ? record.ticket?.before.match(/^series=.+?; dividend=(.*)$/)?.[1]
+        : record.ticket?.before.match(/^.+? · [^=]+ =\s*(.*)$/)?.[1];
+      const before = ticketBefore ?? params.expectedValue;
+      const from = typeof before === "string" ? g4ParamValueText(obj, before) : undefined;
       const change = batch ? <>批次 <span data-mono>{obj}</span></> : from ? <Change from={from} to={to} /> : <>申请改成 {to}</>;
       const rejected = record.replayRejection && !record.ticket;
       return {

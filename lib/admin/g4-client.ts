@@ -660,11 +660,11 @@ export async function fetchG4DividendApprovalState(batchNo?: string) {
   return state;
 }
 
-export async function updateG4GenesisParam(paramKey: string, value: string, reason: string, operator: string, decisionRef?: string) {
+export async function updateG4GenesisParam(paramKey: string, value: string, reason: string, operator: string, decisionRef?: string, expectedValue?: string) {
   return g4OverviewMutation(
     `/nex/genesis/params/${encodeURIComponent(paramKey)}`,
     "PATCH",
-    { value, reason, operator, decisionRef },
+    { value, reason, operator, decisionRef, expectedValue },
   );
 }
 

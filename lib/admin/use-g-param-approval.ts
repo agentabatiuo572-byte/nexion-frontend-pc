@@ -16,7 +16,7 @@ import type { PendingConfirmRecovery } from "@/app/components/domain-views/desig
 type Page = "G2" | "G4" | "G7";
 type Proposal = Parameters<typeof createA2OperationProposal>[0];
 type Change = { key: string; current: string; value: string; reason: string; decisionRef?: string;
-  expectedRevision?: string; batchNo?: string; approvalRequired?: boolean };
+  expectedRevision?: string; batchNo?: string; approvalRequired?: boolean; allowApprovalFallback?: boolean };
 export interface PendingGParam extends PendingMutationRecord {
   adminId: number;
   page: Page;
@@ -346,6 +346,7 @@ export function useGParamApproval(page: Page, toast: (message: string) => void, 
       if (original) return { proposal: await send(original) };
       requireActor(change.key, false, !!change.batchNo);
       if (!amplifies(page, change)) {
+        if (change.allowApprovalFallback === false) return { direct: await direct() };
         try { return { direct: await direct() }; }
         catch (error) {
           const required = page === "G4" && change.batchNo ? "G4_EMISSION_APPROVAL_REQUIRED"

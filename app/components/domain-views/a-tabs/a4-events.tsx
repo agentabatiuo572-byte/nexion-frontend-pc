@@ -333,6 +333,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
 
   const releaseRejectedRegistry = (commandKey: string) => ctx.openConfirm({
     briefKind: "record", action: "解除原操作记录", title: "解除原登记记录", reason: false,
+    requireReleaseCheck: true,
     detail: "按原操作重试被明确拒绝。",
     statedBrief: {
       impact: "核对原操作结果后，只解除这条本地记录。",
@@ -1257,6 +1258,7 @@ const batchActionTarget = (batch: { title?: string; newDomains?: Array<{ name: s
   };
   const releaseDirect = (record: A4Command) => ctx.openConfirm({
     briefKind: "record", action: "解除原操作记录", reason: false,
+    requireReleaseCheck: true,
     detail: "核对原操作结果后，只解除这条本地记录，不发请求，也不进操作记录。",
     run: async () => {
       if (!a4DirectRecovery.releaseRejectedReplay(record)) throw new Error("A4_ORIGINAL_UNRESOLVED");
