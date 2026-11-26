@@ -55,7 +55,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const unknown = response.headers.get("X-Nexion-Upstream-Outcome") === "unknown" || isIdempotencyOutcomeOpen(body.message);
   if (!response.ok || body.code !== 0 || body.data == null || unknown) {
     const status = response.ok && body.code >= 400 && body.code < 500 ? body.code : response.status;
-    const message = formatAdminApiError(body.message, `TRUST_DOCUMENT_REQUEST_FAILED_${response.status}`);
+    const message = formatAdminApiError(body.message, `TRUST_DOCUMENT_REQUEST_FAILED_${response.status}`, write ? "write" : "read");
     const uncertain = write && (unknown || body.code >= 500 || !isDeterministicRejection(response.status, body.code) || response.ok && body.code === 0);
     throw Object.assign(uncertain ? new OutcomeUnknownError(message) : new Error(message), { status, apiCode: body.code, reasonCode: body.message });
   }

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } fro
 import { FileCheck2, FilePen, FileText, Languages, Plus, Trash2 } from "lucide-react";
 import { BlockState, Button, Cell, Conclusion, Decision, DiffList, Drawer, Fact, Facts, Field, Fold, Input, Modal, MoreMenu, Notice, NumberInput, Panel, RecordList, Segments, Select, StatusTag, Table, TableMessage, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { businessClock } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { fetchPrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
 import type { TabHead } from "./i5-disclosures";
 import { LeaveDialog, MergeNotice, mergeEdits, useLeaveGuard, withConflict, WRITE_LOCKED, type EditorSwitch, type I5Writes, type MergeReport } from "./i5-writes";
@@ -49,7 +49,7 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
       setReadAt(businessClock(Date.now()));
     } catch (cause) {
       // 上次读到的 doc 留着给编辑器，页面按 error 不再显示它。清掉会卸载编辑器，丢未保存的输入（OP-97）。
-      setError(displayAdminError(cause));
+      setError(displayAdminReadError(cause));
     } finally {
       setLoading(false);
     }
@@ -231,7 +231,7 @@ function PrivacyEditor({ initial, canPublish, blockedReason, readFailed, onRetry
   const saveLabel = form.status === "PUBLISHED" ? "保存并发布" : form.status === "UNPUBLISHED" ? "保存并撤下" : "保存草稿";
   const close = guard.askClose;
   return <>
-    <Drawer open wide onClose={close} title="编辑隐私政策" sub={`正文版本 ${versionName(baseline.version) || "—"}`} icon={FilePen} tone="role-1"
+    <Drawer open wide onClose={close} onInteractOutside={guard.keepDraftForLeaveLink} title="编辑隐私政策" sub={`正文版本 ${versionName(baseline.version) || "—"}`} icon={FilePen} tone="role-1"
       footer={<Decision note={form.status === "DRAFT" ? "草稿保留当前公开版本。" : "保存后立即生效，请仅发布已审核正文。"}
         danger={<span className="rd-toolbar"><span className="rd-toolbar-note">保存后状态</span><Select aria-label="保存后状态" value={form.status} options={[
           { value: "DRAFT", label: "草稿" },

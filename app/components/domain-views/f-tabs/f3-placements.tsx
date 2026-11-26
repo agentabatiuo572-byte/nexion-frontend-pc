@@ -4,7 +4,7 @@ import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-ti
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { assignPlacement, checkPlacement, readPlacements, rememberPlacement, pendingPlacement, forgetPlacement, PlacementError, type PlacementIntent, type PlacementPage, type PlacementStatus } from "@/lib/admin/f3-placements-client";
 import { CircleDashed, Eye, Users } from "lucide-react";
@@ -51,7 +51,7 @@ export function F3Placements() {
     const key = stamp(), version = ++generation.current;
     working.current = true; setBusy(true); setData(null); setError(""); setNotice("");
     try { const result = await readPlacements(ownerUserId, status, page); if (current(key, version)) setData(result); }
-    catch (e) { if (current(key, version)) setError(displayAdminError(e)); }
+    catch (e) { if (current(key, version)) setError(displayAdminReadError(e)); }
     finally { if (current(key, version)) { working.current = false; setBusy(false); } }
   }
 

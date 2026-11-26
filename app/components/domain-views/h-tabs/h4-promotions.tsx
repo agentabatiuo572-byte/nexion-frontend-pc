@@ -86,7 +86,20 @@ export default function H4Promotions({ ctx, legacy }: {
         url.searchParams.set('promotion', next);
         url.searchParams.set('activity', target);
     } history.pushState({}, '', url); });
-    useEffect(() => { const restore = () => { const p = new URLSearchParams(location.search), s = p.get('promotion'); setScreen(SCREENS.includes(s as Screen) ? s as Screen : 'list'); setId(p.get('activity') || '');setEditStep(Math.max(0,Math.min(3,Number(p.get('step'))||0)));setRouteReady(true);  }; if (screen !== 'edit' || !pageReady) restore(); window.addEventListener('popstate', restore); return () => window.removeEventListener('popstate', restore); }, [routeSearch]);
+    const restoreRoute = useCallback(() => {
+        const params = new URLSearchParams(location.search);
+        const screen = params.get('promotion') as Screen;
+        setScreen(SCREENS.includes(screen) ? screen : 'list');
+        setId(params.get('activity') || '');
+        setEditStep(Math.max(0, Math.min(3, Number(params.get('step')) || 0)));
+        setRouteReady(true);
+    }, []);
+    useEffect(() => { if (screen !== 'edit' || !pageReady) restoreRoute(); }, [routeSearch, restoreRoute]);
+    // Next can update the search params during popstate. Keep this listener attached through that update.
+    useEffect(() => {
+        window.addEventListener('popstate', restoreRoute);
+        return () => window.removeEventListener('popstate', restoreRoute);
+    }, [restoreRoute]);
     useEffect(() => { if (!id) {
         setActivity(null);
         return;

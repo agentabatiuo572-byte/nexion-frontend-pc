@@ -7,18 +7,18 @@
  * OperationConfirmModal 显式 edit 契约(调参传 edit,处置不传)。
  * J3 处置权移交:冻结 → C2(/users/actions)、簇建档 → K1(/risk/multi-account),本页仅跨域跳转(PRD §15.4)。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./j-domain.css";
 import { RdPage } from "@/app/components/rd";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import type { DomainViewMeta } from "./domain-header";
-import { fetchJEmergencyOverviews, jEmergencyActions, type JEmergencyData } from "@/lib/admin/j-client";
+import { fetchJ4NotifyTemplateOptions, fetchJEmergencyOverviews, jEmergencyActions, type JEmergencyData } from "@/lib/admin/j-client";
 import { J1KillSwitch } from "./j-tabs/j1-killswitch";
 import { J2GeoBlock } from "./j-tabs/j2-geoblock";
 import { J3Tamper } from "./j-tabs/j3-tamper";
 import { J4Sop } from "./j-tabs/j4-sop";
 import type { JCtx, ActionConfirmReq } from "./j-tabs/types";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 
 /** J4 单独成页(对齐 PRD §15.4 应急 SOP 独立;原 J4→J3 折叠取消)。 */
 type JTab = "J1" | "J2" | "J3" | "J4";
@@ -55,35 +55,57 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
   const [emergency, setEmergency] = useState<JEmergencyData>({});
   const [contentLoading, setContentLoading] = useState(true);
   const [contentError, setContentError] = useState<string | null>(null);
+  const [notify, setNotify] = useState<Pick<JEmergencyData, "notifyTemplates" | "notifyTemplatesError">>({});
+  const [notifyTemplatesLoading, setNotifyTemplatesLoading] = useState(false);
+  const notifyRequest = useRef<Promise<void> | null>(null);
+
+  const reloadJ4NotifyTemplates = useCallback(() => {
+    if (notifyRequest.current) return notifyRequest.current;
+    setNotifyTemplatesLoading(true);
+    const request = fetchJ4NotifyTemplateOptions().then(
+      notifyTemplates => setNotify({ notifyTemplates }),
+      error => setNotify({ notifyTemplates: [], notifyTemplatesError: displayAdminReadError(error) }),
+    ).finally(() => {
+      notifyRequest.current = null;
+      setNotifyTemplatesLoading(false);
+    });
+    notifyRequest.current = request;
+    return request;
+  }, []);
 
   const reloadJEmergency = useCallback(async () => {
     setContentLoading(true);
     setContentError(null);
     try {
       const j3State = readJ3LocationState();
-      const nextEmergency = tab === "J3"
+      const next = await (tab === "J3"
         ? fetchJEmergencyOverviews(tab, j3State.window, j3State.page, j3State.pageSize)
-        : fetchJEmergencyOverviews(tab);
-      const next = await nextEmergency;
+        : fetchJEmergencyOverviews(tab));
       setEmergency(next);
       return next;
     } catch (error) {
       setEmergency({});
-      setContentError(error instanceof Error ? displayAdminError(error) : "应急控制数据读取失败，请稍后重试。");
+      setContentError(error instanceof Error ? displayAdminReadError(error) : "应急控制数据读取失败，请稍后重试。");
       throw error;
     } finally {
       setContentLoading(false);
     }
   }, [tab]);
 
+  const reloadJEmergencyPage = useCallback(() => {
+    const main = reloadJEmergency();
+    if (tab === "J4") void reloadJ4NotifyTemplates();
+    return main;
+  }, [tab, reloadJEmergency, reloadJ4NotifyTemplates]);
+
   useEffect(() => {
-    void reloadJEmergency().catch(() => undefined);
-  }, [reloadJEmergency]);
+    void reloadJEmergencyPage().catch(() => undefined);
+  }, [reloadJEmergencyPage]);
 
   const actions = useMemo(
     () => ({
       ...jEmergencyActions,
-      reloadJEmergency,
+      reloadJEmergency: reloadJEmergencyPage,
       loadJ3TamperPage: async (window: "24h" | "7d" | "30d", page: number, pageSize: number) => {
         const tamper = await jEmergencyActions.loadJ3TamperPage(window, page, pageSize);
         persistJ3LocationState(window, tamper.accountPage.page, tamper.accountPage.pageSize);
@@ -91,7 +113,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
         return tamper;
       },
     }),
-    [reloadJEmergency],
+    [reloadJEmergencyPage],
   );
 
   const ctx: JCtx = {
@@ -100,10 +122,13 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
     setParam: () => undefined,
     toast: setToast,
     openActionConfirm: setActionConfirm,
-    emergency,
+    emergency: tab === "J4" ? { ...emergency, ...notify } : emergency,
     actions,
     contentLoading,
     contentError,
+    retryJ4Playbooks: () => void reloadJEmergency().catch(() => undefined),
+    reloadJ4NotifyTemplates,
+    notifyTemplatesLoading,
   };
 
   const confirmModal = mc && (

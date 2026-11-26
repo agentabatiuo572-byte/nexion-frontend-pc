@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Gauge, Headset, LogOut, Search, UserRound, UserRoundPen } from "lucide-react";
 import dynamic from "next/dynamic";
 import { roleLabel, type AdminRole, type NavDomain } from "@/lib/nav/console-nav";
+import { isCommandPaletteBlockedByModal } from "@/lib/nav/leave-navigation";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
 import { UtcClock } from "./utc-clock";
@@ -194,10 +195,12 @@ function CoveragePill({ enabled }: { enabled: boolean }) {
 // 跳转到任意运营模块(消费 IA 统一来源 visibleDomains)。真实可再接 A4 事件流 / userId 检索。
 function SearchBox({ domains, showHome }: { domains: NavDomain[]; showHome: boolean }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        if (isCommandPaletteBlockedByModal()) return;
         setOpen((o) => !o);
       }
     };
@@ -207,6 +210,7 @@ function SearchBox({ domains, showHome }: { domains: NavDomain[]; showHome: bool
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
         aria-label="打开查找功能页面"
@@ -219,7 +223,7 @@ function SearchBox({ domains, showHome }: { domains: NavDomain[]; showHome: bool
         </span>
         <kbd className="admin-topbar-search-shortcut font-mono-tabular">⌘K</kbd>
       </button>
-      <CommandPalette domains={domains} showHome={showHome} open={open} onOpenChange={setOpen} />
+      <CommandPalette domains={domains} showHome={showHome} open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
     </>
   );
 }

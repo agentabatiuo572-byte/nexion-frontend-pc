@@ -2118,7 +2118,7 @@ async function f1Request<T>(
       && (reviewConflict === "MATERIAL_REVISION_STALE" || reviewConflict === "APPLICATION_NOT_PENDING")) {
       throw new F4MaterialReviewNotAppliedError(formatAdminApiError(reviewConflict, "F1_REQUEST_FAILED_409"), reviewConflict);
     }
-    const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
+    const error = new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`, isWrite ? "write" : "read"));
     if (isF3ConfigWrite || /^\/commissions\/CM-\d+$/.test(path) || /^\/leadership-pool\/(?:payout-preview|disqualification-readiness)(?:\?|$)/.test(path) || path === "/leadership-pool/vote-projection" || path.startsWith("/ranks/") || path.startsWith("/v8-review-candidates") || path === "/ambassador-policy" || path === "/commissions/anomaly-config" || /^\/ambassador-applications\/\d+\/materials\/review$/.test(path)) throw Object.assign(error, {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status, httpStatus: response.status, apiCode: result?.code,
       backendMessage: result?.message, reasonCode: result?.message,
