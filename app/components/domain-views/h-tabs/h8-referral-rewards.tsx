@@ -196,6 +196,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   const [releasing, setReleasing] = useState<H8RewardCommand | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityRead | null>(null);
   const [eligibilityRetry, setEligibilityRetry] = useState(0);
+  // 点「重试」后按钮随读取卸下，焦点交给结论这一行（OP-46、ST-56）。
+  const eligibilityLine = useRef<HTMLParagraphElement>(null);
   const eligibilityRef = useRef(eligibility);
   eligibilityRef.current = eligibility;
   useEffect(() => {
@@ -985,8 +987,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
                   value={invitedUserIdInput} onChange={(event) => setInvitedUserIdInput(event.target.value)} />}
               </Field>
               <Button type="submit" disabledReason={targetBlock}>给这位新人结算</Button>
-              {targetUserValid && eligibility?.id === targetUserId && <p className="h8-target-check" aria-live="polite">{eligibility.state === "loading" ? "正在查这位新人能不能结…"
-                : eligibility.state === "error" ? <>读不到他现在能不能结：{eligibility.message}<Button type="button" size="sm" onClick={() => setEligibilityRetry(n => n + 1)}>重试</Button></>
+              {targetUserValid && eligibility?.id === targetUserId && <p ref={eligibilityLine} tabIndex={-1} className="h8-target-check" aria-live="polite">{eligibility.state === "loading" ? "正在查这位新人能不能结…"
+                : eligibility.state === "error" ? <>读不到他现在能不能结：{eligibility.message}<Button type="button" size="sm" onClick={() => { eligibilityLine.current?.focus(); setEligibilityRetry(n => n + 1); }}>重试</Button></>
                   : (() => { const view = eligibilityView(data, eligibility.data); return <><StatusTag tone={view.tone}>{view.tag}</StatusTag><span>{view.text}</span><Explain label="这位新人的情况" content={<EligibilityDetail value={eligibility.data} />} /></>; })()}</p>}
             </form>
           ) : <p className="h8-muted">结算要由有邀请奖励结算权限的同事发起。</p>}
