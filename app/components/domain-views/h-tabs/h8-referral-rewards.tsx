@@ -593,13 +593,12 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     const settleFacts = (value?: string) => {
       const limit = targeted ? 1 : Math.max(1, Math.min(100, Number(value) || 20));
       const pendingNow = snapshot.pending;
-      const batchCount = Math.min(limit, pendingNow);
       const { eligibility: readData, recovering, originalSummary, amounts } = settlementReview();
       const checked = readData ? eligibilityView(snapshot, readData) : null;
       return <Facts>
         {targeted
           ? <Fact k="新人用户编号" lead>{invitedUserId}</Fact>
-          : <Fact k="这一批最多" lead unit={value ? "位新人" : undefined}>{value ? countText(batchCount) : "—"}</Fact>}
+          : <Fact k="这一批最多" lead unit={value ? "位新人" : undefined}>{value ? countText(limit) : "—"}</Fact>}
         {targeted
           ? <Fact k="这位新人">{checked
             ? <><StatusTag tone={checked.tone}>{checked.tag}</StatusTag> {checked.text}<Explain label="这位新人的情况" content={<EligibilityDetail value={readData!} original={recovering} />} /></>
@@ -610,7 +609,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           ? "他的礼包还冻结、又已经有首笔实付订单的，只解冻原礼包；否则不发"
           : "批准执行时逐项核对；不符合就不发"}</Fact>}
         {targeted ? null
-          : <Fact k="现在待结算">{countText(pendingNow)} 位，从最早注册的开始发；批准时按那一刻的名单</Fact>}
+          : <>
+            <Fact k="读取时待结算">{countText(pendingNow)} 位</Fact>
+            <Fact k="批准时结谁">按那时的名单，批准前新符合条件的也算；先结现行生效时间起注册的，再结之前各生效区间的，同一区间按注册先后</Fact>
+          </>}
         {originalSummary ? <Fact k="原结算说明">{originalSummary}</Fact> : <>
           <Fact k="每位新人">{amounts.newcomer}</Fact>
           <Fact k="每位邀请人">{amounts.inviter}</Fact>
@@ -628,10 +630,10 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     title: targeted ? "给指定新人结算" : "批量结算邀请奖励",
     detail: targeted
       ? `只结算新人 ${invitedUserId}；不符合条件就不发，也不会改发给别人。已结算、礼包还冻结又已有首笔实付订单的，这次只解冻原礼包。`
-      : "按注册先后找出生效时间起注册、已开钱包、还没结算、没被风控拦下的新人，有没有邀请人都算。",
+      : "找出已开钱包、还没结算、没被风控拦下的新人，有没有邀请人都算。",
     effect: () => <><StatusTag tone="progress" filled explain={settlementReview().amounts.releaseOnly
       ? `${APPROVER}在「操作记录与审批」批准时复核，符合条件才解冻原礼包；奖励配置在这期间变了，要重新提交。`
-      : `${APPROVER}在「操作记录与审批」批准后才发，批准前什么都不发。批准时按那时的名单发；奖励配置在这期间变了，要重新提交。`}>批准后执行</StatusTag><IrreversibleTag /></>,
+      : `${APPROVER}在「操作记录与审批」批准后才发，批准前什么都不发。批准时按那时的名单发；奖励配置在这期间变了，要重新提交。`}>批准后生效</StatusTag><IrreversibleTag /></>,
     statedBrief: () => {
       const { amounts, originalSummary } = settlementReview();
       if (amounts.releaseOnly) return {
@@ -640,7 +642,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       };
       if (originalSummary) return { impact: "批准时按原申请复核结算资格。", check: "核对原结算说明和操作理由。" };
       return {
-        impact: targeted ? "批准后给这位新人和他的邀请人发奖励，发出去不能撤回。" : "批准后按注册先后给这一批新人和他们的邀请人发奖励，发出去不能撤回。",
+        impact: targeted ? "批准后给这位新人和他的邀请人发奖励，发出去不能撤回。" : "批准后按那时的名单给这一批新人和他们的邀请人发奖励，发出去不能撤回。",
         check: "核对人数和每位金额；理由写清结算依据或工单号。",
       };
     },
@@ -658,7 +660,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     getPendingRecovery: () => { const record = currentCommand(); return record && fConfirmRecovery(h8Recovery, record, () => queryCommand(record)); },
     reasonPlaceholder: "例如：本周新人礼例行结算、工单号",
     amplifies: true,
-    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", current: "20", currentLabel: "默认", ...(original || draft?.limit !== undefined ? { initialValue: String(original?.limit ?? draft?.limit) } : {}), unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，填了才能提交；按注册先后从最早的开始" },
+    edit: targeted ? undefined : { kind: "number", label: "这一批最多结算", current: "20", currentLabel: "默认", ...(original || draft?.limit !== undefined ? { initialValue: String(original?.limit ?? draft?.limit) } : {}), unit: "位", min: 1, max: 100, step: 1, hint: "1–100 位，填了才能提交" },
     run: async (reason, value) => {
       const previous = currentCommand();
       if (previous) { await sendCommand(previous, true); return; }
@@ -880,14 +882,19 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           explain="停用期间 App 不显示奖励金额，新的结算不发；已冻结的新人礼首笔实付后照常解冻。待结算照常统计。">
           奖励已停用：新注册的不发新人礼，邀请人也不发奖励</Conclusion>
       : allZero
-        ? <Conclusion state="warn" hint={canWrite ? "在「每位发多少」里调整基础额。" : undefined}
-            explain="三项实际发放都是 0 时不能结算；至少把一项改成大于 0。">奖励开着，但三项金额都是 0，现在结算会被拒绝</Conclusion>
+        ? pending > 0
+          ? <Conclusion state="warn" icon={ListChecks}
+              hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位超级管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
+              explain="生效时间起注册的新人不发奖励；等待结算的是之前生效区间里注册的，按各人生效区间的金额发。">
+              奖励开着，现行三项金额都是 0；有 {countText(pending)} 位按之前的金额等待结算</Conclusion>
+          : <Conclusion state="warn" hint={canWrite ? "在「每位发多少」里调整基础额。" : undefined}
+              explain="生效时间起注册的新人不发奖励。之前生效区间里注册、还没结算的，仍按那段的金额结。">奖励开着，但现行三项金额都是 0，新注册的不发</Conclusion>
         : pending > 0
           ? <Conclusion state="warn" icon={ListChecks}
               hint={canSettle ? "点「结算」里的「批量结算」提交审批，另一位超级管理员批准后才发。" : "结算要由有邀请奖励结算权限的同事发起。"}
               explain="不会自动结算。批准时按那一刻的名单发，人数可能和现在不同。">
               奖励开着，有 {countText(pending)} 位新人等待结算</Conclusion>
-          : <Conclusion state="ok" explain="待结算只算生效时间起注册、已开钱包、还没结算、没被风控拦下的新人。">奖励开着，没有等待结算的注册</Conclusion>;
+          : <Conclusion state="ok" explain="待结算是已开钱包、还没结算、没被风控拦下的新人，含之前生效区间里注册、按旧金额结的。">奖励开着，没有等待结算的注册</Conclusion>;
 
   const amountCard = (param: AmountParam) => {
     const base = String(data.params[param.key]);
@@ -959,8 +966,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
               value={<span className="h8-row-value">{modeLabel}{recoveryByKey["newcomer.lockMode"]}</span>}
               action={canWrite ? (describedBy) => <Button size="sm" aria-describedby={describedBy} disabledReason={policyBlocked ?? freshBlocked} onClick={conflictDraft.register("param:mode", () => editParam(MODE_PARAM))}>调整</Button> : undefined} />
             <ConfigRow name="生效时间"
-              what="这个时间起（含这一刻）注册的新人才进入结算"
-              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，不再进入结算。</p></>}
+              what="这个时间起（含这一刻）注册的新人按现行金额结算"
+              effect={<><p>下面几种保存会把它改成保存那一刻（保存的值和现在一样时不改）：</p><ul className="h8-list"><li>改金额</li><li>改发放方式</li><li>启用获批准</li></ul><p>停用不改。那一刻之前注册、还没结算的新人，仍按他们注册时那段的金额和发放方式结；那段奖励停用或三项都是 0 的不结。</p></>}
               value={<span className="h8-time" title={`${effectiveAtText}（${zone}）`}>{formatBusinessTimeCompact(data.effectiveAt, "—")}<small>{zone}</small></span>} />
           </ConfigList>
         </Panel>
