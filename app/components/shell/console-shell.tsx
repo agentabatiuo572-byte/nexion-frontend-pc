@@ -285,11 +285,11 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     let disposed = false;
     let refreshing = false;
     const refreshSession = async () => {
-      if (disposed || refreshing) return;
+      if (disposed || refreshing || useAdminAuth.getState().logoutPending) return;
       refreshing = true;
       try {
         const auth = await currentAdminSession();
-        if (disposed) return;
+        if (disposed || useAdminAuth.getState().logoutPending) return;
         if (auth) signIn(auth);
         else {
           signOut();
@@ -321,7 +321,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       touch: async () => {
         try {
           const auth = await recordAdminActivity(session.adminId);
-          if (disposed) return false;
+          if (disposed || useAdminAuth.getState().logoutPending) return false;
           if (!auth) {
             activity.stop();
             signOut();
@@ -331,7 +331,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           signIn(auth);
           return true;
         } catch (error) {
-          if (!disposed && error instanceof AdminActivityIdentityChangedError) {
+          if (!disposed && !useAdminAuth.getState().logoutPending && error instanceof AdminActivityIdentityChangedError) {
             activity.stop();
             void restoreAdminSession();
           }

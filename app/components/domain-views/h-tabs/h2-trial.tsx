@@ -751,7 +751,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         return { kind: "stopped" };
       }
       if (outcome.kind === "forbidden" || outcome.kind === "unauthenticated") {
-        handleBuySessionStop(outcome.kind, ownerId);
+        if (outcome.kind === "forbidden" || !useAdminAuth.getState().logoutPending) {
+          handleBuySessionStop(outcome.kind, ownerId);
+        }
         return { kind: "stopped" };
       }
       return outcome;
@@ -800,7 +802,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           handleBuySessionStop("forbidden", ownerId);
           break;
         case "unauthenticated":
-          handleBuySessionStop(outcome.kind, ownerId);
+          if (!useAdminAuth.getState().logoutPending) handleBuySessionStop(outcome.kind, ownerId);
           break;
         case "unknown":
           toast(UNKNOWN_TOAST, "warn");
