@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenText, CircleHelp, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { BlockState, Button, Explain, Field, Fold, Input, Notice, Panel, Segments, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { OutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchRankHowPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
@@ -123,7 +123,7 @@ export function F1RankHow({ ladder, onPendingChange, toast }: { ladder: F1VRankR
       }
     } catch (cause) {
       if (!preserveDraft.current) { setDocument(null); setBaseline(null); }
-      setError(displayAdminError(cause));
+      setError(displayAdminReadError(cause));
     }
     finally { setLoading(false); }
   }, [canRead, session?.adminId]);

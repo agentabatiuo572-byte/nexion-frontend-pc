@@ -367,7 +367,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     try {
       const result = await fetchDisableImpact(target.pool.code, target.tasks.map(row => row.taskTypeId));
       if (serial === impactSequence.current) { setImpact(result); setImpactAt(Date.now()); }
-    } catch (error) { if (serial === impactSequence.current) setImpactError(displayAdminError(error)); }
+    } catch (error) { if (serial === impactSequence.current) setImpactError(displayAdminReadError(error)); }
     finally { if (serial === impactSequence.current) setImpactLoading(false); }
   }
   function open(kind: PoolDialog["kind"], enabled = true) {

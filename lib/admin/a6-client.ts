@@ -87,8 +87,9 @@ async function a6Request<T>(path: string, init?: RequestInit & { idempotencyPref
         || outcomeStaysUnknown(response.status, result?.code))) {
       throw uncertain();
     }
-    const message = formatAdminApiError(result?.message, `A6_REQUEST_FAILED_${response.status}`);
-    if (!init?.method || init.method === "GET") {
+    const isRead = !init?.method || init.method === "GET";
+    const message = formatAdminApiError(result?.message, `A6_REQUEST_FAILED_${response.status}`, isRead ? "read" : "write");
+    if (isRead) {
       throw new PlatformReadError(message, response.ok ? result?.code ?? response.status : response.status);
     }
     throw new Error(message);

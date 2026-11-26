@@ -4000,10 +4000,10 @@ export function formatAdminApiError(
   if (reasonTooLong) return `操作理由不能超过 ${reasonTooLong[1]} 个可见字符。`;
 
   const exact = ADMIN_ERROR_MESSAGES[raw];
-  if (exact) return exact;
+  if (exact) return operation === "read" ? ADMIN_READ_ERROR_MESSAGES[raw] ?? exact : exact;
 
   for (const [code, translated] of ERROR_MESSAGES_BY_CODE_LENGTH) {
-    if (raw.includes(code)) return translated;
+    if (raw.includes(code)) return operation === "read" ? ADMIN_READ_ERROR_MESSAGES[code] ?? translated : translated;
   }
 
   // 环境故障不得归因到用户输入:表里没有专属条目的不可达/网络类失败,在通用兜底前先接住。
@@ -4042,6 +4042,34 @@ const GATEWAY_FAILED_WRITE = "服务连接异常，结果未知，可能已经�
 const NETWORK_FAILED_WRITE = ADMIN_ERROR_MESSAGES.NETWORK_FAILURE;
 const HAS_CJK_RE = /[一-鿿]/;
 
+const ADMIN_READ_ERROR_MESSAGES: Record<string, string> = {
+  RESOURCE_NOT_FOUND: "这项内容暂时找不到，请重新读取；一直找不到请联系值班人员。",
+  REQUEST_PARAMETER_INVALID: "查询条件格式不符，请调整后重新读取。",
+  METHOD_NOT_ALLOWED: "此入口暂时无法读取数据，请联系值班人员。",
+  REQUEST_HEADER_REQUIRED: "读取请求缺少必要信息，请联系值班人员。",
+  REQUEST_BODY_INVALID: "读取请求格式不正确，请重新读取；持续失败请联系值班人员。",
+  LOGIN_REQUIRED: "登录已失效，请重新登录后读取。",
+  E1_BACKEND_UNAVAILABLE: "商品服务暂时不可用，请重新读取；持续失败请联系值班人员。",
+  USERS_RESPONSE_INVALID: "收到的用户资料不完整，已停止显示。请重新读取。",
+  USERS_BACKEND_UNAVAILABLE: "用户服务暂时不可用，请稍后重新读取。",
+  TEAMS_BACKEND_UNAVAILABLE: "团队服务暂时不可用，请稍后重新读取。",
+  CONTENT_BACKEND_REDIRECT_BLOCKED: "内容服务返回了无法使用的跳转，暂时读不到数据，请联系值班人员。",
+  CONTENT_ROUTE_NOT_FOUND: "这个入口暂时读不到内容，请联系值班人员。",
+  CONTENT_BACKEND_UNAVAILABLE: SERVICE_DOWN_READ,
+  PLATFORM_BACKEND_TIMEOUT: SERVICE_DOWN_READ,
+  H4_RESPONSE_INVALID: "收到的活动数据不完整，已停止显示。请重新读取。",
+  J4_RESPONSE_INVALID: "收到的预案数据不完整，已停止显示。请重新读取。",
+  EVENT_NOT_FOUND: "找不到这项活动，请重新读取活动列表。",
+  WEEKLY_REGION_POLICY_UNAVAILABLE: "每周地区规则暂时读不到，请稍后重新读取。",
+  REPORT_ID_REQUIRED: "缺少导出任务编号，请从导出任务列表重新打开。",
+  BI_REPORT_NOT_FOUND: "没有读到这份导出任务，请重新读取；持续失败请联系值班人员。",
+  REPORT_SNAPSHOT_NOT_AVAILABLE: "没有读到这份导出的文件，请联系值班人员。",
+};
+
+// Older readers may pass an error that was formatted before it reached the display boundary.
+const READ_ERRORS_BY_WRITE_MESSAGE = new Map(Object.entries(ADMIN_READ_ERROR_MESSAGES)
+  .map(([code, message]) => [ADMIN_ERROR_MESSAGES[code], message]));
+
 export function supportContractReadError(error: unknown): string | undefined {
   if (error instanceof Error && (
     error.message === "CONTENT_API_MALFORMED_RESPONSE"
@@ -4062,7 +4090,9 @@ export function supportContractReadError(error: unknown): string | undefined {
 /** 读取失败用这个：不说「结果未知」「不要重复提交」，这些话只给写操作（TX-14）。 */
 export function displayAdminReadError(error: unknown): string {
   const shown = displayAdminError(error);
-  if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE || shown === ADMIN_ERROR_MESSAGES.CONTENT_BACKEND_UNAVAILABLE || shown === ADMIN_ERROR_MESSAGES.PLATFORM_BACKEND_TIMEOUT) {
+  const readMessage = READ_ERRORS_BY_WRITE_MESSAGE.get(shown);
+  if (readMessage) return readMessage;
+  if (shown === SERVICE_DOWN_WRITE || shown === GATEWAY_FAILED_WRITE) {
     return SERVICE_DOWN_READ;
   }
   // Some clients format HTTP 503 using the generic 5xx code but retain the status.

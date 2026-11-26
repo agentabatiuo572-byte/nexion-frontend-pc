@@ -192,7 +192,7 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (init?.idempotencyPrefix && isIdempotencyOutcomeOpen(result?.message)) {
       throw new A1OutcomeUncertainError("A1_MUTATION_OUTCOME_UNCERTAIN", commandKey);
     }
-    throw Object.assign(new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`, "write", result?.data)), {
+    throw Object.assign(new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data)), {
       status: response.ok ? result?.code : response.status,
       backendMessage: result?.message,
       details: result?.data,

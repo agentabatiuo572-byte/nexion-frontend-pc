@@ -1312,7 +1312,9 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const message = payload.message === "DISCLOSURE_JURISDICTION_CODE_EXISTS"
       ? "这个代码已有适用范围在用，请更换代码；如需改名，请编辑已有的适用范围。"
       : payload.message;
-    const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`, isWrite ? "write" : "read", payload.data);
+    // Listing and sampling can persist automatic expirations without a user command.
+    const canExpireNovaEvents = path.startsWith("/nova/social-events?") || path.startsWith("/nova/social-events/sample?");
+    const formatted = formatAdminApiError(message, `CONTENT_API_${res.status}`, isWrite || canExpireNovaEvents ? "write" : "read", payload.data);
     const status = res.ok && payload.code! >= 400 ? payload.code : res.status;
     throw Object.assign(isWrite && unknown ? new OutcomeUnknownError(formatted) : new Error(formatted), { status, reasonCode: payload.message });
   }

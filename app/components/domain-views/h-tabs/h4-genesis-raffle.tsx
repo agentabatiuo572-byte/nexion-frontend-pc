@@ -12,7 +12,7 @@ import type { HCtx } from "./types";
 import { fetchAdminRaffle, fetchAdminRaffles, parseAdminRaffle, saveAdminRaffle, raffleDraftError, raffleLocalizedDraft, RAFFLE_LANGUAGES, RAFFLE_READBACK_ADVANCED, RAFFLE_SAVE_PENDING, type AdminRaffle, type RaffleDraft, type RafflePrize } from "@/lib/admin/genesis-raffle-client";
 import { assertH4Fresh, h4ReadVersion, h4Blocked, h4ApprovalLockedReason, h4PendingFor, h4PendingConfirmRecovery, pendingH4Commands, retryH4Command, isH4ApprovalReceipt, h4TicketResult, confirmedH4Saves, h4RaffleSaveNeedsVerification, type H4ReopenRejected } from "@/lib/admin/h4-mutations";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
 import { useH4EditGuard, useH4Editor } from "./h4-edit-guard";
 import { BlockState, Button, Decision, Drawer, Fact, Facts, Field, Input, Notice, Panel, Segments, Select, StatusTag, Steps } from "@/app/components/rd";
@@ -87,7 +87,7 @@ export function useH4RaffleReadback(ctx: HCtx) {
       return result;
     } catch (cause) {
       if (!isCurrent()) return null;
-      setReadError(displayAdminError(cause));
+      setReadError(displayAdminReadError(cause));
       if (afterWrite && isOutcomeUnknownError(cause)) throw cause;
       return null;
     }
