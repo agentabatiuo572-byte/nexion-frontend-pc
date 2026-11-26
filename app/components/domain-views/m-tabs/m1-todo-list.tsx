@@ -169,7 +169,8 @@ export function M1TodoPanel(props: TodoPanelProps) {
       more={<>
         <FilterField label="负责组"><Select aria-label="负责组" value={props.groupValue} options={groups.list} disabled={groups.disabled} onChange={props.onGroup} /></FilterField>
         <FilterField label="客服"><Select aria-label="客服" value={props.agentValue} options={agents.list} disabled={agents.disabled} onChange={props.onAgent} /></FilterField>
-        {(groups.reason || agents.reason) && <p className="m1-todo-more-note">{groups.reason ?? agents.reason}</p>}
+        {groups.reason && <p className="m1-todo-more-note">组目录：{groups.reason}</p>}
+        {agents.reason && <p className="m1-todo-more-note">客服名册：{agents.reason}</p>}
       </>}>
       <FilterField label="客户" grow><Input value={props.keyword} maxLength={200} onChange={event => props.onKeyword(event.target.value)} placeholder="客户名称、用户编码或手机号" aria-label="查询客户名称、用户编码或手机号" /></FilterField>
     </FilterBar>

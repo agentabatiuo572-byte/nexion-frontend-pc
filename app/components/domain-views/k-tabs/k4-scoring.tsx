@@ -177,13 +177,16 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const [historyEntry, setHistoryEntry] = useState<K4ScoreHistory | null>(null);
   const [pending, setPending] = useState<K4PendingCommand[]>([]);
   const [readAt, setReadAt] = useState<number | null>(null);
+  const [pollFailures, setPollFailures] = useState(0);
+  const retryScoringPoll = useRef<(() => void) | undefined>(undefined);
+  const pollWriteBlock = pollFailures > 0 ? "这项没有读到，请刷新后重试" : undefined;
   const tabIds = useTabIds();
   const pageEffectMounted = useRef(false);
   const lookupSequence = useRef(0);
   const inboundLoaded = useRef<string | null>(null);
   const pushedAccountDetail = useRef<string | null>(null);
-  const currentState = useRef({ ctx, rereadPending, lookupUser });
-  currentState.current = { ctx, rereadPending, lookupUser };
+  const currentState = useRef({ ctx, rereadPending, lookupUser, pollWriteBlock });
+  currentState.current = { ctx, rereadPending, lookupUser, pollWriteBlock };
 
   const syncPending = useCallback(() => {
     const records = k4Commands.list();
@@ -192,7 +195,11 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     onCommandsChange();
   }, [onCommandsChange, session?.adminId]);
   useEffect(() => { syncPending(); }, [syncPending]);
-  useEffect(() => { if (overview) setReadAt(Date.now()); }, [overview]);
+  useEffect(() => {
+    if (!overview) return;
+    setReadAt(Date.now());
+    setPollFailures(0);
+  }, [overview]);
 
   useEffect(() => { if (ctx.contentLoading) accountsPageReload.current = true; }, [ctx.contentLoading]);
   // 轮询触发同一查询时不废弃回包；离开名单或换查询时才废弃。
@@ -360,7 +367,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       if (attempt.retained) throw new Error("请重新读取后从原入口发起新修改");
       const current = currentState.current;
       const live = current.ctx.risk.scoring;
-      if (current.rereadPending || current.ctx.contentLoading || current.ctx.contentError || !live?.model) throw new Error("RISK_BACKEND_UNAVAILABLE");
+      if (current.rereadPending || current.pollWriteBlock || current.ctx.contentLoading || current.ctx.contentError || !live?.model) throw new Error("RISK_BACKEND_UNAVAILABLE");
       if (pendingFor(operation)) throw new Error("IDEMPOTENCY_RESULT_UNKNOWN");
       if (operation.kind === "draft" || operation.kind === "publish" || operation.kind === "restore") {
         const before = operation.overview.draft ?? operation.overview.model;
@@ -446,7 +453,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       return;
     }
     const original = retained?.operation ?? operation;
-    if (!retained && (currentState.current.rereadPending || ctx.contentLoading || ctx.contentError || !ctx.risk.scoring?.model)) {
+    if (!retained && (currentState.current.rereadPending || currentState.current.pollWriteBlock || ctx.contentLoading || ctx.contentError || !ctx.risk.scoring?.model)) {
       ctx.toast("这项没有读到，请刷新后重试");
       return;
     }
@@ -510,23 +517,34 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     let timer: number | undefined;
     const poll = async () => {
       const sequence = lookupSequence.current;
+      let overviewRead = false;
       try {
         const scoring = await ctx.refreshK4Scoring({ overridePageNum: overridePage, overridePageSize });
+        overviewRead = true;
         if (!cancelled && scoring?.model && lookupUser && sequence === lookupSequence.current
             && lookupModelVersion !== `k4-v${scoring.model.version}`) {
           const user = await ctx.actions.fetchK4User(lookupUser.userNo);
           if (sequence === lookupSequence.current) setLookupUser(user);
         }
       } catch {
-        // Keep the last authoritative snapshot visible; the next poll retries only the read.
+        if (!cancelled && !overviewRead) setPollFailures(count => Math.min(count + 1, 2));
       } finally {
-        if (!cancelled) timer = window.setTimeout(poll, 1500);
+        if (!cancelled) timer = window.setTimeout(runPoll, 1500);
       }
     };
-    timer = window.setTimeout(poll, 1500);
+    const runPoll = () => {
+      // A manual retry runs the same read early, unless that read is already in flight.
+      if (timer === undefined) return;
+      window.clearTimeout(timer);
+      timer = undefined;
+      void poll();
+    };
+    retryScoringPoll.current = runPoll;
+    timer = window.setTimeout(runPoll, 1500);
     return () => {
       cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
+      window.clearTimeout(timer);
+      retryScoringPoll.current = undefined;
     };
     // Re-arm when the queue starts or stops, or the read conditions change; ctx methods are stable in KDomainView.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -859,7 +877,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   );
 
   // ── 评分模型 ──
-  const publishBlocked = modelDirty ? "有未保存的修改，先保存草稿或放弃修改" : undefined;
+  const versionWriteBlock = pollWriteBlock ?? (modelDirty ? "有未保存的修改，先保存草稿或放弃修改" : undefined);
   const versionCards = (
     <div className="rd-split k4-versions" data-even="">
       <Panel title={`生效中 · v${overview.model.version}`} icon={ShieldCheck} tone="ok" sub={businessZone().label}
@@ -874,7 +892,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         explain={`草稿只存在后台，不影响线上评分。有评分规则修改权限的人可以起草；有这项权限的超级管理员才能发布。${canModelWrite ? "" : "你没有这项权限，要起草请联系管理员在「角色管理」里开通。"}`}
         actions={<span className="k4-actions">
           {canModelWrite && <Button icon={<SlidersHorizontal size={14} aria-hidden />} onClick={editModel}>{modelDirty ? "继续编辑" : overview.draft ? "编辑草稿" : "起草新版本"}</Button>}
-          {canPublish && overview.draft && <Button variant="primary" icon={<Upload size={14} aria-hidden />} disabledReason={publishBlocked} onClick={publishModel}>发布草稿</Button>}
+          {canPublish && overview.draft && <Button variant="primary" icon={<Upload size={14} aria-hidden />} disabledReason={versionWriteBlock} onClick={publishModel}>发布草稿</Button>}
         </span>}>
         {overview.draft ? (
           <VersionFacts rows={[
@@ -938,7 +956,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
                 <Td grow><Cell main={model.reason} title={model.reason} /></Td>
                 <Td align="right" data-fit="">
                   {canModelWrite && model.state === "archived"
-                    ? <Button size="sm" icon={<RotateCcw size={14} aria-hidden />} disabledReason={modelDirty ? "有未保存的修改，先保存草稿或放弃修改" : undefined} onClick={() => restoreModel(model)}>恢复为草稿</Button>
+                    ? <Button size="sm" icon={<RotateCcw size={14} aria-hidden />} disabledReason={versionWriteBlock} onClick={() => restoreModel(model)}>恢复为草稿</Button>
                     : <span className="k4-quiet">—</span>}
                 </Td>
               </Tr>
@@ -961,7 +979,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       explain="修改只在这个页面里，保存后成为草稿，线上评分不变；关掉抽屉修改还在，页面上会提示。"
       footer={<Decision note={issueCount > 0 ? `有 ${issueCount} 处要改正` : modelDirty ? `改了 ${editChanged} 项` : undefined}
         others={<Button variant="ghost" disabledReason={modelDirty ? undefined : "没有改动"} onClick={() => setModelDraft(editableModel(sourceModel))}>放弃修改</Button>}
-        primary={<Button variant="primary" disabledReason={pendingModel && pendingModel.fingerprint !== "model-draft" ? "这个对象有结果未知的原操作，先在页面上方读取当前值核对，或按原操作重试" : issueCount > 0 ? "先改正标出的项" : !modelDirty && !pendingModel ? "没有改动" : undefined} onClick={saveModel}>保存草稿</Button>} />}>
+        primary={<Button variant="primary" disabledReason={pendingModel && pendingModel.fingerprint !== "model-draft" ? "这个对象有结果未知的原操作，先在页面上方读取当前值核对，或按原操作重试" : !pendingModel && pollWriteBlock ? pollWriteBlock : issueCount > 0 ? "先改正标出的项" : !modelDirty && !pendingModel ? "没有改动" : undefined} onClick={saveModel}>保存草稿</Button>} />}>
       <section className="k4-edit-section" aria-labelledby="k4-edit-weights">
         <h3 id="k4-edit-weights" className="k4-edit-title">五维权重 <span className={issues.weightTotal ? "k4-sum" : "k4-sum k4-quiet"} data-bad={issues.weightTotal ? "" : undefined}>合计 {weightTotal}%</span></h3>
         {issues.weightTotal && <div className="rd-form-error" role="alert">{issues.weightTotal}</div>}
@@ -1062,7 +1080,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         ? <Panel title="用户评分" id="k4-user"><BlockState state="empty" title="请选择用户，查看风险分怎么来的" /></Panel>
         : !lookupUser.scored ? (
           <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo, true)}</span>}
-            actions={unscoredOverride && canRecompute ? <Button onClick={() => openRecompute(unscoredOverride)}>恢复系统评分</Button> : undefined}>
+            actions={unscoredOverride && canRecompute ? <Button disabledReason={pollWriteBlock} onClick={() => openRecompute(unscoredOverride)}>恢复系统评分</Button> : undefined}>
             <BlockState state="empty" title="这个账户还没有评分" detail={unscoredOverride ? `人工改分 ${unscoredOverride.effectiveScore} 分` : "可到「评分模型」看重算进度。"} />
           </Panel>
         )
@@ -1070,8 +1088,8 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
           <Panel id="k4-user" title={<span className="k4-user-title">{userRef(lookupUser.userNo, true)}<BandTag tone={lookupUser.bandTone}>{lookupUser.bandLabel}</BandTag>{lookupUser.overridden && <StatusTag tone="warn" icon={PenLine}>人工改分</StatusTag>}</span>}
             sub={lookupUser.asOf === null ? "评分时间 —" : `评分时间 ${stamp(lookupUser.asOf)}（${businessZone().label}）`}
             actions={<span className="k4-actions">
-              {canOverride && <Button onClick={() => openOverride(lookupUser)}>手动改分</Button>}
-              {canRecompute && <Button onClick={() => openRecompute(lookupUser)}>恢复系统评分</Button>}
+              {canOverride && <Button disabledReason={pollWriteBlock} onClick={() => openOverride(lookupUser)}>手动改分</Button>}
+              {canRecompute && <Button disabledReason={pollWriteBlock} onClick={() => openRecompute(lookupUser)}>恢复系统评分</Button>}
             </span>}>
             {oldModel && (
               <Notice tone="warn">这个用户还在排队重新计算，这里显示的是 {versionText(lookupUser.modelVersion)} 下的分{canRecompute ? `；可以点「恢复系统评分」马上按 v${overview.model.version} 计算` : ""}。</Notice>
@@ -1119,7 +1137,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       explain={<><p>谁、改了谁的分、改成多少、为什么。生效中的排在前面。</p><p>「系统评分」是改分那一刻的系统评分，之后不随重算变化，不一定等于改分前的有效分。「已失效」表示这次改分已经不生效：可能被恢复了系统评分，也可能被之后的又一次改分替换。</p></>}
       actions={canRecompute ? <span className="k4-actions">
         {overview.totalUsers > 1000 && <span className="k4-blocked">评分用户超过 1,000 人，请逐条恢复</span>}
-        <Button variant="danger-outline" disabledReason={overview.totalUsers > 1000 ? "超过 1000 人不能手动全部重算；发布评分规则会分批重算，但保留人工改分" : undefined} onClick={recomputeAll}>全部恢复系统评分</Button>
+        <Button variant="danger-outline" disabledReason={pollWriteBlock ?? (overview.totalUsers > 1000 ? "超过 1000 人不能手动全部重算；发布评分规则会分批重算，但保留人工改分" : undefined)} onClick={recomputeAll}>全部恢复系统评分</Button>
       </span> : undefined}
       flush>
       <Table label="手动改分记录" className="k4-overrides">
@@ -1137,7 +1155,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
               <Td>{row.active ? <StatusTag tone="progress" icon={PenLine}>生效中</StatusTag> : <StatusTag tone="done">已失效</StatusTag>}</Td>
               {canRecompute && <Td align="right" data-fit="">
                 {row.active
-                  ? <Button size="sm" onClick={async () => { await prepareRecompute(row.userNo); }}>恢复系统评分</Button>
+                  ? <Button size="sm" disabledReason={pollWriteBlock} onClick={async () => { await prepareRecompute(row.userNo); }}>恢复系统评分</Button>
                   : <span className="k4-quiet">—</span>}
               </Td>}
             </Tr>
@@ -1231,6 +1249,11 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     <>
       {header}
       {conclusion}
+      {pollFailures >= 2 && readAt !== null && (
+        <Notice tone="warn" action={<Button size="sm" onClick={() => retryScoringPoll.current?.()}>重试</Button>}>
+          自动刷新失败，下面是 {formatBusinessTimeCompact(new Date(readAt).toISOString())}（{businessZone().label}）的数据
+        </Notice>
+      )}
       {pendingBars}
       {inboundNotice}
       {tabs}

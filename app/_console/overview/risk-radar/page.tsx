@@ -815,11 +815,11 @@ export default function RiskRadarPage() {
     <Conclusion state="warn" hint={`先看${first.name}。${inboxHint}`}>风险提醒：<b>{issues.length}</b> 项要注意，{issues.map((item) => item.name).join("、")}</Conclusion>
   );
 
-  const meta = data && (
+  const meta = (data || radar.streamWarning) && (
     <span className="b5-meta">
-      数据时间 {timeText(data.generatedAt)}
-      <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" />
-      {radar.streamWarning && <span className="b5-muted"> · {radar.streamWarning.replace(/。$/, "")}</span>}
+      {data && <>数据时间 {timeText(data.generatedAt)}
+        <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" /></>}
+      {radar.streamWarning && <span className="b5-muted">{data && " · "}{radar.streamWarning.replace(/。$/, "")}</span>}
     </span>
   );
   const refreshAll = () => {
@@ -833,6 +833,7 @@ export default function RiskRadarPage() {
   const headerActions = (
     <>
       <Button icon={<RefreshCw size={14} aria-hidden />} onClick={refreshAll}>刷新</Button>
+      {radar.reconnect && <Button onClick={radar.reconnect}>重新连接</Button>}
       {canReadSubscription && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { const saved = pendingWrites.find(record => record.fingerprint === SUBSCRIPTION_SLOT); if (saved) { recoverWrite(saved); return; } setSubscriptionOriginal(null); setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
       {killSwitchLink}
     </>
@@ -981,7 +982,7 @@ export default function RiskRadarPage() {
               <div className="b5-signals-pane">
                 <RiskCategoryPanel data={categories} selectedKey={selectedCategory} onSelect={selectCategory} onRetry={() => void loadCategories()} />
                 <SignalList data={listState} filters={listFilters} page={listPage} onRetry={() => void list.reload()}
-                  table={{ canTriage, handlingHint: listHandlingHint, actionBlocked: listActionBlock, triageBlocked: listTriageBlock, pendingSignalNos, updating: updatingSignal, reach: canCross, canTriageTarget, selected: openSignal, onOpen: openDetail,
+                  table={{ canTriage, handlingHint: listHandlingHint, actionBlocked: listActionBlock, triageBlocked: listTriageBlock, pendingSignalNos, updating: updatingSignal, reach: canCross, canTriageTarget, selected: openSignal, onOpen: list.loading ? undefined : openDetail,
                     onTriage: queueTriage, triageState, onStatus: openSignalStatus }} />
               </div>
             ) : (
@@ -1178,20 +1179,20 @@ export default function RiskRadarPage() {
         const busy = updatingSignal === alert.signalNo;
         const line = signalFacts(alert).line;
         const level = SEVERITY[alert.level];
+        const statusChanged = statusRead.state === "changed" && !statusOriginal;
         const replay = statusOriginal && b5Recovery.state(statusOriginal);
         const blocked = !canTriage ? READ_ONLY : replay
           ? replay.expired ? RETRY_EXPIRED_TEXT : replay.replayBlock ? "原请求不能重试" : undefined
           : statusRead.state === "loading" ? "正在读取这条的当前进度…"
             : statusRead.state === "error" ? "这条的当前进度没读到"
               : statusRead.state === "conflict" ? "这条已被别人改过"
-                : statusRead.state === "changed" ? "这条的当前进度已经变了，不能继续这次标记"
-                  : signalActionBlock(openSignal === alert.signalNo)
-                    ?? (!statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : valid ? undefined : hint);
+                : signalActionBlock(openSignal === alert.signalNo)
+                  ?? (!statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : valid ? undefined : hint);
         return (
-          <Modal title={`标记${signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty
+          <Modal title={`标记${signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty={Boolean(statusReason.trim())}
             sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
             onClose={closeStatus}
-            footer={<>
+            footer={statusChanged ? <Button onClick={closeStatus}>关闭</Button> : <>
               <Button disabled={busy} onClick={closeStatus}>取消</Button>
               <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={blocked}
                 onClick={() => void changeSignalStatus()}>{statusUnknown ? "按原操作重试" : statusRead.state === "loading" ? "正在读取这条的当前进度…" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
@@ -1204,14 +1205,14 @@ export default function RiskRadarPage() {
                 <Fact k="用户"><span data-mono>{alert.userNo ?? `#${alert.userId}`}</span></Fact>
                 <Fact k="信号号"><RefText value={alert.signalNo} /></Fact>
                 <Fact k="记录时间">{timeText(alert.createdAt)}</Fact>
-                <Fact k="处理进度">{statusRead.state === "changed" && !statusOriginal ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
+                <Fact k="处理进度">{statusChanged ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
               </Facts>
-              {statusRead.state !== "changed" || statusOriginal ? <Field label="操作理由" required hint={`至少 ${statusRule.min} 字`}
+              {!statusChanged && <Field label="操作理由" required hint={statusRule.ready ? `至少 ${statusRule.min} 字` : undefined}
                 help={!statusOriginal && !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : undefined}
                 error={!statusOriginal && statusRule.ready && statusReason ? hint : undefined}>
-                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusOriginal ? 200 : statusRule.max}
-                  rows={3} placeholder={isTamper(alert) ? "例如：已核对拦截记录，账户安全设置未改变" : "例如：已核对这条记录和账户近期操作"} count={`${length}/${statusOriginal ? 200 : statusRule.max}`} onChange={(event) => setStatusReason(event.target.value)} />
-              </Field> : null}
+                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusRule.policy?.max}
+                  rows={3} placeholder={isTamper(alert) ? "例如：已核对拦截记录，账户安全设置未改变" : "例如：已核对这条记录和账户近期操作"} count={statusRule.ready ? `${length}/${statusRule.max}` : undefined} onChange={(event) => setStatusReason(event.target.value)} />
+              </Field>}
               {!statusOriginal && statusRead.state === "error" && <BlockState state="error" title="这条的当前进度没读到" detail={statusRead.error} onRetry={() => void loadStatus(statusDialog)} />}
               {!statusOriginal && statusRead.state === "conflict" && <Notice tone="warn">
                 <ConflictBar message="这条已被别人改过" onRead={() => loadStatus(statusDialog, true)} />

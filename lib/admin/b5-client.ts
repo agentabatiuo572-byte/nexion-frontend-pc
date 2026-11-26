@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeB5Radar, normalizeB5Signal, normalizeB5SignalPage, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
@@ -283,43 +283,74 @@ export async function updateB5SignalStatus(
 }
 
 export function useB5Radar(key: string, enabled: boolean) {
-  const radar = useB5Read(key, fetchB5Radar, enabled);
-  const { setData } = radar;
-  const [streamWarning, setStreamWarning] = useState<string | null>(null);
+  const [deniedKey, setDeniedKey] = useState<string>();
+  const readRadar = useCallback(async () => {
+    try {
+      return await fetchB5Radar();
+    } catch (cause) {
+      if (cause instanceof B5RequestError && cause.status === 403) setDeniedKey(key);
+      throw cause;
+    }
+  }, [key]);
+  const radar = useB5Read(key, readRadar, enabled);
+  const { reload, setData } = radar;
+  const [streamStatus, setStreamStatus] = useState<{ warning: string; exhausted?: boolean } | null>(null);
+  const [connection, setConnection] = useState(0);
+  const canConnect = enabled && deniedKey !== key;
 
   useEffect(() => {
-    if (!enabled) return;
-    setStreamWarning(null);
+    if (!canConnect) return;
+    setStreamStatus(null);
     let stream: EventSource | null = null;
+    let retryTimer: number | undefined;
+    let stableTimer: number | undefined;
+    let attempts = 0;
     const onRadar = (event: Event) => {
       try {
         const next = normalizeB5Radar(parseB5MoneyJson((event as MessageEvent<string>).data));
         setData(next);
-        setStreamWarning(null);
+        setStreamStatus(null);
       } catch (cause) {
-        setStreamWarning(displayAdminReadError(cause));
+        setStreamStatus({ warning: displayAdminReadError(cause) });
       }
     };
-    const connect = () => {
-      const next = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
-      next.addEventListener("radar", onRadar);
-      next.onerror = () => {
-        const closed = next.readyState === EventSource.CLOSED;
-        setStreamWarning(closed ? "自动更新断开了；页面每 30 秒刷新一次。" : "自动更新正在重连；页面先显示最近一次的数据，每 30 秒刷新一次。");
-        // EventSource doesn't expose HTTP status. Confirm a closed stream through the guarded read.
-        if (closed) void radar.reload("auto");
-      };
-      stream = next;
-    };
     const disconnect = () => {
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(stableTimer);
       if (!stream) return;
       stream.removeEventListener("radar", onRadar);
+      stream.onopen = null;
       stream.onerror = null;
       stream.close();
       stream = null;
     };
+    const connect = () => {
+      const next = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
+      stream = next;
+      next.addEventListener("radar", onRadar);
+      next.onopen = () => {
+        setStreamStatus(null);
+        stableTimer = window.setTimeout(() => { attempts = 0; }, 30_000);
+      };
+      next.onerror = () => {
+        const closed = next.readyState === EventSource.CLOSED;
+        disconnect();
+        // EventSource doesn't expose HTTP status. Check a closed stream through the guarded read.
+        if (closed && attempts === 0) void reload("auto");
+        if (attempts >= 6) {
+          setStreamStatus({ warning: "自动更新断开了；页面每 30 秒刷新一次。", exhausted: true });
+          return;
+        }
+        setStreamStatus({ warning: "连接已断开，正在重连；下面是最近一次的数据。每 30 秒自动刷新。" });
+        retryTimer = window.setTimeout(connect, Math.min(30_000, 1000 * 2 ** attempts));
+        attempts += 1;
+      };
+    };
     const restore = (event: PageTransitionEvent) => {
-      if (event.persisted) connect();
+      if (!event.persisted) return;
+      attempts = 0;
+      setStreamStatus(null);
+      connect();
     };
     connect();
     // Full document navigation may skip React cleanup and leave the HTTP connection occupied.
@@ -330,7 +361,11 @@ export function useB5Radar(key: string, enabled: boolean) {
       window.removeEventListener("pageshow", restore);
       disconnect();
     };
-  }, [enabled, radar.reload, setData]);
+  }, [canConnect, connection, reload, setData]);
 
-  return { ...radar, streamWarning };
+  return {
+    ...radar,
+    streamWarning: canConnect ? streamStatus?.warning : undefined,
+    reconnect: canConnect && streamStatus?.exhausted ? () => setConnection(value => value + 1) : undefined,
+  };
 }

@@ -28,6 +28,7 @@ export type StatusSentence = {
   aboutFund?: boolean;
   /** 这句话说的是提现压力，页面给展开「风险与开关」的入口。 */
   aboutRisk?: boolean;
+  aboutRiskFeed?: boolean;
   /** 这句话说的是资金数据读取失败：页面只在这里写一次，给重试，别处不再写（VS-107）。 */
   fundFailed?: boolean;
 };
@@ -51,6 +52,8 @@ export function statusSentence(input: {
   belowHealthy: boolean;
   /** 待处理行数，不含读取失败的行。 */
   pendingRows: number;
+  /** 风险提醒可达，但首页缺少读取风控汇总所需的资金读权。 */
+  riskFeedUnavailable: boolean;
   /** 资金结论读到了而且是正常，第 7 句才写「资金安全」，提现关着时才能说不是钱的问题。 */
   fundSafe: boolean;
   /** 其他块读取失败时的名字，不能再说「一切正常」。 */
@@ -78,5 +81,6 @@ export function statusSentence(input: {
   if (pendingRows > 0) return { state: "neutral", text: `有 ${pendingRows} 件事要处理${input.fundSafe ? "，资金安全" : ""}` };
   if (input.failed.length === 1) return { state: "unknown", text: `${input.failed[0]}读取失败，状态不确定` };
   if (input.failed.length > 1) return { state: "unknown", text: "部分数据读取失败，状态不确定" };
+  if (input.riskFeedUnavailable) return { state: "unknown", aboutRiskFeed: true, text: "暂无法判断：风险数据没读到" };
   return { state: "ok", text: "一切正常，没有要你处理的事" };
 }
