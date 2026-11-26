@@ -31,7 +31,14 @@ export type E1CatalogContext = Pick<EViewCtx, "skus" | "canWriteE1" | "e1Invalid
 };
 
 /** 商品目录重读到之后焦点落在这块卡片墙上，不落到整页外框（BUG-710）。 */
-const E1_CATALOG_GRID = { get current() { return document.querySelector<HTMLElement>(".e1-catalog-grid"); } };
+const E1_CATALOG_GRID = { get current() { return document.querySelector<HTMLElement>(".e1-catalog-groups"); } };
+
+/** 商品墙按商城状态上下分组：在售在上，草稿居中，已下架在下（后端只有这三种状态）。没有商品的组不显示。 */
+const E1_STATUS_GROUPS = [
+  { status: "on", title: "在售", icon: PackageCheck, tone: "ok" },
+  { status: "pending", title: "草稿", icon: PackagePlus, tone: "neutral" },
+  { status: "off", title: "已下架", icon: Archive, tone: "done" },
+] as const;
 
 /** 后端时间按业务时区写到分钟（TX-25），时区跟在后面写一次。 */
 const zonedTime = (value?: string | null) => value ? `${formatBusinessTimeCompact(value, "—")}（${businessZone().label}）` : "—";
@@ -81,7 +88,7 @@ export function E1TargetRange({ sku, label }: { sku: OpsSku; label?: ReactNode }
   const bandPlaces = e1Precision([band], 0);
   return <>
     <div className="e1-value-line">{label}<strong><E1Amount value={target} precision={places} /> <small>USDT/月</small></strong></div>
-    <ScaleBar label="月收益目标范围" valueText={`目标 ${e1Amount(target)} USDT/月，范围 ${e1Amount(range.low)} 至 ${e1Amount(range.high)} USDT/月，允许波动 ±${e1Number(band)}%`} min={Number(e1Multiply(target, "0.5"))} max={Number(e1Multiply(target, "1.5"))} range={{ low: Number(range.low), high: Number(range.high) }} target={target} tone="neutral" />
+    <ScaleBar label="月收益目标范围" valueText={`目标 ${e1Amount(target)} USDT/月，范围 ${e1Amount(range.low)} 至 ${e1Amount(range.high)} USDT/月，允许波动 ±${e1Number(band)}%`} min={Number(e1Multiply(target, "0.5"))} max={Number(e1Multiply(target, "1.5"))} range={{ low: Number(range.low), high: Number(range.high) }} target={target} tone="role-4" />
     <div className="e1-range-labels"><span><E1Amount value={range.low} precision={places} /> — <E1Amount value={range.high} precision={places} /></span><span>±<E1Amount value={band} precision={bandPlaces} />%</span></div>
   </>;
 }
@@ -407,7 +414,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       {!!legacy && <> · <Button variant="ghost" onClick={() => setScope("legacy")}>{legacy} 个商品未设系列</Button></>}
       {!!unknown && <> · <Button variant="ghost" onClick={() => setScope("unknown")}>{unknown} 个上架状态待核实</Button></>}
     </Conclusion>}
-    <StatBand label="商品目录汇总">{stats.map(stat => <Stat key={stat.key} label={stat.label} value={available ? stat.value : "—"} unit={available ? "个" : undefined} icon={stat.icon} tone={stat.key === "blocked" ? "warn" : "neutral"} onOpen={available ? () => setScope(scope === stat.key ? "all" : stat.key) : undefined} selected={scope === stat.key} selectedText="已筛选" aria-pressed={scope === stat.key} openLabel={`筛选${stat.label}商品`} explain="全量目录统计，不随关键词和档位筛选变化；发布门未声明和无效行另列。" />)}</StatBand>
+    <StatBand label="商品目录汇总">{stats.map(stat => <Stat key={stat.key} label={stat.label} value={available ? stat.value : "—"} unit={available ? "个" : undefined} icon={stat.icon} tone={stat.key === "blocked" ? "warn" : "neutral"} iconTone={stat.key === "on" ? "ok" : stat.key === "off" ? "done" : undefined} onOpen={available ? () => setScope(scope === stat.key ? "all" : stat.key) : undefined} selected={scope === stat.key} selectedText="已筛选" aria-pressed={scope === stat.key} openLabel={`筛选${stat.label}商品`} explain="全量目录统计，不随关键词和档位筛选变化；发布门未声明和无效行另列。" />)}</StatBand>
     {available && !!ctx.e1InvalidSkus.length && <Notice tone="warn" title="资料有误的商品" action={<Button onClick={() => ctx.refreshE1("products")}>重试</Button>}><ul>{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的资料：{[...new Set(row.invalidFields.map(field => E1_FIELD_LABELS[field] ?? "其他资料"))].join("、")}</li>)}</ul></Notice>}
     <section className="e1-stage-summary" aria-label="开放阶段">
       <div className="e1-stage-identity"><strong>开放阶段<Explain label="开放阶段的说明" content="节点等距只表示先后，不代表各阶段持续时间；这里不能推进当前阶段。" /></strong><span className="e1-muted">{ctx.e1Gates ? `运营第 ${e1Number(platformMonth)} 个月${phaseSummary ? ` · ${phaseSummary}` : ""}` : ctx.gatesLoading ? "正在加载…" : "— · 未读取"}</span>{ctx.e1Gates && !phaseCurrentKnown && <StatusTag tone="warn" explain="「运营阶段设置」的当前阶段在这里没有对应的开放阶段。核实前，依赖当前阶段的上架、强制开放和删除阶段不能提交。">{E1_CURRENT_PHASE_UNVERIFIED}</StatusTag>}{phaseMismatch && <StatusTag tone="warn" explain={`「运营阶段设置」现在是${phaseLabel(phaseMismatch.h1)}，这里是${phaseLabel(phaseMismatch.e1)}。商品什么时候开放只看这里的阶段。`}>和运营阶段设置不一致</StatusTag>}</div>
@@ -421,7 +428,9 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       <Select aria-label="商品档位筛选" value={tier} onChange={setTier} options={[{ value: "all", label: "全部档位" }, ...["Entry", "Pro", "Flagship", "Share"].map(t => ({ value: t, label: operatorSkuTier(t) }))]} />
     </FilterBar>
     {skuLink && available && <Notice tone="neutral" title={filtered.some(s => s.id === skuLink) ? `已定位商品 ${skuLink}` : `没有找到商品 ${skuLink}`} />}
-    {ctx.e1InitialLoading ? <BlockState state="loading" title="正在加载商品目录…" /> : ctx.e1Error ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={ctx.e1Error} onRetry={() => ctx.refreshE1("products")} afterRetryFocus={E1_CATALOG_GRID} /> : incomplete ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={<>收到的数据不完整，已停止显示。资料有误的商品：<ul className="e1-invalid-list">{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的资料：{[...new Set(row.invalidFields.map(field => E1_FIELD_LABELS[field] ?? "其他资料"))].join("、")}</li>)}</ul></>} onRetry={() => ctx.refreshE1("products")} afterRetryFocus={E1_CATALOG_GRID} /> : !filtered.length ? <BlockState state="empty" title={skus.length ? "没有符合筛选条件的商品" : "尚未添加商品"} detail={skus.length ? <Button onClick={clear}>清除筛选</Button> : canWrite ? <Button disabledReason={writeBlock({ op: "sku-save" })} onClick={() => ctx.openSku()}>+ 新增商品</Button> : "当前账号只能查看商品"} /> : <section className="e1-catalog-grid" aria-label="商品目录">{filtered.map(s => {
+    {ctx.e1InitialLoading ? <BlockState state="loading" title="正在加载商品目录…" /> : ctx.e1Error ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={ctx.e1Error} onRetry={() => ctx.refreshE1("products")} afterRetryFocus={E1_CATALOG_GRID} /> : incomplete ? <BlockState retryKey="e1-catalog-412" state="error" title="商品目录加载失败" detail={<>收到的数据不完整，已停止显示。资料有误的商品：<ul className="e1-invalid-list">{ctx.e1InvalidSkus.map(row => <li key={row.skuId}>{row.name} · {row.skuId} · 有误的资料：{[...new Set(row.invalidFields.map(field => E1_FIELD_LABELS[field] ?? "其他资料"))].join("、")}</li>)}</ul></>} onRetry={() => ctx.refreshE1("products")} afterRetryFocus={E1_CATALOG_GRID} /> : !filtered.length ? <BlockState state="empty" title={skus.length ? "没有符合筛选条件的商品" : "尚未添加商品"} detail={skus.length ? <Button onClick={clear}>清除筛选</Button> : canWrite ? <Button disabledReason={writeBlock({ op: "sku-save" })} onClick={() => ctx.openSku()}>+ 新增商品</Button> : "当前账号只能查看商品"} /> : <section className="e1-catalog-groups" aria-label="商品目录">{E1_STATUS_GROUPS.map(group => {
+      const items = filtered.filter(s => s.status === group.status);
+      return !!items.length && <Panel plain key={group.status} title={group.title} icon={group.icon} tone={group.tone}><div className="e1-catalog-grid">{items.map(s => {
       const { release, open, needsAttention, blockers } = ctx.e1Gates ? e1SkuOpening(s, ctx.e1Gates, phaseCur) : { open: !s.unlock, needsAttention: !!s.unlock, blockers: [], release: undefined };
       const publishReason = s.publishBlockReason === "PRODUCT_TEST_IDENTIFIER" ? "测试标识不能发布" : s.publishBlockReason === "PRODUCT_NO_EFFECTIVE_EARNINGS" ? "未配置有效收益" : s.publishBlockReason || "发布门未通过";
       const locked = ctx.locked("device_sku", s.id);
@@ -433,11 +442,11 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
       const actionReason = onBlock && !proposal && !cardReasons.some(reason => onBlock.includes(reason)) ? onBlock : undefined;
       const sold = s.sold, stock = s.stock == null ? null : Number(s.stock);
       const quotaLeft = e1QuotaLeftValue(s);
-      return <article key={s.id} className="e1-product" data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
+      return <article key={s.id} className="e1-product" data-status={s.status} data-blocked={s.publishBlocked === false ? undefined : ""} data-hit={skuLink === s.id ? "" : undefined} aria-label={s.name}>
         <div className="e1-product-identity">
           <div className="e1-product-media"><SkuMediaThumb sku={s} />{s.badge && <span className="e1-badge" title={nexGridBrandText(skuBadgeReviewText(s.badge) ?? s.badge)}>{skuBadgeKind(s.badge) === "custom" ? nexGridBrandText(s.badge) : SKU_BADGE_OPTIONS.find(option => option.value === skuBadgeKind(s.badge))?.label}</span>}</div>
           <div className="e1-product-title">
-            <div className="e1-product-name"><h2>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s.id)}><E1MiddleText text={s.name} /></button>}</h2><StatusTag tone={s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
+            <div className="e1-product-name"><h3>{canWrite ? <E1MiddleText text={s.name} /> : <button className="rd-link e1-detail-link" aria-label={`商品资料 ${s.name}`} onClick={() => openDetail(s.id)}><E1MiddleText text={s.name} /></button>}</h3><StatusTag tone={s.status === "on" && s.publishBlocked === false ? "ok" : s.status === "off" ? "done" : "neutral"} icon={s.status === "on" ? CheckCircle2 : s.status === "off" ? Archive : FileText}>{e1Value(s.status)}</StatusTag></div>
             <div className="e1-product-id"><span title={s.id}>{s.id}</span><span>{operatorSkuTier(s.tier ?? "")}</span>{hasUnsupportedSeries(s) ? <StatusTag tone="warn" icon={ShieldAlert}>{skuSeriesText(s.seriesCode)}</StatusTag> : <span>{skuSeriesText(s.seriesCode)} 系列</span>}{s.lifecycle === "legacy" && <StatusTag tone="done" icon={Archive}>已停产</StatusTag>}</div>
             <div className="e1-product-price"><strong><E1Amount value={s.price} /> <small>USD</small></strong></div>
           </div>
@@ -445,23 +454,23 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         <div className="e1-product-levels"><div className="e1-value-line"><span className="e1-muted">任务等级</span>{s.allowedPoolCodes?.length === 0 && <StatusTag tone={s.status === "on" ? "warn" : "neutral"} icon={ShieldAlert}>未配置任务等级</StatusTag>}</div>{s.allowedPoolCodes == null ? <span className="e1-muted">— · 任务等级未读取</span> : <LevelStrip label={`${s.name}任务等级`} levels={E1_LEVELS} selectedKeys={s.allowedPoolCodes} />}</div>
         <div className="e1-product-target"><E1TargetRange sku={s} label={<span className="e1-muted">月收益目标<Explain label="月收益目标口径" content="范围是持续运行的设备月目标边界，停跑不补发。各卡刻度独立，不表示实际到账。" /></span>} /></div>
         <div className="e1-product-stock">
-          <div className="e1-value-line"><span className="e1-muted">库存</span>{s.inventoryMode === "UNLIMITED" ? <span className="e1-muted">不限（非实物） · 累计销量 {e1Number(sold)}</span> : <span className="e1-muted">累计销量 {e1Number(sold)} · 剩余 {e1Number(stock)}{stock === 0 && <StatusTag tone="warn" icon={PackageX}>售罄</StatusTag>}</span>}</div>
+          <div className="e1-value-line"><span className="e1-muted">库存</span>{s.inventoryMode === "UNLIMITED" ? <span className="e1-val">不限（非实物）<span className="e1-val-k"> · 累计销量 </span>{e1Number(sold)}</span> : <span className="e1-val"><span className="e1-val-k">累计销量 </span>{e1Number(sold)}<span className="e1-val-k"> · 剩余 </span>{e1Number(stock)}{stock === 0 && <StatusTag tone="warn" icon={PackageX}>售罄</StatusTag>}</span>}</div>
           {s.inventoryMode === "UNLIMITED" ? null : sold != null && stock != null && sold + stock > 0 ? <RatioBar label="累计销量与剩余库存" value={sold} total={sold + stock} valueText={`累计销量 ${sold}，剩余 ${stock}`} tone="role-2" /> : <span className="e1-muted">{sold == null || stock == null ? "— · 库存数据未读取" : "暂无销量和库存"}</span>}
-          {quotaLeft && <div className="e1-value-line"><span className="e1-muted">剩余配额</span><span className="e1-muted">{quotaLeft}</span></div>}
+          {quotaLeft && <div className="e1-value-line"><span className="e1-muted">剩余配额</span><span className="e1-val">{quotaLeft}</span></div>}
         </div>
         <div className="e1-product-conditions">
           <div className="e1-product-meta">
             <span className="e1-meta-item">{s.dailyEarnNEX == null ? "— · 未填写 UVT/天" : <E1Amount value={s.dailyEarnNEX} unit="UVT/天" />}</span>
-            <StatusTag tone="neutral" icon={s.trialEligible ? CheckCircle2 : Ban}>{s.trialEligible ? "允许试用" : "不可试用"}</StatusTag>
+            <StatusTag tone={s.trialEligible ? "ok" : "neutral"} icon={s.trialEligible ? CheckCircle2 : Ban}>{s.trialEligible ? "允许试用" : "不可试用"}</StatusTag>
             {s.purchaseGate && <Explain label={`${s.name}购买条件`} content={<E1PurchaseConditions sku={s} />}><span className="e1-gate-trigger"><ShieldCheck size={14} aria-hidden />购买条件</span></Explain>}
             <StatusTag tone="neutral" icon={open ? CheckCircle2 : Clock3}>{s.unlock ? ctx.e1Gates ? phaseLabel(s.unlock) : "开放阶段未读取" : "无需阶段"}</StatusTag>
           </div>
-          {s.datacenter?.trim() && <div className="e1-meta-room">原填机房：{datacenterNameText(s.datacenter)}<Explain label={`${s.name}原填机房说明`} content="商品上原来填的，只做记录；新设备交付时按页头「托管机房」清单分配。" /></div>}
+          {s.datacenter?.trim() && <div className="e1-meta-room"><span className="e1-val-k">原填机房：</span>{datacenterNameText(s.datacenter)}<Explain label={`${s.name}原填机房说明`} content="商品上原来填的，只做记录；新设备交付时按页头「托管机房」清单分配。" /></div>}
           {cardReasons.length > 0 && <div className={needsAttention || s.publishBlocked !== false || hasUnsupportedSeries(s) ? "e1-card-warning" : "e1-card-note"}>{cardReasons.join("；")}{release && <Button size="sm" variant="ghost" onClick={() => revealPlan(s.id)}>查看条件</Button>}</div>}
           {proposal && <Button size="sm" variant="ghost" onClick={() => ctx.openPending(proposal.id)}>有变更待审批 · {proposal.id}</Button>}
         </div>
         {canWrite && <div className="e1-product-actions">
-          {canWrite && <><Button size="sm" disabledReason={writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined)} onClick={() => ctx.openSku(s.id)} aria-label={`改价 / 编辑 ${s.name}`}>改价 / 编辑</Button><div className="e1-status-action"><Button size="sm" disabledReason={onBlock} aria-label={`${s.status === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: `${s.status === "on" ? "下架" : "上架"}商品 · ${s.name}`, op: "sku-status", target: s.id, status: s.status === "on" ? "off" : "on", detail: s.status === "on" ? "下架后从商城隐藏，不影响已售设备结算。" : "批准后按完整购买条件判断，不保证所有用户都能购买。" })}>{s.status === "on" ? "下架" : "上架"}</Button>{actionReason && <span className="e1-action-reason">{actionReason}</span>}</div></>}
+          {canWrite && <><Button size="sm" variant="primary" disabledReason={writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined)} onClick={() => ctx.openSku(s.id)} aria-label={`改价 / 编辑 ${s.name}`}>改价 / 编辑</Button><div className="e1-status-action"><Button size="sm" disabledReason={onBlock} aria-label={`${s.status === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: `${s.status === "on" ? "下架" : "上架"}商品 · ${s.name}`, op: "sku-status", target: s.id, status: s.status === "on" ? "off" : "on", detail: s.status === "on" ? "下架后从商城隐藏，不影响已售设备结算。" : "批准后按完整购买条件判断，不保证所有用户都能购买。" })}>{s.status === "on" ? "下架" : "上架"}</Button>{actionReason && <span className="e1-action-reason">{actionReason}</span>}</div></>}
           <MoreMenu label={`更多操作 ${s.name}`} items={[
             { key: "details", label: "商品资料", onSelect: () => afterMenu(() => openDetail(s.id)) },
             ...canWrite && s.status === "on" && (s.inventoryMode === "UNLIMITED" || Number(s.stock) > 0) && !open && !release && phaseCurrentKnown ? [{ key: "current-phase", label: "按当前阶段上架", disabledReason: writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.openSku(s.id, phaseCur)) }] : [],
@@ -469,6 +478,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
           ]} />
         </div>}
       </article>;
+    })}</div></Panel>;
     })}</section>}
     <>
       <div id="e1-open-plan"><Fold title="商品开放计划" summary={ctx.e1Gates ? `${releases.length} 条上架条件 · ${available ? `${gated} 条尚未开放` : "商品目录未读取，开放状态待核对"}` : "上架条件未读取"} icon={SlidersHorizontal} open={planOpen} onOpenChange={setPlanOpen} explain="强制提前开放只跳过运营月数，阶段与设备资格仍须满足。异常条件在商品卡常显。">
