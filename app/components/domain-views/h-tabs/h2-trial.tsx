@@ -116,6 +116,11 @@ type H2Model = {
   writePermissionName?: string;
 };
 
+function buyPricingDefaults(params: TrialParam[]) {
+  const valueOf = (key: string) => params.find((param) => param.key === key)?.cur;
+  return { rate: valueOf("discountRate"), cap: valueOf("discountCapUSD"), early: valueOf("earlyPurchaseDiscountUSD") };
+}
+
 const H2_WRITE_PERMISSION = "growth_h2_write";
 const H2_READ_PERMISSION = "growth_h2_read";
 const OFFSET_CAP = "trialOffsetCapUSD";
@@ -603,11 +608,21 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       const raw = await fetchH2Trials(sessionPage, sessionPageSize);
       if (attempt !== buyReadEpochRef.current) throw new Error(READING);
       const { buyList, pricing } = readH2TrialPurchase(raw);
-      setModel((previous) => previous && { ...previous, buyList, pricing });
+      const defaults = pricing && Array.isArray(raw.params)
+        ? (raw.params as TrialParam[]).filter((param) => Object.hasOwn(PRICING_DEFAULT_GROUP, param?.key))
+        : [];
+      const pricingDefaults = pricing ? buyPricingDefaults(defaults) : undefined;
+      if (buyList && buyList !== "invalid" && pricingDefaults && !Object.values(pricingDefaults).every(nonBlank)) {
+        throw new Error(BUY_READ_INVALID);
+      }
+      setModel((previous) => previous && {
+        ...previous, buyList, pricing,
+        params: defaults.length ? [...previous.params.filter((param) => !Object.hasOwn(PRICING_DEFAULT_GROUP, param.key)), ...defaults] : previous.params,
+      });
       if (buyList === "invalid" || (requireList && !buyList)) throw new Error(BUY_READ_INVALID);
       latestBuyList.current = buyList;
       setBuyReadError(undefined);
-      return buyList;
+      return { list: buyList, pricing: pricingDefaults };
     } catch (cause) {
       if (attempt === buyReadEpochRef.current) setBuyReadError(displayAdminReadError(cause));
       throw cause;
@@ -676,7 +691,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const buyInvalid = buyRead === "invalid" || !!buyReadError;
   // 读取带「支持按设备优惠」标识时：三项是默认值，可购买设备显示「优惠」列和单独设置（B125）。
   const pricingOn = !!model?.pricing && showBuySection;
-  const pricingDefaults = pricingOn ? { rate: paramOf("discountRate")?.cur, cap: paramOf("discountCapUSD")?.cur, early: paramOf("earlyPurchaseDiscountUSD")?.cur } : undefined;
+  const pricingDefaults = pricingOn ? buyPricingDefaults(params) : undefined;
   const scopeOf = (key: string): DefaultScope | undefined => {
     const group = PRICING_DEFAULT_GROUP[key];
     if (!pricingOn || !group) return;
@@ -1164,8 +1179,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <Notice key="buy-list-conflict" tone="warn" title={BUY_CONFLICT}
         action={edits && canWrite && <Button size="sm" disabled={loading || buyLoading || !!error || !showBuySection}
           onClick={() => void reloadBuyList(true).then(latest => {
-            if (!latest || !reviewBuyReplay.current) return;
-            reviewBuyReplay.current(edits, latest);
+            if (!latest.list || !reviewBuyReplay.current) return;
+            reviewBuyReplay.current(edits, latest.list, latest.pricing);
             pendingBuyLists.forget(buyReplayConflict.fingerprint, buyReplayConflict.commandKey);
             syncBuyPending();
           }).catch(() => undefined)}>读取最新</Button>}>

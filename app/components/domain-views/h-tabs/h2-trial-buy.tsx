@@ -162,14 +162,14 @@ function changedByOthers(before: BuyDevice[], latest: BuyDevice[]) {
   return added || removed ? `别人已改：${[added && `新增 ${added}`, removed && `移除 ${removed}`].filter(Boolean).join("，")}` : undefined;
 }
 
-/** 读取最新后，别人改了谁的优惠（OP-97 第 2 步）：别款保留，自己改过、已被别人移除的款不再保存它的优惠。 */
+/** 读取最新后，说明别人保留的优惠改动，以及本次无法保存的逐款优惠（OP-97、D8）。 */
 function othersPricing(before: BuyDevice[], latest: BuyDevice[], mine: ReadonlyMap<string, ReturnType<typeof changedGroups>>, defaults: PricingDefaults): ReactNode[] {
   const old = new Map(before.map((item) => [item.productNo, item]));
   const changed = latest.flatMap((item) => {
     const prior = old.get(item.productNo);
     if (!prior) return [];
     const groups = changedGroups(prior.pricing ?? FOLLOW_ALL, item.pricing ?? FOLLOW_ALL)
-      .filter((group) => !mine.get(item.productNo)?.includes(group));
+      .filter((group) => !item.selectable || !mine.get(item.productNo)?.includes(group));
     if (!groups.length) return [];
     return [<Notice key={item.productNo} tone="neutral" title={`${productName(item)} 刚被别人改过，保存时保留`}>
       <span className="h2-others-note">{groups.map((group) => <span key={group}>{GROUP_NAME[group]}改为 {groupAfter(item.pricing ?? FOLLOW_ALL, group, defaults).full}</span>)}</span>
@@ -177,7 +177,12 @@ function othersPricing(before: BuyDevice[], latest: BuyDevice[], mine: ReadonlyM
   });
   const gone = [...mine.keys()].filter((no) => old.has(no) && !latest.some((item) => item.productNo === no))
     .map((no) => <Notice key={`gone-${no}`} tone="neutral">{productName(old.get(no)!)} 已被移除，本次不保存它的优惠；要加回请重新选择</Notice>);
-  return [...changed, ...gone];
+  const locked = latest.filter((item) => !item.selectable && mine.has(item.productNo)).map((item) => (
+    <Notice key={`locked-${item.productNo}`} tone="neutral">
+      {productName(item)} {item.status === "OFF_SALE" ? "已下架" : hiddenText(item)}，这次对它的优惠改动不保存
+    </Notice>
+  ));
+  return [...changed, ...gone, ...locked];
 }
 
 function buyChoices(list: BuyList | undefined) {
@@ -249,7 +254,7 @@ export function buyReplayEdits(record: BuyListPending) {
   return { before, added, removed, wanted };
 }
 
-export type ReviewBuyReplay = (edits: NonNullable<ReturnType<typeof buyReplayEdits>>, latest: BuyList) => void;
+export type ReviewBuyReplay = (edits: NonNullable<ReturnType<typeof buyReplayEdits>>, latest: BuyList, defaults?: PricingDefaults) => void;
 
 export function BuySection({ ctx, list, readError, trialTargetNo, blocked, reading, reach, leaveGuard, replayReview, pricing, onReload, onSubmit }: {
   ctx: HCtx;
@@ -267,7 +272,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   replayReview: RefObject<ReviewBuyReplay | null>;
   /** 读取带「支持按设备优惠」标识时传三项默认值：显示「优惠」列和单独设置。不传时和以前完全一样。 */
   pricing?: PricingDefaults;
-  onReload: (requireList?: boolean) => Promise<BuyList | undefined>;
+  onReload: (requireList?: boolean) => Promise<{ list?: BuyList; pricing?: PricingDefaults }>;
   onSubmit: (input: BuyListDraft) => Promise<BuyListSubmitResult>;
 }) {
   const canWrite = ctx.can("growth_h2_write");
@@ -339,7 +344,8 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
   const setEdit = (no: string, next: PricingEdit) => setEdits((current) => ({ ...current, [no]: next }));
   const touch = (no: string, field: PricingField) => setTouched((current) => current.includes(`${no}:${field}`) ? current : [...current, `${no}:${field}`]);
 
-  const showConfirm = (base: BuyList, selection: string[], { initialReason, initialRejected, othersNote, readFresh, drafted, prior }: {
+  const showConfirm = (base: BuyList, selection: string[], { defaults: pricing, initialReason, initialRejected, othersNote, readFresh, drafted, prior }: {
+    defaults: PricingDefaults | undefined;
     initialReason?: string;
     initialRejected?: string;
     othersNote?: ReactNode;
@@ -348,7 +354,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     drafted?: Record<string, BuyPricing>;
     /** 读取最新后，自己改的款别人也改过：别人改之前的值（④b）。 */
     prior?: Record<string, BuyPricing>;
-  } = {}) => {
+  }) => {
     const { items, candidates } = buyChoices(base);
     const selected = new Set(selection);
     const current = new Set(items.map((item) => item.productNo));
@@ -398,13 +404,13 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     const submittedPricing = base.pricing ? next.map((item) => ({ productNo: item.productNo, ...wanted(item) })) : undefined;
     const intended = submittedPricing && Object.fromEntries(submittedPricing.map(({ productNo, ...value }) => [productNo, value]));
     const readReview = async () => {
-      const latest = await onReload(true);
+      const { list: latest, pricing: defaults } = await onReload(true);
       if (!latest || latest.pricing !== base.pricing) throw new Error(BUY_READ_INVALID);
       const review = rebaseBuyEdits(latest, base.items, added, removed, intended);
       setDraftBase(review.base);
       setPicked(review.selection);
       setEdits(Object.fromEntries(Object.entries(review.drafted).map(([no, value]) => [no, editFrom(value)])));
-      return review;
+      return { ...review, defaults };
     };
     // 被拒的提示跟着这一框里的增删走：改过勾选再打开，「返回调整」按现在的勾选重算。
     const rejection = (message: string) => new ConfirmReadConflict({
@@ -453,10 +459,10 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         throw new ConfirmReadConflict({
           preserveReason: true,
           readLatest: async () => {
-            const { base: latest, selection, drafted, prior, mine } = await readReview();
+            const { base: latest, selection, drafted, prior, mine, defaults } = await readReview();
             setLastReason("");
-            const note = othersNode(base.items, latest.items, mine);
-            if (!showConfirm(latest, selection, { othersNote: note, readFresh: true, drafted, prior })) ctx.openActionConfirm(null);
+            const note = othersNode(base.items, latest.items, mine, defaults);
+            if (!showConfirm(latest, selection, { defaults, othersNote: note, readFresh: true, drafted, prior })) ctx.openActionConfirm(null);
             return false;
           },
           renderNotice: (readLatest) => (
@@ -518,13 +524,13 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     return true;
   };
 
-  const othersNode = (before: BuyDevice[], latest: BuyDevice[], mine: ReadonlyMap<string, ReturnType<typeof changedGroups>>): ReactNode => {
+  const othersNode = (before: BuyDevice[], latest: BuyDevice[], mine: ReadonlyMap<string, ReturnType<typeof changedGroups>>, defaults?: PricingDefaults): ReactNode => {
     const members = changedByOthers(before, latest);
-    const notes = [members && <Notice key="members" tone="neutral">{members}</Notice>, ...(pricing ? othersPricing(before, latest, mine, pricing) : [])].filter(Boolean);
+    const notes = [members && <Notice key="members" tone="neutral">{members}</Notice>, ...(defaults ? othersPricing(before, latest, mine, defaults) : [])].filter(Boolean);
     return notes.length ? <>{notes}</> : undefined;
   };
 
-  replayReview.current = ({ before, added, removed, wanted }, latest) => {
+  replayReview.current = ({ before, added, removed, wanted }, latest, defaults) => {
     const review = rebaseBuyEdits(latest, before, added, removed, wanted);
     afterLeave.current = undefined;
     setLeaving(false);
@@ -534,9 +540,9 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     setPicked(review.selection);
     setEdits(Object.fromEntries(Object.entries(review.drafted).map(([no, value]) => [no, editFrom(value)])));
     const { base, selection, drafted, prior, mine } = review;
-    if (!showConfirm(base, selection, { othersNote: othersNode(before, latest.items, mine), readFresh: true, drafted, prior })
+    if (!showConfirm(base, selection, { defaults, othersNote: othersNode(before, latest.items, mine, defaults), readFresh: true, drafted, prior })
       && selection.length === latest.items.length && latest.items.every(item => selection.includes(item.productNo))) {
-      ctx.toast(pricing ? PRICED.noChanges : NO_CHANGES, "info");
+      ctx.toast(defaults ? PRICED.noChanges : NO_CHANGES, "info");
     }
   };
 
@@ -546,10 +552,10 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
     setLeaving(false);
     const wanted = pricing ? Object.fromEntries(picked.map((no) => [no, wantedOf(no)])) : undefined;
     if (list && list.version !== draftBase.version) {
-      replayReview.current?.({ before: draftBase.items, added: candidates.filter((item) => added.includes(item.productNo)), removed, wanted }, list);
+      replayReview.current?.({ before: draftBase.items, added: candidates.filter((item) => added.includes(item.productNo)), removed, wanted }, list, pricing);
       return;
     }
-    showConfirm(draftBase, picked, { initialReason: lastReason, initialRejected: rejected, drafted: wanted });
+    showConfirm(draftBase, picked, { defaults: pricing, initialReason: lastReason, initialRejected: rejected, drafted: wanted });
   };
 
   const pricingHref = (no: string) => `/devices/pricing?sku=${encodeURIComponent(no)}`;
