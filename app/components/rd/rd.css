@@ -250,12 +250,14 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 /* 分项区按这组卡最多几行留高（MetricBoard 的 rows）。 */
 .rd-metric-rows { display: flex; flex-direction: column; gap: 4px; min-height: calc(var(--rd-lh-aux) * var(--rd-metric-rows, 3) + 4px * (var(--rd-metric-rows, 3) - 1) + 9px); margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--rd-line); }
 .rd-metric-rows > .rd-segbar-wrap { padding-top: 4px; }
-.rd-metric-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.rd-metric-row { display: flex; align-items: baseline; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+/* 名称和值两列：名称列按这张卡最长的名称，值紧跟在后面左对齐（VS-65），卡排宽了也一样，空白只在值后面。
+   放不下时名称省略，值不折行、不缩字。 */
+.rd-metric-pairs { display: grid; grid-template-columns: minmax(0, max-content) max-content; align-content: start; column-gap: 4px; }
+.rd-metric-pairs > .rd-metric-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
 .rd-metric-row dt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rd-text-3); }
-.rd-metric-row dd { flex: none; margin: 0; font-variant-numeric: tabular-nums; color: var(--tone, var(--rd-text)); white-space: nowrap; }
+.rd-metric-row dd { margin: 0; font-variant-numeric: tabular-nums; color: var(--tone, var(--rd-text)); white-space: nowrap; }
 .rd-metric-row dd[data-zero] { color: var(--rd-text-3); }
-/* 只有两张卡时卡很宽，分项限宽，名字和数字挨着（亲密性）。 */
-.rd-metrics-grid:has(> :nth-child(2):last-child) .rd-metric-row { max-width: 360px; }
 .rd-metric-note { color: var(--rd-text-3); }
 /* 重试的点击面 24 高，不撑开行高，旁边点空了也不容易误进业务页。 */
 .rd-metric .rd-inline-retry { padding: 3px 4px; margin: -3px -4px; }
