@@ -1,4 +1,5 @@
 "use client";
+import { approvalShownObject } from "@/lib/admin/a2-approval-summary";
 import {
   a2AccountStatusText, a2Pair, a2Shown, a2TicketKey, actionName, approvalActionName, approvalDisplayChanges, approvalQueueChange, approvalReviewValues, approvalTitleParts,
   CHANGE_LABELS, CHANGE_UNAVAILABLE, changeAfter, changeBefore, changeSummary, derivedBaseRateShown,
@@ -2499,9 +2500,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   </TableMessage>
                 ) : qPageRows.map((w) => {
                   const change = approvalQueueChange(w);
-                  const { action: name, object, objectInAction } = approvalTitleParts(w);
+                  const { action: name, object } = approvalTitleParts(w);
                   // 和首页、消息中心同一个判断（approvalChangeSummary）；objectText 认不出时原样返回系统键（current、配置键），这种不写。
-                  const showObject = object && object !== "—" && !objectInAction && object !== change.objectId && (object !== w.obj || !!w.objDisplayName);
+                  const showObject = approvalShownObject(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
                       <Td sticky="start"><Cell main={name} sub={showObject ? object : undefined} title={`${name}\n对象：${object || "—"}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
