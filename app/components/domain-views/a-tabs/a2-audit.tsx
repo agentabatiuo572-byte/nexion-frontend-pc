@@ -93,6 +93,7 @@ import { createPendingMutationStore, isPendingCommandOwnedBy, isRetryExpired, ty
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES_FEE, TRC20_CLOSED, TRC20_OPENS_WITHDRAWAL, TRC20_REPLAY_UNVERIFIED } from "@/lib/admin/trc20-closed";
+import { withdrawalProposalChanges, type WithdrawalProposalChanges } from "@/lib/admin/withdrawal-proposal-changes";
 import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
@@ -1436,8 +1437,26 @@ function reviewPair(before: string, after: string, operationCode?: string) {
 }
 
 /** 队列「变更」列：和详情同一套格式。第一项做第一行，原值做第二行，多项时写「等 N 项」（必须改 5）。 */
+const D5_CHANGE_UNAVAILABLE = "未能读取变更明细";
+
+function d5ApprovalChanges(ticket: A2OperationRow) {
+  if (ticket.operationCode === D5_APPROVAL_OP || (!ticket.operationCode && ticket.action === "放宽提现参数")) {
+    return withdrawalProposalChanges("D5", ticket);
+  }
+}
+
 /** amountKey：整张单是哪个字段（a2TicketKey），文字型前后值按它判断是不是金额。 */
-function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string, amountKey?: string) {
+function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string, amountKey?: string, withdrawalChanges?: WithdrawalProposalChanges | null) {
+  if (withdrawalChanges === null) return { main: D5_CHANGE_UNAVAILABLE };
+  if (withdrawalChanges) {
+    const { facts } = withdrawalChanges;
+    const first = facts[0];
+    return {
+      main: `${first.label} ${first.after}${facts.length > 1 ? ` 等 ${facts.length} 项` : ""}`,
+      sub: `原 ${first.before}`,
+      title: facts.map(({ label, before, after }) => `${label} ${before} → ${after}`).join("\n"),
+    };
+  }
   const { b, a, labels, evidenceKeys } = reviewPair(before, after, operationCode);
   if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? a2Shown(amountKey, b.text) : "见详情"}` : undefined };
   if (a.kind === "text") {
@@ -1656,11 +1675,17 @@ function g3ControlReviewAfter(before: Record<string, unknown>, after: Record<str
   return { ...after, [currentPrice]: `拟按 ${day} 目标价 ${valueText(currentPrice, price)} 发布` };
 }
 
-export function A2ChangeReview({ before, after, omit = [], operationCode, amountKey, facts, children }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; /** 整张单是哪个字段（a2TicketKey）：文字型前后值和 F 配置的一组值按它判断是不是金额。 */ amountKey?: string; /** 跟在「变更」后面同一块里的说明行，比如 F1 券冲正的「批准后」。 */ facts?: ReactNode; children?: ReactNode }) {
+export function A2ChangeReview({ before, after, omit = [], operationCode, amountKey, facts, children, withdrawalChanges }: { before: string; after: string; omit?: readonly string[]; operationCode?: string; /** 整张单是哪个字段（a2TicketKey）：文字型前后值和 F 配置的一组值按它判断是不是金额。 */ amountKey?: string; /** 跟在「变更」后面同一块里的说明行，比如 F1 券冲正的「批准后」。 */ facts?: ReactNode; children?: ReactNode; withdrawalChanges?: WithdrawalProposalChanges | null }) {
   const { b, a, labels } = reviewPair(before, after, operationCode);
-  const created = !b;
+  const created = withdrawalChanges === undefined && !b;
   let body: ReactNode;
-  if (!a) {
+  if (withdrawalChanges === null) {
+    body = <Facts><Fact k="变更">{D5_CHANGE_UNAVAILABLE}</Fact></Facts>;
+  } else if (withdrawalChanges) {
+    body = <Facts>{withdrawalChanges.facts.map(({ key, label, before, after }) => (
+      <Fact key={key} k={label}><Change from={before} to={after} /></Fact>
+    ))}</Facts>;
+  } else if (!a) {
     body = <Facts><Fact k="变更后">—</Fact></Facts>;
   } else if (a.kind === "text" && b?.kind === "text" && fieldPairs(b.text, a.text)) {
     // 「显示名：甲；工作邮箱：乙」这类逐项摘要：两边字段一一对应时每项一行，不拼成一长句折行。
@@ -2715,7 +2740,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           {fBatchTicket(w)?.items ? <A2BatchReview items={fBatchTicket(w)!.items!} />
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined}
+            : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} withdrawalChanges={d5ApprovalChanges(w)}
                 facts={v8Promotion ? v8PromotionFacts(w) : f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
                 {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
                 <A2I5DisclosureReview key={w.id} ticket={w} />
@@ -3144,7 +3169,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
                   const mission = h3MissionView(w);
                   const change = mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: f2BootstrapUsesRank(boot[0].usdtPct, boot[1].usdtPct) ? "第 1、2 层按受益人等级" : `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
-                    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w));
+                    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w), d5ApprovalChanges(w));
                   const name = actionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
@@ -3478,7 +3503,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
+            : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} withdrawalChanges={d5ApprovalChanges(shown)}
                 facts={isV8PromotionTicket(shown) ? v8PromotionFacts(shown)
                   : shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>
