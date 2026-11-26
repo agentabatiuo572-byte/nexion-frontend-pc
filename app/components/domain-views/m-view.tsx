@@ -277,10 +277,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       return next;
     });
   }, [reloadMContent, session?.adminId, authEpoch]);
-  const reconcileConversationSnapshot = useCallback(async (signal: AbortSignal) => {
+  const reconcileConversationSnapshot = useCallback(async (signal: AbortSignal, verifySet = true) => {
     const generation = mLoadCoordinator.current.beginConversationSnapshot();
     const snapshotAuthEpoch = authEpoch;
-    const conversations = await fetchMConversationSnapshot(signal);
+    const conversations = await fetchMConversationSnapshot(signal, verifySet);
     if (signal.aborted) return;
     if (!mLoadCoordinator.current.isConversationSnapshotCurrent(generation) || mDataAuthEpoch.current !== snapshotAuthEpoch) {
       throw new Error("M3_CONVERSATION_SNAPSHOT_SUPERSEDED");
@@ -618,9 +618,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,
     setParam: runMWrite,
-    refreshConversations: async () => {
+    refreshConversations: async (options) => {
       const controller = new AbortController();
-      try { await reconcileConversationSnapshot(controller.signal); }
+      // The manual retry needs one complete scoped read. Reconnect still
+      // verifies a stable set before consuming streamed invalidations.
+      try { await reconcileConversationSnapshot(controller.signal, !options?.manualRetry); }
       catch (cause) {
         // A newer snapshot is already loading and will land instead; that is not a failure (M-10).
         if (cause instanceof Error && cause.message === "M3_CONVERSATION_SNAPSHOT_SUPERSEDED") return;

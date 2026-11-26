@@ -5,7 +5,7 @@ import { isRetryExpired, type PendingMutationRecord } from "./pending-mutation-s
 export type ECommandLocator = {
   commandKey: string; originalMethod: "POST" | "PUT" | "PATCH" | "DELETE"; originalPath: string; originalAdminId: string;
 };
-export type ECommandBusinessState = "PROCESSING" | "FAILED" | "SUCCEEDED" | "REJECTED" | "UNKNOWN";
+export type ECommandBusinessState = "PROCESSING" | "FAILED" | "SUCCEEDED" | "REJECTED" | "UNKNOWN" | "NOT_EXECUTED";
 export type ECommandBatch = {
   accepted: string[];
   rejected: string[];
@@ -45,6 +45,12 @@ export type ECommandResult = "SUCCEEDED" | "NOT_EXECUTED" | "REJECTED" | "PROCES
 
 export type ECommandClosureOffer = { conclusions: ECommandEvidence["conclusion"][]; success?: "receipt" | "audit" };
 
+export const A3_CONTENT_COMMANDS = {
+  docs: { path: "/api/admin/developer/docs", scope: "A3_DEVELOPER_DOCS_UPDATE", target: "developer.docs.published" },
+  how: { path: "/api/admin/content/how-it-works", scope: "A3_HOW_CONTENT_UPDATE", target: "how-it-works.published" },
+} as const;
+const isA3ContentScope = (scope: string) => /^A3_(?:DEVELOPER_DOCS|HOW_CONTENT)_UPDATE:[1-9]\d{0,18}$/.test(scope);
+
 /** The stored suffix is the normalized audit display name, never an administrator ID. */
 function purchasePaymentPolicyScope(scope: string) {
   return scope.length <= 96 && /^D1:PURCHASE_PAYMENT_POLICY:[A-Z0-9_.:-]+$/.test(scope);
@@ -65,7 +71,8 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
   const h9 = scope === "GROWTH:H9:PUBLIC_STATS_UPDATE:PUBLIC_STATS"
     || /^GROWTH:H9:DEVICE_RANK_UPDATE:(?:growth\.device_rank\.model|h9\.dr\.sb\.[0-9a-f]{32})$/i.test(scope);
   const a3Param = scope.length <= 96 && /^A3_PLATFORM_PARAM:[A-Za-z0-9_.-]{1,80}$/.test(scope);
-  const local = rbac || j2 || h9 || a3Param || scope === "J3_ALERT_CONFIG"
+  const a3Content = isA3ContentScope(scope);
+  const local = rbac || j2 || h9 || a3Param || a3Content || scope === "J3_ALERT_CONFIG"
     || purchasePaymentPolicyScope(scope)
     || scope.startsWith("D1_TOPUP_CHANNEL_") || scope === "D1_VIETQR_CONFIG_UPDATE"
     || ["I5_JURISDICTION_CREATE", "I5_JURISDICTION_UPDATE", "I5_DISCLOSURE_DRAFT_SAVE", "I5_DISCLOSURE_DRAFT_DELETE",
@@ -82,6 +89,7 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
     || scope.startsWith("L_BI_REPORT_ACTION_") || /^(?:E2_POOL_|E5_DEVICE_|I1_COPY_|I2_NOVA_|I3_NOTIFICATION_CAMPAIGN_|I6_I18N_|I7_COURSE_|M4_SUPPORT_FAQ_|I4_TRUST_SECTION_)/.test(scope)
     || scope === "J4_PLAYBOOK_CREATE" || /^J4_PLAYBOOK_(?:UPDATE|DRILL|EXECUTE|CANCEL|ROLLBACK):/.test(scope)
     || scope === "E6_PHONE_RISK_SETTINGS" || scope === "J3_ALERT_CONFIG" || j2 || h9 || a3Param
+    || a3Content && !eCommandCanConcludeRejected(receipt)
     || /^GROWTH:H[14]:/.test(scope) || /^A4_(?:PARAM:|EVENT_LIFECYCLE:|H3_OUTBOX_REDRIVE:|EVENT_RETENTION_RUN$)/.test(scope)
     || scope === "I4_TRUST_DOCUMENT" || /^(?:D5_WITHDRAWAL_LIMITS|D6_FX_QUOTE|FINANCE:D7:CONFIG_UPDATE$|D7_PAYOUT_VND_CONFIG$)/.test(scope)
     || /^(?:F1_VRANK_|F4_MATERIAL_REVIEW:)/.test(scope)
@@ -90,7 +98,8 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
     || scope.startsWith("A3_FEATURE_FLAG:") || /^USER_PAYMENT_METHOD_(?:UNBIND|REBIND_NOTICE):(?:PRODUCTION|SANDBOX)$/.test(scope)
     || /^(?:D2|D3|E4|H2|K1|J1|I5|C2)(?:[_:])/.test(scope) || scope.startsWith("GROWTH:H2:"));
   const conclusions: ECommandEvidence["conclusion"][] = [];
-  const byReceipt = receipt.originalStatus === "SUCCEEDED" && (receipt.businessCode === 0 || receipt.businessCode === null || receipt.businessCode === undefined && scope.startsWith("J4_PLAYBOOK_RESUME:"));
+  const byReceipt = receipt.originalStatus === "SUCCEEDED" && (receipt.businessCode === 0
+    || !a3Content && receipt.businessCode === null || receipt.businessCode === undefined && scope.startsWith("J4_PLAYBOOK_RESUME:"));
   if (eCommandCanConcludeRejected(receipt)) conclusions.push("REJECTED");
   if (byReceipt || audit) conclusions.push("SUCCEEDED");
   // These I5 codes are candidates only: provenNotExecuted must also match the exact stored message.
@@ -98,7 +107,7 @@ export function eCommandClosureRequests(receipt: ECommandInvestigation | null | 
     || scope === "I5_JURISDICTION_UPDATE" && (receipt.businessCode === 404 || receipt.businessCode === 409);
   // The new flag proves only response-free local rollback; I5 has separate nonexecution replies.
   // Without the flag, preserve the previous candidates, including the explicit null-code gate.
-  const rollback = receipt.localTransactionRollbackConfirmed === undefined
+  const rollback = !a3Content && receipt.localTransactionRollbackConfirmed === undefined
     ? receipt.businessCode === null && receipt.originalStatus !== "SUCCEEDED"
     : receipt.localTransactionRollbackConfirmed;
   if (local && (rollback || localNonexecutionReply)) conclusions.push("NOT_EXECUTED");
@@ -203,6 +212,7 @@ export type ECommandParseOptions = { acceptA2ProposalCreated?: boolean };
 function parseReceipt(value: unknown, locator: ECommandLocator, options: ECommandParseOptions = {}): ECommandInvestigation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   const row = value as Record<string, unknown>;
+  const a3Content = Object.values(A3_CONTENT_COMMANDS).find(command => command.path === locator.originalPath);
   const d1Topup = locator.originalPath.match(/^\/api\/admin\/finance\/topup\/(?:channels\/([^/]+)\/(enabled|fee|min-amount|max-amount)|reconciliation\/([^/]+)\/writeoff)$/);
   const d1Channel = d1Topup ? decodeURIComponent(d1Topup[1] ?? d1Topup[3]).trim().toLowerCase().replaceAll("_", "-") : "";
   // Same channel aliases as OpsFinanceService.normalizeChannelCode; the locator remains exact.
@@ -267,7 +277,9 @@ function parseReceipt(value: unknown, locator: ECommandLocator, options: EComman
       else if (courseParts.length === 4 && ["publish", "rollback"].includes(versionAction) && method === "POST") courseScope = `I7_COURSE_VERSION_${versionAction.toUpperCase()}:${course}:${version}`;
     }
   }
-  const scopeMatches = locator.originalPath === "/api/admin/finance/purchase-payment-policy"
+  const scopeMatches = a3Content
+    ? locator.originalMethod === "PUT" && row.scope === `${a3Content.scope}:${locator.originalAdminId}` && row.originalTarget === a3Content.target
+    : locator.originalPath === "/api/admin/finance/purchase-payment-policy"
     ? locator.originalMethod === "PATCH" && typeof row.scope === "string" && purchasePaymentPolicyScope(row.scope) && row.originalTarget === "1"
     : d1Topup ? locator.originalMethod === (d1Topup[1] ? "PATCH" : "POST") && row.scope === d1TopupScope
     : locator.originalPath === "/api/admin/finance/vietqr/config" ? locator.originalMethod === "PATCH" && row.scope === "D1_VIETQR_CONFIG_UPDATE"
@@ -366,7 +378,9 @@ function parseReceipt(value: unknown, locator: ECommandLocator, options: EComman
     || row.originalTarget !== null && typeof row.originalTarget !== "string"
     || row.originalTargets !== null && typeof row.originalTargets !== "string"
     || !["PROCESSING", "UNKNOWN", "SUCCEEDED", "FAILED", "CONFIRMED_SUCCEEDED", "CONFIRMED_NOT_EXECUTED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus))
-    || row.locked !== ["PROCESSING", "UNKNOWN"].includes(String(row.originalStatus))
+    || (a3Content && row.originalStatus === "FAILED"
+      ? row.locked !== true && !(row.locked === false && row.localTransactionRollbackConfirmed === true)
+      : row.locked !== ["PROCESSING", "UNKNOWN"].includes(String(row.originalStatus)))
     || row.newOperationAllowed !== (row.originalStatus === "CONFIRMED_NOT_EXECUTED")) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
   if (row.businessCode !== undefined && row.businessCode !== null
     && (!Number.isInteger(row.businessCode) || Number(row.businessCode) < -2147483648 || Number(row.businessCode) > 2147483647)) throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");
@@ -376,10 +390,13 @@ function parseReceipt(value: unknown, locator: ECommandLocator, options: EComman
   // completed command as SUCCEEDED (AdminCommandInvestigationService.receiptState). Only this exact origin may omit the zero code.
   const a2ProposalCreated = options.acceptA2ProposalCreated === true && row.scope === "A2_COMMAND" && locator.originalMethod === "POST"
     && locator.originalPath === "/api/admin/platform/audit/operations" && row.businessCode === null;
+  const a3AuditSuccess = !!a3Content && row.originalStatus === "CONFIRMED_SUCCEEDED" && row.businessCode === null;
   if (row.businessState !== undefined) {
-    if (typeof row.businessState !== "string" || !["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
+    if (typeof row.businessState !== "string"
+      || !(["PROCESSING", "FAILED", "SUCCEEDED", "REJECTED", "UNKNOWN"].includes(row.businessState)
+        || a3Content && row.businessState === "NOT_EXECUTED" && row.originalStatus === "CONFIRMED_NOT_EXECUTED")
       || row.businessCode === undefined
-      || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 && !a2ProposalCreated || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
+      || row.businessState === "SUCCEEDED" && (row.businessCode !== 0 && !a2ProposalCreated && !a3AuditSuccess || !["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(String(row.originalStatus)))
       || row.businessState === "REJECTED" && (row.businessCode === null || row.businessCode === 0 || !["FAILED", "SUCCEEDED", "CONFIRMED_SUCCEEDED", "CONFIRMED_REJECTED"].includes(String(row.originalStatus)))
       || row.businessState === "PROCESSING" && row.originalStatus !== "PROCESSING"
       || row.businessState === "FAILED" && row.originalStatus !== "FAILED") throw new Error("INVESTIGATION_RECEIPT_UNREADABLE");

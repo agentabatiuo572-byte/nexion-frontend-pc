@@ -10,6 +10,10 @@ import type { ReactNode } from "react";
 import { CircleHelp, Clock3, Hourglass } from "lucide-react";
 import { Explain, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
+import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { replayRejectionText } from "@/lib/admin/retry-rejected";
+import { TechInfo } from "../recovery-panel";
+import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 
 export type GRecoveryRow = {
   key: string;
@@ -24,6 +28,28 @@ export type GRecoveryRow = {
   actions: ReactNode;
   state?: string;
 };
+
+export function GReplayRejectionNote({ record }: { record: PendingMutationRecord }) {
+  return <span className="rd-note"> · {replayRejectionText(record)} <TechInfo commandKey={record.commandKey} /></span>;
+}
+
+export function GRejectedRelease({ record, name, target, disabled, toast, getSnapshot, release }: {
+  record: PendingMutationRecord;
+  name: ReactNode;
+  target: ReactNode;
+  disabled: boolean;
+  toast: (message: string) => void;
+  getSnapshot: () => string | undefined;
+  release: () => boolean;
+}) {
+  const verified = useVerifiedRelease(toast);
+  return <>
+    <VerifiedReleaseButton disabled={disabled} onClick={() => verified.ask({
+      operation: name, target, targetLabel: "改动", createdAt: record.createdAt, getSnapshot, release,
+    })} />
+    {verified.dialog}
+  </>;
+}
 
 /** 结果未知：直接生效的写操作和走审批的申请各一句。 */
 export function unknownTag(kind: "direct" | "approval", approvalHint = "可以查询原操作；24 小时内也可以按原操作重试，不会建第二张。") {
