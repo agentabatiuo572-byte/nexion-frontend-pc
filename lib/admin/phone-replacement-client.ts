@@ -202,52 +202,72 @@ const modelCommands = createPendingMutationStore<PendingModelLockCommand>({
         && typeof row.installationId === "string" && record(row.lock) && record(row.body) && typeof row.path === "string",
 });
 export function modelLockCommandRecords(owner: number, userId: string) { return modelCommands.list().filter(row => row.owner === owner && row.userId === userId); }
-export function pendingModelLockCommands(owner: number, userId: string) { return modelLockCommandRecords(owner, userId).filter(row => !row.rejection); }
+export function modelLockCommandBlocks(row: PendingModelLockCommand, installationId: string) {
+    return !row.rejection || row.installationId === installationId;
+}
 export async function submitModelLockCommand(owner: number, userId: string, lock: PhoneModelLock, reason: string, context?: { label: string; userNo: string }) {
-    if (pendingModelLockCommands(owner, userId).length) throw new Error("此用户有机型锁处置待核实，请先核对原解除结果。");
+    if (modelLockCommandRecords(owner, userId).some(row => modelLockCommandBlocks(row, lock.installationId))) throw new Error("此用户有机型锁处置待核实，请先核对原解除结果。");
     const commandKey = createA2CommandKey("phone-model-lock"), fingerprint = `${owner}|${userId}|${lock.installationId}`;
     const original = { owner, userId, installationId: lock.installationId, lock, ...context, receiptSupported: true as const,
         path: `${accountPath(userId)}/phone-model-locks/${segment(lock.installationId)}/release`,
         body: { reason: reason.trim(), confirmed: true as const, expectedRevision: lock.revision } };
     modelCommands.remember(fingerprint, commandKey, original);
     if (!modelCommands.isDurablyStored(fingerprint, commandKey)) { modelCommands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原请求，尚未提交解除。"); }
-    const result = await sendModelLockCommand({ ...original, fingerprint, commandKey });
+    let result: PhoneModelLock;
+    try {
+        result = await sendModelLockCommand({ ...original, fingerprint, commandKey });
+    } catch (failure) {
+        if (isExplicitRejection(failure)) modelCommands.forget(fingerprint, commandKey);
+        throw failure;
+    }
     modelCommands.remember(fingerprint, commandKey, { ...original, returned: true });
     return result;
 }
 
 export async function retryModelLockCommand(row: PendingModelLockCommand): Promise<PhoneModelLock> {
-    if (!row.receiptSupported || row.expiresAt <= Date.now() || row.returned || row.rejection) throw new Error("这条原记录不能重发，请查询原解除结果或读回核对。");
-    const result = await sendModelLockCommand(row);
+    const saved = modelLockCommandRecords(row.owner, row.userId).find(original => original.commandKey === row.commandKey);
+    if (!saved?.receiptSupported || saved.expiresAt <= Date.now() || saved.returned || saved.rejection) throw new Error("这条原记录不能重发，请查询原解除结果或读回核对。");
+    let result: PhoneModelLock;
+    try {
+        result = await sendModelLockCommand(saved);
+    } catch (failure) {
+        const rejectionCode = explicitRejectionCode(failure);
+        if (rejectionCode) modelCommands.remember(saved.fingerprint, saved.commandKey, { ...saved, rejectionCode, rejection: failure instanceof Error ? failure.message : "原操作已被明确拒绝" });
+        throw failure;
+    }
     modelCommands.forget(row.fingerprint, row.commandKey);
     return result;
 }
 
 /** Both sends reuse the saved request, including its original revision. */
 async function sendModelLockCommand(row: Omit<PendingModelLockCommand, "createdAt" | "expiresAt">): Promise<PhoneModelLock> {
-    try {
-        const result = parseModelLock(await request(row.path, row.body, row.commandKey));
-        if (result.installationId !== row.installationId || !result.released) throw new PhoneOutcomeUnknownError(502);
-        return result;
-    } catch (failure) {
-        const rejectionCode = explicitRejectionCode(failure);
-        if (rejectionCode) modelCommands.remember(row.fingerprint, row.commandKey, { ...row, rejectionCode, rejection: failure instanceof Error ? failure.message : "原操作已被明确拒绝" });
-        throw failure;
-    }
+    const result = parseModelLock(await request(row.path, row.body, row.commandKey));
+    if (result.installationId !== row.installationId || !result.released) throw new PhoneOutcomeUnknownError(502);
+    return result;
 }
 
 export function forgetModelLockCommand(row: PendingModelLockCommand) { modelCommands.forget(row.fingerprint, row.commandKey); }
 
-export async function recoverModelLockCommand(row: PendingModelLockCommand): Promise<boolean> {
+export async function recoverModelLockCommand(row: PendingModelLockCommand): Promise<"succeeded" | "not-executed" | "not-found" | "unknown"> {
     if (!row.receiptSupported) throw new Error("这条原记录来自早期版本，查不了原结果，只能读取现在的安装状态，原记录继续保留。");
-    const value = await request(`${row.path.replace(/\/release$/, "/release-receipt")}?${new URLSearchParams({ commandKey: row.commandKey })}`);
+    let value: unknown;
+    try {
+        value = await request(`${row.path.replace(/\/release$/, "/release-receipt")}?${new URLSearchParams({ commandKey: row.commandKey })}`);
+    } catch (failure) {
+        if (failure instanceof PhoneApiError && failure.status === 404 && failure.reasonCode === "PHONE_MODEL_LOCK_RELEASE_NOT_FOUND") return "not-found";
+        throw failure;
+    }
     if (!record(value) || value.commandKey !== row.commandKey || String(value.userId) !== row.userId
         || value.installationId !== row.installationId || typeof value.status !== "string") throw new PhoneOutcomeUnknownError(502);
-    if (!["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(value.status)) return false;
+    if (["FAILED", "CONFIRMED_NOT_EXECUTED"].includes(value.status)) {
+        modelCommands.forget(row.fingerprint, row.commandKey);
+        return "not-executed";
+    }
+    if (!["SUCCEEDED", "CONFIRMED_SUCCEEDED"].includes(value.status)) return "unknown";
     const result = parseModelLock(value.response);
     if (result.installationId !== row.installationId || !result.released) throw new PhoneOutcomeUnknownError(502);
     modelCommands.forget(row.fingerprint, row.commandKey);
-    return true;
+    return "succeeded";
 }
 
-export function settleReturnedModelLockCommands(owner: number, userId: string) { for (const row of pendingModelLockCommands(owner, userId)) if (row.returned) modelCommands.forget(row.fingerprint, row.commandKey); }
+export function settleReturnedModelLockCommands(owner: number, userId: string) { for (const row of modelLockCommandRecords(owner, userId)) if (row.returned && !row.rejection) modelCommands.forget(row.fingerprint, row.commandKey); }
