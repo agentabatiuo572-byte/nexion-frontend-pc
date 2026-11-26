@@ -4,7 +4,7 @@
  * 侧栏待办数来自服务端 TODO 分页同一快照的 total。
  */
 import { createContext, useEffect, useState } from "react";
-import { isSupportSessionExpired, supportClient } from "@/lib/admin/m-support-client";
+import { isSupportScopeDenial, isSupportSessionExpired, supportClient } from "@/lib/admin/m-support-client";
 
 export type SupportPendingCount = number | "—" | undefined;
 export const ServicePendingCount = createContext<SupportPendingCount>(undefined);
@@ -21,7 +21,8 @@ export function useServicePendingCount(enabled: boolean, sessionKey: string): Su
       const { signal } = controller;
       void supportClient.customers({ pageNum: 1, pageSize: 1, filter: "TODO", signal })
         .then(page => { if (!signal.aborted) setRead({ sessionKey, count: page.total }); })
-        .catch(cause => { if (!signal.aborted && !isSupportSessionExpired(cause)) setRead({ sessionKey, count: "—" }); });
+        // 没有客服范围（403／404）不是读取失败：不显示计数（ST-39）；真正读不到才写「—」（ST-34）。
+        .catch(cause => { if (!signal.aborted && !isSupportSessionExpired(cause)) setRead({ sessionKey, count: isSupportScopeDenial(cause) ? undefined : "—" }); });
     };
     refresh();
     const timer = window.setInterval(refresh, 30_000);
