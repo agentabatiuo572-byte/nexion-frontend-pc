@@ -911,7 +911,9 @@
 .e1-product[data-status="on"]:not([data-blocked]) {
   background: color-mix(in srgb, var(--rd-panel) 82%, transparent);
   -webkit-backdrop-filter: blur(14px) saturate(150%); backdrop-filter: blur(14px) saturate(150%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--rd-ok) 22%, transparent), 0 0 18px 3px color-mix(in srgb, var(--rd-ok) 30%, transparent), 0 12px 32px -10px color-mix(in srgb, var(--rd-ok) 38%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--rd-ok) 22%, transparent),
+    0 2px 8px color-mix(in srgb, var(--rd-ok) 14%, transparent);
 }
 .e1-product[data-status="on"]:not([data-blocked]):not([data-hit]) { border-color: transparent; }
 .e1-product[data-status="on"]:not([data-blocked]) > .e1-product-identity { background: color-mix(in srgb, var(--rd-ok-bg) 85%, transparent); }
@@ -982,8 +984,14 @@
 .e1-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .e1-upload:focus-within { outline: 2px solid var(--rd-progress); outline-offset: 2px; }
 .e1-editor-media { display: flex; flex-direction: column; gap: var(--rd-space-3); }
-.e1-editor-media img, .e1-editor-media video { display: block; width: 100%; max-height: 180px; object-fit: contain; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.e1-editor-media img, .e1-editor-media video { display: block; width: 100%; object-fit: contain; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.e1-editor-media img { max-height: clamp(180px, 40vh, 360px); }
+.e1-editor-media video { max-height: 180px; }
 .e1-draft-preview { display: flex; flex-direction: column; gap: var(--rd-space-3); padding: var(--rd-space-4); background: var(--rd-panel-inner); border-radius: var(--rd-radius-control); min-width: 0; }
+:is(.e1-product-levels, .e1-draft-preview) .rd-levelstrip-cell:not([data-on]) > i {
+  background: var(--rd-line-strong);
+  box-shadow: none;
+}
 @container (max-width: 900px) {
   .e1-editor-layout { display: flex; flex-direction: column; }
   .e1-editor-layout .rd-section-nav { position: sticky; top: -12px; z-index: 2; display: flex; flex-wrap: nowrap; overflow-x: auto; width: 100%; background: var(--rd-panel); padding: 12px 0 var(--rd-space-2); margin-top: -12px; border-bottom: 1px solid var(--rd-line); }
