@@ -425,7 +425,7 @@ function G7RepurchasePage() {
         : "走审批的先查询原操作，查无且符合条件才可重试。直接修改可读取当前配置核对。记录清掉之前不能改成别的值，其他参数照常可改。"}
       explain={<>
         <p>这里列你在这台电脑上提交过、还没处理完的参数修改：结果未知的、在等审批的、已有结论待读回的。{G_PARAM_RECOVERY}现在的配置值证明不了原直接修改是否生效。</p>
-        <p>要改成别的值，等原操作有结论后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
+        <p>要改成别的值，等原操作有结论、这条记录清掉后再发起新修改。别人提交的审批单不在这里，要到「操作记录与审批」看。</p>
       </>} />;
   };
 
@@ -772,7 +772,7 @@ function G7RepurchasePage() {
   const originalClasses = [
     { count: originalCount - originalWaiting - originalEnded, name: "结果未知", reason: "提交时没收到确定结果，可能已经生效或已经建了审批单。", todo: "走审批的先查询原操作，直接修改的读取当前配置" },
     { count: originalWaiting, name: "在等审批", reason: "", todo: "等另一位超级管理员在「操作记录与审批」批准，批准前参数不变" },
-    { count: originalEnded, name: "已有结论待读回", reason: "原审批单已经批准、驳回、撤回或过期，这页还没读到现在的值。", todo: "点「查询原操作」读回现在的值，读到后这条记录会清掉" },
+    { count: originalEnded, name: "已有结论待读回", reason: "原审批单已经批准、驳回、撤回或过期，这条记录还没按原号核对完。", todo: "点「查询原操作」读回现在的值，读到后这条记录会清掉" },
   ].filter((item) => item.count > 0);
   const originalRule = "处理完之前这几项不能改成别的值，其他参数照常可改。";
   const conclusion = lockedNames.length > 0
@@ -785,8 +785,7 @@ function G7RepurchasePage() {
           hint={originalClasses.length === 1 ? `${originalClasses[0].todo}。` : "在下面逐条按状态处理。"}
           explain={originalClasses.length === 1 ? `${originalClasses[0].reason}${originalRule}`
             : <>{originalClasses.map((item) => <p key={item.name}>{item.name}：{item.reason}{item.todo}。</p>)}<p>{originalRule}</p></>}>
-          {originalClasses.length === 1 ? `有 ${fmtCount(originalCount)} 项参数修改${originalClasses[0].name}`
-            : `参数修改还没处理完：${originalClasses.map((item) => `${fmtCount(item.count)} 项${item.name}`).join("，")}`}</Conclusion>
+          {originalClasses.length === 1 ? `有参数修改${originalClasses[0].name}` : "参数修改还没处理完"}</Conclusion>
       : <Conclusion state="neutral" icon={Lock}
           hint="改规则只影响之后新开的订单。"
           explain="未结束是待锁定、锁仓中、到期未领取三种状态的订单，不限哪天下单。已有订单按下单时的规则到期或提前解锁；用户到期后要自己领取，这页不能代领、不能提前解锁。">

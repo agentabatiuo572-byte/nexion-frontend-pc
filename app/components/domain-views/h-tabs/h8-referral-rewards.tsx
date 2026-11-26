@@ -616,8 +616,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         ? record.kind === "param-approval" ? pendingTag() : <StatusTag tone="warn" icon={Clock3} explain={<>
           <p>等{APPROVER}在「操作记录与审批」批准，批准前什么都不发。</p>
           <p>{record.invitedUserId !== undefined ? "批准时按那时的资格核对，不符合就不发；兑付覆盖率低于红线时也不发。" : "批准时按那时的资格和名单核对，符合的才发；兑付覆盖率低于红线时整批不发。"}</p>
-          <p>奖励设置、阶段月份或加成在提交后变了，批准时会被拒绝，要重新提交。</p>
-          {record.invitedUserId !== undefined && <p>这位新人已结算、礼包还冻结又已有首笔实付订单的，批准后只解冻原礼包。</p>}
+          <p>奖励设置、阶段月份或加成在提交后变了，这张申请就批不下来，这条记录也会一直挡着新的结算：请到「操作记录与审批」撤回，或请审批人驳回；再点「查询原操作」清掉这条记录，按现在的设置重新提交。</p>
+          {record.invitedUserId !== undefined && <p>这位新人已结算过、礼包还冻结的，批准后不会再发一份；已有首笔实付订单、账户状态和风控核验也都通过时，只解冻原礼包。</p>}
         </>}>待审批</StatusTag>
         : isRetryExpired(record) ? expiredTag(record.kind === "direct" ? "direct" : "approval") : unknownTag(record.kind === "direct" ? "direct" : "approval");
       if (param) recoveryByKey[param.key] = tag;
@@ -783,9 +783,9 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         hint={!originalUnknown ? `等${APPROVER}在「操作记录与审批」批准，批准前不生效。`
           : !originalWaiting ? "在下面逐条查询原操作，有结论后再改这一项。"
             : `结果未知的先查询原操作；在等审批的等${APPROVER}批准。`}>
-        {!originalUnknown ? `有 ${originalWaiting} 项修改或结算申请在等审批`
-          : !originalWaiting ? `有 ${originalUnknown} 项修改或结算申请结果未知`
-            : `修改或结算申请还没处理完：${originalUnknown} 项结果未知，${originalWaiting} 项在等审批`}</Conclusion>
+        {!originalUnknown ? "有修改或结算申请在等审批"
+          : !originalWaiting ? "有修改或结算申请结果未知"
+            : "修改或结算申请还没处理完"}</Conclusion>
     : !data.enabled
       ? <Conclusion state="neutral" icon={Power}
           hint={canWrite ? "要开启，点「开关和发放方式」里的「启用」提交审批。" : undefined}
