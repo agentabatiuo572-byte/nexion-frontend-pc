@@ -133,7 +133,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
   ];
   return <GRecoveryNotice label="原操作" rows={rows}
     title={recoveryTitle(total - waitingCount - endedCount, waitingCount, endedCount)}
-    lead={waiting ? waitingLead : `走审批的先查询原操作，查无且符合条件才可重试。直接修改可读取当前配置核对。有结论前不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}。其他参数照常可改。`}
+    lead={waiting ? waitingLead : `走审批的先查询原操作，查无且符合条件才可重试。直接修改可读取当前配置核对。记录清掉之前不能改成别的值${dividendWaiting ? "（每日收益比例的调高申请在等批准时，仍可直接调低）" : ""}。其他参数照常可改。`}
     explain={<>
       <p>这里列你在这台电脑上提交过、还没处理完的参数修改、每日收益比例、补发收益和价格档位。{G_PARAM_RECOVERY}现在的配置值证明不了原直接修改是否生效。</p>
       <p>补发收益按原批次号恢复，不会换成今天的批次。要改成别的值，等原操作有结论后再发起新修改。</p>

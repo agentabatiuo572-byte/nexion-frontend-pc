@@ -562,7 +562,7 @@ function G2ExchangePage() {
       title={recoveryTitle(rows.length - waitingCount - endedCount, waitingCount, endedCount)}
       lead={waiting
         ? "有原申请的参数被审批锁住：批准、驳回或撤回之前，这一项调高调低都改不了；其他参数照常可改。"
-        : `走审批的先查询原操作，查无且符合条件才可重试。直接修改和处理排队用各行入口核对。有结论前不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "，处理排队的原批次确认之前不能开新的一批" : ""}。`}
+        : `走审批的先查询原操作，查无且符合条件才可重试。直接修改和处理排队用各行入口核对。记录清掉之前不能改成别的值${directs.some((record) => record.path === "/exchange/queue/process") ? "，处理排队的原批次确认之前不能开新的一批" : ""}。`}
       explain={<>
         <p>这里列你在这台电脑上提交过、还没处理完的原操作：结果未知的、在等审批的、已有结论待读回的。{G_PARAM_APPROVAL_RECOVERY}直接改参数和处理排队可以「查询原操作」。紧急暂停和取消排队可读取当前配置核对，现在的值证明不了原操作成没成。</p>
         <p>要改成别的值，等原操作有结论后再在「兑换参数」里发起新修改。处理排队的原批次在这里只能查原结果，不会重发。</p>
