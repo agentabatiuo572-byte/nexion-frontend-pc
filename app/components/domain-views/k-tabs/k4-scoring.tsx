@@ -738,7 +738,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         ]} />
       </Panel>
       <Panel title={overview.draft ? `草稿 · v${overview.draft.version}` : "草稿"} icon={FilePenLine} tone={overview.draft ? "warn" : "role-other"}
-        explain="草稿只存在后台，不影响线上评分。有评分规则修改权限的人可以起草；有这项权限的超级管理员才能发布。"
+        explain={`草稿只存在后台，不影响线上评分。有评分规则修改权限的人可以起草；有这项权限的超级管理员才能发布。${canModelWrite ? "" : "你没有这项权限，要起草请联系管理员在「角色管理」里开通。"}`}
         actions={<span className="k4-actions">
           {canModelWrite && <Button icon={<SlidersHorizontal size={14} aria-hidden />} onClick={editModel}>{modelDirty ? "继续编辑" : overview.draft ? "编辑草稿" : "起草新版本"}</Button>}
           {canPublish && overview.draft && <Button variant="primary" icon={<Upload size={14} aria-hidden />} disabledReason={publishBlocked} onClick={publishModel}>发布草稿</Button>}
@@ -750,7 +750,6 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
             { key: "why", label: "理由", value: overview.draft.reason },
           ]} />
         ) : <p className="k4-quiet">暂无草稿</p>}
-        {!canModelWrite && <p className="k4-quiet">你没有修改评分规则的权限，请联系管理员在「角色管理」里开通。</p>}
         {canModelWrite && !canPublish && overview.draft && <p className="k4-quiet">发布要由有评分规则修改权限的超级管理员操作。</p>}
       </Panel>
     </div>

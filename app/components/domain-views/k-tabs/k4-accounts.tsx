@@ -35,7 +35,7 @@ export type K4AccountPage = {
   records: K4AccountRow[];
 };
 
-/** 名单区自己的状态：读取中、读取失败（含名单接口的 503，只重试名单）、读到了。 */
+/** 名单区自己的状态：读取中、读取失败（含名单接口的 503，只重试名单）、读到了。message 现在不上屏：503 的通用错误文案写「本次没有放行」，放在名单上不对。 */
 export type K4AccountListState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
@@ -100,8 +100,9 @@ export function K4AccountList({ band, state, lines, version, highlight, pageSize
   const shown = state.kind === "ready" ? state.page : null;
   const now = shown ?? lines;
   const range = rangeText(band, now);
-  const sub = state.kind === "error" ? range ?? undefined
-    : [range, ORDER_TEXT, shown && shown.records.some((row) => row.asOf) ? businessZone().label : null].filter(Boolean).join(" · ");
+  // 副标题只放数据：范围；有行时再写固定顺序，有评分时间时标一次时区（ST-07、TX-25）。读取失败、空时只留范围。
+  const sub = !shown || shown.total === 0 ? range ?? undefined
+    : [range, ORDER_TEXT, shown.records.some((row) => row.asOf) ? businessZone().label : null].filter(Boolean).join(" · ");
   const empty = emptyText(band, now, version);
   return (
     <Panel id="k4-accounts" className="k4-accounts" title={panelTitle(band)} icon={band === "STALE" ? Hourglass : List} tone={band === "STALE" ? "progress" : "role-3"}
@@ -110,7 +111,7 @@ export function K4AccountList({ band, state, lines, version, highlight, pageSize
         <Segments label="风险档" value={band} onChange={onBand} items={BAND_ORDER.map((value) => ({ value, label: K4_BAND_NAME[value] }))} />
       </div>
       {state.kind === "loading" ? <BlockState state="loading" title="正在加载…" />
-        : state.kind === "error" ? <BlockState state="error" title="账户名单加载失败" detail={state.message} onRetry={onRetry} retryKey="k4-accounts" />
+        : state.kind === "error" ? <BlockState state="error" title="账户名单加载失败" detail="这次没读到名单，其他页签照常。" onRetry={onRetry} retryKey="k4-accounts" />
           : state.page.records.length === 0 && state.page.total === 0 ? <BlockState state="empty" title={empty.title} detail={empty.detail} />
             : (
               <>
@@ -134,7 +135,7 @@ export function K4AccountList({ band, state, lines, version, highlight, pageSize
                         <Td align="right">{!row.scored && row.overridden
                           ? <span className="k4-unscored">还没有评分</span>
                           : <Cell num main={row.overridden && row.modelScore !== null ? `${row.modelScore} 分` : "—"} />}</Td>
-                        <Td><span className="k4-account-version">{row.scored ? versionText(row.modelVersion) : "—"}</span></Td>
+                        <Td>{row.scored && row.modelVersion ? <span className="k4-account-version">{versionText(row.modelVersion)}</span> : "—"}</Td>
                         <Td><Cell num main={row.scored && row.asOf ? formatBusinessTimeCompact(row.asOf, "—") : "—"} /></Td>
                         <Td align="right" data-fit=""><Button size="sm" onClick={() => onOpenUser(row.userNo)}>查看评分</Button></Td>
                       </Tr>

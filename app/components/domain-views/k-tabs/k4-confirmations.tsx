@@ -23,7 +23,7 @@ export function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effec
     errorHandled: true,
     action: `恢复系统评分 · ${user.userNo}`,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-    detail: `系统先给这个账户评分，再撤掉人工改分 ${user.effectiveScore} 分。`,
+    detail: `这个账户还没有系统评分，现在按人工改分 ${user.effectiveScore} 分算。确认后按当前规则 v${modelVersion} 评分，人工改分不再生效，改分记录保留。`,
     content: <>
       <Facts>
         <Fact k={`${now}的有效分`}>{user.effectiveScore} 分（人工改分）</Fact>
@@ -32,7 +32,7 @@ export function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effec
       <Notice tone="progress">按执行那一刻生效的规则 v{modelVersion} 评分，评出多少分提交后才知道。</Notice>
     </>,
     statedBrief: {
-      impact: `这个账户还没有系统评分，现在按人工改分 ${user.effectiveScore} 分算。确认后按当前规则 v${modelVersion} 评分，人工改分不再生效，改分记录保留。`,
+      impact: `系统先给这个账户评分，再撤掉人工改分 ${user.effectiveScore} 分。`,
       check: "提交前已核对：这位用户的评分在你打开后没有被别人改过。",
     },
     reasonPlaceholder: "写清依据，例如：工单号、申诉已核实",

@@ -14,3 +14,6 @@
 .k4-back { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
 @media (hover: hover) and (pointer: fine) { .k4-back:hover { color: var(--rd-text); } }
 .k4-back:focus-visible { outline: 2px solid var(--rd-focus); outline-offset: 2px; border-radius: 4px; }
+/* 改分记录里「还没有评分 → N 分」一行放得下（k-domain.css 给这一列 132）。 */
+.k4-overrides.k4-overrides th:nth-child(2), .k4-overrides.k4-overrides td:nth-child(2) { width: 168px; }
+.k4-overrides .k4-change { flex-wrap: nowrap; }
