@@ -107,7 +107,7 @@ export function F5Drawer({ row, rows, history, ledgerAllowed, coverageAllowed, l
       sub={<><span data-mono>{row.id}</span><StatusBadge status={row.status} /></>}
       nav={{ hasPrev: !!prev, hasNext: !!next, onPrev: () => { if (prev) onOpen(prev); }, onNext: () => { if (next) onOpen(next); } }}
       footer={<Decision note={note}
-        explain={list.length ? "每个处置都先提交审批，另一位管理员批准后才执行。暂停此类奖励针对这位用户，不只这一笔。" : undefined}
+        explain={list.length ? "每个处置都先提交审批，另一位超级管理员批准后才执行。暂停此类奖励针对这位用户，不只这一笔。" : undefined}
         danger={danger.length ? <>{danger.map(button)}</> : undefined}
         others={others.length ? <>{others.map(button)}</> : undefined} />}>
       <JudgmentPoints rows={points} />

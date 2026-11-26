@@ -137,8 +137,8 @@ export const OPERATION_LABELS: Record<string, string> = {
 export const operationLabel = (type: string) => OPERATION_LABELS[type] ?? "奖励处理";
 export const kindNames = (value: string) => value.split(",").map((kind) => KIND_LABELS[kind.trim()] ?? "未知奖励类型").join("、");
 
-/** 审批人叫法照「全站-审批人叫法」：F5 七个处置要另一位有审批批准权限和对应处置权限的管理员，不要求超级管理员。 */
-export const APPROVER = "另一位管理员";
+/** 审批人叫法照 02 OP-67：A2 票只有超级管理员有批准权，F5 七个处置由另一位超级管理员批（还要有审批批准权限和对应处置权限）。 */
+export const APPROVER = "另一位超级管理员";
 export const approverText = (permission: string) => `${APPROVER}，需有审批批准权限和${permission}`;
 
 export function approvalTag(note = "批准前这笔奖励不变。") {

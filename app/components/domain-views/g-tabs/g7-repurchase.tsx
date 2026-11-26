@@ -765,7 +765,16 @@ function G7RepurchasePage() {
   const early = deduction === undefined || deduction > principal ? undefined : principal - deduction;
   const exampleReady = maturity !== undefined && early !== undefined;
 
+  // 和下面原操作提醒的标题同一个分法（recoveryNotice）：读到审批单的按审批单算在等审批或已有结论待读回，其余是结果未知。
   const originalCount = records.length + (session ? listG7DirectCommands(session.adminId).length : 0);
+  const originalWaiting = records.filter((record) => record.ticket?.status === "pending").length;
+  const originalEnded = records.filter((record) => record.ticket && record.ticket.status !== "pending").length;
+  const originalClasses = [
+    { count: originalCount - originalWaiting - originalEnded, name: "结果未知", reason: "提交时没收到确定结果，可能已经生效或已经建了审批单。", todo: "走审批的先查询原操作，直接修改的读取当前配置" },
+    { count: originalWaiting, name: "在等审批", reason: "", todo: "等另一位超级管理员在「操作记录与审批」批准，批准前参数不变" },
+    { count: originalEnded, name: "已有结论待读回", reason: "原审批单已经批准、驳回、撤回或过期，这页还没读到现在的值。", todo: "点「查询原操作」读回现在的值，读到后这条记录会清掉" },
+  ].filter((item) => item.count > 0);
+  const originalRule = "处理完之前这几项不能改成别的值，其他参数照常可改。";
   const conclusion = lockedNames.length > 0
       ? <Conclusion state="warn" icon={LockKeyhole}
           hint={lockedNames.length === 1 && lockedIds.length === 1 ? `到「操作记录与审批」找审批单 ${lockedParams[lockedIds[0]].operationId}，有结论后再改。` : "到「操作记录与审批」找这张审批单，有结论后再改。"}
@@ -773,9 +782,11 @@ function G7RepurchasePage() {
           {lockedNames.join("、")}被一张审批单锁住，现在改不了</Conclusion>
       : originalCount > 0
       ? <Conclusion state="warn" icon={Clock3}
-          hint="在下面逐条核对。走审批的先查询原操作，直接修改的读取当前配置。"
-          explain="提交过的参数修改还没有确定结论：有的在等另一位超级管理员审批，有的没收到结果。有结论之前这几项不能改成别的值，其他参数照常可改。">
-          有 {fmtCount(originalCount)} 项参数修改还没有结论</Conclusion>
+          hint={originalClasses.length === 1 ? `${originalClasses[0].todo}。` : "在下面逐条按状态处理。"}
+          explain={originalClasses.length === 1 ? `${originalClasses[0].reason}${originalRule}`
+            : <>{originalClasses.map((item) => <p key={item.name}>{item.name}：{item.reason}{item.todo}。</p>)}<p>{originalRule}</p></>}>
+          {originalClasses.length === 1 ? `有 ${fmtCount(originalCount)} 项参数修改${originalClasses[0].name}`
+            : `参数修改还没处理完：${originalClasses.map((item) => `${fmtCount(item.count)} 项${item.name}`).join("，")}`}</Conclusion>
       : <Conclusion state="neutral" icon={Lock}
           hint="改规则只影响之后新开的订单。"
           explain="未结束是待锁定、锁仓中、到期未领取三种状态的订单，不限哪天下单。已有订单按下单时的规则到期或提前解锁；用户到期后要自己领取，这页不能代领、不能提前解锁。">

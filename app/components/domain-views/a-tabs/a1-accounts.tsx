@@ -1238,7 +1238,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const pendingTag = (op: A1Operator) => {
     const pending = pendingFor({ kind: "password", account: op });
     if (!pending?.ticket || pending.ticket.status !== "pending") return null;
-    return <StatusTag tone="warn" icon={Clock3} explain={`审批单 ${pending.ticket.id}，在「操作记录与审批」批准后执行；批准前这个账号的其他操作先不能提交。`}>{PENDING_KIND[pending.intent.kind] ?? "申请"}待审批</StatusTag>;
+    return <StatusTag tone="warn" icon={Clock3} explain={`审批单 ${pending.ticket.id}：等另一位有相应审批权限的超级管理员在「操作记录与审批」批准，你自己不能批。批准前这个账号什么都不变，其他操作也先不能提交；批准后按这次申请执行。`}>{PENDING_KIND[pending.intent.kind] ?? "申请"}待审批</StatusTag>;
   };
   const menuItems = (op: A1Operator): MoreMenuItem[] => accountActions(op).map((action) => ({ key: action.key, label: action.label, danger: action.danger, disabledReason: action.disabledReason ?? undefined, onSelect: action.onSelect }));
 
