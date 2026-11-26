@@ -66,7 +66,7 @@ export function RewardFlow({ pending, blocked, settled, mode }: { pending: React
               <p>没有邀请人的新人也有新人礼；这时邀请人那一份不发。</p>
             </>} />
           </span>
-          <span className="h8-flow-sub">按注册时那段的金额结，有没有邀请人都算</span>
+          <span className="h8-flow-sub">按各人生效区间结，有没有邀请人都算</span>
         </div>
       </li>
       <li className="h8-flow-step">
