@@ -47,7 +47,7 @@ export function MReleaseModal({ target, where, onCancel, onConfirm, returnFocus 
   return (
     <Modal title="解除原操作记录" icon={ShieldCheck} onClose={onCancel} returnFocus={returnFocus} footer={<>
       <Button onClick={onCancel}>取消</Button>
-      <Button variant="primary" disabledReason={checked ? undefined : "先勾选「已核实」"} onClick={onConfirm}>确认解除</Button>
+      <Button variant="primary" disabledReason={checked ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={onConfirm}>确认解除</Button>
     </>}>
       <Facts>
         <Fact k="原操作">{target.action}</Fact>
@@ -60,7 +60,7 @@ export function MReleaseModal({ target, where, onCancel, onConfirm, returnFocus 
         <p>只清这个标签页里的记录，不进操作记录。</p>
       </div>
       <p className="m-release-text">{where} <MAuditLink /></p>
-      <Check label="已核实原操作的结果" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
+      <Check label="我已核实原操作的结果" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
     </Modal>
   );
 }

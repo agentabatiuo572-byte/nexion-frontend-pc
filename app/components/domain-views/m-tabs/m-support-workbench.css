@@ -148,3 +148,5 @@
 /* Footer: leaving the flow stays on the left, back and next sit together on the right. A button on its own keeps the right line (D1-right). */
 .rd-modal .rd-modal-foot .m-admin-toolbar { justify-content: flex-end; }
 .rd-modal .rd-modal-foot .m-admin-toolbar > :first-child:not(:only-child) { margin-right: auto; }
+/* The release view in the bulk dialog takes focus as a whole when it opens, like the content panel; its controls keep their own focus ring. */
+.m-bulk-release:focus { outline: none; }
