@@ -8,7 +8,7 @@ import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag, JudgmentPoints,
   Notice, PageHeader, PageTabs, Pager, Panel, ScaleBar, SearchSelect, StatusTag, Table, TableMessage, Td, Th, Tr, useTabIds,
 } from "@/app/components/rd";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import {
   K1OutcomeUncertainError,
   K1RequestError,
@@ -237,7 +237,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       } catch (error) {
         if (accountsInFlight.current !== request) return;
         const message = error instanceof K1RequestError && error.reasonCode === "K4_RISK_SCORE_UNAVAILABLE"
-          ? "这次没读到名单，其他页签照常。" : displayAdminError(error);
+          ? "这次没读到名单，其他页签照常。" : displayAdminReadError(error);
         setAccountsResult((current) => automatic && current?.key === accountsKey && current.state.kind === "ready"
           ? { ...current, state: { ...current.state, autoFailed: true } }
           : { key: accountsKey, scope: accountsScope, state: { kind: "error", message } });
@@ -861,9 +861,10 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       有 {unreadAlerts} 条提现升级告警未读
     </Conclusion>
   ) : (
-    <Conclusion state={overview.draft || overview.recomputePending > 0 ? "neutral" : "ok"} icon={ShieldCheck} explain={conclusionExplain}
+    <Conclusion state={overview.draft || overview.recomputePending > 0 ? "neutral" : "ok"} icon={overview.recomputePending > 0 ? RefreshCw : ShieldCheck} explain={conclusionExplain}
       hint={overview.draft && canPublish ? "核对草稿改了什么，没问题就发布。" : undefined}>
-      {clauses.length > 0 ? status : `评分规则 v${overview.model.version} 生效中，全部评分用户都已按它算好`}
+      {/* 排队重算是进行中：图标底用进行中蓝（VS-20），由 k-domain.css 认 data-k4-progress。 */}
+      {clauses.length > 0 ? overview.recomputePending > 0 ? <span data-k4-progress="">{status}</span> : status : `评分规则 v${overview.model.version} 生效中，全部评分用户都已按它算好`}
     </Conclusion>
   );
 
@@ -1248,12 +1249,12 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   return (
     <>
       {header}
-      {conclusion}
       {pollFailures >= 2 && readAt !== null && (
         <Notice tone="warn" action={<Button size="sm" onClick={() => retryScoringPoll.current?.()}>重试</Button>}>
           自动刷新失败，下面是 {formatBusinessTimeCompact(new Date(readAt).toISOString())}（{businessZone().label}）的数据
         </Notice>
       )}
+      {conclusion}
       {pendingBars}
       {inboundNotice}
       {tabs}

@@ -341,7 +341,12 @@ export default function RiskRadarPage() {
   const redPct = Number(redInput);
   const thresholdValid = Number.isFinite(yellowPct) && yellowPct >= 5 && yellowPct <= 50
     && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
-  const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const thresholdRule = useReasonRule(!!threshold && !thresholdOriginal && !approvalRecovery);
+  const reasonLength = visibleReasonLength(reason);
+  const reasonValid = thresholdRule.ok(reason);
+  const reasonHint = !thresholdRule.ready ? thresholdRule.error || "正在加载，稍候即可提交。"
+    : reasonLength < thresholdRule.min ? `操作理由还差 ${thresholdRule.min - reasonLength} 字`
+      : reasonLength > thresholdRule.max ? `操作理由多了 ${reasonLength - thresholdRule.max} 字` : undefined;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
   usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
@@ -820,6 +825,7 @@ export default function RiskRadarPage() {
       {data && <>数据时间 {timeText(data.generatedAt)}
         <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" /></>}
       {radar.streamWarning && <span className="b5-muted">{data && " · "}{radar.streamWarning.replace(/。$/, "")}</span>}
+      {radar.reconnect && <Button size="sm" variant="ghost" onClick={radar.reconnect}>重新连接</Button>}
     </span>
   );
   const refreshAll = () => {
@@ -833,7 +839,6 @@ export default function RiskRadarPage() {
   const headerActions = (
     <>
       <Button icon={<RefreshCw size={14} aria-hidden />} onClick={refreshAll}>刷新</Button>
-      {radar.reconnect && <Button onClick={radar.reconnect}>重新连接</Button>}
       {canReadSubscription && <Button icon={<BellRing size={14} aria-hidden />} onClick={() => { const saved = pendingWrites.find(record => record.fingerprint === SUBSCRIPTION_SLOT); if (saved) { recoverWrite(saved); return; } setSubscriptionOriginal(null); setSubscriptionSaveError(""); setSubscriptionOpen(true); }}>告警订阅</Button>}
       {killSwitchLink}
     </>
@@ -849,13 +854,14 @@ export default function RiskRadarPage() {
     if (dimension && canTriageDimension(dimension)) void triage(dimension);
     return true;
   };
-  // 「真正去哪办」：排查去处只写「去处理」里点得开的页；表头问号是整张名单的，名单筛成一类时才写那一类的页（design-plan 板 2）。
+  // 「真正去哪办」：排查去处只写「去处理」里点得开的页；表头问号是整张名单的，名单筛成一类时写那一类的页，没筛类型时指向每行的「去处理」（design-plan 板 2）。
   const triagePage = (target: string | null | undefined) => {
     const link = signalTreatmentLink(target, canCross, canTriage, canTriageTarget);
     return link && link.mode !== "unreachable" ? TARGET_NAME[link.target] ?? null : null;
   };
   const listCategory = query.signalType ? "TAMPER" : query.category.length === 1 ? query.category[0] : null;
-  const listHandlingHint = handlingHint(triagePage(listCategory && CATEGORY_TARGETS[listCategory]), canFreeze);
+  const listHandlingHint = listCategory ? handlingHint(triagePage(CATEGORY_TARGETS[listCategory]), canFreeze)
+    : Object.values(CATEGORY_TARGETS).some((target) => triagePage(target)) ? `排查到每行「去处理」写的页面，${handlingHint(null, canFreeze)}` : handlingHint(null, canFreeze);
   const triageState = (target: string) => {
     const dimension = QUEUE_TRIAGE[target];
     if (!triaging || !dimension || !canTriageDimension(dimension)) return undefined;
@@ -1022,7 +1028,7 @@ export default function RiskRadarPage() {
         const blocked = !canThreshold ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
           : !thresholdValid ? "先把黄线、红线填在范围内"
             : !recovering && !thresholdChanged ? "没有修改"
-            : !reasonValid && approvalRecovery !== "retry" ? "理由要写 8–200 个字"
+            : !recovering && !reasonValid ? reasonHint
               : !previewReady && approvalRecovery !== "retry" ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
                 : undefined;
         return (
@@ -1071,8 +1077,10 @@ export default function RiskRadarPage() {
                   </Facts>
                 </Notice>
               )}
-              <Field label="调整理由" required error={reason && !reasonValid && !thresholdLocked ? "理由要写 8–200 个字" : undefined}>
-                <Textarea value={reason} disabled={thresholdLocked} maxLength={200} rows={3} placeholder="8–200 字，例如：工单号、调整依据" count={`${reason.trim().length} / 200`} onChange={(event) => setReason(event.target.value)} />
+              <Field label="操作理由" required hint={!recovering && thresholdRule.ready ? `至少 ${thresholdRule.min} 字` : undefined}
+                help={!recovering && !thresholdRule.ready ? reasonHint : undefined}
+                error={!recovering && thresholdRule.ready && reason && !reasonValid && !thresholdLocked ? reasonHint : undefined}>
+                <Textarea value={reason} disabled={thresholdLocked} maxLength={thresholdRule.policy?.max} rows={3} placeholder="例如：工单号、调整依据" count={!recovering && thresholdRule.ready ? `${reasonLength}/${thresholdRule.max}` : undefined} onChange={(event) => setReason(event.target.value)} />
               </Field>
             </div>
           </Modal>
@@ -1198,14 +1206,15 @@ export default function RiskRadarPage() {
                 onClick={() => void changeSignalStatus()}>{statusUnknown ? "按原操作重试" : statusRead.state === "loading" ? "正在读取这条的当前进度…" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">
-              <p className="b5-line">不会解除风控，也不会放行提现；{handlingHint(triagePage(triageTarget(alert)), canFreeze)}</p>
+              {statusChanged ? <Notice tone="warn">这条已被别人改过，不用再标记。</Notice>
+                : <p className="b5-line">不会解除风控，也不会放行提现；{handlingHint(triagePage(triageTarget(alert)), canFreeze)}</p>}
               <Facts>
                 <Fact k="风险信号">{signalName(alert)}{line ? ` · ${line}` : ""}</Fact>
                 <Fact k="级别"><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></Fact>
                 <Fact k="用户"><span data-mono>{alert.userNo ?? `#${alert.userId}`}</span></Fact>
                 <Fact k="信号号"><RefText value={alert.signalNo} /></Fact>
                 <Fact k="记录时间">{timeText(alert.createdAt)}</Fact>
-                <Fact k="处理进度">{statusChanged ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
+                <Fact k={statusChanged ? "最新进度" : "处理进度"}>{statusChanged ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
               </Facts>
               {!statusChanged && <Field label="操作理由" required hint={statusRule.ready ? `至少 ${statusRule.min} 字` : undefined}
                 help={!statusOriginal && !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : undefined}

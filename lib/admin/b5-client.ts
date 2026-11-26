@@ -338,10 +338,10 @@ export function useB5Radar(key: string, enabled: boolean) {
         // EventSource doesn't expose HTTP status. Check a closed stream through the guarded read.
         if (closed && attempts === 0) void reload("auto");
         if (attempts >= 6) {
-          setStreamStatus({ warning: "自动更新断开了；页面每 30 秒刷新一次。", exhausted: true });
+          setStreamStatus({ warning: "连接已断开，自动重连没有成功；每 30 秒自动刷新。", exhausted: true });
           return;
         }
-        setStreamStatus({ warning: "连接已断开，正在重连；下面是最近一次的数据。每 30 秒自动刷新。" });
+        setStreamStatus({ warning: "连接已断开，正在重连；下面是最近一次的数据，每 30 秒自动刷新。" });
         retryTimer = window.setTimeout(connect, Math.min(30_000, 1000 * 2 ** attempts));
         attempts += 1;
       };

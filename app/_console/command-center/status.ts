@@ -81,6 +81,6 @@ export function statusSentence(input: {
   if (pendingRows > 0) return { state: "neutral", text: `有 ${pendingRows} 件事要处理${input.fundSafe ? "，资金安全" : ""}` };
   if (input.failed.length === 1) return { state: "unknown", text: `${input.failed[0]}读取失败，状态不确定` };
   if (input.failed.length > 1) return { state: "unknown", text: "部分数据读取失败，状态不确定" };
-  if (input.riskFeedUnavailable) return { state: "unknown", aboutRiskFeed: true, text: "暂无法判断：风险数据没读到" };
+  if (input.riskFeedUnavailable) return { state: "unknown", aboutRiskFeed: true, text: "暂无法判断：这里看不到风险待处理", explain: "首页的风险汇总要有「资金与应付款总览」的查看权限，你的账号没有。待处理的风险到风险提醒看。" };
   return { state: "ok", text: "一切正常，没有要你处理的事" };
 }

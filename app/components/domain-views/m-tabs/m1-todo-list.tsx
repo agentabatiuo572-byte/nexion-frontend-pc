@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from "react";
 import { Clock3, Info, MessageSquare, UserRound, Users } from "lucide-react";
-import { BlockState, Button, Drawer, Explain, FilterBar, FilterField, Input, Notice, Pager, Panel, Segments, Select, StatusTag, Table, TableLoading, Td, Th, Tr } from "@/app/components/rd";
+import { BlockState, Button, Cell, Drawer, Explain, FilterBar, FilterField, Input, Notice, Pager, Panel, Segments, Select, StatusTag, Table, TableLoading, Td, Th, Tr } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { durationText } from "./m1-live-service";
 import { SupportAvatar } from "./support-avatar";
@@ -169,8 +169,8 @@ export function M1TodoPanel(props: TodoPanelProps) {
       more={<>
         <FilterField label="负责组"><Select aria-label="负责组" value={props.groupValue} options={groups.list} disabled={groups.disabled} onChange={props.onGroup} /></FilterField>
         <FilterField label="客服"><Select aria-label="客服" value={props.agentValue} options={agents.list} disabled={agents.disabled} onChange={props.onAgent} /></FilterField>
-        {groups.reason && <p className="m1-todo-more-note">组目录：{groups.reason}</p>}
-        {agents.reason && <p className="m1-todo-more-note">客服名册：{agents.reason}</p>}
+        {groups.reason && <p className="m1-todo-more-note">负责组：{groups.reason}</p>}
+        {agents.reason && <p className="m1-todo-more-note">客服：{agents.reason}</p>}
       </>}>
       <FilterField label="客户" grow><Input value={props.keyword} maxLength={200} onChange={event => props.onKeyword(event.target.value)} placeholder="客户名称、用户编码或手机号" aria-label="查询客户名称、用户编码或手机号" /></FilterField>
     </FilterBar>
@@ -192,7 +192,7 @@ export function M1TodoPanel(props: TodoPanelProps) {
         <colgroup><col /><col /><col /><col /><col /></colgroup>
         <thead><Tr><Th>客户</Th><Th>负责客服</Th><Th><span className="m1-todo-th">待办原因<Explain label="待办原因的说明" content="待回复写等了多久，从最早一条没回的消息算；首次待联系写分给专属客服多久；待维护写超期多久。都算到「截至」的时间。" /></span></Th><Th>上次登录</Th><Th sticky="end">操作</Th></Tr></thead>
         <tbody>{list.rows === null ? <TableLoading columns={5} rows={Math.min(props.pageSize, 10)} /> : list.rows.map(row => <Tr key={row.customerId} selected={row.customerId === props.selectedId} onOpen={() => props.onProfile(row)}>
-          <Td><span className="m1-todo-customer" title={row.name + " · " + row.customerCode}><SupportAvatar name={row.name} path={row.avatarPath} size={28} /><span><span className="m1-todo-name">{row.name}</span><span className="m-user-code">{row.customerCode}</span></span></span></Td>
+          <Td><span className="m1-todo-customer"><SupportAvatar name={row.name} path={row.avatarPath} size={28} /><Cell title={row.name + " · " + row.customerCode} main={row.name} sub={<span className="m-user-code">{row.customerCode}</span>} /></span></Td>
           <Td><span className="m1-todo-nowrap">{row.agentName ?? "—"}</span></Td>
           <Td><TodoReasons row={row} quietReply={filter === "WAITING_REPLY"} /></Td>
           <Td><span className="m1-todo-nowrap">{row.lastLoginAt ? formatBusinessTimeCompact(row.lastLoginAt, "—") : "—"}</span></Td>

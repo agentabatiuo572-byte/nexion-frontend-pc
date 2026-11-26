@@ -65,7 +65,7 @@ export function SignalList({ data, filters, page, onRetry, table }: {
   return (
     <Panel flush data-testid="b5-recent-alert-feed" data-capability="b5-signal-disposition" className="b5-list-panel">
       <div id={SIGNAL_LIST_ANCHOR} className="b5-list-filter">
-        <FilterBar onClear={filters.onClear} canClear={filters.canClear}
+        <FilterBar onClear={filters.onClear} canClear={filters.canClear} sort={<span className="rd-filter-result">按记录时间从新到旧</span>}
           end={data.state !== "ready" || filters.accountCount === null ? undefined : `涉及 ${fmtNum(filters.accountCount)} 个账户`}>
           <FilterField><Select aria-label="风险类型" value={filters.category} onChange={filters.onCategory} options={filters.categoryLabel ? [...CATEGORY_OPTIONS, { value: filters.category, label: filters.categoryLabel }] : CATEGORY_OPTIONS} /></FilterField>
           <FilterField><Select aria-label="处理进度" value={filters.status} onChange={filters.onStatus} options={STATUS_OPTIONS} /></FilterField>

@@ -274,7 +274,7 @@ export default function CommandCenter() {
       : sentence.aboutRisk
         ? <Button onClick={() => openFold("risk", "risk")}>查看风险与开关</Button>
         : sentence.aboutRiskFeed
-          ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={B5_FROM_HOME} prefetch={false}><span className="rd-btn-face">风险提醒</span></Link>
+          ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={B5_FROM_HOME} prefetch={false}><span className="rd-btn-face">查看风险提醒</span></Link>
           : undefined;
   const phase = rhythm.h1;
   const phaseText = phase.currentPhase ? `${phase.currentPhase} 阶段 · 第 ${phase.currentMonth}/${phase.totalMonths} 月` : "运营阶段未配置";

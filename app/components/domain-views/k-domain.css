@@ -377,6 +377,8 @@
 /* 页签下面每一块之间用页面的区块间距。 */
 .k4-tab { display: grid; gap: var(--rd-section-gap); min-width: 0; }
 .k4-pending { display: grid; gap: var(--rd-space-3); }
+/* 结论是「正在排队重算」时，图标底用进行中蓝（VS-20）；Conclusion 没有进行中这一档，这里只改这一处。 */
+.rd-conclusion:has([data-k4-progress]) > .rd-tile { --tone-tile: var(--rd-progress-tile); --tone-tile-ink: var(--rd-progress-tile-ink); }
 .k4-actions { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--rd-space-2); }
 .k4-quiet { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .k4-quiet[data-kind="problem"] { color: var(--rd-warn); }
