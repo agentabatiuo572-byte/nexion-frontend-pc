@@ -1787,7 +1787,10 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       ? <>奖励记录 <span data-mono className="a2-code">{fund.ids.join("、")}</span></> : `${fund.ids.length} 笔奖励记录（记录号见下方）`;
     if (w.operationCode === "f_unilevel_bootstrap") return <>{objectText(w)}<Explain label="技术信息" content={`对象原文 ${w.obj}`} /></>;
     // 整组政策单（七层结算、好友奖励政策、首次配置等）后端写的对象是 current，不是运营要对照的编号。
-    if (w.obj === "current" && !w.objDisplayName) return "当前设置";
+    if (w.obj === "current" && !w.objDisplayName) {
+      const object = objectText(w);
+      return object === w.obj ? "当前设置" : object;
+    }
     // 整批申请的对象是配置键清单或摘要，运营看不懂：写涉及的页面和项数，原文进技术信息。
     if (fBatchTicket(w)) return <>{objectText(w)}<Explain label="技术信息" content={`对象原文 ${w.obj}${fBatchTicket(w)?.digest ? "（清单太长，只存了摘要）" : ""}`} /></>;
     const ambassador = !w.objDisplayName && /^F\.ambassador\.(\d+)\.status$/.exec(w.obj);
@@ -2499,7 +2502,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
                       <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
-                      <Td><Cell main={change.main} sub={change.sub} title={"title" in change ? change.title : `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
+                      <Td><Cell main={change.main} sub={change.sub} title={change.title ?? `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
                       {showActions && <Td sticky="end" fit><span className="rd-row-actions">{rowActions(w)}</span></Td>}

@@ -21,8 +21,13 @@ import { e1GateText, e1Value } from "./e1-product-review";
 import { ORDER_STATES, stateLabel } from "./e4-order-display";
 import { containsHan } from "./content-language-rules";
 import { findHighOp } from "./high-ops-registry";
+import { h3WeeklyZoneLabel } from "./h3-weekly-zone-labels";
+import { normalizeSessionRole } from "./session-role";
+import { TASK_CLASS_LABELS } from "./task-classes";
+import { D5_MENU_NAME, roleLabel } from "@/lib/nav/console-nav-labels";
 import { amountDisplay } from "@/lib/format";
 
+const SEE_APPROVAL_DETAIL = "请在审批详情核对";
 const ACCOUNT_STATUS: Record<string, string> = { enabled: "启用", disabled: "停用" };
 export const a2AccountStatusText = (value: string) => Object.hasOwn(ACCOUNT_STATUS, value) ? ACCOUNT_STATUS[value] : undefined;
 
@@ -279,6 +284,8 @@ function h3ConfigValue(key: string | undefined, value: string) {
 
 /** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
 export function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null; disclosureReview?: A2OperationRow["disclosureReview"] }) {
+  if (w.obj === "current" && isD5Approval(w)) return D5_MENU_NAME;
+  if (w.operationCode === "h3_weekly_region_policy" && w.obj === "growth.h3.weekly-region-policy") return "区号规则";
   if (w.disclosureReview) return w.disclosureReview.jurisdiction;
   if (w.objDisplayName && isGParamTicket(w)) return w.objDisplayName;
   if (w.objDisplayName) return a2ObjectText(w);
@@ -552,10 +559,11 @@ export const CHANGE_UNAVAILABLE = "未能读取变更明细";
 
 type ApprovalChangeValues = Pick<A2OperationRow, "operationCode" | "action" | "before" | "after" | "withdrawalChanges">;
 
+const isD5Approval = (ticket: { operationCode?: string | null; action: string }) =>
+  ticket.operationCode === D5_APPROVAL_OP || (!ticket.operationCode && ticket.action === "放宽提现参数");
+
 export function d5ApprovalChanges(ticket: ApprovalChangeValues) {
-  if (ticket.operationCode === D5_APPROVAL_OP || (!ticket.operationCode && ticket.action === "放宽提现参数")) {
-    return withdrawalProposalChanges("D5", ticket);
-  }
+  if (isD5Approval(ticket)) return withdrawalProposalChanges("D5", ticket);
 }
 
 const FX_APPROVAL_FIELDS = [
@@ -577,10 +585,10 @@ function fxApprovalNumber(value: unknown) {
   return f4Decimal(text)?.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") ?? null;
 }
 
-export function approvalDisplayChanges(ticket: ApprovalChangeValues): WithdrawalProposalChanges | null | undefined {
+export function approvalDisplayChanges(ticket: ApprovalChangeValues, accountStatusText = a2AccountStatusText): WithdrawalProposalChanges | null | undefined {
   const { action, before, after, operationCode } = ticket;
   if (operationCode === "a1_account_status_update") {
-    const from = a2AccountStatusText(before), to = a2AccountStatusText(after);
+    const from = accountStatusText(before), to = accountStatusText(after);
     return from && to ? { facts: [{ key: "accountStatus", label: "账号状态", before: from, after: to }], forced: false } : null;
   }
   if (operationCode === "d6_fx_quote" || !operationCode && ["调整汇率", "调整敏感汇率"].includes(action)) {
@@ -600,7 +608,7 @@ export function approvalDisplayChanges(ticket: ApprovalChangeValues): Withdrawal
 }
 
 /** amountKey：整张单是哪个字段（a2TicketKey），文字型前后值按它判断是不是金额。 */
-export function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string, amountKey?: string, withdrawalChanges?: WithdrawalProposalChanges | null) {
+export function changeSummary(before: string, after: string, omit: readonly string[] = [], operationCode?: string, amountKey?: string, withdrawalChanges?: WithdrawalProposalChanges | null, summaryLabels?: Record<string, string>) {
   if (withdrawalChanges === null) return { main: CHANGE_UNAVAILABLE };
   if (withdrawalChanges) {
     const { facts } = withdrawalChanges;
@@ -611,7 +619,8 @@ export function changeSummary(before: string, after: string, omit: readonly stri
       title: [...facts.map(({ label, before, after }) => `${label} ${before} → ${after}`), ...(withdrawalChanges.forced ? ["强制保存倒挂价"] : [])].join("\n"),
     };
   }
-  const { b, a, labels, evidenceKeys } = reviewPair(before, after, operationCode);
+  const { b, a, labels: reviewLabels, evidenceKeys } = reviewPair(before, after, operationCode);
+  const labels = summaryLabels ? { ...reviewLabels, ...summaryLabels } : reviewLabels;
   if (!a) return { main: "—", sub: b ? `原 ${b.kind === "text" ? a2Shown(amountKey, b.text) : "见详情"}` : undefined };
   if (a.kind === "text") {
     const [was, now] = a2Pair(amountKey, b?.kind === "text" ? b.text : undefined, a.text);
@@ -633,7 +642,11 @@ export function changeSummary(before: string, after: string, omit: readonly stri
   const pair = a2Pair(amountKey ?? first, valueText(first, was, labels), valueText(first, now, labels), [was, now]);
   const { label, before: wasShown, after: nowShown } = derivedBaseRateShown(first, labels[first] ?? first, was, now, !b, pair[0], pair[1]);
   const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : nowShown}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
-  return { main, sub: !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${wasShown}` : "原 见详情" };
+  const sub = !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${wasShown}` : "原 见详情";
+  const preserveText = summaryLabels !== undefined && ["name", "displayName", "reason", "remark", "description", "tagline", "specDocumentTitle",
+    "名称", "任务名称", "原因", "理由", "备注", "说明"].includes(first);
+  if (summaryLabels && !preserveText && [wasShown, nowShown].some(value => value && !readableQueueChange(value))) return { main: SEE_APPROVAL_DETAIL };
+  return { main, sub, ...(preserveText ? { preserveText: true } : {}) };
 }
 
 /** 设备审批只翻译后端给出的状态码；占位的原状态不能用设备当前状态补写。 */
@@ -765,8 +778,7 @@ const changeBeforeText = (row: { before: string; ambassadorMaterialProposal?: un
 export const isRoleGrantsTicket = (w: { operationCode?: string }) => w.operationCode === "a6_role_grants_update";
 
 /** 队列「变更」列：主行写增减了几项，副行写菜单或加上的前几项名称。 */
-function roleGrantsSummary(review: A2RoleGrantsReview | null): { main: string; sub?: string; title: string } {
-  if (!review) return { main: "没有记下增减", sub: "旧单，详情里看原始内容", title: "这张单没有记下增加和去掉了哪些" };
+function roleGrantsSummary(review: A2RoleGrantsReview): { main: string; sub?: string; title: string } {
   const p = [review.permissionsAdded.length && `增加 ${review.permissionsAdded.length} 项权限`, review.permissionsRemoved.length && `去掉 ${review.permissionsRemoved.length} 项权限`].filter(Boolean) as string[];
   const m = [review.menusAdded.length && `增加 ${review.menusAdded.length} 个菜单`, review.menusRemoved.length && `去掉 ${review.menusRemoved.length} 个菜单`].filter(Boolean) as string[];
   if (!p.length && !m.length) return { main: "权限和菜单都没有增减", title: "权限和菜单都没有增减" };
@@ -777,11 +789,131 @@ function roleGrantsSummary(review: A2RoleGrantsReview | null): { main: string; s
   return { main, sub, title: [main, p.length && m.length ? m.join("、") : "", added.length ? `加：${added.join("、")}` : ""].filter(Boolean).join("\n") };
 }
 
-export function approvalQueueChange(w: A2OperationRow) {
-  const batch = fBatchTicket(w);
-  const k1 = k1TicketView(w);
-  const boot = w.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(w.after) : undefined;
-  const mission = h3MissionView(w);
-  return mission ? { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建" } : boot ? { main: f2BootstrapUsesRank(boot[0].usdtPct, boot[1].usdtPct) ? "第 1、2 层按受益人等级" : `L1–L7 合计占订单 ${f2PctSum(boot.map((row) => row.usdtPct))}%`, sub: "首次配置，原来没有规则" } : k1 ? k1ChangeCell(k1) : batch?.items ? fBatchCell(batch.items, batch.count)
-    : isRoleGrantsTicket(w) ? roleGrantsSummary(w.roleGrantsReview) : changeSummary(changeBefore(w), changeAfter(w), g3PolicyExecutionTiming(w) ? ["生效时间"] : [], reviewOperation(w), a2TicketKey(w), approvalDisplayChanges(w));
+const ROLE_STATUS: Record<string, string> = { "1": "已启用", "0": "已停用", enabled: "已启用", disabled: "已停用" };
+const ACCOUNT_STATE: Record<string, string> = { active: "正常", frozen: "冻结", restricted: "受限", banned: "封禁" };
+const K1_CLUSTER_STATUS: Record<string, string> = { detected: "待判定", flagged: "可疑", frozen: "已冻结", released: "已解除", cleared: "正常" };
+const TASK_STATUS: Record<string, string> = { ...ROLE_STATUS, active: "已启用", inactive: "已停用" };
+const TASK_CHANGE_LABELS: Record<string, string> = {
+  name: "任务名称", taskClass: "任务类型", selectionWeight: "权重", status: "状态",
+  durationMinutes: "固定时长", baseReward: "每任务奖励", asset: "奖励资产", enabled: "状态",
+};
+const QUOTA_CHANGE_LABELS: Record<string, string> = {
+  productNo: "商品", displayName: "名称", directRefs: "有效直接邀请（人）", monthComputePoints: "本月团队算力点",
+  monthlyQuota: "每月名额（台）", unlockMode: "两项条件", status: "状态",
+};
+const QUOTA_UNLOCK_MODE: Record<string, string> = { ALL: "两项都要满足", EITHER: "满足一项就行" };
+// 删除角色的 active 只表示角色仍存在，启停是另一项状态。
+const ROLE_DELETE_STATUS: Record<string, string> = { active: "已存在", deleted: "已删除" };
+
+const knownValue = (names: Record<string, string> | undefined, value: string) =>
+  names && Object.hasOwn(names, value) ? names[value] : value;
+
+function queueChangeValue(ticket: A2OperationRow, text: string) {
+  const operation = ticket.operationCode;
+  if (operation === "a1_account_change_role" || operation === "a1_account_create") {
+    const role = (code: string) => roleLabel(code === "super" ? "superadmin" : normalizeSessionRole(code));
+    if (operation === "a1_account_change_role") return role(text);
+    return text.replace(/(角色[：: ]\s*)([A-Za-z][\w-]*)/g, (_, label: string, code: string) => `${label}${role(code)}`);
+  }
+  const names = operation === "a6_role_status_update" || operation === "a6_role_disable" ? ROLE_STATUS
+    : operation === "a6_role_delete" ? ROLE_DELETE_STATUS
+    : operation === "c2_account_freeze" || operation === "c2_account_unfreeze" ? ACCOUNT_STATE
+    : operation?.startsWith("k1_cluster_") ? K1_CLUSTER_STATUS
+    : operation === "e2_task_status" ? TASK_STATUS : undefined;
+  const shown = knownValue(names, text.toLowerCase());
+  return names && shown !== text.toLowerCase() ? shown : text;
+}
+
+function structuredQueueValue(text: string, flattenSimulation: boolean, valueNames: Record<string, Record<string, string>>) {
+  const parsed = parseReview(text);
+  if (parsed?.kind !== "object") return text;
+  const { simulation, ...fields } = parsed.value;
+  if (flattenSimulation && isRecord(simulation)) Object.assign(fields, simulation);
+  else if (simulation !== undefined) fields.simulation = simulation;
+  return JSON.stringify(Object.fromEntries(Object.entries(fields).map(([key, value]) => {
+    if (key === "enabled" && typeof value === "boolean") return [key, value ? "已启用" : "已停用"];
+    const shown = knownValue(valueNames[key], String(value));
+    return [key, shown === String(value) ? value : shown];
+  })));
+}
+
+function weeklyRegionChange(ticket: A2OperationRow) {
+  const read = (text: string) => {
+    const parsed = parseReview(text);
+    if (parsed?.kind !== "object" || !Array.isArray(parsed.value.mappings) || typeof parsed.value.defaultZoneId !== "string") return;
+    if (!h3WeeklyZoneLabel(parsed.value.defaultZoneId)) return;
+    const byCode = new Map<string, string>();
+    for (const row of parsed.value.mappings) {
+      if (!isRecord(row) || typeof row.callingCode !== "string" || !/^\+\d+$/.test(row.callingCode) || typeof row.zoneId !== "string") return;
+      const zone = h3WeeklyZoneLabel(row.zoneId);
+      if (!zone) return;
+      byCode.set(row.callingCode, zone);
+    }
+    return byCode;
+  };
+  const before = read(ticket.before);
+  const after = read(ticket.after);
+  if (!before || !after) return;
+  const changed = [...new Set([...after.keys(), ...before.keys()])].filter(code => before.get(code) !== after.get(code));
+  const code = changed[0];
+  if (!code) return;
+  return {
+    main: `区号 ${code} · ${after.get(code) ?? "未设置"}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`,
+    sub: `原 ${before.get(code) ?? "未设置"}`,
+  };
+}
+
+type QueueChange = { main: string; sub?: string; title?: string };
+
+function queueChange(ticket: A2OperationRow): (QueueChange & { preserveText?: boolean }) | undefined {
+  const mission = h3MissionView(ticket);
+  if (mission) return { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建", preserveText: true };
+  if (ticket.operationCode === "h3_weekly_region_policy") return weeklyRegionChange(ticket);
+  const boot = ticket.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(ticket.after) : undefined;
+  if (boot) return { main: f2BootstrapUsesRank(boot[0].usdtPct, boot[1].usdtPct) ? "第 1、2 层按受益人等级" : `L1–L7 合计占订单 ${f2PctSum(boot.map(row => row.usdtPct))}%`, sub: "首次配置，原来没有规则" };
+  const k1 = k1TicketView(ticket);
+  if (k1) return k1ChangeCell(k1);
+  const batch = fBatchTicket(ticket);
+  if (batch?.items) return fBatchCell(batch.items, batch.count);
+  if (isRoleGrantsTicket(ticket)) return ticket.roleGrantsReview ? roleGrantsSummary(ticket.roleGrantsReview) : undefined;
+
+  const fund = fundTicket(ticket);
+  if (isV8PromotionTicket(ticket) || fund?.kind === "f5Status" || fund?.kind === "f5Reissue" || fund?.kind === "f5Reverse") return;
+
+  let before = queueChangeValue(ticket, changeBefore(ticket));
+  let after = queueChangeValue(ticket, changeAfter(ticket));
+  let labels: Record<string, string> = {};
+  const omit = g3PolicyExecutionTiming(ticket) ? ["生效时间"] : [];
+  if (ticket.operationCode === "f4_quota_tier_create") {
+    labels = QUOTA_CHANGE_LABELS;
+    after = structuredQueueValue(after, false, { status: ROLE_STATUS, unlockMode: QUOTA_UNLOCK_MODE });
+    omit.push("quotaCode", "sortOrder");
+  } else if (["e2_task_create", "e2_task_update", "e2_task_status"].includes(ticket.operationCode ?? "")) {
+    labels = TASK_CHANGE_LABELS;
+    const values = { status: TASK_STATUS, taskClass: TASK_CLASS_LABELS };
+    before = structuredQueueValue(before, true, values);
+    after = structuredQueueValue(after, true, values);
+    omit.push("expectedVersion");
+  }
+  const displayChanges = approvalDisplayChanges(ticket, (value) => {
+    const status = a2AccountStatusText(value.toLowerCase());
+    return status ? `已${status}` : undefined;
+  });
+  return changeSummary(before, after, omit, reviewOperation(ticket), a2TicketKey(ticket), displayChanges, labels);
+}
+
+const MACHINE_CHANGE = /^\s*[\[{]|\b[A-Za-z][\w.]*\s*=|\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b|\b[a-z][a-z\d]*[A-Z][A-Za-z\d]*\b/;
+const BARE_ENUM = /^(?:enabled|disabled|active|inactive|deleted|true|false|null)$/i;
+
+function readableQueueChange(text: string) {
+  const value = text.replace(/^原 /, "").trim();
+  return !MACHINE_CHANGE.test(value) && !value.split(/ · | → |[：；]/).some(part => BARE_ENUM.test(part.trim()));
+}
+
+export function approvalQueueChange(ticket: A2OperationRow): QueueChange {
+  const change = queueChange(ticket);
+  if (!change || change.main === "—" || change.main === CHANGE_UNAVAILABLE) return { main: SEE_APPROVAL_DETAIL };
+  const { main, sub, title, preserveText } = change;
+  if (!preserveText && (!readableQueueChange(main) || sub && !readableQueueChange(sub))) return { main: SEE_APPROVAL_DETAIL };
+  return { main, sub, title: title?.split("\n").every(readableQueueChange) ? title : undefined };
 }
