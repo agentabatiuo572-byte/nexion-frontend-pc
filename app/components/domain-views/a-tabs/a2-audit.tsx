@@ -1926,7 +1926,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           <Fact k="能不能撤回">不能；新记录可以再冲正</Fact>
         </>,
         lead: undefined,
-        extra: reissueList(w),
+        extra: reissueList(w, true),
       };
     }
     if (fund.kind === "f5Reverse") return {
@@ -2482,7 +2482,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 
         {h5CoverageBlock && qPageRows.some(w => canDecide(w, "approve") && h5ApproveBlock(w)) && <Notice tone="warn">签到倍率提前解锁或调高倍率的单：{h5CoverageBlock}</Notice>}
         <Panel flush icon={ClipboardList} tone="role-3" title="待审批的操作" explain="应急在前，资金类其次，其余按提交时间从新到旧。">
-          {/* 1024 也要放下：对象多是系统键，名字里通常已经带着，列表不单列，抽屉和确认框里常显（DP-13）。 */}
+          {/* 对象不单列：写在「审批单」格第二行，弱化；动作名里已有的不重复，认不出、原样是系统键的不上列表，抽屉和确认框里常显（ST-04、DP-13、DP-30）。 */}
           <Table label="待审批的操作" className="a2-queue" data-tight="">
             <thead><tr>
               <Th sticky="start">审批单</Th>
@@ -2500,10 +2500,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                 ) : qPageRows.map((w) => {
                   const change = approvalQueueChange(w);
                   const { action: name, object, objectInAction } = approvalTitleParts(w);
-                  const showObject = w.objDisplayName && !isGParamTicket(w) && object && object !== "—" && !objectInAction;
+                  // 和首页、消息中心同一个判断（approvalChangeSummary）；objectText 认不出时原样返回系统键（current、配置键），这种不写。
+                  const showObject = object && object !== "—" && !objectInAction && object !== change.objectId && (object !== w.obj || !!w.objDisplayName);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={showObject ? `${name} · ${object}` : name} title={`${name}\n对象：${object || "—"}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
+                      <Td sticky="start"><Cell main={name} sub={showObject ? object : undefined} title={`${name}\n对象：${object || "—"}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={change.title ?? `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
@@ -2717,6 +2718,14 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           : shownAmount && shownAmount.state !== "ok" && shownAmount.state !== "loading" ? REFUND_AMOUNT_REQUIRED : shownD5Block ?? h5ApproveBlock(shown)));
   const shownK1 = shown ? k1TicketView(shown) : undefined;
   const shownBoot = shown?.operationCode === "f_unilevel_bootstrap" ? parseF2BootstrapAfter(shown.after) : undefined;
+  // 改值类单：判断要点直接写第一项的「原值 → 新值」，多项写「等 N 项」，完整变更留在下面（OP-149）。
+  // 提现参数和账号启停有逐项的前后值；其余用队列同一句（新值一行、原值一行），队列写不出原值时不加这一行。K1 自己有「改动」。
+  const shownFacts = shown && !shownK1 ? approvalDisplayChanges(shown) : undefined;
+  const shownFirst = shownFacts?.facts[0];
+  const shownQueue = shown && !shownK1 && shownFacts === undefined ? approvalQueueChange(shown) : undefined;
+  const shownChange: JudgmentRow | undefined = shownFacts === null ? { label: "改动", state: "warn", value: CHANGE_UNAVAILABLE }
+    : shownFacts && shownFirst ? { label: "改动", value: <>{shownFirst.label} <Change from={shownFirst.before} to={shownFirst.after} />{shownFacts.facts.length > 1 && ` 等 ${shownFacts.facts.length} 项`}{shownFacts.forced && " · 强制保存倒挂价"}</> }
+      : shownQueue?.sub?.startsWith("原 ") && shownQueue.sub !== "原 见详情" ? { label: "改动", value: shownQueue.main, reason: shownQueue.sub } : undefined;
   const judgment: JudgmentRow[] = shown ? [
     // 批准退款是直接出钱、收不回的操作，第一行就是这笔钱（必须改 1，DP-03）。
     ...(shownAmount ? [shownAmount.state === "ok"
@@ -2724,6 +2733,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
     { label: "要做什么", value: approvalActionName(shown) },
     { label: "对象", value: objectNode(shown) },
+    ...(shownChange ? [shownChange] : []),
     ...(shownK1?.kind === "param" ? [{ label: "改动", value: <Change from={`${shownK1.from} 个账户`} to={`${shownK1.to} 个账户`} /> }]
       : shownK1?.kind === "release" ? [{ label: "这笔收益", value: `${k1Amount(shownK1.net)} ${nexGridBrandText(shownK1.asset)} · ${k1Source(shownK1.source)} · 用户 ${userCode(shownK1.userId)}` }] : []),
     ...(shownF5Ids.length === 1 ? [{ label: "这笔奖励", value: <F5CurrentValue id={shownF5Ids[0]} /> }] : []),
@@ -2736,6 +2746,22 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     ...(shownBlock ? [{ label: "不能批准的原因", state: "warn" as const, value: shownBlock }] : []),
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
+  // 技术信息：上面写运营的话，这里给查证用的原文，只列和上面写法不同的（TX-06、TX-34、OP-154）。
+  // 对象一格、K1、七层首次配置的「技术信息」提示里已有的原文，这里不再列（VS-105）。
+  const shownFundKind = shown ? fundTicket(shown) : undefined;
+  const objectRawInTip = !!shown && (shownFundKind?.kind === "fConfig" || shown.operationCode === "f_unilevel_bootstrap" || !!fBatchTicket(shown)
+    || !shown.objDisplayName && /^F\.ambassador\.\d+\.status$/.test(shown.obj) || shown.operationCode === "j1_gate_resume"
+    || shown.operationCode === "h3_quest_config" && !!h3ConfigName(shown.obj) || isGParamTicket(shown));
+  const changeRawInTip = !!shownK1 || !!shownBoot || shownFundKind?.kind === "fConfig" && (!!shownFundKind.spec?.cron || !shownFundKind.spec)
+    || !!shown && isGParamTicket(shown) && shown.obj === "divBase";
+  const shownValues = shown ? approvalReviewValues(shown) : undefined;
+  const changeReworded = !!shown && !!shownValues && (shownValues.withdrawalChanges !== undefined || shownValues.before !== shown.before || shownValues.after !== shown.after
+    || [shown.before, shown.after].some((text) => { const parsed = parseReview(text); return !!parsed && parsed.kind !== "text"; }));
+  const shownTech = !shown ? [] : [
+    ...(shown.action !== approvalActionName(shown) ? [{ k: "原动作名", v: shown.action }] : []),
+    ...(!objectRawInTip && shown.obj !== objectText(shown) ? [{ k: "对象原文", v: shown.obj }] : []),
+    ...(!changeRawInTip && changeReworded ? [{ k: "修改前原文", v: shown.before || "—" }, { k: "修改后原文", v: shown.after || "—" }] : []),
+  ];
   const shownOwn = shown ? isMine(shown) : false;
   const shownCoverageMode = shown && approvalCoverageMode(shown);
   // F4 派奖和结算、F5 提前解锁：被覆盖率挡住时单子留着，可以等恢复后再批，不只是驳回。
@@ -2749,12 +2775,14 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         : `会让平台多付钱。${shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`}`;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
   const shownCanWithdraw = !!shown && shownOwn && canWithdraw(shown);
-  const ticketFooter = shown && (shownCanWithdraw || shownCanApprove || shownCanReject ? (
+  // 自己发起的单：有批准权的照样看到批准、驳回，禁用，原因在按钮提示里（OP-66）；没有批准权的不显示（OP-124）。
+  const shownOwnLocked = shownOwn && canApprove;
+  const ticketFooter = shown && (shownCanWithdraw || shownCanApprove || shownCanReject || shownOwnLocked ? (
     <Decision
       explain={shownCanApprove && !shownOwn && !shown.retiredOperation ? approvalTiming(shown).drawer : undefined}
-      danger={shownCanReject ? <Button disabledReason={decideBlock(shown, "reject")} onClick={() => confirmDecision(shown, "reject")}>驳回</Button> : undefined}
+      danger={shownCanReject || shownOwnLocked ? <Button disabledReason={decideBlock(shown, "reject")} onClick={() => confirmDecision(shown, "reject")}>驳回</Button> : undefined}
       others={shownCanWithdraw ? <Button disabledReason={decideBlock(shown, "withdraw")} onClick={() => confirmDecision(shown, "withdraw")}>撤回我的申请</Button> : undefined}
-      primary={shownCanApprove ? <Button variant="primary" disabledReason={decideBlock(shown, "approve")} onClick={() => confirmDecision(shown, "approve")}>批准</Button> : undefined} />
+      primary={shownCanApprove || shownOwnLocked ? <Button variant="primary" disabledReason={decideBlock(shown, "approve")} onClick={() => confirmDecision(shown, "approve")}>批准</Button> : undefined} />
   ) : <Decision note={WAIT_OTHERS} />);
 
   /* 操作记录抽屉 */
@@ -2845,6 +2873,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           {reissueList(shown, true)}
           {shown.phoneCalibrationProposal && <PhoneCalibrationReview proposal={shown.phoneCalibrationProposal} />}
           {shown.ambassadorMaterialProposal && <AmbassadorMaterialSummary packet={shown.ambassadorMaterialProposal} expectedMaterialRevision={shown.ambassadorMaterialProposal.applicationDecision === "APPROVE" ? shown.ambassadorMaterialProposal.expectedMaterialRevision : undefined} />}
+          {shownTech.length > 0 && <Fold inset title="技术信息" summary={[...new Set(shownTech.map(({ k }) => k.startsWith("修改") ? "修改前后原文" : k))].join("、")}>
+            <Facts>{shownTech.map(({ k, v }) => <Fact key={k} k={k}><span data-mono className="a2-long-code">{v}</span></Fact>)}</Facts>
+          </Fold>}
         </>}
       </Drawer>
 
