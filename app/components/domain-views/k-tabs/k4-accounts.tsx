@@ -7,7 +7,6 @@
 import { Hourglass, List, PenLine } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Pager, Panel, Segments, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import "./k4-accounts.css";
 
 /** 名单的档键，和后端 /risk/scoring/accounts 的 band 一致。高风险用 HIGH_BELOW_AUTO：不含达到自动升级线的人（B120）。 */
 export type K4AccountBand = "AUTO_REPORT" | "HIGH_BELOW_AUTO" | "MEDIUM" | "STALE";
