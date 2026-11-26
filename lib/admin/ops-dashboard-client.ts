@@ -72,6 +72,20 @@ function alertReason(value: unknown) {
   return typeof value === "string" && value.trim() ? value : "未填写原因";
 }
 
+function geoAlertHint(row: Record<string, unknown>, hint: string) {
+  let { scope, target, operator, reason } = row;
+  if (scope === undefined) {
+    const prefix = "J2 地域策略已变更 · ";
+    const parts = /^(.*?) · (.*?) · ([\s\S]*)$/.exec(hint);
+    if (typeof row.title !== "string" || !row.title.startsWith(prefix) || !parts) {
+      return hint.replace(/\bK4\b/g, "风险评分");
+    }
+    scope = row.title.slice(prefix.length);
+    [, target, operator, reason] = parts;
+  }
+  return [geoAlertScope(scope, target), alertOperator(operator), alertReason(reason)].join(" · ");
+}
+
 function tamperAlertConfig(value: unknown) {
   if (!value || typeof value !== "object") return {};
   const config = value as Record<string, unknown>;
@@ -79,6 +93,34 @@ function tamperAlertConfig(value: unknown) {
     threshold: typeof config.threshold === "number" && Number.isInteger(config.threshold) ? config.threshold : undefined,
     feedK4: typeof config.feedK4 === "boolean" ? config.feedK4 : undefined,
   };
+}
+
+function tamperAlertHint(row: Record<string, unknown>, hint: string) {
+  let before = tamperAlertConfig(row.before);
+  let after = tamperAlertConfig(row.after);
+  let { operator, reason } = row;
+  if (row.before === undefined && row.after === undefined) {
+    const parts = /^阈值 (\d+|\?)→(\d+|\?) 次\/24h · K4 (开启|关闭|未知)→(开启|关闭|未知) · (.*?) · ([\s\S]*)$/.exec(hint);
+    if (!parts) return hint.replace(/\bK4\b/g, "风险评分");
+    const [, oldThreshold, newThreshold, oldFeed, newFeed, legacyOperator, legacyReason] = parts;
+    const legacyConfig = (threshold: string, feed: string) => ({
+      threshold: threshold === "?" ? undefined : Number(threshold),
+      feedK4: feed === "未知" ? undefined : feed === "开启",
+    });
+    before = legacyConfig(oldThreshold, oldFeed);
+    after = legacyConfig(newThreshold, newFeed);
+    operator = legacyOperator;
+    reason = legacyReason;
+  }
+
+  const changes: string[] = [];
+  if (before.threshold !== undefined && after.threshold !== undefined && before.threshold !== after.threshold) {
+    changes.push(`告警阈值 ${before.threshold} → ${after.threshold} 次 / 24 小时`);
+  }
+  if (before.feedK4 !== undefined && after.feedK4 !== undefined && before.feedK4 !== after.feedK4) {
+    changes.push(`新事件计入风险评分 ${before.feedK4 ? "开" : "关"} → ${after.feedK4 ? "开" : "关"}`);
+  }
+  return [...changes, alertOperator(operator), alertReason(reason)].join(" · ");
 }
 
 function accountAlertUserCode(eventType: string, row: Record<string, unknown>) {
@@ -104,30 +146,22 @@ function normalizeAlert(value: unknown, index: number): OpsDashboardAlert {
     domain: requiredText(row.domain, `alerts.${index}.domain`),
     level,
   } satisfies Pick<OpsDashboardAlert, "id" | "domain" | "level">;
+  const hint = typeof row.hint === "string" ? row.hint : "";
+  const occurredAt = typeof row.occurredAt === "string" ? row.occurredAt.trim() || undefined : undefined;
   if (alert.domain === "J2") {
     return {
       ...alert,
       title: "地区策略已变更",
-      // Legacy responses contain only a combined title and hint. Neither can identify the original fields reliably.
-      hint: row.scope === undefined ? "变更详情未提供" : [geoAlertScope(row.scope, row.target), alertOperator(row.operator), alertReason(row.reason)].join(" · "),
+      hint: geoAlertHint(row, hint),
+      occurredAt,
     };
   }
   if (alert.domain === "J3") {
-    const before = tamperAlertConfig(row.before);
-    const after = tamperAlertConfig(row.after);
-    const changes: string[] = [];
-    if (before.threshold !== undefined && after.threshold !== undefined && before.threshold !== after.threshold) {
-      changes.push(`告警阈值 ${before.threshold} → ${after.threshold} 次 / 24 小时`);
-    }
-    if (before.feedK4 !== undefined && after.feedK4 !== undefined && before.feedK4 !== after.feedK4) {
-      changes.push(`新事件计入风险评分 ${before.feedK4 ? "开" : "关"} → ${after.feedK4 ? "开" : "关"}`);
-    }
     return {
       ...alert,
       title: "篡改告警设置已变更",
-      hint: row.before === undefined && row.after === undefined
-        ? "变更详情未提供"
-        : [...changes, alertOperator(row.operator), alertReason(row.reason)].join(" · "),
+      hint: tamperAlertHint(row, hint),
+      occurredAt,
     };
   }
   if (alert.domain === "C2" || alert.domain === "C5") {
@@ -139,7 +173,7 @@ function normalizeAlert(value: unknown, index: number): OpsDashboardAlert {
       hint: userCode ?? "",
       userCode,
       // The legacy hint embeds delivery time. Only a separately supplied occurrence time belongs here.
-      occurredAt: typeof row.occurredAt === "string" ? row.occurredAt : undefined,
+      occurredAt,
     };
   }
   return {
