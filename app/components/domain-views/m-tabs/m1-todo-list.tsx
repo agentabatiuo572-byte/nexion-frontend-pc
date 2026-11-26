@@ -99,8 +99,10 @@ export function TodoRowActions({ row, access, checking, refreshing, onStart, onR
 }
 
 /** 名单上方的接待状态提示：读不到不是提交失败，用橙黄（VS-107）；只给下一步。 */
-export function TodoHoldNotice({ name, onRead, onDismiss }: { name: string; onRead?: () => void; onDismiss: () => void }) {
-  return <Notice tone="warn" action={<>{onRead && <Button size="sm" onClick={onRead}>查看会话记录</Button>}<Button size="sm" onClick={onDismiss}>知道了</Button></>}>{name}：暂时核对不了接待状态，请稍后再点「发起会话」。</Notice>;
+export function TodoHoldNotice({ name, message, onRead, onDismiss }: ({ name: string; onRead?: () => void; message?: never } | { message: string; name?: never; onRead?: never }) & { onDismiss: () => void }) {
+  return <Notice tone="warn" action={<>{onRead && <Button size="sm" onClick={onRead}>查看会话记录</Button>}<Button size="sm" onClick={onDismiss}>知道了</Button></>}>
+    {message ?? `${name}：暂时核对不了接待状态，请稍后再点「发起会话」。`}
+  </Notice>;
 }
 
 export type TodoPanelProps = {

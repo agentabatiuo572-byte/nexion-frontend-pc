@@ -9,7 +9,7 @@
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 import type { ToastKind } from "@/lib/store/ui";
 
-export type SupportScopeNotice = string | { text: string; page: "M3" };
+export type SupportScopeNotice = string | { text: string; page: "M1" | "M3" };
 
 export type MCtx = {
   pget: (k: string) => string | undefined;
@@ -28,6 +28,7 @@ export type MCtx = {
   loadConversationDetail: (no: string, signal?: AbortSignal, includeCustomerProfile?: boolean) => Promise<import("./data").SessionConvo | undefined>;
   /** notice 是权限失效时给人看的话，放在这页顶部，不随会话和本组件重置。 */
   invalidateScope: (conversationNo?: string, customerId?: string, notice?: SupportScopeNotice, changedAssignmentKey?: string) => void;
+  scopeNotice?: { text: string; dismiss: () => void };
   /** 这类操作有没有过了 24 小时重试时限的待确认记录（OP-96）。 */
   commandExpired: (part: string) => boolean;
   addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;

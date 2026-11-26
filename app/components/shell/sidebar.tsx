@@ -10,7 +10,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import type { SupportPendingCount } from "./use-service-badges";
 import { PanelLeftClose, PanelLeftOpen, LayoutGrid } from "lucide-react";
-import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
+import { canAccessResolvedPath, type AdminRole, type NavDomain } from "@/lib/nav/console-nav";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useAdminUi } from "@/lib/store/admin-ui";
@@ -99,7 +99,8 @@ export function Sidebar({
   const toggleSidebar = useAdminUi((s) => s.toggleSidebar);
   const visibleL2Count = domains.reduce((total, domain) => total + domain.l2.length, 0);
   const showHomeEntry = b0HasAnyBlock(b0Blocks(authorities));
-  const badges: Record<string, number | "—"> = servicePending ? { "/service/sessions": servicePending } : {};
+  const serviceBadgePath = canAccessResolvedPath(domains, "/service/sessions") ? "/service/sessions" : "/service/overview";
+  const badges: Record<string, number | "—"> = servicePending ? { [serviceBadgePath]: servicePending } : {};
 
   const onCollapsedOpen = (code: string) => {
     if (mobile) { onMobileOpenChange?.(true); setExpanded([code]); return; }

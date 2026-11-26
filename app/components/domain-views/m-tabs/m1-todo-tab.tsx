@@ -8,6 +8,7 @@ import { readTodoLocation, todoListHref, type TodoListLocation } from "@/lib/adm
 import { allAgents } from "./m1-customer-transfer";
 import { m1CustomerCode } from "./m1-customer-code";
 import { M1TodoPanel, TodoHoldNotice, TodoProfileDrawer, type TodoAccess, type TodoConfigLink, type TodoListRead, type TodoOptions, type TodoRow, type TodoScope } from "./m1-todo-list";
+import type { MCtx } from "./types";
 
 export type TodoSessionTarget = { customerId: string; nickname?: string | null };
 export type TodoHoldError = { row: TodoSessionTarget; inDrawer: boolean; canRead: boolean };
@@ -44,15 +45,17 @@ function initialQuery(keywordKey: string): Query {
   return { ...readTodoLocation(params), keyword };
 }
 
-export function M1TodoTab({ adminId, mode, groups, revision, access, configLink, checkingId, holdError, onStart, onOpenSessions, onDismissHold, onQueryChanged, renderProfile }: {
+export function M1TodoTab({ adminId, mode, groups, revision, conversationSnapshot, access, configLink, checkingId, holdError, scopeNotice, onStart, onOpenSessions, onDismissHold, onQueryChanged, renderProfile }: {
   adminId: number;
   mode: "ALL" | "MANAGED";
   groups: TodoOptions;
   revision: number;
+  conversationSnapshot: string | undefined;
   access: TodoAccess;
   configLink?: TodoConfigLink;
   checkingId: string | null;
   holdError: TodoHoldError | null;
+  scopeNotice?: MCtx["scopeNotice"];
   onStart: (target: TodoSessionTarget, inDrawer: boolean) => void;
   onOpenSessions: (target: TodoSessionTarget) => void;
   onDismissHold: () => void;
@@ -67,6 +70,25 @@ export function M1TodoTab({ adminId, mode, groups, revision, access, configLink,
   const [retry, setRetry] = useState(0);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [agentDirectory, setAgentDirectory] = useState<{ groupId: string; options: TodoOptions }>();
+
+  useEffect(() => {
+    const refresh = () => setRetry(value => value + 1);
+    const invalidate = (event: Event) => {
+      const customerId = (event as CustomEvent<{ customerId?: string }>).detail?.customerId;
+      setProfileId(current => !customerId || current === customerId ? null : current);
+      setResult(current => {
+        if (!customerId) return undefined;
+        if (current?.read.state !== "ready") return current;
+        return { ...current, read: { ...current.read, rows: current.read.rows.filter(row => row.customerId !== customerId) } };
+      });
+    };
+    window.addEventListener("support-todo-changed", refresh);
+    window.addEventListener("support-scope-invalidated", invalidate);
+    return () => {
+      window.removeEventListener("support-todo-changed", refresh);
+      window.removeEventListener("support-scope-invalidated", invalidate);
+    };
+  }, []);
 
   useEffect(() => {
     window.history.replaceState(null, "", todoListHref(query));
@@ -112,6 +134,7 @@ export function M1TodoTab({ adminId, mode, groups, revision, access, configLink,
       const read: TodoListRead = page.available
         ? { state: "ready", rows: page.records.map(todoRowOf), total: page.total, evaluatedAt: page.evaluatedAt }
         : { state: "unconfigured" };
+      if (read.state === "ready") setProfileId(current => read.rows.some(row => row.customerId === current) ? current : null);
       setResult({ query, read });
     }).catch(cause => {
       if (signal.aborted || isSupportSessionExpired(cause)) return;
@@ -122,7 +145,7 @@ export function M1TodoTab({ adminId, mode, groups, revision, access, configLink,
       if (!signal.aborted) setQuerying(false);
     });
     return () => controller.abort();
-  }, [query, retry, revision]);
+  }, [query, retry, revision, conversationSnapshot]);
 
   function apply(next: Query) {
     onQueryChanged();
@@ -165,7 +188,7 @@ export function M1TodoTab({ adminId, mode, groups, revision, access, configLink,
       page={query.page} pageSize={query.pageSize} onPage={page => apply({ ...query, page })} onPageSize={pageSize => change({ pageSize })}
       access={access} checkingId={checkingId} selectedId={profileId}
       onStart={row => onStart(toTarget(row), false)} onRead={row => onOpenSessions(toTarget(row))} onProfile={row => selectProfile(row.customerId)}
-      notice={holdNotice(false)} />
+      notice={scopeNotice ? <TodoHoldNotice message={scopeNotice.text} onDismiss={scopeNotice.dismiss} /> : holdNotice(false)} />
     {profileRow && <TodoProfileDrawer row={profileRow} access={access} checking={checkingId === profileRow.customerId} refreshing={querying}
       nav={{ hasPrev: profileIndex > 0, hasNext: profileIndex < rows.length - 1, onPrev: () => selectProfile(rows[profileIndex - 1]?.customerId ?? profileId), onNext: () => selectProfile(rows[profileIndex + 1]?.customerId ?? profileId) }}
       holdNotice={holdNotice(true)} onStart={() => onStart(toTarget(profileRow), true)} onRead={() => onOpenSessions(toTarget(profileRow))} onClose={() => selectProfile(null)}>

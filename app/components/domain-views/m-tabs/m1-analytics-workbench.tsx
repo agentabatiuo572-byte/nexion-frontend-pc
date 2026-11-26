@@ -12,7 +12,7 @@ import { DomainModuleLoading } from "../domain-module-state";
 import { useRouter } from "next/navigation";
 import { supportPerformanceAnalyticsClient as analytics, type SupportAnalyticsMonth, type SupportAnalyticsQuery, type SupportAnalyticsResponse, type SupportAnalyticsView, type SupportAnalyticsDetailView, type SupportAnalyticsCustomer } from "@/lib/admin/support-analytics-client";
 import { PERFORMANCE_EXPORT_APPROVE, PERFORMANCE_EXPORT_DETAIL, PERFORMANCE_EXPORT_SUMMARY, sameCoveredPerformance, samePerformanceWindow } from "@/lib/admin/support-performance-contract";
-import { isSupportScopeDenial, isSupportSessionExpired, SupportClientError, supportClient, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
+import { isSupportScopeDenial, isSupportSessionExpired, SupportClientError, supportClient, supportCustomerNotFound, SUPPORT_SESSION_ROLE_LABEL, type SupportSessionHold } from "@/lib/admin/m-support-client";
 import { formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { todoListHref, todoSessionsHref } from "@/lib/admin/support-todo-route";
 import { ServicePendingCount } from "@/app/components/shell/use-service-badges";
@@ -807,8 +807,11 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     });
   }
   const sessionStart: CustomerSessionStart = { checkingId: sessionCheck, start: row => checkReception(row, () => openSessions(row), () => setSessionError(row)) };
-  const startTodoSession = (row: TodoSessionTarget, inDrawer: boolean) => checkReception(row, () => openTodoSessions(row),
-    cause => setTodoHoldError({ row, inDrawer, canRead: !isSupportScopeDenial(cause) }));
+  const startTodoSession = (row: TodoSessionTarget, inDrawer: boolean) => checkReception(row, () => openTodoSessions(row), cause => {
+    if (cause instanceof SupportClientError && (analyticsResponseStatus(cause) === 403 || supportCustomerNotFound(cause))) {
+      ctx.invalidateScope(undefined, row.customerId, { text: "你没有查看这位客户的权限", page: "M1" });
+    } else setTodoHoldError({ row, inDrawer, canRead: !isSupportScopeDenial(cause) });
+  });
   const customerName = (row: TodoSessionTarget) => operatorNicknameText(row.nickname || "") || m1CustomerCode(row.customerId);
   function page(number: number) {
     if (!data) return;
@@ -841,7 +844,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const personalHeader = scope?.scopeSummary.mode === "PERSONAL";
   const superOperator = authSession?.role === "super" || authSession?.role === "superadmin";
   const canReplyM3 = superOperator || Boolean(authSession?.authorities.includes("service_m3_write"));
-  const sessionsReachable = canAccessResolvedPath(visible, "/service/sessions");
+  const sessionsReachable = Boolean(authSession?.authorities.includes("service_m3_read")) && canAccessResolvedPath(visible, "/service/sessions");
   const todoAccess: TodoAccess = sessionsReachable ? canReplyM3 ? "reply" : "read" : "none";
   // 整页都没有写权时页头右下写一句（PG-18、OP-125、ST-39）；只缺回复权、仍能分配分组或导出审批的主管不写。权限名取角色页显示名括号前的部分。
   const pageReadOnly = (scope || todoActive) && !personalHeader && !superOperator && !canReplyM3 && !authSession?.authorities.some(code => code === "service_m1_write" || code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL || code === PERFORMANCE_EXPORT_APPROVE)
@@ -851,6 +854,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   // 没有负责组、只有导出记录的账号（申请人调出了组，或只有审批权）：只露「导出记录」一个页签（6k、6l）。
   const canRequestExports = authSession?.authorities.some(code => code === PERFORMANCE_EXPORT_SUMMARY || code === PERFORMANCE_EXPORT_DETAIL);
   const exportDisabledReason = noScopedContent && canRequestExports ? NO_EXPORT_GROUP_REASON : exportsPorts?.persona.exportBlocked;
+  const exportDialogPorts = !statisticsUnavailable && !exportDisabledReason && exportsPorts?.persona.canExport ? exportsPorts : null;
   const exportAccessPending = (noScopedContent || statisticsUnavailable) && exportsPorts === undefined;
   const guideId = exportsOnly ? hasMyExports && hasExportApprovals ? "M1-export-both" : hasMyExports ? "M1-export-mine" : "M1-export-approvals"
     : noScopedContent && !exportAccessPending ? "M1-no-group" : undefined;
@@ -866,13 +870,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   };
   const header = <PageHeader pageId="M1" guideId={todoActive && !noScopedContent ? undefined : guideId} readOnly={pageReadOnly} title="客服工作台" summary={exportsOnly && !todoActive ? hasMyExports ? "查看和撤回你提交的业绩导出申请。" : "审批客服业绩明细的导出申请。" : noScopedContent ? "设置负责组后，这里显示组里的客服和客户。" : "先处理客户待办，再核对分配和维护进展。"} actions={<>
     {!statisticsUnavailable && exportDisabledReason && <span className="rd-toolbar-note">{exportDisabledReason}</span>}
-    {!statisticsUnavailable && (exportsPorts?.persona.canExport || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
+    {!statisticsUnavailable && (exportDialogPorts || exportDisabledReason) && <Button disabledReason={exportDisabledReason} onClick={() => setExportOpen(true)}>导出业绩</Button>}
     {!noScopedContent && (todoActive || scope && !personalHeader) && sessionsReachable && <Button onClick={() => router.push("/service/sessions?tab=pending")}>会话审阅</Button>}
     {personalHeader && leaderboardReachable && <Button onClick={() => router.push("/service/leaderboard")}>业绩榜</Button>}{(todoActive || exportsOnly || (!noScopedContent && !exportAccessPending)) && <Button loading={!!exportsOnly && !todoActive && exportRecordsRefreshing} onClick={refreshWorkbench}>刷新</Button>}
   </>} />;
   const related = !personalHeader && leaderboardReachable && <nav className="rd-links" aria-label="相关页面"><span>相关页面</span><a className="rd-link" href="/service/leaderboard" onClick={event => { event.preventDefault(); router.push("/service/leaderboard"); }}>业绩榜</a></nav>;
-  const exportDialog = exportOpen && exportsPorts && scope && !scopeDenied && <PerfExportDialog ports={exportsPorts}
-    initialMonth={queryState.month} initialScope={queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL"}
+  const exportDialog = exportOpen && exportDialogPorts && <PerfExportDialog ports={exportDialogPorts}
+    initialMonth={queryState.month} initialScope={scope ? queryState.groupId ? `GROUP:${queryState.groupId}` : scope.scopeSummary.mode === "PERSONAL" ? "SELF" : scope.scopeSummary.mode === "MANAGED" ? "MANAGED_GROUPS" : "ALL" : undefined}
     onClose={() => setExportOpen(false)} onRecords={() => { setExportOpen(false); openTab("exports"); }} />;
   const currency = queryState.currency ?? "USDT";
   const tabs = roleTabs(isPersonal, canMine, Boolean(exportsPorts?.persona.views.length)).filter(tab => tab !== "todo" || canManageTodo);
@@ -949,13 +953,13 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const ownWorkbench = <M1PersonalWorkbench permission="supervisor" ctx={ctx} view={personalView} onViewChange={setPersonalView} onTransfer={setTransferCustomer} transferRevision={transferRevision} />;
   if (todoActive && adminId !== undefined) return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel("todo")}>
     {header}
-    <M1LiveService ctx={ctx} />
+    <M1LiveService ctx={ctx} sessionsReachable={sessionsReachable} />
     {recoveryNotice}
     {navigation}
     {transferNotes}
-    <M1TodoTab adminId={adminId} mode={permission === "superadmin" ? "ALL" : "MANAGED"} groups={todoGroups} revision={todoRevision}
+    <M1TodoTab adminId={adminId} mode={permission === "superadmin" ? "ALL" : "MANAGED"} groups={todoGroups} revision={todoRevision} conversationSnapshot={ctx.pget("I.session.convos")}
       access={todoAccess} configLink={canAccessResolvedPath(visible, "/service/scripts") ? { href: "/service/scripts", verb: permission === "superadmin" && authSession?.authorities.includes("service_m1_write") ? "配置" : "查看" } : undefined}
-      checkingId={sessionCheck} holdError={todoHoldError} onStart={startTodoSession} onOpenSessions={openTodoSessions} onDismissHold={() => setTodoHoldError(null)} onQueryChanged={clearSessionFeedback}
+      checkingId={sessionCheck} holdError={todoHoldError} scopeNotice={ctx.scopeNotice} onStart={startTodoSession} onOpenSessions={openTodoSessions} onDismissHold={() => setTodoHoldError(null)} onQueryChanged={clearSessionFeedback}
       renderProfile={customerId => <M3CustomerProfile key={customerId} ctx={ctx} customerId={customerId} source="M1"
         onHistory={sessionsReachable ? no => router.push(todoSessionsHref({ conversationNo: no })) : undefined} onRetryMessages={() => void ctx.refreshConversations()} />} />
     {exportDialog}
@@ -963,7 +967,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   </section>;
   if (section === "mine" && canMine && (!scope || statisticsUnavailable)) return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel("mine")}>
     {header}
-    <M1LiveService ctx={ctx} />
+    <M1LiveService ctx={ctx} sessionsReachable={sessionsReachable} />
     {recoveryNotice}
     {navigation}
     {transferNotes}
@@ -974,7 +978,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
     {header}
     {exportsOnly && exportsPorts && exportViews ? <><PageTabs ids={tabIds} label="客服工作台" value="exports" items={[{ value: "exports", label: TAB_LABEL.exports }]} onChange={() => undefined} />
       <PerfExportRecords ports={{ ...exportsPorts, persona: { ...exportsPorts.persona, views: exportViews } }} refreshKey={exportRecordsRefresh} onRefreshingChange={setExportRecordsRefreshing} /></>
-      : <>{canManageTodo && (scopeError || scopeDenied || noManagedGroups) && navigation}<Panel>{noScopedContent && !exportAccessPending ? <TodoNoGroups />
+      : <>{canManageTodo && !noScopedContent && (scopeError || scopeDenied || noManagedGroups) && navigation}<Panel>{noScopedContent && !exportAccessPending ? <TodoNoGroups />
         : statisticsUnavailable && !exportAccessPending && !exportReadFailed ? <AnalyticsReadDenied /> : <BlockState state={scopeError || exportReadFailed ? "error" : "loading"}
           title={exportReadFailed ? "导出记录加载失败" : scopeError ? "当前可见范围加载失败" : "正在核对当前可见范围…"} detail={scopeError || undefined}
           onRetry={exportReadFailed ? refreshWorkbench : scopeError ? () => { setScopeError(""); setScopeRetry(n => n + 1); } : undefined} retryLabel="重试" afterRetryFocus={workbenchTitle} />}</Panel></>}
@@ -1031,7 +1035,7 @@ function ResolvedAnalyticsWorkbench({ permission, ctx }: { permission: Permissio
   const caption = queryState.basis === "PERIOD_EVENT" ? `统计 ${queryState.month} 当月发生的业务（${businessZone().label}）；绑定和设备按当前状态` : queryState.basis === "CURRENT_ASSET" ? "按当前设备和活跃状态统计；不含首充和累计资金" : "按客户注册以来的累计数据统计，不是本月新增";
   return <section ref={workbenchRef} className="sa-workbench" {...tabIds.panel(currentTab)}>
     {header}
-    {!isPersonal && <M1LiveService ctx={ctx} />}
+    {!isPersonal && <M1LiveService ctx={ctx} sessionsReachable={sessionsReachable} />}
     {recoveryNotice}
     {!(isPersonal && currentTab === "home") && navigation}
     {transferNotes}

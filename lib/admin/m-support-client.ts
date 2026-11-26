@@ -327,11 +327,20 @@ function page<T>(value: unknown, parse: (value: unknown) => T): SupportPage<T> {
   if (!Array.isArray(row.records)) malformed("page.records");
   return { total: count(row.total, "page.total"), pageNum: positive(row.pageNum, "page.pageNum"), pageSize: positive(row.pageSize, "page.pageSize"), records: row.records.map(parse) };
 }
-function customer(value: unknown): SupportCustomer {
+function customer(value: unknown, evaluatedAt: string): SupportCustomer {
   const row = object(value, "customer");
   const enabled = bool(row.enabled, "customer.enabled");
   const due = row.due === null ? null : bool(row.due, "customer.due");
   const openCycleId = row.openCycleId === null ? null : id(row.openCycleId, "customer.openCycleId");
+  const waitingReply = bool(row.waitingReply, "customer.waitingReply");
+  const firstContact = bool(row.firstContact, "customer.firstContact");
+  const waitingReplySinceAt = row.waitingReplySinceAt === null ? null : timestamp(row.waitingReplySinceAt, "customer.waitingReplySinceAt");
+  const firstContactSinceAt = row.firstContactSinceAt === null ? null : timestamp(row.firstContactSinceAt, "customer.firstContactSinceAt");
+  const maintenanceDueAt = row.maintenanceDueAt === null ? null : timestamp(row.maintenanceDueAt, "customer.maintenanceDueAt");
+  if (waitingReply !== (waitingReplySinceAt !== null)) malformed("customer.waitingReplySinceAt");
+  if ((enabled && firstContact) !== (firstContactSinceAt !== null)) malformed("customer.firstContactSinceAt");
+  if ((enabled && due === true) !== (maintenanceDueAt !== null)) malformed("customer.maintenanceDueAt");
+  if (row.evaluatedAt !== evaluatedAt) malformed("customer.evaluatedAt");
   return {
     customerId: id(row.customerId, "customer.customerId"),
     assignmentId: row.assignmentId === null ? null : id(row.assignmentId, "customer.assignmentId"),
@@ -350,16 +359,16 @@ function customer(value: unknown): SupportCustomer {
     maintenanceStatus: !enabled ? "STOPPED" : due === null ? "UNCONFIGURED" : due ? "DUE" : openCycleId ? "OPEN" : "CURRENT",
     lastEffectiveAt: row.lastEffectiveAt === null ? null : timestamp(row.lastEffectiveAt, "customer.lastEffectiveAt"),
     nextMaintenanceAt: row.nextDueAt === null ? null : timestamp(row.nextDueAt, "customer.nextDueAt"),
-    waitingReply: bool(row.waitingReply, "customer.waitingReply"),
-    firstContact: bool(row.firstContact, "customer.firstContact"),
+    waitingReply,
+    firstContact,
     due,
     pendingReplyCount: count(row.pendingReplyCount, "customer.pendingReplyCount"),
     pendingConversationNo: nullableString(row.pendingConversationNo, "customer.pendingConversationNo"),
     pendingThroughMessageId: row.pendingThroughMessageId === null ? null : positive(row.pendingThroughMessageId, "customer.pendingThroughMessageId"),
-    waitingReplySinceAt: nullableTimestamp(row.waitingReplySinceAt, "customer.waitingReplySinceAt") ?? null,
-    firstContactSinceAt: nullableTimestamp(row.firstContactSinceAt, "customer.firstContactSinceAt") ?? null,
-    maintenanceDueAt: nullableTimestamp(row.maintenanceDueAt, "customer.maintenanceDueAt") ?? null,
-    evaluatedAt: timestamp(row.evaluatedAt, "customer.evaluatedAt"),
+    waitingReplySinceAt,
+    firstContactSinceAt,
+    maintenanceDueAt,
+    evaluatedAt,
   };
 }
 const EFFECTIVE_SUPPORT_LANGUAGES = new Set(["en-US", "zh-CN", "vi-VN", "id-ID", "ms-MY", "fil-PH", "ru-RU", "kk-KZ", "uz-UZ"]);
@@ -384,7 +393,7 @@ function legacyCustomerProfile(value: unknown): Record<string, unknown> {
 function detail(value: unknown): SupportCustomerDetail {
   const row = object(value, "detail");
   const rawCustomer = object(row.customer, "customer");
-  const parsed = customer(rawCustomer);
+  const parsed = customer(rawCustomer, timestamp(row.evaluatedAt, "detail.evaluatedAt"));
   return {
     ...parsed,
     ...(row.profile === undefined ? {} : { profile: legacyCustomerProfile(row.profile) }),
@@ -434,7 +443,7 @@ function workbenchSnapshot(value: unknown): SupportWorkbenchSnapshot {
     activityWindowDays: nullablePositive(rules.activityWindowDays, "workbench.rules.activityWindowDays"),
     performance: { executionCount: count(performance.executionCount, "workbench.performance.executionCount"), successfulCycleCount: count(performance.successfulCycleCount, "workbench.performance.successfulCycleCount"), successfulCustomerCount: count(performance.successfulCustomerCount, "workbench.performance.successfulCustomerCount"), from: timestamp(performance.from, "workbench.performance.from"), to: timestamp(performance.to, "workbench.performance.to"), timeZone: nonempty(performance.timeZone, "workbench.performance.timeZone"), scopeVersion: performance.scopeVersion == null ? null : nonempty(performance.scopeVersion, "workbench.performance.scopeVersion"), trend },
   };
-  const customers = { ...page(rawPage, customer), evaluatedAt: overview.evaluatedAt, available: bool(rawPage.available, "workbench.customers.available"), filter: enumValue(rawPage.filter, FILTERS, "workbench.customers.filter") };
+  const customers = { ...page(rawPage, value => customer(value, overview.evaluatedAt)), evaluatedAt: overview.evaluatedAt, available: bool(rawPage.available, "workbench.customers.available"), filter: enumValue(rawPage.filter, FILTERS, "workbench.customers.filter") };
   if (!customers.available && (customers.total !== 0 || customers.records.length !== 0)) malformed("workbench.customers.records");
   if (!customers.available && ["TODO", "WAITING_REPLY", "FIRST_CONTACT"].includes(customers.filter)) malformed("workbench.customers.available");
   const completenessValue = {
