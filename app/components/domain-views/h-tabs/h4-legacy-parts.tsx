@@ -276,7 +276,10 @@ export function EventCard({ event, zh, en, gaps, softGaps, rewardFromRule, requi
       <header className="h4-card-head">
         <div className="h4-card-title">
           <h3 data-empty={name ? undefined : ""}>{name?.text ?? "名称未配置"}{enTag("name")}{originalFields[0] === "name" && <> {originalTag}</>}</h3>
-          <span className="h4-card-meta"><span className="h4-card-kind">{KIND_LABEL(event.kind)}</span></span>
+          <span className="h4-card-meta">
+            <span className="h4-card-kind">{KIND_LABEL(event.kind)}</span>
+            <span className="h4-mono" aria-hidden="true">&nbsp;</span>
+          </span>
         </div>
         <span className="h4l-tags">
           {event.featured && <StatusTag tone="progress" icon={Star} explain="App 活动页把它放在主推位。同时只能有一个进行中的主推活动。">主推</StatusTag>}
