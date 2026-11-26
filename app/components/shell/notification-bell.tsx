@@ -7,13 +7,14 @@
  * 只放要处理的事(DP-65):覆盖率正常、风险结论行这类正常状态不进列表。铃铛数字 = 列表里的告警 + 待确认,两边一致。
  */
 import { useReach } from "@/lib/nav/use-reach";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, AlertTriangle, ChevronRight } from "lucide-react";
 import { InlineRetry } from "@/app/components/rd/block-state";
 import { Drawer } from "@/app/components/rd/overlay";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { businessZone, formatBusinessTimeCompact, subscribeBusinessZone } from "@/lib/admin/business-time";
 import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
@@ -30,6 +31,7 @@ interface ShellAlert {
   level: AlertLevel;
   text: string;
   href: string;
+  occurredAt?: string;
 }
 
 const LEVEL: Record<AlertLevel, { tone: "danger" | "warn" | "done"; label: string }> = {
@@ -57,8 +59,12 @@ function roleForA2Operation(row: A2OperationRow): AdminRole | null {
   return null;
 }
 
-/** 铃铛的目标里默认读权表没有的两页。其余目标按表判断。 */
-const ALERT_READ: Record<string, string> = { "/emergency/geo-block": "emergency_j2_read", "/users/actions": "user_c2_read" };
+/** 补充铃铛目标的专用读权。其余目标按默认读权表判断。 */
+const ALERT_READ: Record<string, string> = {
+  "/emergency/geo-block": "emergency_j2_read",
+  "/users/actions": "user_c2_read",
+  "/users/security": "user_c5_read",
+};
 
 /** 告警不能隐藏（DP-03）：目标页进不去时这一行照样显示，只是不能点（X03）。 */
 function AlertRow({ href, tone, onClose, children }: { href?: string; tone?: string; onClose: () => void; children: ReactNode }) {
@@ -81,9 +87,10 @@ export function NotificationBell() {
   const canReadA2 = authorities.includes("platform_a2_read");
   const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   const canReadC2Alerts = canReadC2HighRiskAlerts(session);
+  const canReadJ2Alerts = isSuperAdmin && authorities.includes("emergency_j2_read");
   const canReadJ3Alerts = authorities.includes("emergency_j3_alert_config");
   const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(hasAdminSession);
-  const { alerts: j2Alerts, error: j2AlertError } = useJ2GeoAlerts(isSuperAdmin);
+  const { alerts: j2Alerts, error: j2AlertError } = useJ2GeoAlerts(canReadJ2Alerts);
   const { alerts: j3Alerts, error: j3AlertError } = useJ3TamperConfigAlerts(canReadJ3Alerts);
   const { alerts: c2Alerts, error: c2AlertError } = useC2HighRiskAlerts(canReadC2Alerts);
   useEffect(() => {
@@ -139,8 +146,9 @@ export function NotificationBell() {
     .map((alert) => ({
       id: `ops-${alert.id}`,
       level: alert.level,
-      text: `${alert.title} · ${alert.hint}`,
+      text: [alert.title, alert.hint].filter(Boolean).join(" · "),
       href: opsAlertHref(alert),
+      occurredAt: alert.occurredAt,
     }));
   if (opsAlertError) {
     j1Alerts.push({
@@ -216,6 +224,8 @@ function NotificationDrawer({
 }) {
   const reach = useReach();
   const canOpenAudit = reach("/platform/audit", "platform_a2_read");
+  const zone = useSyncExternalStore(subscribeBusinessZone, businessZone, businessZone);
+  const hasOccurrenceTime = alerts.some((alert) => alert.occurredAt);
   return (
     <Drawer
       open={open}
@@ -230,17 +240,18 @@ function NotificationDrawer({
       ) : undefined}
     >
       {/* 风险与应急告警 */}
-      <h3 className="rd-alert-heading">风险与应急告警</h3>
+      <h3 className="rd-alert-heading">风险与应急告警{hasOccurrenceTime && ` · ${zone.label}`}</h3>
       <div className="rd-alert-list">
         {alerts.length === 0 && <div className="rd-alert-empty">{alertsLoading ? "正在加载告警…" : "现在没有要处理的告警。"}</div>}
         {alerts.map((a) => {
           const lv = LEVEL[a.level];
-          const reachable = reach(a.href, ALERT_READ[a.href]);
+          const reachable = reach(a.href, ALERT_READ[a.href.split(/[?#]/, 1)[0]]);
+          const occurredAt = a.occurredAt ? formatBusinessTimeCompact(a.occurredAt, "时间待核验") : "";
           return (
             <AlertRow key={a.id} href={reachable ? a.href : undefined} tone={lv.tone} onClose={onClose}>
               <AlertTriangle className="rd-alert-icon" size={14} aria-hidden />
               <span className="min-w-0 flex-1">
-                <span className="rd-alert-text">{a.text}</span>
+                <span className="rd-alert-text">{a.text}{occurredAt && ` · ${occurredAt}`}</span>
                 <span className="rd-alert-level">{lv.label}</span>
               </span>
               {reachable && <ChevronRight className="rd-alert-go" size={14} aria-hidden />}

@@ -1,4 +1,5 @@
 import type { AdminSession } from "@/lib/store/admin-auth";
+import { normalizeSessionRole } from "@/lib/admin/session-role";
 
 export const B_DASHBOARD_READ_AUTHORITIES = [
   "overview_b1_read",
@@ -27,8 +28,8 @@ export const M_CONTENT_READ_AUTHORITIES = [
 
 export function canReadC2HighRiskAlerts(session: AdminSession | null): boolean {
   if (!session || !session.authorities.includes("user_c2_read")) return false;
-  const roleCode = session.role.trim().toUpperCase();
-  return roleCode === "SUPER_ADMIN" || roleCode === "RISK";
+  const role = normalizeSessionRole(session.role);
+  return role === "superadmin" || role === "risk";
 }
 
 export function adminShellSessionKey(session: AdminSession | null, authEpoch = 0): string {
