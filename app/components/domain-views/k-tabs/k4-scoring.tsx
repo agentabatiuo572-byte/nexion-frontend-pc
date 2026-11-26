@@ -170,7 +170,8 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const accountList: K4AccountListState = accountsResult?.key === accountsKey ? accountsResult.state
     : { kind: "loading", previous: accountsResult?.scope === accountsScope && accountsResult.state.kind === "ready" ? accountsResult.state.page : undefined };
   const accountsPageReload = useRef(false);
-  const accountsPolledFrom = useRef<unknown>(null);
+  const accountsPolledFrom = useRef<typeof staleAccountsOverview>(null);
+  const accountsInFlight = useRef<{ readAfterQueueDrains: boolean } | null>(null);
   const reloadAccounts = () => setAccountsRead((read) => read + 1);
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyEntry, setHistoryEntry] = useState<K4ScoreHistory | null>(null);
@@ -180,6 +181,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   const pageEffectMounted = useRef(false);
   const lookupSequence = useRef(0);
   const inboundLoaded = useRef<string | null>(null);
+  const pushedAccountDetail = useRef<string | null>(null);
   const currentState = useRef({ ctx, rereadPending, lookupUser });
   currentState.current = { ctx, rereadPending, lookupUser };
 
@@ -193,33 +195,51 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   useEffect(() => { if (overview) setReadAt(Date.now()); }, [overview]);
 
   useEffect(() => { if (ctx.contentLoading) accountsPageReload.current = true; }, [ctx.contentLoading]);
+  // 轮询触发同一查询时不废弃回包；离开名单或换查询时才废弃。
+  useEffect(() => () => { accountsInFlight.current = null; }, [tab, accountsKey]);
   useEffect(() => {
     if (tab !== "accounts") accountsPolledFrom.current = null;
     if (tab !== "accounts" || activeModelVersion === undefined || ctx.contentError || ctx.contentLoading) return;
     // 只有重算轮询带动的同条件回读失败时留着旧行（ST-51）；首次读、翻页、页头刷新、手动重试失败仍换成错误卡（ST-36 K 域）。
-    const polled = staleAccountsOverview !== null && accountsPolledFrom.current !== null
-      && accountsPolledFrom.current !== staleAccountsOverview && !accountsPageReload.current;
+    const previousOverview = accountsPolledFrom.current;
+    const polled = staleAccountsOverview !== null && previousOverview !== null
+      && previousOverview !== staleAccountsOverview && !accountsPageReload.current;
     accountsPolledFrom.current = staleAccountsOverview;
     accountsPageReload.current = false;
-    let alive = true;
-    setAccountsResult((current) => current?.scope === accountsScope && current.state.kind === "ready" ? current : null);
-    fetchK4ScoringAccounts({ band: accountsBand, pageNum: accountsPage, pageSize: accountsPageSize }).then((page) => {
-      if (!alive) return;
-      const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
-      if (page.pageNum > lastPage) {
-        writeScoringLocation((params) => params.set("page", String(lastPage)));
-        return;
+    if (accountsInFlight.current) {
+      // 队列归零是最后一轮概览，等在途回包落地后还要再读一次。
+      if (staleAccountsOverview?.recomputePending === 0 && previousOverview && previousOverview.recomputePending > 0) {
+        accountsInFlight.current.readAfterQueueDrains = true;
       }
-      setAccountsResult({ key: accountsKey, scope: accountsScope, state: { kind: "ready", page, readAt: Date.now() } });
-    }).catch((error: unknown) => {
-      if (!alive) return;
-      const message = error instanceof K1RequestError && error.reasonCode === "K4_RISK_SCORE_UNAVAILABLE"
-        ? "这次没读到名单，其他页签照常。" : displayAdminError(error);
-      setAccountsResult((current) => polled && current?.key === accountsKey && current.state.kind === "ready"
-        ? { ...current, state: { ...current.state, autoFailed: true } }
-        : { key: accountsKey, scope: accountsScope, state: { kind: "error", message } });
-    });
-    return () => { alive = false; };
+      return;
+    }
+
+    const readAccounts = async (automatic: boolean) => {
+      const request = { readAfterQueueDrains: false };
+      accountsInFlight.current = request;
+      setAccountsResult((current) => current?.scope === accountsScope && current.state.kind === "ready" ? current : null);
+      try {
+        const page = await fetchK4ScoringAccounts({ band: accountsBand, pageNum: accountsPage, pageSize: accountsPageSize });
+        if (accountsInFlight.current !== request) return;
+        const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
+        if (page.pageNum > lastPage) {
+          writeScoringLocation((params) => params.set("page", String(lastPage)));
+          return;
+        }
+        setAccountsResult({ key: accountsKey, scope: accountsScope, state: { kind: "ready", page, readAt: Date.now() } });
+      } catch (error) {
+        if (accountsInFlight.current !== request) return;
+        const message = error instanceof K1RequestError && error.reasonCode === "K4_RISK_SCORE_UNAVAILABLE"
+          ? "这次没读到名单，其他页签照常。" : displayAdminError(error);
+        setAccountsResult((current) => automatic && current?.key === accountsKey && current.state.kind === "ready"
+          ? { ...current, state: { ...current.state, autoFailed: true } }
+          : { key: accountsKey, scope: accountsScope, state: { kind: "error", message } });
+      } finally {
+        if (accountsInFlight.current === request) accountsInFlight.current = null;
+      }
+      if (request.readAfterQueueDrains) void readAccounts(true);
+    };
+    void readAccounts(polled);
   }, [tab, activeModelVersion, accountsBand, accountsPage, accountsPageSize, accountsKey, accountsScope, accountsRead,
     staleAccountsOverview, ctx.contentError, ctx.contentLoading]);
 
@@ -592,10 +612,16 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       writeAccountQuery(params, accountsBand, accountsPage, accountsPageSize, true);
       params.delete("returnTo");
     }, true);
+    pushedAccountDetail.current = window.location.href;
   };
   const backToList = () => {
     if (!listSource) return;
     setAccountsHighlight(listSource.userNo);
+    // 直达或刷新没有本次页面推入的历史项，沿用已校验的名单条件。
+    if (window.location.href === pushedAccountDetail.current) {
+      window.history.back();
+      return;
+    }
     writeScoringLocation((params) => {
       params.set("view", "accounts");
       params.delete("userCode");
