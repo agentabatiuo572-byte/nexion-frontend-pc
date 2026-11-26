@@ -5,9 +5,10 @@
  * 状态和提交处理都在 k4-scoring.tsx，这里只收值和回调。
  */
 import { Fragment, useId, useState, type ReactNode } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { ChevronDown, CircleOff, Crosshair, Minus } from "lucide-react";
 import { BarList, Button, Cell, Check, DiffList, Explain, Fold, NumberInput, Panel, RatioBar, ScaleBar, StatusTag, Table, Td, Th, Tr, type DiffRow } from "@/app/components/rd";
-import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings, type K4WithdrawalEvidence, type K4WithdrawalSummary, type K4WithdrawalWindow } from "@/lib/admin/k-client";
+import { K4_DIMENSION_KEYS, type K4Contribution, type K4Dimension, type K4DimensionKey, type K4Distribution, type K4Model, type K4ScoreMappingKey, type K4ScoreMappings, type K4WithdrawalEvidence, type K4WithdrawalWindow } from "@/lib/admin/k-client";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { amountDisplay } from "@/lib/format";
 
@@ -279,14 +280,34 @@ function windowText(name: string, window: K4WithdrawalWindow) {
   return `${name} · ${count} 笔${money}`;
 }
 
-/** 提现速度的证据：三个窗口分三段并排，放不下按段换行，段内不折行（VS-109）。 */
-function WithdrawWindows({ summary }: { summary: K4WithdrawalSummary }) {
+/** 悬停和聚焦看的那一行：一个币种照格子里写；几种币种时在后面按币种写原额（ST-04，板 3）。 */
+function windowTip(name: string, window: K4WithdrawalWindow, perAsset: Array<{ count: string; amount: string; currency: string }>) {
+  const line = windowText(name, window);
+  const spread = perAsset.filter((asset) => !/^0(\.0*)?$/.test(asset.count));
+  return window.amount === null && spread.length > 1 ? `${line}：${spread.map((asset) => `${asset.count} 笔 ${moneyText(asset.amount)} ${asset.currency}`).join("，")}` : line;
+}
+
+/** 提现速度的证据：三个窗口分三段并排，放不下按段换行，段内不折行（VS-109）。悬停或键盘聚焦看同一套写法的原币种证据。 */
+function WithdrawWindows({ data }: { data: K4WithdrawalEvidence }) {
+  const { summary, assets } = data;
+  const tip = [
+    windowTip("24 小时", summary.last24h, assets.map((asset) => ({ count: String(asset.count24h), amount: asset.amount24h, currency: asset.currency }))),
+    windowTip("7 天", summary.last7d, assets.map((asset) => ({ count: String(asset.count7d), amount: asset.amount7d, currency: asset.currency }))),
+    windowTip("历史日均", summary.baselineDaily, assets.map((asset) => ({ count: countText(asset.baselineDailyCount), amount: asset.baselineDailyAmount, currency: asset.currency }))),
+  ];
   return (
-    <span className="k4-evidence-wins">
-      <span>{windowText("24 小时", summary.last24h)}</span>
-      <span>{windowText("7 天", summary.last7d)}</span>
-      <span>{windowText("历史日均", summary.baselineDaily)}</span>
-    </span>
+    <Tooltip.Provider delayDuration={300}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>
+          <span className="k4-evidence-wins" tabIndex={0}>
+            <span>{windowText("24 小时", summary.last24h)}</span>
+            <span>{windowText("7 天", summary.last7d)}</span>
+            <span>{windowText("历史日均", summary.baselineDaily)}</span>
+          </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal><Tooltip.Content className="rd-tip rd-cell-tip" sideOffset={6}>{tip.join("\n")}</Tooltip.Content></Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }
 
@@ -321,7 +342,7 @@ export function ContributionTable({ rows, total, label }: { rows: K4Contribution
                 <Td grow>
                   <span className="k4-evidence-cell">
                     {row.structured
-                      ? <WithdrawWindows summary={row.structured.summary} />
+                      ? <WithdrawWindows data={row.structured} />
                       : <span className="k4-evidence" data-user-content="" title={evidence === "—" ? undefined : evidence || undefined}>{evidence || "—"}</span>}
                     {row.structured && <Button size="sm" variant="ghost" className="k4-evidence-toggle" aria-expanded={open} aria-controls={detailId}
                       icon={<ChevronDown size={14} aria-hidden className="k4-chevron" data-open={open ? "" : undefined} />} onClick={() => setOpen((value) => !value)}>各币种明细</Button>}

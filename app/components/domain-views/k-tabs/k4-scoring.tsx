@@ -161,11 +161,16 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
     ? { band: queryBand, page: queryPage, pageSize: queryPageSize, userNo: userCode } : null;
   const [accountsHighlight, setAccountsHighlight] = useState<string | null>(null);
   const [accountsRead, setAccountsRead] = useState(0);
-  const [accountsResult, setAccountsResult] = useState<{ key: string; state: K4AccountListState } | null>(null);
-  const accountsKey = `${session?.adminId}:${activeModelVersion}:${accountsBand}:${accountsPage}:${accountsPageSize}`;
+  const [accountsResult, setAccountsResult] = useState<{ key: string; scope: string; state: K4AccountListState } | null>(null);
+  const accountsScope = `${session?.adminId}:${activeModelVersion}:${accountsBand}`;
+  const accountsKey = `${accountsScope}:${accountsPage}:${accountsPageSize}`;
   // 跟随等待档的概览回读，包括停止轮询前队列归零的回包。
   const staleAccountsOverview = accountsBand === "STALE" ? overview : null;
-  const accountList: K4AccountListState = accountsResult?.key === accountsKey ? accountsResult.state : { kind: "loading" };
+  // 同一档翻页、换条数时，读到之前留着上一页的表头、分页和总数（ST-13、ST-32）；换档不留。
+  const accountList: K4AccountListState = accountsResult?.key === accountsKey ? accountsResult.state
+    : { kind: "loading", previous: accountsResult?.scope === accountsScope && accountsResult.state.kind === "ready" ? accountsResult.state.page : undefined };
+  const accountsPageReload = useRef(false);
+  const accountsPolledFrom = useRef<unknown>(null);
   const reloadAccounts = () => setAccountsRead((read) => read + 1);
   const [editorOpen, setEditorOpen] = useState(false);
   const [historyEntry, setHistoryEntry] = useState<K4ScoreHistory | null>(null);
@@ -187,10 +192,17 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
   useEffect(() => { syncPending(); }, [syncPending]);
   useEffect(() => { if (overview) setReadAt(Date.now()); }, [overview]);
 
+  useEffect(() => { if (ctx.contentLoading) accountsPageReload.current = true; }, [ctx.contentLoading]);
   useEffect(() => {
+    if (tab !== "accounts") accountsPolledFrom.current = null;
     if (tab !== "accounts" || activeModelVersion === undefined || ctx.contentError || ctx.contentLoading) return;
+    // 只有重算轮询带动的同条件回读失败时留着旧行（ST-51）；首次读、翻页、页头刷新、手动重试失败仍换成错误卡（ST-36 K 域）。
+    const polled = staleAccountsOverview !== null && accountsPolledFrom.current !== null
+      && accountsPolledFrom.current !== staleAccountsOverview && !accountsPageReload.current;
+    accountsPolledFrom.current = staleAccountsOverview;
+    accountsPageReload.current = false;
     let alive = true;
-    setAccountsResult((current) => current?.key === accountsKey && current.state.kind === "ready" ? current : null);
+    setAccountsResult((current) => current?.scope === accountsScope && current.state.kind === "ready" ? current : null);
     fetchK4ScoringAccounts({ band: accountsBand, pageNum: accountsPage, pageSize: accountsPageSize }).then((page) => {
       if (!alive) return;
       const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
@@ -198,15 +210,17 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
         writeScoringLocation((params) => params.set("page", String(lastPage)));
         return;
       }
-      setAccountsResult({ key: accountsKey, state: { kind: "ready", page } });
+      setAccountsResult({ key: accountsKey, scope: accountsScope, state: { kind: "ready", page, readAt: Date.now() } });
     }).catch((error: unknown) => {
       if (!alive) return;
       const message = error instanceof K1RequestError && error.reasonCode === "K4_RISK_SCORE_UNAVAILABLE"
         ? "这次没读到名单，其他页签照常。" : displayAdminError(error);
-      setAccountsResult({ key: accountsKey, state: { kind: "error", message } });
+      setAccountsResult((current) => polled && current?.key === accountsKey && current.state.kind === "ready"
+        ? { ...current, state: { ...current.state, autoFailed: true } }
+        : { key: accountsKey, scope: accountsScope, state: { kind: "error", message } });
     });
     return () => { alive = false; };
-  }, [tab, activeModelVersion, accountsBand, accountsPage, accountsPageSize, accountsKey, accountsRead,
+  }, [tab, activeModelVersion, accountsBand, accountsPage, accountsPageSize, accountsKey, accountsScope, accountsRead,
     staleAccountsOverview, ctx.contentError, ctx.contentLoading]);
 
   const sourceModel = overview ? (overview.draft ?? overview.model) : null;
@@ -1088,7 +1102,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
               <Td><Cell mono main={<button type="button" className="rd-link k4-user-link" onClick={() => { setUserSearch(row.userNo); void loadUser(row.userNo).then(() => document.getElementById("k4-user")?.scrollIntoView({ block: "start", behavior: "instant" as ScrollBehavior })); }}>{row.userNo}</button>} /></Td>
               <Td align="right"><span className="k4-change">{row.systemScoreState === "SCORED"
                 ? <Change from={String(row.systemScoreBefore)} to={String(row.overrideScore)} settled={!row.active} tone={row.active ? (row.overrideScore > row.systemScoreBefore ? "danger" : "ok") : undefined} />
-                : <Change from={row.systemScoreState === "UNSCORED" ? "还没有评分" : "—"} to={String(row.overrideScore)} settled />} <span className="k4-unit">分</span></span></Td>
+                : <Change from={row.systemScoreState === "UNSCORED" ? "还没有评分" : "未知"} to={String(row.overrideScore)} settled />} <span className="k4-unit">分</span></span></Td>
               <Td grow><Cell main={row.reason} title={row.reason} /></Td>
               <Td><Cell main={row.operator} sub={stamp(row.timeText)} /></Td>
               <Td>{row.active ? <StatusTag tone="progress" icon={PenLine}>生效中</StatusTag> : <StatusTag tone="done">已失效</StatusTag>}</Td>
@@ -1108,7 +1122,7 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
 
   const accountsTab = (
     <div {...tabIds.panel("accounts")} className="k4-tab">
-      <K4AccountList band={accountsBand} state={accountList} lines={overview.model} version={versionText(accountList.kind === "ready" ? accountList.page.modelVersion : overview.model.version)} highlight={accountsHighlight} pageSizes={ACCOUNT_PAGE_SIZES}
+      <K4AccountList band={accountsBand} state={accountList} lines={overview.model} version={versionText(accountList.kind === "ready" ? accountList.page.modelVersion : accountList.kind === "loading" && accountList.previous ? accountList.previous.modelVersion : overview.model.version)} highlight={accountsHighlight} pageSizes={ACCOUNT_PAGE_SIZES}
         onBand={(band) => {
           setAccountsHighlight(null);
           writeScoringLocation((params) => writeAccountQuery(params, band, 1, accountsPageSize));

@@ -12,7 +12,7 @@ import { ModelDiff, changedCount, editableModel, fmt, modelDiffRows } from "./k4
  * 还没有评分、但人工改分仍生效的账户：「恢复系统评分」的确认框（3-tgt-7）。
  * 和已评分账户的恢复框同一结构、同一按钮；对象只写在标题里，事实不画占位 0 和规则版本。
  */
-function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveScore: number }, modelVersion: number,
+function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveScore: number },
   recovery: Pick<ConfirmReq, "getPendingReason" | "blockedReason" | "getPendingValue">,
   submit: (reason: string) => Promise<void>) {
   const saved = recovery.getPendingReason?.() !== undefined;
@@ -21,13 +21,13 @@ function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveSco
     errorHandled: true,
     action: `恢复系统评分 · ${user.userNo}`,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-    detail: `这个账户还没有系统评分，现在按人工改分 ${user.effectiveScore} 分算。确认后按当前规则 v${modelVersion} 评分，人工改分不再生效，改分记录保留。`,
+    detail: `这个账户还没有系统评分，现在按人工改分 ${user.effectiveScore} 分算。确认后人工改分不再生效，改分记录保留。`,
     content: <>
       <Facts>
         <Fact k={`${now}的有效分`}>{user.effectiveScore} 分（人工改分）</Fact>
         <Fact k="系统评分">还没有评分</Fact>
       </Facts>
-      <Notice tone="progress">按执行那一刻生效的规则 v{modelVersion} 评分，评出多少分提交后才知道。</Notice>
+      <Notice tone="progress">按执行时生效的规则评分，评出多少分提交后才知道。</Notice>
     </>,
     statedBrief: {
       impact: `系统先给这个账户评分，再撤掉人工改分 ${user.effectiveScore} 分。`,
@@ -90,7 +90,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
   if (operation.kind === "recompute") {
     const user = operation.user;
     if (!user.scored) {
-      openK4UnscoredRecompute(ctx, user, overview.model.version, recovery, submit);
+      openK4UnscoredRecompute(ctx, user, recovery, submit);
       return;
     }
     ctx.openConfirm({ recoveryUi: true, briefKind: "judgment",
