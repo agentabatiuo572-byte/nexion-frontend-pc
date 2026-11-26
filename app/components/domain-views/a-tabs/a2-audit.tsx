@@ -1,6 +1,6 @@
 "use client";
 import {
-  a2AccountStatusText, a2Pair, a2Shown, a2TicketKey, actionName, approvalDisplayChanges, approvalQueueChange,
+  a2AccountStatusText, a2Pair, a2Shown, a2TicketKey, actionName, approvalActionName, approvalDisplayChanges, approvalQueueChange,
   CHANGE_LABELS, CHANGE_UNAVAILABLE, changeAfter, changeBefore, changeSummary, d5ApprovalChanges, derivedBaseRateShown,
   F5_STATE_FROM, F5_STATE_NAME, F_BATCH_DIGEST, F_CONFIG_CODES, f1VoucherReverse, fBatchLabel, fBatchLogItems, fBatchPages, fBatchTicket, fundTicket,
   G_PARAM_ACTION, g3PolicyExecutionTiming, gParamText, h3ConfigName, h3MissionView, isG3Policy, isGParamTicket, isRecord,
@@ -2495,7 +2495,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   </TableMessage>
                 ) : qPageRows.map((w) => {
                   const change = approvalQueueChange(w);
-                  const name = actionName(w);
+                  const name = approvalActionName(w);
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
                       <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
@@ -2717,7 +2717,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     ...(shownAmount ? [shownAmount.state === "ok"
       ? { label: "退款金额", value: <span className="a2-amount">{orderAmount(shownAmount.amount)} USDT</span> }
       : { label: "退款金额", state: "warn" as const, value: <>{refundAmountText(shownAmount)}{" "}{shownAmount.state === "error" && shown.refundOrderNo && <InlineRetry onRetry={() => void loadMain()} />}</> }] : []),
-    { label: "要做什么", value: actionName(shown) },
+    { label: "要做什么", value: approvalActionName(shown) },
     { label: "对象", value: objectNode(shown) },
     ...(shownK1?.kind === "param" ? [{ label: "改动", value: <Change from={`${shownK1.from} 个账户`} to={`${shownK1.to} 个账户`} /> }]
       : shownK1?.kind === "release" ? [{ label: "这笔收益", value: `${k1Amount(shownK1.net)} ${nexGridBrandText(shownK1.asset)} · ${k1Source(shownK1.source)} · 用户 ${userCode(shownK1.userId)}` }] : []),

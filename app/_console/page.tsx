@@ -14,7 +14,7 @@ import { Button, Conclusion, Explain, Fact, Facts, InlineRetry, Notice, PageHead
 import { BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
-import { actionName } from "@/lib/admin/a2-approval-text";
+import { approvalActionName } from "@/lib/admin/a2-approval-text";
 import { B0_BANK_REVIEW_PATH, b0Blocks } from "@/lib/admin/b0-access";
 import { coverDaysText } from "@/lib/admin/treasury-cover-days";
 import { fetchB0Business, fetchB0Devices, fetchB0ExchangeQueue, fetchB0PromotionUnfulfilled, fetchB0ReferralPending } from "@/lib/admin/b0-client";
@@ -64,7 +64,7 @@ function approvalOwner(row: A2OperationRow): PendingRow["owner"] {
 }
 
 function approvalDetail(row: A2OperationRow) {
-  return `${actionName(row)} · ${approvalChangeSummary(row)}`;
+  return `${approvalActionName(row)} · ${approvalChangeSummary(row)}`;
 }
 
 export default function CommandCenter() {

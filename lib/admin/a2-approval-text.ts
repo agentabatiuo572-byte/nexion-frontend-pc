@@ -19,6 +19,8 @@ import { withdrawalProposalChanges, type WithdrawalProposalChanges } from "./wit
 import { f2BootstrapUsesRank, f2PctSum, parseF2BootstrapAfter } from "./f2-bootstrap-summary";
 import { e1GateText, e1Value } from "./e1-product-review";
 import { ORDER_STATES, stateLabel } from "./e4-order-display";
+import { containsHan } from "./content-language-rules";
+import { findHighOp } from "./high-ops-registry";
 import { amountDisplay } from "@/lib/format";
 
 const ACCOUNT_STATUS: Record<string, string> = { enabled: "启用", disabled: "停用" };
@@ -180,6 +182,14 @@ export function actionName(ticket: string | { action: string; obj?: string; afte
   const gParam = G_PARAM_ACTION.exec(action);
   if (gParam) return `${gParam[1] === "回购参数调整" ? "锁定计划参数调整" : gParam[1]} · ${G_PARAM_NAMES[gParam[2]] ?? gParam[2]}`;
   return a2ActionText(nexGridBrandText(action));
+}
+
+export function approvalActionName(ticket: A2OperationRow) {
+  const name = actionName(ticket);
+  if (containsHan(name)) return name;
+  if (!ticket.operationCode) return ticket.action;
+  const registered = findHighOp(ticket.operationCode)?.action;
+  return registered && containsHan(registered) ? registered : name;
 }
 
 /* ────────────────── 完整变更内容 ────────────────── */
