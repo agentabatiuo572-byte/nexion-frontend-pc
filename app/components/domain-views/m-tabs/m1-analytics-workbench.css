@@ -212,11 +212,13 @@
 .m1-todo .rd-filter-more { background: var(--rd-panel-inner); }
 .m1-todo-more-note { grid-column: 1 / -1; margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 
-/* 五列：客户、负责客服、待办原因、上次登录、操作；原因列吃掉剩下的宽度。 */
+/* 五列：客户、负责客服、待办原因、上次登录、操作；操作列只占按钮宽（data-fit），原因列吃掉剩下的宽度，两组原因在 1440 一行放下。 */
 .m1-todo-table col:nth-child(1) { width: 148px; }
-.m1-todo-table col:nth-child(2) { width: 124px; }
+.m1-todo-table col:nth-child(2) { width: 112px; }
 .m1-todo-table col:nth-child(4) { width: 152px; }
 .m1-todo-th { display: inline-flex; align-items: center; gap: 4px; }
+/* 「条件未应用」排在「查询」右边，和筛选条里其余结果文字同一档（ST-18）；和按钮同高，字和按钮上的字对齐。 */
+.m1-todo-unapplied { display: inline-flex; align-items: center; height: var(--rd-control-h); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
 .m1-todo-nowrap { white-space: nowrap; }
 
 .m1-todo-customer { display: flex; align-items: center; gap: 8px; min-width: 0; }

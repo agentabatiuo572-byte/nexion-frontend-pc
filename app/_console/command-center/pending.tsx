@@ -60,7 +60,7 @@ export function riskSummaryRow(items: readonly RiskSummaryItem[], href: string |
     sub: <span className="cc-risk-parts">{parts.map((part, index) => <Fragment key={part}>{index > 0 && " "}<span className="cc-risk-part">{index > 0 && "· "}{part}</span></Fragment>)}</span>,
     owner: "风控",
     href,
-    tone: urgent ? "danger" : sorted[0].sev === "p1" ? "warn" : undefined,
+    tone: urgent ? "danger" : sorted[0].sev === "p1" && sorted.length > 1 ? "warn" : undefined,  // 只有一类、最严重是 p1 时不标色（画板 v2-b1-now-single）
     icon: urgent ? ShieldAlert : undefined,
   };
 }

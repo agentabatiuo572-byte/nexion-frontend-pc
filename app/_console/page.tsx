@@ -135,7 +135,8 @@ export default function CommandCenter() {
   if (closedBusinesses) rows.push({ key: "j1-closed", title: closedBusinesses.title, sub: closedBusinesses.hint, owner: "风控", href: opsAlertHref(closedBusinesses), tone: "warn" });
   // 风控条目合成一行，点进风险提醒页的「待处理风险 · 按类型」（design-plan 板 1）。
   const risks = riskCategoryRows(pendingRisk.riskRadar.feed, reach);
-  const riskRow = pendingRisk.error ? null : riskSummaryRow(risks.map((item) => ({ sev: item.sev, title: riskCategoryTitle(item) })), B5_FROM_HOME);
+  // 信号类只写条数，涉及账户数留给类型列表；副行里「·」只分隔类别（VR-01）。
+  const riskRow = pendingRisk.error ? null : riskSummaryRow(risks.map((item) => ({ sev: item.sev, title: item.kind === "signal" ? `${item.name} ${fmtNum(item.count)} 条` : riskCategoryTitle(item) })), B5_FROM_HOME);
   if (pendingRisk.error) rows.push({ key: "risk", name: "待处理风险", onRetry: () => void pendingRisk.reload() });
   else if (riskRow) rows.push(riskRow);
   if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });

@@ -409,7 +409,7 @@ export function SignalDrawer({ alert, nav, canTriage, canFreeze, canAudit, actio
     ...(isTamper(alert) ? [{ label: "被拦入口", value: alert.facts?.blockedAtEndpointName ?? <span className="b5-muted">未记录</span> }] : []),
     { label: "哪个账户", value: <>{userHref ? <Link className="rd-link b5-mono" href={userHref} prefetch={false} data-mono="">{user}</Link> : <span className="b5-mono" data-mono>{user}</span>}
       {actionsHref && <> · <Link className="rd-link" href={actionsHref} prefetch={false}>查看账户操作</Link></>}</> },
-    { label: "什么时候", value: `记录 ${stamp(alert.createdAt)}`, reason: alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)} · ${businessZone().label}` : isTamper(alert) ? `拦截 — · ${businessZone().label}` : businessZone().label },
+    { label: "什么时候", value: alert.occurredAt || isTamper(alert) ? `记录 ${stamp(alert.createdAt)}` : `记录 ${stamp(alert.createdAt)}（${businessZone().label}）`, reason: alert.occurredAt ? `拦截 ${stamp(alert.occurredAt)} · ${businessZone().label}` : isTamper(alert) ? `拦截 — · ${businessZone().label}` : undefined },
     { label: "处理到哪", value: <><StatusTag tone={HANDLING[alert.handlingStatus].tone} icon={HANDLING_ICON[alert.handlingStatus]}>{HANDLING[alert.handlingStatus].text}</StatusTag>
       {handler && <span className="b5-handler"> {handler}{alert.handledAt && <span className="b5-muted"> {stamp(alert.handledAt)}</span>}</span>}</>,
       reason: `最近一次发送：${deliveryStatusText(alert.deliveryStatus)}` },

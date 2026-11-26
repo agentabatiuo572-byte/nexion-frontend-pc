@@ -180,7 +180,7 @@ export function M1TodoTab({ adminId, mode, groups, revision, conversationSnapsho
 
   return <>
     <M1TodoPanel scope={scope} read={read} filter={query.reason} onFilter={reason => change({ reason })}
-      keyword={keyword} onKeyword={setKeyword} onSubmit={() => change({ keyword: keyword.trim() })} draftChanged={keyword.trim() !== query.keyword}
+      keyword={keyword} onKeyword={setKeyword} onSubmit={() => change({ keyword: keyword.trim() })} draftChanged={keyword.trim() !== query.keyword} appliedKeyword={query.keyword}
       groupValue={query.groupId} groupOptions={groups} onGroup={groupId => change({ groupId, agentId: "" })}
       agentValue={query.agentId} agentOptions={agents} onAgent={agentId => change({ agentId })}
       applied={chips} moreCount={[query.groupId, query.agentId].filter(Boolean).length} canClear={canClear}

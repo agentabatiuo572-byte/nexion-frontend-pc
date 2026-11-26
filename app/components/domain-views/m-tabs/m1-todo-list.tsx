@@ -114,6 +114,8 @@ export type TodoPanelProps = {
   onSubmit: () => void;
   /** 输入框里的客户词和已应用的不一样（还没点查询）：查询旁写「条件未应用」（ST-18）。 */
   draftChanged: boolean;
+  /** 已应用的客户关键词：筛空时空态写明是关键词没有匹配（ST-33）。 */
+  appliedKeyword: string;
   /** 更多筛选：负责组、客服。选项读不到时传 unavailable 写原因，名单照常。 */
   groupValue: string;
   groupOptions: TodoOptions;
@@ -160,7 +162,9 @@ export function M1TodoPanel(props: TodoPanelProps) {
   const sub = <>{scopeText(props.scope)}{ready && ready.rows.length > 0 && <>{filter === "WAITING_REPLY" ? "" : " · 待回复在前"} · {asOf(ready.evaluatedAt)}</>}</>;
   return <Panel className="m1-todo" icon={Users} tone="role-3" title="待跟进客户" sub={sub} explainLabel="待跟进客户的说明"
     explain="一位客户只算一次、占一行。不带筛选时和今日概览用同一范围，各自刷新。待回复的排在前面。">
-    <FilterBar onSubmit={props.onSubmit} querying={props.querying} onClear={props.onClear} canClear={props.canClear} moreCount={props.moreCount} applied={props.applied} result={props.draftChanged ? "条件未应用" : undefined}
+    <FilterBar onSubmit={props.onSubmit} querying={props.querying} onClear={props.onClear} canClear={props.canClear} moreCount={props.moreCount} applied={props.applied}
+      // 「条件未应用」紧跟在「查询」后面，不另起一行把名单往下推（ST-18）；按钮和 FilterBar 自带的「查询」相同。
+      action={<><Button type="submit" disabled={props.querying}>查询</Button>{props.draftChanged && <span className="m1-todo-unapplied" role="status">条件未应用</span>}</>}
       scope={<FilterField><div className="rd-field"><span aria-hidden="true">待办原因</span><Segments label="待办原因" value={filter} items={FILTER_ITEMS} onChange={props.onFilter} /></div></FilterField>}
       more={<>
         <FilterField label="负责组"><Select aria-label="负责组" value={props.groupValue} options={groups.list} disabled={groups.disabled} onChange={props.onGroup} /></FilterField>
@@ -180,7 +184,7 @@ export function M1TodoPanel(props: TodoPanelProps) {
       {props.configLink && <a className="rd-link" href={props.configLink.href}>去「服务规则与话术」{props.configLink.verb}</a>}
     </div>}
     {ready && ready.rows.length === 0 && (filtered
-      ? <BlockState state="empty" title="没有符合条件的待跟进客户" detail={<>换个待办原因或客服再看。<span className="m1-todo-empty-action"><Button size="sm" onClick={props.onClear}>清除筛选</Button></span></>} />
+      ? <BlockState state="empty" title="没有符合条件的待跟进客户" detail={<>{props.appliedKeyword ? "关键词没有匹配的客户，换个关键词再查。" : "换个待办原因或客服再看。"}<span className="m1-todo-empty-action"><Button size="sm" onClick={props.onClear}>清除筛选</Button></span></>} />
       : props.noGroups ? <TodoNoGroups /> : <BlockState state="empty" title="暂无待跟进客户" detail="客户发来消息、新分给专属客服或到了维护时间，会出现在这里。" />)}
     {list && <>
       <Table label="待跟进客户" className="m1-todo-table" aria-busy={list.rows === null || undefined}>
@@ -191,7 +195,7 @@ export function M1TodoPanel(props: TodoPanelProps) {
           <Td><span className="m1-todo-nowrap">{row.agentName ?? "—"}</span></Td>
           <Td><TodoReasons row={row} quietReply={filter === "WAITING_REPLY"} /></Td>
           <Td><span className="m1-todo-nowrap">{row.lastLoginAt ? formatBusinessTimeCompact(row.lastLoginAt, "—") : "—"}</span></Td>
-          <Td sticky="end"><TodoRowActions row={row} access={props.access} checking={props.checkingId === row.customerId} refreshing={props.querying} onStart={() => props.onStart(row)} onRead={() => props.onRead(row)} onProfile={() => props.onProfile(row)} /></Td>
+          <Td sticky="end" data-fit=""><TodoRowActions row={row} access={props.access} checking={props.checkingId === row.customerId} refreshing={props.querying} onStart={() => props.onStart(row)} onRead={() => props.onRead(row)} onProfile={() => props.onProfile(row)} /></Td>
         </Tr>)}</tbody>
       </Table>
       <Pager label="待跟进客户" total={list.total} page={props.page} pageSize={props.pageSize} sizes={TODO_PAGE_SIZES} loading={props.querying} onPage={props.onPage} onPageSize={props.onPageSize} />
