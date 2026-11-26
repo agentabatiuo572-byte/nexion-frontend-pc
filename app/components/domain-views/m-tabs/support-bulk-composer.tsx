@@ -6,10 +6,11 @@ import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { useEffect, useRef, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { supportEnhancements, parseBulkJob, type BulkFilters, type BulkCandidatePage, type BulkPreview, type BulkContent, type BulkJob, type BulkRecipient, type SupportProfile } from "@/lib/admin/m-support-enhancements";
-import { supportClient, SupportClientError, isIndeterminateSupportError } from "@/lib/admin/m-support-client";
+import { supportClient, SupportClientError, isIndeterminateSupportError, isSupportScopeDenial, isSupportSessionExpired } from "@/lib/admin/m-support-client";
 import { RETRY_EXPIRED_TEXT, createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
-import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
+import { isSupportAccessFailure, isSupportWriteBeforeAuthFailure, refreshSupportAccess } from "@/lib/admin/support-self-session";
 import { Modal } from "../design-kit";
 import { Button, Check, Explain, Fact, Facts, Field, Fold, Input, Notice, Pager, RecordList, Select, StatusTag, Steps, Table, Td, Textarea, Th, Tr } from "@/app/components/rd";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
@@ -17,13 +18,19 @@ import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { businessOffsetMinutes, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { SupportContentTools, type SelectedSupportContent } from "./support-content-tools";
 import { blocksNewSend, parseConversations, pendingSendCustomers } from "./m-message-journal";
+import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
+import { beijing } from "./m1-statistic-details";
 import type { MCtx } from "./types";
 import "./m-support-workbench.css";
 type Stored = PendingMutationRecord & { actorId:number; payload:BulkContent; recipientIds?:string[]; recipientAssignments?:Record<string,string>; batchId?:string; readOnlyRecovery?:boolean; action?:"cancel"|"retry"; mutation?:{expectedVersion:number;reason:string} };
+type ReadBulkJob = BulkJob & { readAt: string };
 type PreviewIntent = { input: Parameters<typeof supportEnhancements.bulkPreview>[0]; advance: boolean };
 type UploadPending = PendingMutationRecord & { actorId: number; clientUploadId: string; hash: string; fileName: string; fileMime: string; assetExpiresAt?: number };
 const uploads = createPendingMutationStore<UploadPending>({ storageKey: "nexion-support-bulk-attachment-v1", retainExpiredRecords: true, isValidRecord: r => Number.isSafeInteger(r.actorId) && typeof r.clientUploadId === "string" && typeof r.hash === "string" && typeof r.fileName === "string" && typeof r.fileMime === "string" });
 const commands=createPendingMutationStore<Stored>({storageKey:"nexion-support-bulk-pending",retainExpiredRecords:true,isValidRecord:r=>Number.isSafeInteger(r.actorId)&&Boolean(r.payload?.selectionId)});
+const mutationLabel = (action: Stored["action"]) => action === "cancel" ? "取消未提交项" : "核对并重试失败项";
+const replayFailure = (record: Stored) => `「${record.action ? mutationLabel(record.action) : "提交群发"}」的同号重试被拒绝。${displayAdminError(record.replayRejection)}原操作结果仍需核实。`;
+const isBulkAccessFailure = (error: unknown) => isSupportScopeDenial(error) || isSupportSessionExpired(error) || isSupportAccessFailure(error);
 const conversationReasonText:Record<string,string>={
   // Kept for batches created before closed conversations were included (D-6); customer threads are now resumed.
   CONVERSATION_CLOSED:"原会话已结束，本次未发送（旧批次记录）。现在重新圈选会在该客户的会话中继续发送。",
@@ -39,8 +46,6 @@ const stateText:Record<string,string>={QUEUED:"等待执行",RUNNING:"正在执�
 const dayStart=(v:string)=>v?new Date(Date.parse(v+"T00:00:00Z")-businessOffsetMinutes()*60000).toISOString():undefined;
 const dayOf=(v:unknown)=>typeof v==="string"?new Date(Date.parse(v)+businessOffsetMinutes()*60000).toISOString().slice(0,10):"";
 const recipientTone=(r:BulkRecipient)=>r.resultCertainty==="UNKNOWN"?"warn" as const:r.state==="SENT"?"ok" as const:r.state==="FAILED"?"danger" as const:r.state==="PENDING"?"progress" as const:"done" as const;
-const isBulkPreviewDenied = (error: unknown) => error instanceof SupportClientError && error.status === 403
-  && ["SUPPORT_AGENT_UNAVAILABLE", "SUPPORT_SCOPE_FORBIDDEN", "SUPPORT_WRITE_FORBIDDEN"].includes(error.backendMessage ?? "");
 const bulkPreviewError = (error: unknown) => error instanceof SupportClientError
   && error.status === 403 && error.backendMessage === "SUPPORT_AGENT_UNAVAILABLE"
   ? "当前账号没有可用的专属客服资格，暂不能圈选群发。请联系客服主管核对接待资格，再由可接待的专属客服账号操作。"
@@ -67,11 +72,12 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const [text,setText]=useState(""),[intent,setIntent]=useState<"SERVICE"|"MAINTENANCE">("SERVICE"),[choice,setChoice]=useState<SelectedSupportContent|null>(null),[reason,setReason]=useState(""),[reasonLeft,setReasonLeft]=useState(false),[ack,setAck]=useState(false);
   const [draftOwner,setDraftOwner]=useState(0);
   const [image,setImage]=useState<{file:File;url:string;id:string;key:string;hash:string;assetId?:string;ttlSeconds:number|null;assetExpiresAt?:number}|null>(null),[uploading,setUploading]=useState(false),[uploadError,setUploadError]=useState("");
-  const [job,setJob]=useState<BulkJob|null>(null),[jobs,setJobs]=useState<BulkJob[]|null>(null),[jobsTotal,setJobsTotal]=useState(0),[jobsPage,setJobsPage]=useState(1),[jobsError,setJobsError]=useState("");
+  const [job,setJob]=useState<ReadBulkJob|null>(null),[jobs,setJobs]=useState<ReadBulkJob[]|null>(null),[jobsTotal,setJobsTotal]=useState(0),[jobsPage,setJobsPage]=useState(1),[jobsError,setJobsError]=useState("");
   const [recoveryBatchId,setRecoveryBatchId]=useState<string|null>(null),[mutationFailure,setMutationFailure]=useState("");
-  const [batchReadsRequired,setBatchReadsRequired]=useState<Record<string,number>>({});
+  const [batchReadsRequired,setBatchReadsRequired]=useState<Record<string,{after:number;reason:string}>>({});
   const [recipients,setRecipients]=useState<BulkRecipient[]|null>(null),[recipientTotal,setRecipientTotal]=useState(0),[recipientPage,setRecipientPage]=useState(1),[resultRetry,setResultRetry]=useState(0),[jobsRetry,setJobsRetry]=useState(0),[resultError,setResultError]=useState("");
   const [pending,setPending]=useState<Stored|null>(null),[mutationAction,setMutationAction]=useState<"cancel"|"retry"|null>(null),[mutationReason,setMutationReason]=useState("");
+  const verifiedRelease = useVerifiedRelease(ctx.toast);
   const generation=useRef(0),stamp=useRef("");stamp.current=`${scopeKey}:${generation.current}`;
   const resultReadSequence=useRef(0),recipientsScope=useRef<string|null>(null);
   const queryKey=JSON.stringify([scopeKey,filters,page]),requestKey=useRef(queryKey);requestKey.current=queryKey;
@@ -116,15 +122,35 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     };
   }, [actorId, scopeKey, selected, selection, pending, onClose]);
   useEffect(()=>{if(scopeOwner===scopeKey)return;setScopeOwner(scopeKey);setPreviewIntent(null);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);setQuery(null);setJob(null);setRecoveryBatchId(null);setMutationFailure("");setBatchReadsRequired({});setRecipients(null);setJobs(null);setPending(null);setStep(1);setBusy(false);setUploading(false);setFilters({});setFilterDraft({});setPage(1);setChoice(null);setReason("");setAck(false);setUploadError("");imageSelection.current++;if(imageRef.current)URL.revokeObjectURL(imageRef.current.url);setImage(null);},[scopeKey]);
-  useEffect(()=>{const old=commands.list().find(r=>r.actorId===actorId);if(old){setPending(old);setStep(3);setError(isRetryExpired(old)?RETRY_EXPIRED_TEXT:"原操作结果未知，请先查询原操作。");}},[scopeKey]);
+  useEffect(()=>{
+    const old=commands.list().find(r=>r.actorId===actorId);
+    if(!old)return;
+    setPending(old);
+    if(old.replayRejection&&old.batchId&&old.action){
+      setRecoveryBatchId(old.batchId);setMutationFailure(replayFailure(old));setStep(4);
+    }else{
+      setStep(3);setError(old.replayRejection ? replayFailure(old) : isRetryExpired(old) ? RETRY_EXPIRED_TEXT : "原操作结果未知，请先查询原操作。");
+    }
+  },[scopeKey]);
   useEffect(()=>{if(!actorId)return;try{const saved=JSON.parse(sessionStorage.getItem(`nexion-bulk-draft:${actorId}`)??"{}");setText(typeof saved.text==="string"?saved.text:"");setIntent(saved.intent==="MAINTENANCE"?"MAINTENANCE":"SERVICE");}catch{setError("群发草稿暂不能恢复，请在本页核对。");}setDraftOwner(actorId);},[actorId,epoch]);
   useEffect(()=>{if(!actorId||draftOwner!==actorId)return;try{sessionStorage.setItem(`nexion-bulk-draft:${actorId}`,JSON.stringify({text,intent}));}catch{setError("群发草稿无法保存在浏览器里，请在本页一次完成。");}},[actorId,draftOwner,text,intent]);
   // 开发模式的重挂载也走这里：重新挂上时先把 stamp 对回来，不然后面的读取都被判成过期，名单一直停在加载中。
   useEffect(()=>{stamp.current=`${scopeKey}:${generation.current}`;return()=>{generation.current++;stamp.current=`unmounted:${generation.current}`;imageSelection.current++;const current=imageRef.current;if(current)URL.revokeObjectURL(current.url);imageRef.current=null;};},[]);
+  const closeForAccessFailure = (error: unknown) => {
+    onClose();
+    refreshSupportAccess(error);
+  };
   useEffect(()=>{
     if(createBlocked)return;
     const controller=new AbortController(),saved=queryKey,owner=stamp.current;setQuery(null);setError("");setPreviewDenied(false);
-    supportEnhancements.bulkCandidates(filters,page,controller.signal).then(v=>{if(controller.signal.aborted||saved!==requestKey.current||owner!==stamp.current)return;if(v.actorId!==actorId)throw new SupportClientError(403,403,"SUPPORT_SCOPE_FORBIDDEN");if(v.pageNum!==page)throw new Error("SUPPORT_CANDIDATE_PAGE_INVALID");if(page>1&&page>Math.max(1,Math.ceil(v.total/10))){setPage(Math.max(1,Math.ceil(v.total/10)));return;}setQuery({...v,requestKey:saved});setIdentities(old=>({...old,...Object.fromEntries(v.records.map(c=>[c.id,{nickname:c.nickname,userNo:c.userNo}]))}));}).catch(e=>{if(!controller.signal.aborted&&saved===requestKey.current&&owner===stamp.current){setError(bulkPreviewError(e));setPreviewDenied(isBulkPreviewDenied(e));if(isBulkPreviewDenied(e)){setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);}}});
+    supportEnhancements.bulkCandidates(filters,page,controller.signal).then(v=>{if(controller.signal.aborted||saved!==requestKey.current||owner!==stamp.current)return;if(v.actorId!==actorId)throw new SupportClientError(403,403,"SUPPORT_SCOPE_FORBIDDEN");if(v.pageNum!==page)throw new Error("SUPPORT_CANDIDATE_PAGE_INVALID");if(page>1&&page>Math.max(1,Math.ceil(v.total/10))){setPage(Math.max(1,Math.ceil(v.total/10)));return;}setQuery({...v,requestKey:saved});setIdentities(old=>({...old,...Object.fromEntries(v.records.map(c=>[c.id,{nickname:c.nickname,userNo:c.userNo}]))}));}).catch(e=>{
+      if(controller.signal.aborted||saved!==requestKey.current||owner!==stamp.current)return;
+      if(isBulkAccessFailure(e)){
+        setPreviewDenied(true);setSelected(new Set());setIdentities({});setProfiles({});setSelection(null);
+        refreshSupportAccess(e);
+      }
+      setError(bulkPreviewError(e));
+    });
     return()=>controller.abort();
   },[filters,page,retry,scopeKey,createBlocked]);
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [pending]);
@@ -138,11 +164,15 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   },[query,scopeKey]);
   useEffect(()=>{
     const controller=new AbortController(),owner=stamp.current;setJobs(null);setJobsError("");
-    supportEnhancements.bulkJobs(jobsPage,controller.signal).then(p=>{if(!controller.signal.aborted&&owner===stamp.current){setJobs(p.records);setJobsTotal(p.total);}}).catch(e=>{if(!controller.signal.aborted&&owner===stamp.current)setJobsError(displayAdminReadError(e));});
+    supportEnhancements.bulkJobs(jobsPage,controller.signal).then(p=>{if(!controller.signal.aborted&&owner===stamp.current){const readAt=new Date().toISOString();setJobs(p.records.map(row=>({...row,readAt})));setJobsTotal(p.total);}}).catch(e=>{
+      if(controller.signal.aborted||owner!==stamp.current)return;
+      if(isBulkAccessFailure(e)){setJobsTotal(0);refreshSupportAccess(e);}
+      setJobsError(displayAdminReadError(e));
+    });
     return()=>controller.abort();
   },[jobsPage,resultRetry,jobsRetry,scopeKey]);
   const resultBatchId=recoveryBatchId??job?.batchId;
-  const batchReadBlock=job&&batchReadsRequired[job.batchId]!==undefined?"正在读取批次最新状态":undefined;
+  const batchReadBlock=job ? batchReadsRequired[job.batchId]?.reason : undefined;
   useEffect(()=>{
     if(!resultBatchId)return;const controller=new AbortController(),owner=stamp.current;let timer:ReturnType<typeof setTimeout>|undefined;
     const recipientKey=JSON.stringify([scopeKey,resultBatchId,recipientPage]);
@@ -150,19 +180,21 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     const read=async()=>{
       const sequence=++resultReadSequence.current;
       const [batch,items]=await Promise.allSettled([
-        supportEnhancements.bulkJob(resultBatchId,controller.signal),
+        supportEnhancements.bulkJob(resultBatchId,controller.signal).then(row => ({ ...row, readAt: new Date().toISOString() })),
         supportEnhancements.bulkRecipients(resultBatchId,recipientPage,controller.signal),
       ]);
       if(controller.signal.aborted||owner!==stamp.current)return;
       // 两次读取各自按当时的权限查。同轮有拒绝就丢弃整份结果，批次编号只保留给只读刷新。
-      const readDenied=(reason:unknown)=>reason instanceof SupportClientError&&[401,403,404].includes(reason.status);
-      if(batch.status==="rejected"&&readDenied(batch.reason)||items.status==="rejected"&&readDenied(items.reason)){
+      const denials = [batch, items].filter((result): result is PromiseRejectedResult =>
+        result.status === "rejected" && isBulkAccessFailure(result.reason));
+      if(denials.length){
         keepRecipients=false;
         recipientsScope.current=null;
         setJob(null);setRecoveryBatchId(resultBatchId);
         setRecipients(null);setRecipientTotal(0);
         setMutationAction(null);setMutationReason("");
         setResultError("没有查看这个批次的权限。");
+        refreshSupportAccess(denials.find(result => isSupportSessionExpired(result.reason))?.reason ?? denials[0].reason);
         return;
       }
       const currentBatch=batch.status==="fulfilled"&&batch.value.batchId===resultBatchId?batch.value:null;
@@ -171,14 +203,19 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
         setJob(currentBatch);
         setBatchReadsRequired(current=>{
           // An in-flight read started before the refusal cannot unlock this batch.
-          const failedAfter=current[resultBatchId];
-          if(failedAfter===undefined||sequence<=failedAfter)return current;
+          const block=current[resultBatchId];
+          if(!block||sequence<=block.after)return current;
           const next={...current};
           delete next[resultBatchId];
           return next;
         });
         if(["QUEUED","RUNNING"].includes(currentBatch.state))timer=setTimeout(()=>void read(),3000);
-      }else failure=batch.status==="rejected"?displayAdminError(batch.reason):"批次资料与当前查询不一致，请重新读取。";
+      }else{
+        failure=batch.status==="rejected"?displayAdminReadError(batch.reason):"批次资料与当前查询不一致，请重新读取。";
+        setBatchReadsRequired(current=>({...current,[resultBatchId]:{
+          after:sequence,reason:"批次最新状态读取失败，当前显示上次核对值。请刷新原批次后再操作。",
+        }}));
+      }
       if(items.status==="fulfilled"){
         recipientsScope.current=recipientKey;
         setRecipients(items.value.records);setRecipientTotal(items.value.total);
@@ -233,9 +270,8 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       setStep(previous ? 3 : 2);
     } catch (e) {
       if (saved !== stamp.current) return;
-      const denied = isBulkPreviewDenied(e);
-      setError(bulkPreviewError(e)); setPreviewUnknown(previewRequested && !denied); setPreviewDenied(denied);
-      if (denied) { setPreviewIntent(null); setQuery(null); setSelected(new Set()); setIdentities({}); setProfiles({}); setSelection(null); }
+      if (isBulkAccessFailure(e)) { closeForAccessFailure(e); return; }
+      setError(bulkPreviewError(e)); setPreviewUnknown(previewRequested);
     } finally { if (saved === stamp.current) setBusy(false); }
   }
   async function selectAll() {
@@ -263,7 +299,11 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       const exactFile = original ? new File([file], original.fileName, { type: original.fileMime }) : file;
       if (imageRef.current) URL.revokeObjectURL(imageRef.current.url); setChoice(null);
       setImage({ file: exactFile, url: URL.createObjectURL(exactFile), id: original?.clientUploadId ?? crypto.randomUUID(), key: original?.commandKey ?? crypto.randomUUID(), hash, ttlSeconds: policy.ttlSeconds, assetExpiresAt: original?.assetExpiresAt });
-    } catch (e) { if (saved === stamp.current && chosen === imageSelection.current) setUploadError(e instanceof Error && /^(原|图片|请选择)/.test(e.message) ? e.message : displayAdminError(e)); }
+    } catch (e) {
+      if (saved !== stamp.current || chosen !== imageSelection.current) return;
+      if (isBulkAccessFailure(e)) closeForAccessFailure(e);
+      else setUploadError(e instanceof Error && /^(原|图片|请选择)/.test(e.message) ? e.message : displayAdminError(e));
+    }
   }
   async function upload() {
     if (!image || uploading || image.assetId) return;
@@ -279,31 +319,52 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       const asset = await supportEnhancements.bulkUpload(current.file, current.id, current.key);
       if (saved !== stamp.current || imageRef.current?.id !== current.id) return;
       uploads.forget(fingerprint, current.key); setImage({ ...current, assetId: asset.assetId, assetExpiresAt });
-    } catch (e) { if (saved === stamp.current) { if (!old && isExplicitRejection(e)) uploads.forget(fingerprint, current.key); setUploadError("图片上传结果未知，原图片已保留。" + displayAdminError(e)); } }
+    } catch (e) {
+      if (saved !== stamp.current) return;
+      if (!old && (isExplicitRejection(e) || isSupportWriteBeforeAuthFailure(e))) uploads.forget(fingerprint, current.key);
+      if (isBulkAccessFailure(e)) closeForAccessFailure(e);
+      else setUploadError("图片上传结果未知，原图片已保留。" + displayAdminError(e));
+    }
     finally { if (saved === stamp.current) setUploading(false); }
   }
   const input:BulkContent|undefined=selection?{selectionId:selection.selectionId,intent,kind:image?"IMAGE":choice?.kind??"TEXT",content:text.trim(),skuId:choice?.kind==="SKU"?choice.skuId:undefined,linkTarget:choice?.kind==="LINK"?choice.linkTarget:undefined,assetId:image?.assetId,reason:reason.trim()}:undefined;
   const ready=Boolean(!uploads.list().some(r=>r.actorId===actorId)&&input&&selection?.count&&Date.parse(selection.expiresAt)>Date.now()&&reasonRule.ok(reason)&&ack&&(image?image.assetId&&image.assetExpiresAt!==undefined&&Date.now()<image.assetExpiresAt:text.trim()));
-  function rejectSubmission(record:Stored, reason:string) {
-    commands.forget(record.fingerprint,record.commandKey);
-    setPending(null);setNotReceived(false);
+  function rejectSubmission(record:Stored, reason:string, replayRefusal?: string) {
+    if(replayRefusal)commands.markReplayRejected(record.fingerprint,record.commandKey,replayRefusal);
+    else commands.forget(record.fingerprint,record.commandKey);
+    setPending(replayRefusal ? {...record,replayRejection:replayRefusal} : null);setNotReceived(false);
     if(record.action&&record.batchId){
       const batchId=record.batchId,failedAfter=resultReadSequence.current;
-      setBatchReadsRequired(current=>({...current,[batchId]:failedAfter}));
-      const label=record.action==="cancel"?"取消未提交项":"核对并重试失败项";
-      setMutationFailure(`${label}失败。${reason}`);
+      setBatchReadsRequired(current=>({...current,[batchId]:{after:failedAfter,reason:"正在读取批次最新状态"}}));
+      setMutationFailure(replayRefusal ? replayFailure({...record,replayRejection:replayRefusal}) : `${mutationLabel(record.action)}失败。${reason}`);
       if(job?.batchId!==record.batchId){
         setJob(null);setRecoveryBatchId(record.batchId);setRecipientPage(1);
       }
       setError("");setResultError("");setHistoryOpen(false);setStep(4);setResultRetry(n=>n+1);
       return;
     }
-    setSubmitFailed(true);setError(reason);
+    setSubmitFailed(true);setError(replayRefusal ? replayFailure({...record,replayRejection:replayRefusal}) : reason);
+  }
+  function releaseRejected(record: Stored) {
+    const currentRecord = () => commands.list().find(row => row.commandKey === record.commandKey && row.actorId === actorId && row.replayRejection);
+    verifiedRelease.ask({
+      operation: record.action ? mutationLabel(record.action) : "提交群发", target: record.batchId, targetLabel: "原批次", createdAt: record.createdAt,
+      getSnapshot: () => {
+        const current = currentRecord();
+        return current && JSON.stringify(current);
+      },
+      release: () => {
+        commands.forget(record.fingerprint, record.commandKey);
+        if (currentRecord()) return false;
+        setPending(null);setMutationFailure("");setError("");setNotReceived(false);
+        return true;
+      },
+    });
   }
 
   async function submit(recover=false,replay=false,original?:Stored){
     if(!recover&&!original&&image?.assetId&&image.assetExpiresAt!==undefined&&Date.now()>=image.assetExpiresAt){setError("图片已过有效期，请返回编写内容移除旧图并重新准备。");return;}
-    if(busy||!recover&&!original?.action&&!ready)return;
+    if(busy||replay&&pending?.replayRejection||!recover&&!original?.action&&!ready)return;
     if (!recover && !original && selection) {
       const locks = pendingCustomers();
       if (selection.customers.some(c => blocksNewSend(locks, c.id))) {
@@ -316,8 +377,12 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
     commands.remember(record.fingerprint,record.commandKey,{actorId:record.actorId,payload:record.payload,recipientIds:record.recipientIds,recipientAssignments:record.recipientAssignments,batchId:record.batchId,action:record.action,mutation:record.mutation,readOnlyRecovery:record.readOnlyRecovery});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError(recover ? "浏览器没能记下这次操作，这次没有发出；之前发出的原操作结果仍未知，请先查询原操作。" : "浏览器没能记下这次操作，这次没有发出；请关闭无痕模式或允许本站保存数据后再试。");return;}setBusy(true);setError("");setSubmitFailed(false);const saved=stamp.current;
     let submitted=false;
     try{
-      const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&e.status===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;
+      const recovered=recover?await supportClient.command(record.commandKey).catch(e=>{if(e instanceof SupportClientError&&(e.status===200?e.apiCode:e.status)===404&&e.backendMessage==="SUPPORT_COMMAND_NOT_FOUND")return null;throw e;}):null;
       if(saved!==stamp.current)return;
+      if(record.replayRejection&&recovered?.status!=="SUCCEEDED"&&recovered?.status!=="FAILED"){
+        (record.action ? setMutationFailure : setError)(replayFailure(record)+(recovered?"已查到原操作，仍未取得结论。":"暂时查不到原结果。"));
+        return;
+      }
       if(recovered&&recovered.status!=="SUCCEEDED"&&recovered.status!=="FAILED"){setError("发送结果仍未知，请稍后再查询原操作。");return;}
       if(record.readOnlyRecovery&&recovered?.status!=="SUCCEEDED"&&recovered?.status!=="FAILED"){setError("原操作结果未知；客户归属变了，只能查询原操作，不能重新创建或发送。");return;}
       if(recovered?.status==="FAILED"){
@@ -336,8 +401,30 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       }
       if(!recovered)submitted=true;
       const next=recovered?parseBulkJob(recovered.result):record.action&&record.batchId&&record.mutation?await supportEnhancements.bulkMutate(record.batchId,record.action,record.mutation,record.commandKey):await supportEnhancements.bulkCreate(record.payload,record.commandKey);
-      if(saved!==stamp.current)return;commands.forget(record.fingerprint,record.commandKey);setPending(null);setJob(next);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setHistoryOpen(false);setRecipientPage(1);setMutationAction(null);setMutationReason("");setResultRetry(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));
-    }catch(e){if(saved===stamp.current){if(submitted&&!recover&&isExplicitRejection(e))rejectSubmission(record,displayAdminError(e));else setError(displayAdminError(e));}}finally{if(saved===stamp.current)setBusy(false);}
+      if(saved!==stamp.current)return;commands.forget(record.fingerprint,record.commandKey);setPending(null);setJob({...next,readAt:new Date().toISOString()});setRecoveryBatchId(null);setMutationFailure("");setStep(4);setHistoryOpen(false);setRecipientPage(1);setMutationAction(null);setMutationReason("");setResultRetry(n=>n+1);window.dispatchEvent(new Event("support-todo-changed"));
+    }catch(e){
+      if(saved!==stamp.current)return;
+      const status = e instanceof SupportClientError ? e.status === 200 ? e.apiCode : e.status : undefined;
+      if(submitted ? isSupportSessionExpired(e) || status === 403 : isBulkAccessFailure(e)){
+        if (submitted && status === 403) {
+          if (recover) commands.markReplayRejected(record.fingerprint, record.commandKey, "ADMIN_PERMISSION_DENIED");
+          else commands.forget(record.fingerprint, record.commandKey);
+          setDraftOwner(0);
+          setText(""); setReason(""); setMutationReason("");
+          try { sessionStorage.removeItem(`nexion-bulk-draft:${actorId}`); } catch { /* The editor is cleared before closing. */ }
+        } else if(submitted&&!recover&&isSupportWriteBeforeAuthFailure(e))commands.forget(record.fingerprint,record.commandKey);
+        closeForAccessFailure(e);
+        return;
+      }
+      // The create endpoint can only reject a missing attachment before queueing.
+      // SUPPORT_BULK_NOT_FOUND can also come from its post-write batch readback.
+      const missingAttachment = submitted && !record.action && status === 404
+        && e instanceof SupportClientError && e.backendMessage === "ATTACHMENT_NOT_FOUND";
+      const refusal = missingAttachment ? "ATTACHMENT_NOT_FOUND" : submitted && status !== 404 ? explicitRejectionCode(e) : undefined;
+      if(refusal&&(!recover||record.action&&record.batchId||missingAttachment))rejectSubmission(record,displayAdminError(e),recover?refusal:undefined);
+      else if(record.replayRejection)(record.action ? setMutationFailure : setError)(replayFailure(record)+displayAdminReadError(e));
+      else setError(displayAdminError(e));
+    }finally{if(saved===stamp.current)setBusy(false);}
   }
   async function mutate(){if(!job||!mutationAction||mutationBlocked||!reasonRule.ok(mutationReason)||busy||pending)return;const payload=input??{selectionId:"result",intent:"SERVICE" as const,kind:"TEXT" as const,content:"",reason:mutationReason.trim()};const record:Stored={fingerprint:`${actorId}:${job.batchId}:${mutationAction}`,commandKey:crypto.randomUUID(),createdAt:Date.now(),expiresAt:Date.now()+86400000,actorId,payload,batchId:job.batchId,action:mutationAction,mutation:{expectedVersion:job.version,reason:mutationReason.trim()}};commands.remember(record.fingerprint,record.commandKey,{actorId,payload,batchId:record.batchId,action:record.action,mutation:record.mutation});setPending(record);if(!commands.isDurablyStored(record.fingerprint,record.commandKey)){setError("浏览器存不下这次操作，没有提交；请允许浏览器保存网站数据后查询原操作。");return;}await submit(false,false,record);}
 
@@ -356,7 +443,9 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
   const cancelBlocked=job&&(job.actorId!==actorId?"只有发起人能操作这个批次":!canWrite?"当前账号只能查看":batchReadBlock??(!job.counts.pending?"没有未提交的客户":pending?"先查询原操作":undefined));
   const retryBlocked=job&&(job.actorId!==actorId?"只有发起人能操作这个批次":!canWrite?"当前账号只能查看":batchReadBlock??(!(job.counts.failed||job.counts.unknown)?"没有失败或结果未知的客户":pending?"先查询原操作":undefined));
   const mutationBlocked=mutationAction==="cancel"?cancelBlocked:retryBlocked;
-  return <Modal title="圈选客户群发" icon="users" wide busy={busy||uploading} onClose={onClose} footer={<div className="m-admin-toolbar"><Button disabled={busy||uploading} onClick={onClose}>{step===4?"知道了":"取消"}</Button>{!historyOpen&&<>{step>1&&step<4&&!pending&&<Button disabled={busy} onClick={()=>setStep(n=>n-1)}>上一步</Button>}{step===1&&!createBlocked&&<Button variant="primary" disabledReason={!selected.size?"先勾选客户":undefined} disabled={busy||previewDenied||Boolean(pending)} onClick={()=>void freeze()}>{busy?"核对名单…":"下一步：编写内容"}</Button>}{step===2&&<Button variant="primary" disabledReason={uploadPending?"先核对原图片上传结果":(image?!image.assetId:!text.trim())?(image?"先上传图片":"先写发送内容"):undefined} onClick={()=>{setStep(3);setAck(false);setPreviewList("included");}}>下一步：确认名单</Button>}{step===3&&!pending&&<Button variant="primary" disabled={busy} disabledReason={!ready&&!busy?"先写操作理由并勾选核对":undefined} onClick={()=>void submit()}>{busy?"提交中…":"确认提交群发"}</Button>}</>}{pending&&notReceived&&!isRetryExpired(pending)&&!pending.readOnlyRecovery&&<Button disabled={busy} onClick={()=>void submit(true,true)}>按原操作重试</Button>}{pending&&<Button variant="primary" disabled={busy} onClick={()=>void submit(true)}>查询原操作</Button>}</div>}>
+  const permissionRefused = pending?.replayRejection === "ADMIN_PERMISSION_DENIED";
+  const rejectedCommand = pending?.replayRejection ? pending : null;
+  return <><Modal title="圈选客户群发" icon="users" wide busy={busy||uploading} onClose={onClose} footer={<div className="m-admin-toolbar"><Button disabled={busy||uploading} onClick={onClose}>{step===4?"知道了":"取消"}</Button>{!historyOpen&&<>{step>1&&step<4&&!pending&&<Button disabled={busy} onClick={()=>setStep(n=>n-1)}>上一步</Button>}{step===1&&!createBlocked&&<Button variant="primary" disabledReason={!selected.size?"先勾选客户":undefined} disabled={busy||previewDenied||Boolean(pending)} onClick={()=>void freeze()}>{busy?"核对名单…":"下一步：编写内容"}</Button>}{step===2&&<Button variant="primary" disabledReason={uploadPending?"先核对原图片上传结果":(image?!image.assetId:!text.trim())?(image?"先上传图片":"先写发送内容"):undefined} onClick={()=>{setStep(3);setAck(false);setPreviewList("included");}}>下一步：确认名单</Button>}{step===3&&!pending&&<Button variant="primary" disabled={busy} disabledReason={!ready&&!busy?"先写操作理由并勾选核对":undefined} onClick={()=>void submit()}>{busy?"提交中…":"确认提交群发"}</Button>}</>}{pending&&notReceived&&!isRetryExpired(pending)&&!pending.readOnlyRecovery&&!pending.replayRejection&&<Button disabled={busy} onClick={()=>void submit(true,true)}>按原操作重试</Button>}{pending&&<Button variant="primary" disabled={busy} onClick={()=>void submit(true)}>查询原操作</Button>}</div>}>
     <div className="ui-support-workflow ui-support-contact-picker rd-stack"><Steps label="群发步骤" items={["圈选客户","编写内容","确认提交","逐客结果"].map((title,index) => ({ label: title, state: step > index + 1 ? "done" as const : step === index + 1 ? submitFailed && step === 3 ? "failed" as const : "current" as const : "todo" as const }))}/><p className="rd-sr-only" role="status">第 {step} 步：{["","圈选客户","编写内容","确认提交","逐客结果"][step]}</p>{error&&!(pending&&isRetryExpired(pending)&&error===RETRY_EXPIRED_TEXT)&&<Notice tone={pending?"warn":"danger"}>{error}</Notice>}{uploadPending && <Notice tone="warn">原图片上传结果未知。请选择同一张图片后按原操作重试；超过图片有效期或 24 小时，请联系管理员核对。</Notice>}
     {!historyOpen&&<>
     {previewIntent&&!pending&&<Notice tone="warn" action={<Button disabled={busy} onClick={()=>void generatePreview(previewIntent)}>{previewUnknown?"重新生成预览":"重新读取原名单"}</Button>}>按上次{previewIntent.input.selectionMode==="ALL_FILTERED"?"全部筛选结果":"明确选中名单"}重新读取并生成新快照，旧预览的确认作废；这会生成新的预览。</Notice>}
@@ -380,17 +469,21 @@ export function SupportBulkComposer({ctx,onClose,createBlocked}:{ctx:MCtx;onClos
       {selection&&excluded(selection)}
     </>}</>}
     {step===2&&selection&&<><p className="m-bulk-head">名单已确定，共 {selection.count} 位 <Explain label="返回修改" content="内容返回修改时保留。"/></p><Field label="本条消息用途" explain="普通服务不计维护；联系维护仅在消息成功提交后计一次，后续新的有效活动才形成成功维护。群发不清待回复。">{control=><Select {...control} aria-label="本条消息用途" value={intent} onChange={value=>setIntent(value as "SERVICE"|"MAINTENANCE")} options={[{value:"SERVICE",label:"普通服务"},{value:"MAINTENANCE",label:"联系维护"}]}/>}</Field><SupportContentTools ctx={ctx} disabled={uploading || Boolean(uploadPending)} onInsert={insert} onSelect={v=>{if(image)URL.revokeObjectURL(image.url);setImage(null);setChoice(v);if(!text.trim())setText(v.kind==="SKU"?"推荐商品："+v.name:"查看："+v.name);}}/>{choice&&<div className="m-bulk-row"><span>已选：{choice.name}</span><Button size="sm" onClick={()=>setChoice(null)}>取消推荐</Button></div>}<Field label="发送文案">{control=><Textarea {...control} ref={composerRef} aria-label="群发文案" rows={4} maxLength={10000} value={text} onChange={e=>setText(e.target.value)}/>}</Field><Field label="群发图片">{control=><><input {...control} ref={fileRef} type="file" hidden accept="image/jpeg,image/png" disabled={uploading} onChange={e=>{void chooseFile(e.target.files?.[0]);e.target.value="";}}/><div><Button size="sm" disabled={uploading} onClick={()=>fileRef.current?.click()}>选择图片</Button></div></>}</Field>{image&&<div><img src={image.url} alt="群发图片预览" className="rd-thumb"/><p>{image.assetId?"已上传，尚未发送":uploading?"正在上传…":"尚未上传"}</p><div className="m-bulk-row-tools"><Button size="sm" disabled={uploading||Boolean(image.assetId)} onClick={()=>void upload()}>上传或重试图片</Button><Button size="sm" disabled={uploading || Boolean(uploadPending)} onClick={()=>{URL.revokeObjectURL(image.url);setImage(null);}}>移除图片</Button></div></div>}{uploadError&&<p role="alert">{uploadError}</p>}{excluded(selection)}</>}
-    {step===3&&<>{pending?<div className="rd-stack"><Notice tone="warn">{isRetryExpired(pending)?RETRY_EXPIRED_TEXT:"已保存原操作号，查询和重试使用完全相同的名单及内容。"}</Notice><Facts><Fact k="原操作">{pending.action === "cancel" ? "取消未提交项" : pending.action === "retry" ? "核对重试失败项" : "创建群发批次"}</Fact><Fact k={pending.batchId ? "原批次" : "原名单快照"}><span data-mono>{pending.batchId ?? pending.payload.selectionId}</span></Fact><Fact k="原理由">{pending.mutation?.reason ?? pending.payload.reason}</Fact>{pending.mutation && <Fact k="原批次版本">{pending.mutation.expectedVersion}</Fact>}{!pending.action && !pending.readOnlyRecovery && <><Fact k="原用途">{pending.payload.intent === "MAINTENANCE" ? "联系维护" : "普通服务"}</Fact><Fact k="原发送内容"><span className="rd-pre">{pending.payload.content}</span></Fact></>}</Facts><Fold inset title="技术信息" summary="操作编号与内容编号"><Facts><Fact k="操作编号"><span data-mono>{pending.commandKey}</span></Fact>{pending.payload.assetId && <Fact k="原图片编号"><span data-mono>{pending.payload.assetId}</span></Fact>}</Facts></Fold></div>:selection&&<><Facts><Fact k="发送给" lead unit="位客户">{selection.count}</Fact><Fact k="发送身份">当前专属客服本人</Fact><Fact k="用途">{intent==="SERVICE"?"普通服务":"联系维护"}</Fact><Fact k="内容类型">{image?"图片":choice?.kind==="SKU"?"商品推荐":choice?.kind==="LINK"?"页面链接":"文字"}</Fact><Fact k="发送内容"><span className="rd-pre">{text}</span>{choice&&<div>{choice.name}</div>}{image&&<img src={image.url} alt="确认群发图片" className="rd-thumb"/>}</Fact><Fact k="预览有效期至">{formatBusinessTimeCompact(selection.expiresAt)}（{businessZone().label}）<Explain label="预览过期怎么办" content="过期请返回选人重新核对。"/></Fact></Facts><Fold inset title="发送名单" open={previewList === "included"} onOpenChange={open=>setPreviewList(open ? "included" : "")} summary={`${selection.count} 位`}><RecordList label="发送名单" records={recipientRecords(selection)}/></Fold>{excluded(selection)}<Field label="操作理由" required hint={`至少 ${reasonRule.min} 字`} error={reasonLeft?reasonRule.hint(reason)||undefined:undefined}>{control=><Textarea {...control} rows={3} value={reason} maxLength={reasonRule.max} disabled={busy} count={`${visibleReasonLength(reason)}/${reasonRule.max}`} onChange={e=>setReason(e.target.value)} onBlur={()=>setReasonLeft(true)}/>}</Field><Check label="已核对名单、当前专属客服、用途和内容，确认逐客独立发送。" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/></>}</>}
-    {step===4&&job&&<><Facts><Fact k="批次状态">{stateText[job.state]??"未知"}<Explain label="执行结束是什么意思" content="执行结束不代表全部成功，逐客结果看下面。"/></Fact><Fact k="批次"><span data-mono="">{job.batchId}</span></Fact><Fact k="名单">共 {job.frozenCount} 位 · 当前可读 {job.visibleCount} 位</Fact><Fact k="发送内容">{job.contentRestricted?"客户归属已变化，部分内容、附件和明细受限；不显示旧缓存。":job.content}</Fact></Facts>
+    {step===3&&<>{pending?<div className="rd-stack"><Notice tone="warn">{permissionRefused ? replayFailure(pending) : isRetryExpired(pending)?RETRY_EXPIRED_TEXT:"已保存原操作号，查询和重试使用完全相同的名单及内容。"}</Notice><Facts><Fact k="原操作">{pending.action === "cancel" ? "取消未提交项" : pending.action === "retry" ? "核对重试失败项" : "创建群发批次"}</Fact><Fact k="提交时间">{beijing(new Date(pending.createdAt).toISOString())}（北京时间）</Fact><Fact k={pending.batchId ? "原批次" : "原名单快照"}><span data-mono>{pending.batchId ?? pending.payload.selectionId}</span></Fact><Fact k="原理由">{permissionRefused ? "—" : pending.mutation?.reason ?? pending.payload.reason}</Fact>{pending.mutation && <Fact k="原批次版本">{pending.mutation.expectedVersion}</Fact>}{!pending.action && !pending.readOnlyRecovery && !permissionRefused && <><Fact k="原用途">{pending.payload.intent === "MAINTENANCE" ? "联系维护" : "普通服务"}</Fact><Fact k="原发送内容"><span className="rd-pre">{pending.payload.content}</span></Fact></>}</Facts><Fold inset title="技术信息" summary="操作编号与内容编号"><Facts><Fact k="操作编号"><span data-mono>{pending.commandKey}</span></Fact>{pending.payload.assetId && <Fact k="原图片编号"><span data-mono>{pending.payload.assetId}</span></Fact>}</Facts>{pending.replayRejection&&<VerifiedReleaseButton disabled={busy} onClick={()=>releaseRejected(pending)} />}</Fold></div>:selection&&<><Facts><Fact k="发送给" lead unit="位客户">{selection.count}</Fact><Fact k="发送身份">当前专属客服本人</Fact><Fact k="用途">{intent==="SERVICE"?"普通服务":"联系维护"}</Fact><Fact k="内容类型">{image?"图片":choice?.kind==="SKU"?"商品推荐":choice?.kind==="LINK"?"页面链接":"文字"}</Fact><Fact k="发送内容"><span className="rd-pre">{text}</span>{choice&&<div>{choice.name}</div>}{image&&<img src={image.url} alt="确认群发图片" className="rd-thumb"/>}</Fact><Fact k="预览有效期至">{formatBusinessTimeCompact(selection.expiresAt)}（{businessZone().label}）<Explain label="预览过期怎么办" content="过期请返回选人重新核对。"/></Fact></Facts><Fold inset title="发送名单" open={previewList === "included"} onOpenChange={open=>setPreviewList(open ? "included" : "")} summary={`${selection.count} 位`}><RecordList label="发送名单" records={recipientRecords(selection)}/></Fold>{excluded(selection)}<Field label="操作理由" required hint={`至少 ${reasonRule.min} 字`} error={reasonLeft?reasonRule.hint(reason)||undefined:undefined}>{control=><Textarea {...control} rows={3} value={reason} maxLength={reasonRule.max} disabled={busy} count={`${visibleReasonLength(reason)}/${reasonRule.max}`} onChange={e=>setReason(e.target.value)} onBlur={()=>setReasonLeft(true)}/>}</Field><Check label="已核对名单、当前专属客服、用途和内容，确认逐客独立发送。" checked={ack} disabled={busy} onChange={e=>setAck(e.target.checked)}/></>}</>}
+    {step===4&&job&&<>{resultError&&batchReadBlock&&<Notice tone="warn">批次结果加载失败，下面是 {beijing(job.readAt)}（北京时间）核对的批次值：{resultError}</Notice>}<Facts><Fact k="批次状态">{stateText[job.state]??"未知"}<Explain label="执行结束是什么意思" content="执行结束不代表全部成功，逐客结果看下面。"/></Fact><Fact k="批次"><span data-mono="">{job.batchId}</span></Fact><Fact k="名单">共 {job.frozenCount} 位 · 当前可读 {job.visibleCount} 位</Fact><Fact k="发送内容">{job.contentRestricted?"客户归属已变化，部分内容、附件和明细受限；不显示旧缓存。":job.content}</Fact></Facts>
       <div className="m-bulk-counts"><span>总数 <b>{job.counts.total}</b></span>{job.counts.failed>0&&<StatusTag tone="danger">失败 {job.counts.failed}</StatusTag>}{job.counts.unknown>0&&<StatusTag tone="warn">结果未知 {job.counts.unknown}</StatusTag>}<span>已提交 <b>{job.counts.sent}</b></span>{job.counts.failed===0&&<span>失败 <b>0</b></span>}<span>跳过 <b>{job.counts.skipped}</b></span><span>取消 <b>{job.counts.cancelled}</b></span><span>待处理（已知）<b>{job.counts.pending-job.counts.unknown}</b></span></div>
       <div className="m-bulk-row"><Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button><span className="m-bulk-row-tools"><Button size="sm" disabledReason={cancelBlocked||undefined} onClick={()=>setMutationAction("cancel")}>取消未提交项</Button><Button size="sm" disabledReason={retryBlocked||undefined} onClick={()=>setMutationAction("retry")}>核对并重试失败项</Button></span></div>
       {mutationAction&&<div className="rd-stack"><p>{mutationAction==="cancel"?"取消只影响未提交项，已经提交的消息保留。":"先核对原消息，已提交、已转绑或不再维护项不重发。"}</p><Field label="操作理由" required hint="至少 8 字" explain="提交中或原结果未知时，不能重复操作。">{control=><Textarea {...control} rows={3} minLength={8} maxLength={200} value={mutationReason} count={`${visibleReasonLength(mutationReason)}/200`} onChange={e=>setMutationReason(e.target.value)}/>}</Field><div className="m-bulk-row-tools"><Button variant="primary" size="sm" disabled={busy||Boolean(pending)||!reasonRule.ok(mutationReason)||mutationReason.trim().length>200} disabledReason={mutationBlocked||undefined} onClick={()=>void mutate()}>确认{mutationAction==="cancel"?"取消剩余":"核对重试"}</Button><Button size="sm" disabled={busy} onClick={()=>setMutationAction(null)}>返回结果</Button></div></div>}
-      {(mutationFailure||resultError)&&<Notice tone="danger">{mutationFailure}{resultError&&` 结果加载失败，以上为上次已核对值：${resultError}`}</Notice>}
+      {(mutationFailure||resultError&&!batchReadBlock)&&<Notice tone="danger">{mutationFailure}{resultError&&!batchReadBlock&&` 逐客明细加载失败：${resultError}`}</Notice>}
       {!recipients?<p role="status">逐客明细暂未读取</p>:<Table label="逐客结果"><thead><tr><Th>客户</Th><Th>结果</Th><Th>原因</Th><Th>原会话</Th></tr></thead><tbody>{recipients.map((r,i)=><Tr key={r.customerId+":"+i}><Td>{customerName(r.customerId)}</Td><Td><StatusTag tone={recipientTone(r)}>{r.resultCertainty==="UNKNOWN"?"结果未知":stateText[r.state]??"未知"}</StatusTag></Td><Td>{r.failureCode?{...conversationReasonText,SUPPORT_ASSIGNMENT_CHANGED:"客户已转绑，本次不再发送",SUPPORT_MAINTENANCE_STOPPED:"客户已停止维护",SUPPORT_AGENT_UNAVAILABLE:"专属客服当前不可发送",RESULT_UNKNOWN:"需核对原提交结果",SUPPORT_BULK_PAYLOAD_REVIEW_REQUIRED:"原内容需核对，暂不自动重发"}[r.failureCode]??"执行未通过，请核对客户与原消息":"—"}{r.retryable?" · 可核对重试":""}</Td><Td>{r.conversationNo?<a className="rd-link" href={`/service/sessions?conversationNo=${encodeURIComponent(r.conversationNo)}`}>打开原客户会话</a>:"—"}</Td></Tr>)}</tbody></Table>}
       {recipientTotal>0&&<Pager label="逐客结果" total={recipientTotal} page={recipientPage} pageSize={10} sizes={[10]} onPage={setRecipientPage} onPageSize={()=>undefined}/>}</>}
     {step===4&&!job&&(mutationFailure||resultError)&&<Notice tone="danger" action={resultError ? <Button size="sm" onClick={()=>setResultRetry(n=>n+1)}>刷新原批次</Button> : undefined}>{mutationFailure}{resultError&&` ${resultError}`}</Notice>}
+    {step===4&&rejectedCommand&&<Fold inset title="技术信息" summary="原操作编号">
+      <Facts><Fact k="操作编号"><span data-mono>{rejectedCommand.commandKey}</span></Fact></Facts>
+      <VerifiedReleaseButton disabled={busy} onClick={()=>releaseRejected(rejectedCommand)} />
+    </Fold>}
     </>}
     <Fold inset title="已提交批次" explain="关闭后可以在这里恢复查看。" open={historyOpen} onOpenChange={setHistoryOpen} summary={jobsError?"加载失败":jobs?`${jobsTotal} 批`:"正在加载…"}>{jobsError?<div role="alert" className="m-bulk-row"><span>已提交批次加载失败。{jobsError}</span><Button size="sm" onClick={()=>setJobsRetry(n=>n+1)}>重试</Button></div>:!jobs?<p role="status">正在加载…</p>:<>{!jobs.length&&<p role="status">暂无已提交批次，提交群发后会显示在这里。</p>}{jobs.map(j=><div className="m-bulk-row" key={j.batchId}><span>{stateText[j.state]??"未知"} · {j.frozenCount} 位{j.counts.failed>0?` · 失败 ${j.counts.failed}`:""}</span><Button size="sm" disabled={Boolean(pending)||busy} onClick={()=>{setJob(j);setRecoveryBatchId(null);setMutationFailure("");setStep(4);setRecipientPage(1);setHistoryOpen(false);}}>查看结果</Button></div>)}{jobsTotal>0&&<Pager label="已提交批次" total={jobsTotal} page={jobsPage} pageSize={10} sizes={[10]} onPage={setJobsPage} onPageSize={()=>undefined}/>}</>}</Fold>
     </div>
-  </Modal>;
+  </Modal>{verifiedRelease.dialog}</>;
 }
