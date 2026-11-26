@@ -474,7 +474,7 @@ export function M3CustomerProfile({ ctx, customerId, source, transferEntry = tru
     ? history.some(row => row.pendingReplyCount! > 0)
     : service?.waitingReply;
   const tickets = (() => { try { return (JSON.parse(ctx.pget("I.support.tickets") ?? "[]") as SupportTicket[]).filter(t => String(t.userId) === customerId); } catch { return []; } })();
-  const financeLabels: Record<string,string> = { creditedDepositTotal: "累计成功充值实际入账", successfulWithdrawalPrincipalTotal: "累计成功提现金额", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现金额", balance: "余额", availableBalance: "可用余额" };
+  const financeLabels: Record<string,string> = { creditedDepositTotal: "累计成功充值", successfulWithdrawalPrincipalTotal: "累计成功提现", successfulWithdrawalFeeTotal: "累计提现手续费", successfulWithdrawalNetTotal: "累计提现实际到账", processingWithdrawalPrincipalTotal: "处理中提现金额", balance: "余额", availableBalance: "可用余额" };
   // 一页放得下就不显示（ST-13）。
   const pager = (page: number, total: unknown, set: (n:number)=>void, pageSize = 10, showTotal = true) => page === 1 && typeof total === "number" && total <= pageSize ? null : <div className="m3-profile-pager"><Button size="sm" disabled={page<=1} onClick={()=>set(page-1)}>上一页</Button><span>第 {page} 页{showTotal && <> · {show(total)} 条</>}</span><Button size="sm" disabled={typeof total !== "number" || page*pageSize>=total} onClick={()=>set(page+1)}>下一页</Button></div>;
   const summaryFinance = currencies.find(row => row.currency === summaryCurrency) ?? currencies[0];

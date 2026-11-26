@@ -995,6 +995,7 @@ function buildOperatorBrief(action: ReactNode, amplifies: boolean, hasEdit: bool
   ];
 }
 
+/** detail 是执行摘要里的「说明」：只写影响句和框里事实区、提示都没写的内容（VS-105），都写过了就传空串，不显示这一行。 */
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink, kind, stated }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history"; kind: OperatorBriefKind; stated?: { impact: string; check: string } }) {
   const surface = useRdSurface();
   const businessBrief = stated ?? STATED_BRIEF[kind];

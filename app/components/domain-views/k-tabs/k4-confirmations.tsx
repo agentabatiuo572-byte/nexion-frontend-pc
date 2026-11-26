@@ -21,7 +21,8 @@ function openK4UnscoredRecompute(ctx: KCtx, user: { userNo: string; effectiveSco
     errorHandled: true,
     action: `恢复系统评分 · ${user.userNo}`,
     effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-    detail: `这个账户还没有系统评分，现在按人工改分 ${user.effectiveScore} 分算。确认后人工改分不再生效，改分记录保留。`,
+    // 执行摘要的「说明」只写影响句、事实区和提示都没写的（VS-105）。
+    detail: "人工改分的记录会保留。",
     content: <>
       <Facts>
         <Fact k={`${now}的有效分`}>{user.effectiveScore} 分（人工改分）</Fact>
@@ -72,7 +73,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
       action: `手动改分 · ${user.userNo}`,
       title: "手动改分",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      detail: `把这个用户的风险分从 ${user.effectiveScore} 改成指定分数，马上生效，并记入操作记录。`,
+      detail: "这次改分记入操作记录。",
       content: userFacts(user),
       statedBrief: {
         impact: "有效分立即改成新分数，提现审核和提现升级告警按它判断。系统评分照常更新，但后台重算和发布新规则都保留这个改分，直到恢复系统评分或再次手动改分。",
@@ -98,7 +99,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
       action: `恢复系统评分 · ${user.userNo}`,
       title: "恢复系统评分",
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
-      detail: `取消人工改的分，按当前评分规则重新计算。${now}分 ${user.effectiveScore}，系统算的分 ${user.modelScore}。`,
+      detail: "",
       content: <>{userFacts(user)}<Notice tone="progress">算出多少分提交后才知道，不一定等于上面的系统评分。</Notice></>,
       statedBrief: {
         impact: "清除这位用户的人工改分，按当前生效的规则重新计算系统评分，算出的分立即生效。",
@@ -117,7 +118,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
       title: saved ? "按原操作重试 · 保存评分规则草稿" : "保存评分规则草稿",
       effect: <StatusTag tone="neutral" filled>只存草稿，不改线上评分</StatusTag>,
       confirmLabel: "保存草稿",
-      detail: `在当前${overview.draft ? "草稿" : "生效规则"}的基础上保存。保存后不影响线上评分，需要超级管理员另外发布。`,
+      detail: "",
       facts: (
         <Facts>
           <Fact k="保存为">{overview.draft ? `草稿 v${overview.draft.version}（覆盖现在的草稿）` : `新草稿 v${nextDraftVersion}`}</Fact>
@@ -141,7 +142,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
       title: `${saved ? "按原操作重试 · " : ""}发布评分规则 v${draft.version}`,
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认发布",
-      detail: `生效模型 v${overview.model.version} → 草稿 v${draft.version}，共改 ${changedCount(draftRows)} 项。`,
+      detail: "",
       facts: (
         <Facts>
           <Fact k="生效版本"><Change from={`v${overview.model.version}`} to={`v${draft.version}`} /></Fact>
@@ -175,7 +176,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
     title: `${saved ? "按原操作重试 · " : ""}把 v${model.version} 恢复为草稿`,
     effect: <StatusTag tone="neutral" filled>只改草稿，不改线上评分</StatusTag>,
     confirmLabel: "恢复为草稿",
-    detail: `用 v${model.version} 覆盖当前草稿，线上的 v${overview.model.version} 不变；恢复后还要核对并发布才会生效。`,
+    detail: "",
     facts: (
       <Facts>
         <Fact k="恢复的版本">v{model.version} · {model.createdBy} 起草于 {formatBusinessTimeCompact(model.createdAt, model.createdAt)}（{businessZone().label}）</Fact>
@@ -200,7 +201,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
     effect: <><StatusTag tone="progress" filled>立即生效</StatusTag><IrreversibleTag>人工改分全部清除</IrreversibleTag></>,
     confirmTone: "danger",
     confirmLabel: "确认全部重算",
-    detail: `按当前评分规则 v${overview.model.version} 重新计算 ${overview.totalUsers} 个用户的风险分，人工改过的分会被清除。手动一次最多 1000 人。`,
+    detail: "",
     facts: (
       <Facts>
         <Fact k={saved ? "提交时的评分用户" : "评分用户"} lead unit="人">{fmt(overview.totalUsers)}</Fact>
@@ -211,7 +212,7 @@ export function openK4Confirmation(ctx: KCtx, operation: K4Operation,
     content: <Notice tone="warn">一次把全部评分用户算完才出结果（最多 1000 人），人数多时要等一会儿；有一人算失败整次都不生效。评分历史和人工改分记录保留，但改分不再生效。</Notice>,
     statedBrief: {
       impact: `当前全部评分用户按 v${overview.model.version} 重新计算并清除人工改分，新分数立即生效。`,
-      check: "实际处理的是执行那一刻有评分的用户，人数可能和现在看到的不同；执行时核对评分规则没被别人改过、人数不超过 1000。",
+      check: "实际处理的是执行那一刻有评分的用户，人数可能和现在看到的不同；执行时核对评分规则没被别人改过；人数不超过 1000。",
     },
     reasonPlaceholder: "写清为什么要全部重算",
       ...recovery,

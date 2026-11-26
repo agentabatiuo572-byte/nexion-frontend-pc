@@ -861,10 +861,9 @@ export function K4Scoring({ ctx, rereadPending, onRereadRequired, onCommandsChan
       有 {unreadAlerts} 条提现升级告警未读
     </Conclusion>
   ) : (
-    <Conclusion state={overview.draft || overview.recomputePending > 0 ? "neutral" : "ok"} icon={overview.recomputePending > 0 ? RefreshCw : ShieldCheck} explain={conclusionExplain}
+    <Conclusion state={overview.recomputePending > 0 ? "progress" : overview.draft ? "neutral" : "ok"} icon={overview.recomputePending > 0 ? RefreshCw : ShieldCheck} explain={conclusionExplain}
       hint={overview.draft && canPublish ? "核对草稿改了什么，没问题就发布。" : undefined}>
-      {/* 排队重算是进行中：图标底用进行中蓝（VS-20），由 k-domain.css 认 data-k4-progress。 */}
-      {clauses.length > 0 ? overview.recomputePending > 0 ? <span data-k4-progress="">{status}</span> : status : `评分规则 v${overview.model.version} 生效中，全部评分用户都已按它算好`}
+      {clauses.length > 0 ? status : `评分规则 v${overview.model.version} 生效中，全部评分用户都已按它算好`}
     </Conclusion>
   );
 

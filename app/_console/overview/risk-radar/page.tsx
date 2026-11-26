@@ -350,7 +350,9 @@ export default function RiskRadarPage() {
   const reasonValid = thresholdRule.ready && reasonLength >= thresholdRule.min && reasonOverflow <= 0;
   const reasonHint = !thresholdRule.ready ? thresholdRule.error || "正在加载，稍候即可提交。"
     : reasonLength < thresholdRule.min ? `操作理由还差 ${thresholdRule.min - reasonLength} 字`
-      : reasonOverflow > 0 ? `操作理由多了 ${reasonOverflow} 字` : undefined;
+      : reasonLength > thresholdRule.max ? `操作理由多了 ${reasonLength - thresholdRule.max} 字`
+        // 可见字数没超、提交长度超了（后端 B129 修好前的临时上限）：不写数字，免得和框角的可见字数对不上。
+        : reasonOverflow > 0 ? "表情、符号、空格和换行占得多，已超出上限，请删短一些" : undefined;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
   usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
