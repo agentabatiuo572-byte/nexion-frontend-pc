@@ -1,6 +1,8 @@
 import type { AdminRole, BuiltinAdminRole } from "./console-nav";
 
 export const D5_MENU_NAME = "USDT 提现参数";
+export const D6_MENU_NAME = "汇率设置";
+export const D7_MENU_NAME = "越南盾提现参数";
 
 export const ROLE_LABEL: Record<BuiltinAdminRole, string> = {
   superadmin: "超级管理员",

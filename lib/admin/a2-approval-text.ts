@@ -24,12 +24,18 @@ import { findHighOp } from "./high-ops-registry";
 import { h3WeeklyZoneLabel } from "./h3-weekly-zone-labels";
 import { normalizeSessionRole } from "./session-role";
 import { TASK_CLASS_LABELS } from "./task-classes";
-import { D5_MENU_NAME, roleLabel } from "@/lib/nav/console-nav-labels";
+import { D5_MENU_NAME, D6_MENU_NAME, D7_MENU_NAME, roleLabel } from "@/lib/nav/console-nav-labels";
 import { amountDisplay } from "@/lib/format";
 
 const SEE_APPROVAL_DETAIL = "请在审批详情核对";
 const ACCOUNT_STATUS: Record<string, string> = { enabled: "启用", disabled: "停用" };
 export const a2AccountStatusText = (value: string) => Object.hasOwn(ACCOUNT_STATUS, value) ? ACCOUNT_STATUS[value] : undefined;
+function a1ApprovalStatusText(value: string) {
+  const text = value.trim().toLowerCase();
+  if (text === "已启用" || text === "已停用") return text;
+  const status = a2AccountStatusText(text) ?? (text === "启用" || text === "停用" ? text : undefined);
+  return status ? `已${status}` : undefined;
+}
 
 /**
  * Backend 111e00cd returns the persisted command op for tickets and history.
@@ -197,6 +203,23 @@ export function approvalActionName(ticket: A2OperationRow) {
   return registered && containsHan(registered) ? registered : name;
 }
 
+export function approvalTitleParts(ticket: A2OperationRow) {
+  const action = approvalActionName(ticket);
+  const object = objectText(ticket);
+  // A1's title has a fixed verb followed by the entire account name, which can itself contain 「 · 」.
+  const accountName = /^(?:启用账号|停用账号|编辑资料|撤销全部登录|新建运营账号|删除账号|重置密码|重置两步验证) · (.+)$/.exec(action)?.[1];
+  const a1ObjectInAction = isA1AccountTicket(ticket) && object !== "—"
+    && (accountName === object || ticket.operationCode === "a1_account_change_role" && action.startsWith(`改角色 · ${object} → `));
+  // The delegated C2 and K1 descriptors append their target identifier after the verb.
+  const delegatedTarget = /^(?:冻结账户|恢复账户|批量冻结关联账户|解除误判|判定为正常|标记可疑账户簇) · (.+)$/.exec(action)?.[1];
+  const delegatedObjectInAction = (ticket.operationCode === "c2_account_freeze" || ticket.operationCode === "c2_account_unfreeze"
+    || ticket.operationCode?.startsWith("k1_cluster_") === true) && object === ticket.obj && delegatedTarget === ticket.obj;
+  const parameterKey = G_PARAM_ACTION.exec(ticket.action)?.[2];
+  const parameterInAction = isGParamTicket(ticket) && (action === `调整创世参数 · ${object}`
+    || parameterKey === ticket.obj && G_PARAM_NAMES[ticket.obj] === object);
+  return { action, object, objectInAction: a1ObjectInAction || delegatedObjectInAction || parameterInAction };
+}
+
 /* ────────────────── 完整变更内容 ────────────────── */
 
 export const CHANGE_LABELS: Record<string, string> = {
@@ -282,9 +305,15 @@ function h3ConfigValue(key: string | undefined, value: string) {
   return reward.legacy ? `${reward.text}（旧名称 NEX）` : value;
 }
 
-/** 对象写运营看得懂的名字：G 参数写参数名，H4 奖池写「抽奖转盘奖池」；其余原样。 */
+const isA1AccountTicket = (ticket: { operationCode?: string | null }) => ticket.operationCode?.startsWith("a1_account_") === true;
+const WITHDRAWAL_OBJECT_NAMES = { D5: D5_MENU_NAME, D6: D6_MENU_NAME, D7: D7_MENU_NAME };
+
+/** 对象写运营看得懂的名字。业务编号保留，已知锁号和 A1 账号库内编号留在原单。 */
 export function objectText(w: { action: string; obj: string; after?: string; objDisplayName?: string; operationCode?: string | null; disclosureReview?: A2OperationRow["disclosureReview"] }) {
-  if (w.obj === "current" && isD5Approval(w)) return D5_MENU_NAME;
+  const withdrawal = w.obj === "current" ? withdrawalApprovalDomain(w) : undefined;
+  if (withdrawal) return WITHDRAWAL_OBJECT_NAMES[withdrawal];
+  if (w.obj === "currentPrice" && (w.operationCode ? w.operationCode === "g3_market_policy_change" : isG3Policy(w))) return "当前全站价格";
+  if (isA1AccountTicket(w) && /^\d+$/.test(w.obj)) return w.objDisplayName && w.objDisplayName !== w.obj ? w.objDisplayName : "—";
   if (w.operationCode === "h3_weekly_region_policy" && w.obj === "growth.h3.weekly-region-policy") return "区号规则";
   if (w.disclosureReview) return w.disclosureReview.jurisdiction;
   if (w.objDisplayName && isGParamTicket(w)) return w.objDisplayName;
@@ -358,7 +387,7 @@ export function valueText(key: string | undefined, value: unknown, labels = CHAN
     if (key === "clearMonthlyTarget" || key === "trialEligible") return "否";
     return "未设置";
   }
-  if (key?.startsWith("taglineTranslations.")) return String(value);
+  if (key === "tagline" || key?.startsWith("taglineTranslations.")) return String(value);
   // 「显示购买动态」和商品页确认框一样写开／关；其他布尔项照旧写是／否。
   if (key === "liveActivityVisible" && typeof value === "boolean") return value ? "开" : "关";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -419,13 +448,16 @@ export function parseReview(value: string): Review | null {
 }
 
 /** H4 stores a pool snapshot before and command values after, not two replacement configs. */
+const isSkuReview = (operationCode?: string) => operationCode === "e1_sku_create" || operationCode === "e1_sku_update";
+const SKU_MEDIA_EVIDENCE = ["imageAssetId", "imageObjectKey", "imagePreviewUrl"];
+
 export function reviewPair(before: string, after: string, operationCode?: string) {
   const b = parseReview(operationCode === "g_param" ? gParamText(before) : k1ApprovalSummaryText(before, operationCode));
   const a = parseReview(operationCode === "g_param" ? gParamText(after) : k1ApprovalSummaryText(after, operationCode));
   const labels = hiReviewLabels(operationCode);
   const original = { b, a, labels, evidenceKeys: [] as string[] };
   // E1 商品：后端冻结的是代码值（系列、档位、商城状态、生命周期、库存模式），这里换成和商品页一样的名称，价格带币种。新建没有前值；旧票没有这一项时不补。
-  if (operationCode === "e1_sku_create" || operationCode === "e1_sku_update") {
+  if (isSkuReview(operationCode)) {
     const creating = operationCode === "e1_sku_create";
     // 新建的结构化前值是默认设置。更早的文字摘要沿用原显示。
     const skuBefore = creating && b?.kind === "object" ? null : b;
@@ -457,7 +489,7 @@ export function reviewPair(before: string, after: string, operationCode?: string
     // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
     const filled = (review: Review | null): Review | null => skuBefore || review?.kind !== "object" ? review
       : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(skuBefore, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: [] as string[] };
+    return { b: named(skuBefore, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: SKU_MEDIA_EVIDENCE };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
@@ -559,11 +591,10 @@ export const CHANGE_UNAVAILABLE = "未能读取变更明细";
 
 type ApprovalChangeValues = Pick<A2OperationRow, "operationCode" | "action" | "before" | "after" | "withdrawalChanges">;
 
-const isD5Approval = (ticket: { operationCode?: string | null; action: string }) =>
-  ticket.operationCode === D5_APPROVAL_OP || (!ticket.operationCode && ticket.action === "放宽提现参数");
-
-export function d5ApprovalChanges(ticket: ApprovalChangeValues) {
-  if (isD5Approval(ticket)) return withdrawalProposalChanges("D5", ticket);
+function withdrawalApprovalDomain({ operationCode, action }: { operationCode?: string | null; action: string }) {
+  if (operationCode === D5_APPROVAL_OP || !operationCode && action === "放宽提现参数") return "D5";
+  if (operationCode === "d6_fx_quote" || !operationCode && ["调整汇率", "调整敏感汇率"].includes(action)) return "D6";
+  if (operationCode === "d7_payout_vnd_config" || !operationCode && action === "放宽越南盾提现参数") return "D7";
 }
 
 const FX_APPROVAL_FIELDS = [
@@ -585,13 +616,14 @@ function fxApprovalNumber(value: unknown) {
   return f4Decimal(text)?.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") ?? null;
 }
 
-export function approvalDisplayChanges(ticket: ApprovalChangeValues, accountStatusText = a2AccountStatusText): WithdrawalProposalChanges | null | undefined {
-  const { action, before, after, operationCode } = ticket;
+export function approvalDisplayChanges(ticket: ApprovalChangeValues, accountStatusText = a1ApprovalStatusText): WithdrawalProposalChanges | null | undefined {
+  const { before, after, operationCode } = ticket;
   if (operationCode === "a1_account_status_update") {
     const from = accountStatusText(before), to = accountStatusText(after);
     return from && to ? { facts: [{ key: "accountStatus", label: "账号状态", before: from, after: to }], forced: false } : null;
   }
-  if (operationCode === "d6_fx_quote" || !operationCode && ["调整汇率", "调整敏感汇率"].includes(action)) {
+  const withdrawal = withdrawalApprovalDomain(ticket);
+  if (withdrawal === "D6") {
     const previous = fxApprovalValues(before), next = fxApprovalValues(after);
     const facts: WithdrawalProposalChanges["facts"] = [];
     for (const [key, label, unit] of FX_APPROVAL_FIELDS) {
@@ -601,10 +633,7 @@ export function approvalDisplayChanges(ticket: ApprovalChangeValues, accountStat
     }
     return facts.length ? { facts, forced: false } : null;
   }
-  if (operationCode === "d7_payout_vnd_config" || !operationCode && action === "放宽越南盾提现参数") {
-    return withdrawalProposalChanges("D7", ticket);
-  }
-  return d5ApprovalChanges(ticket);
+  if (withdrawal) return withdrawalProposalChanges(withdrawal, ticket);
 }
 
 /** amountKey：整张单是哪个字段（a2TicketKey），文字型前后值按它判断是不是金额。 */
@@ -635,7 +664,7 @@ export function changeSummary(before: string, after: string, omit: readonly stri
   };
   const keys = Object.keys(a.value).filter((key) => !omit.includes(key) && !evidenceKeys.includes(key));
   const changed = b?.kind === "object" ? keys.filter((key) => !same(b.value[key], a.value[key])) : keys;
-  const first = changed[0] ?? keys[0];
+  const first = changed[0] ?? (isSkuReview(operationCode) ? undefined : keys[0]);
   if (!first) return { main: "—" };
   const now = a.value[first];
   const was = b?.kind === "object" ? b.value[first] : undefined;
@@ -643,10 +672,12 @@ export function changeSummary(before: string, after: string, omit: readonly stri
   const { label, before: wasShown, after: nowShown } = derivedBaseRateShown(first, labels[first] ?? first, was, now, !b, pair[0], pair[1]);
   const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : nowShown}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
   const sub = !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${wasShown}` : "原 见详情";
-  const preserveText = summaryLabels !== undefined && ["name", "displayName", "reason", "remark", "description", "tagline", "specDocumentTitle",
-    "名称", "任务名称", "原因", "理由", "备注", "说明"].includes(first);
+  const preserveText = ["name", "displayName", "reason", "remark", "description", "名称", "任务名称", "原因", "理由", "备注", "说明"].includes(first)
+    || isSkuReview(operationCode) && (["skuId", "tagline", "badge", "specDocumentTitle"].includes(first) || first.startsWith("taglineTranslations."));
   if (summaryLabels && !preserveText && [wasShown, nowShown].some(value => value && !readableQueueChange(value))) return { main: SEE_APPROVAL_DETAIL };
-  return { main, sub, ...(preserveText ? { preserveText: true } : {}) };
+  // E1's SKU identifier is the object itself when it is the field shown on the main line.
+  const objectId = isSkuReview(operationCode) && first === "skuId" && typeof now === "string" ? now : undefined;
+  return { main, sub, preserveText, objectId };
 }
 
 /** 设备审批只翻译后端给出的状态码；占位的原状态不能用设备当前状态补写。 */
@@ -802,13 +833,13 @@ const QUOTA_CHANGE_LABELS: Record<string, string> = {
   monthlyQuota: "每月名额（台）", unlockMode: "两项条件", status: "状态",
 };
 const QUOTA_UNLOCK_MODE: Record<string, string> = { ALL: "两项都要满足", EITHER: "满足一项就行" };
-// 删除角色的 active 只表示角色仍存在，启停是另一项状态。
-const ROLE_DELETE_STATUS: Record<string, string> = { active: "已存在", deleted: "已删除" };
+// 删除角色的 active 表示未删除，启停是另一项状态。
+const ROLE_DELETE_STATUS: Record<string, string> = { active: "未删除", deleted: "已删除" };
 
 const knownValue = (names: Record<string, string> | undefined, value: string) =>
   names && Object.hasOwn(names, value) ? names[value] : value;
 
-function queueChangeValue(ticket: A2OperationRow, text: string) {
+function approvalChangeValue(ticket: A2OperationRow, text: string) {
   const operation = ticket.operationCode;
   if (operation === "a1_account_change_role" || operation === "a1_account_create") {
     const role = (code: string) => roleLabel(code === "super" ? "superadmin" : normalizeSessionRole(code));
@@ -822,6 +853,14 @@ function queueChangeValue(ticket: A2OperationRow, text: string) {
     : operation === "e2_task_status" ? TASK_STATUS : undefined;
   const shown = knownValue(names, text.toLowerCase());
   return names && shown !== text.toLowerCase() ? shown : text;
+}
+
+export function approvalReviewValues(ticket: A2OperationRow) {
+  return {
+    before: approvalChangeValue(ticket, changeBefore(ticket)),
+    after: approvalChangeValue(ticket, changeAfter(ticket)),
+    withdrawalChanges: approvalDisplayChanges(ticket),
+  };
 }
 
 function structuredQueueValue(text: string, flattenSimulation: boolean, valueNames: Record<string, Record<string, string>>) {
@@ -863,7 +902,7 @@ function weeklyRegionChange(ticket: A2OperationRow) {
   };
 }
 
-type QueueChange = { main: string; sub?: string; title?: string };
+type QueueChange = { main: string; sub?: string; title?: string; objectId?: string };
 
 function queueChange(ticket: A2OperationRow): (QueueChange & { preserveText?: boolean }) | undefined {
   const mission = h3MissionView(ticket);
@@ -880,8 +919,7 @@ function queueChange(ticket: A2OperationRow): (QueueChange & { preserveText?: bo
   const fund = fundTicket(ticket);
   if (isV8PromotionTicket(ticket) || fund?.kind === "f5Status" || fund?.kind === "f5Reissue" || fund?.kind === "f5Reverse") return;
 
-  let before = queueChangeValue(ticket, changeBefore(ticket));
-  let after = queueChangeValue(ticket, changeAfter(ticket));
+  let { before, after, withdrawalChanges } = approvalReviewValues(ticket);
   let labels: Record<string, string> = {};
   const omit = g3PolicyExecutionTiming(ticket) ? ["生效时间"] : [];
   if (ticket.operationCode === "f4_quota_tier_create") {
@@ -895,11 +933,7 @@ function queueChange(ticket: A2OperationRow): (QueueChange & { preserveText?: bo
     after = structuredQueueValue(after, true, values);
     omit.push("expectedVersion");
   }
-  const displayChanges = approvalDisplayChanges(ticket, (value) => {
-    const status = a2AccountStatusText(value.toLowerCase());
-    return status ? `已${status}` : undefined;
-  });
-  return changeSummary(before, after, omit, reviewOperation(ticket), a2TicketKey(ticket), displayChanges, labels);
+  return changeSummary(before, after, omit, reviewOperation(ticket), a2TicketKey(ticket), withdrawalChanges, labels);
 }
 
 const MACHINE_CHANGE = /^\s*[\[{]|\b[A-Za-z][\w.]*\s*=|\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b|\b[a-z][a-z\d]*[A-Z][A-Za-z\d]*\b/;
@@ -912,8 +946,11 @@ function readableQueueChange(text: string) {
 
 export function approvalQueueChange(ticket: A2OperationRow): QueueChange {
   const change = queueChange(ticket);
-  if (!change || change.main === "—" || change.main === CHANGE_UNAVAILABLE) return { main: SEE_APPROVAL_DETAIL };
-  const { main, sub, title, preserveText } = change;
+  if (!change || change.main === "—" || change.main === CHANGE_UNAVAILABLE) {
+    const reason = ticket.reason.trim();
+    return { main: reason && reason !== "—" && !parseReview(ticket.before) && !parseReview(ticket.after) ? reason : SEE_APPROVAL_DETAIL };
+  }
+  const { main, sub, title, preserveText, objectId } = change;
   if (!preserveText && (!readableQueueChange(main) || sub && !readableQueueChange(sub))) return { main: SEE_APPROVAL_DETAIL };
-  return { main, sub, title: title?.split("\n").every(readableQueueChange) ? title : undefined };
+  return { main, sub, objectId, title: preserveText || title?.split("\n").every(readableQueueChange) ? title : undefined };
 }

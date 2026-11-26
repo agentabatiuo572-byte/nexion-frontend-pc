@@ -10,6 +10,7 @@ import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bell, AlertTriangle, ChevronRight } from "lucide-react";
+import { InlineRetry } from "@/app/components/rd/block-state";
 import { Drawer } from "@/app/components/rd/overlay";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
@@ -17,7 +18,7 @@ import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, use
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel, type AdminRole } from "@/lib/nav/console-nav";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { approvalChangeSummary } from "@/lib/admin/a2-approval-summary";
 import { approvalActionName } from "@/lib/admin/a2-approval-text";
 import { isRiskConclusion, riskFeedTitle } from "@/lib/admin/risk-feed";
@@ -70,6 +71,9 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [pendingOperations, setPendingOperations] = useState<A2OperationRow[]>([]);
   const [a2Error, setA2Error] = useState<string | null>(null);
+  const [a2Loading, setA2Loading] = useState(false);
+  const [a2ReadRequest, setA2ReadRequest] = useState(0);
+  const refreshA2 = () => setA2ReadRequest((count) => count + 1);
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const hasAdminSession = session != null;
@@ -86,9 +90,11 @@ export function NotificationBell() {
     if (!canReadA2) {
       setPendingOperations([]);
       setA2Error(null);
+      setA2Loading(false);
       return undefined;
     }
     let alive = true;
+    setA2Loading(true);
     fetchA2Overview()
       .then((overview) => {
         if (!alive) return;
@@ -98,12 +104,15 @@ export function NotificationBell() {
       .catch((error: unknown) => {
         if (!alive) return;
         setPendingOperations([]);
-        setA2Error(displayAdminError(error));
+        setA2Error(displayAdminReadError(error));
+      })
+      .finally(() => {
+        if (alive) setA2Loading(false);
       });
     return () => {
       alive = false;
     };
-  }, [canReadA2]);
+  }, [canReadA2, a2ReadRequest]);
   const bDomain = useBDomainDashboard(canReadBDomain);
   const bAlerts: ShellAlert[] = (() => {
     if (bDomain.error) {
@@ -171,7 +180,7 @@ export function NotificationBell() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => { if (!open) refreshA2(); setOpen(true); }}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`告警和待审批的申请${badge > 0 ? ` · ${badge} 条` : ""}`}
@@ -180,7 +189,8 @@ export function NotificationBell() {
         <Bell size={16} aria-hidden />
         {badge > 0 && <span className="rd-top-count font-mono-tabular">{badge > 9 ? "9+" : badge}</span>}
       </button>
-      <NotificationDrawer open={open} alerts={alerts} alertsLoading={bDomain.loading && !bDomain.hasData} pendingOperations={pendingOperations} a2Error={a2Error} onClose={() => setOpen(false)} />
+      <NotificationDrawer open={open} alerts={alerts} alertsLoading={bDomain.loading && !bDomain.hasData} pendingOperations={pendingOperations}
+        a2Error={a2Error} a2Loading={a2Loading} onRetryA2={refreshA2} onClose={() => setOpen(false)} />
     </>
   );
 }
@@ -191,6 +201,8 @@ function NotificationDrawer({
   alertsLoading,
   pendingOperations,
   a2Error,
+  a2Loading,
+  onRetryA2,
   onClose,
 }: {
   open: boolean;
@@ -198,6 +210,8 @@ function NotificationDrawer({
   alertsLoading: boolean;
   pendingOperations: A2OperationRow[];
   a2Error: string | null;
+  a2Loading: boolean;
+  onRetryA2: () => void;
   onClose: () => void;
 }) {
   const reach = useReach();
@@ -207,7 +221,7 @@ function NotificationDrawer({
       open={open}
       onClose={onClose}
       title="告警和待审批的申请"
-      sub={`${alerts.length} 条告警 · ${pendingOperations.length} 项待审批`}
+      sub={`${alerts.length} 条告警 · ${a2Error ? "—" : pendingOperations.length} 项待审批`}
       aria-label="告警和待审批的申请"
       footer={canOpenAudit ? (
         <Link href="/platform/audit" prefetch={false} onClick={onClose} className="rd-btn rd-alert-cta" data-variant="primary">
@@ -239,10 +253,10 @@ function NotificationDrawer({
       <h3 className="rd-alert-heading">待审批的申请</h3>
       <div className="rd-alert-list">
         {a2Error && (
-          <AlertRow href={canOpenAudit ? "/platform/audit" : undefined} tone="danger" onClose={onClose}>
+          <AlertRow tone="danger" onClose={onClose}>
             <span className="min-w-0 flex-1">
-              <span className="rd-alert-text">待审批的申请没有读到</span>
-              <span className="rd-alert-note">{a2Error}</span>
+              <span className="rd-alert-text">待审批操作加载失败</span>
+              <span className="rd-alert-note">{a2Error}{" "}<InlineRetry onRetry={onRetryA2} retrying={a2Loading} /></span>
             </span>
           </AlertRow>
         )}

@@ -1,7 +1,7 @@
 "use client";
 import {
-  a2AccountStatusText, a2Pair, a2Shown, a2TicketKey, actionName, approvalActionName, approvalDisplayChanges, approvalQueueChange,
-  CHANGE_LABELS, CHANGE_UNAVAILABLE, changeAfter, changeBefore, changeSummary, d5ApprovalChanges, derivedBaseRateShown,
+  a2AccountStatusText, a2Pair, a2Shown, a2TicketKey, actionName, approvalActionName, approvalDisplayChanges, approvalQueueChange, approvalReviewValues, approvalTitleParts,
+  CHANGE_LABELS, CHANGE_UNAVAILABLE, changeAfter, changeBefore, changeSummary, derivedBaseRateShown,
   F5_STATE_FROM, F5_STATE_NAME, F_BATCH_DIGEST, F_CONFIG_CODES, f1VoucherReverse, fBatchLabel, fBatchLogItems, fBatchPages, fBatchTicket, fundTicket,
   G_PARAM_ACTION, g3PolicyExecutionTiming, gParamText, h3ConfigName, h3MissionView, isG3Policy, isGParamTicket, isRecord,
   isRoleGrantsTicket, isRowList, isV8PromotionAction, isV8PromotionTicket, j1GateName, k1Amount, k1Source, k1TicketView,
@@ -651,7 +651,7 @@ function logDeltaText({ delta, approvalAction, action, resourceType }: A2AuditLo
     const [before, after] = sides;
     const account = resourceType === "A2_OPERATION" && a2AccountStatusText(before) && a2AccountStatusText(after);
     const operationCode = account ? "a1_account_status_update" : action === "FX_QUOTE_UPDATED" ? "d6_fx_quote" : undefined;
-    const changes = approvalDisplayChanges({ action: approvalAction ?? "", before, after, operationCode });
+    const changes = approvalDisplayChanges({ action: approvalAction ?? "", before, after, operationCode }, a2AccountStatusText);
     if (changes === null) return CHANGE_UNAVAILABLE;
     if (changes) return [...changes.facts.map(({ label, before, after }) => `${label} ${before} → ${after}`),
       ...(changes.forced ? ["强制保存倒挂价"] : [])].join("，");
@@ -1743,7 +1743,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const immediate = <StatusTag tone="progress" filled>立即生效</StatusTag>;
 
   /** 框标题只写「批准审批单」，动作名放在标题下面一行，长了省略、悬停看全文（设计偏差二选一的第一种）。 */
-  const subject = (w: A2OperationRow) => <span className="a2-confirm-subject" title={actionName(w)}>{shortCodes(actionName(w))}</span>;
+  const subject = (name: string) => <span className="a2-confirm-subject" title={name}>{shortCodes(name)}</span>;
 
   /** 本人、已退役、解析不了、有未确认操作、正在加载、读不到退款金额：入口先禁用并写原因（第五节）。没有业务权限的入口不显示（OP-124），这里只兜底。 */
   const decideBlock = (w: A2OperationRow, kind: "approve" | "reject" | "withdraw") => {
@@ -1982,6 +1982,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   };
 
   const approveRequest = (w: A2OperationRow): A4ActionConfirmReq => {
+    const name = approvalActionName(w);
     const v8Promotion = isV8PromotionTicket(w);
     const coverageMode = approvalCoverageMode(w);
     const amplifies = coverageMode === "amplifies";
@@ -2059,8 +2060,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     return {
       briefKind,
       title: "批准审批单",
-      action: <>确认执行 · {w.id}({fBatchTicket(w) || w.operationCode === "j1_gate_resume" ? actionName(w) : a2ActionText(w.action)})</>,
-      effect: <>{subject(w)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
+      action: <>确认执行 · {w.id}({name})</>,
+      effect: <>{subject(name)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
         : coverageMode === "onApproval" ? <>{approvalCoverageCopy(w)}</> : <>{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && `${BACKEND_CHECKS_NOTE}。`}</>,
@@ -2073,7 +2074,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           {fBatchTicket(w)?.items ? <A2BatchReview items={fBatchTicket(w)!.items!} />
             : isRoleGrantsTicket(w)
             ? <A2RoleGrantsChange limit={4} review={w.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} before={changeBefore(w)} after={changeAfter(w)} omit={g3 ? ["生效时间"] : undefined} withdrawalChanges={d5ApprovalChanges(w)}
+            : <A2ChangeReview operationCode={reviewOperation(w)} amountKey={a2TicketKey(w)} {...approvalReviewValues(w)} omit={g3 ? ["生效时间"] : undefined}
                 facts={v8Promotion ? v8PromotionFacts(w) : f1VoucherReverse(w) && <Fact k="批准后">{f1VoucherReverse(w)!.impact}</Fact>}>
                 {/* I5 发布、设置／切换生效版本：列表上直接批准也看同一份对照，和详情抽屉一样（BUG-503）。 */}
                 <A2I5DisclosureReview key={w.id} ticket={w} />
@@ -2129,7 +2130,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     briefKind: "record",
     title: "驳回审批单",
     action: <>取消执行 · {w.id} · {w.operationCode === "j1_gate_resume" ? actionName(w) : a2ActionText(w.action)}</>,
-    effect: <>{subject(w)}{immediate}</>,
+    effect: <>{subject(actionName(w))}{immediate}</>,
     detail: <>{w.retiredOperation ? "此操作已退役。驳回后保留历史记录，不能重新发起。" : "驳回后这张单结束，要做需重新发起。"}</>,
     facts: ticketFacts(w, "reject", (() => {
       const v = k1TicketView(w);
@@ -2161,7 +2162,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     briefKind: "record",
     title: "撤回我的申请",
     action: <>撤回我的申请 · {w.id}</>,
-    effect: <>{subject(w)}{immediate}</>,
+    effect: <>{subject(actionName(w))}{immediate}</>,
     detail: <>撤回后原操作不会执行。只有申请人本人能撤回。</>,
     facts: <Facts><Fact k="审批单"><span data-mono>{w.id}</span></Fact><Fact k="对象">{objectNode(w)}</Fact></Facts>,
     statedBrief: { impact: "改为已撤回，原操作不执行。", check: "理由写清撤回原因或工单号。" },
@@ -2498,10 +2499,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   </TableMessage>
                 ) : qPageRows.map((w) => {
                   const change = approvalQueueChange(w);
-                  const name = approvalActionName(w);
+                  const { action: name, object, objectInAction } = approvalTitleParts(w);
+                  const showObject = w.objDisplayName && !isGParamTicket(w) && object && object !== "—" && !objectInAction;
                   return (
                     <Tr key={w.id} selected={w.id === ticketId} onOpen={() => { if (!submitting) setTicketId(w.id); }}>
-                      <Td sticky="start"><Cell main={w.objDisplayName && !isGParamTicket(w) ? <>{name} · {w.objDisplayName}{w.objDisplayName !== w.obj && <> <span className="rd-note" data-mono>{w.obj}</span></>}</> : name} title={`${name}\n对象：${objectText(w)}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
+                      <Td sticky="start"><Cell main={showObject ? `${name} · ${object}` : name} title={`${name}\n对象：${object || "—"}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={change.title ?? `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
@@ -2833,7 +2835,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             : fBatchTicket(shown)?.items ? <A2BatchReview items={fBatchTicket(shown)!.items!} />
             : isRoleGrantsTicket(shown)
             ? <A2RoleGrantsChange review={shown.roleGrantsReview} fallback={<A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} />} />
-            : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} before={changeBefore(shown)} after={changeAfter(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined} withdrawalChanges={approvalDisplayChanges(shown)}
+            : <A2ChangeReview operationCode={reviewOperation(shown)} amountKey={a2TicketKey(shown)} {...approvalReviewValues(shown)} omit={g3PolicyExecutionTiming(shown) ? ["生效时间"] : undefined}
                 facts={isV8PromotionTicket(shown) ? v8PromotionFacts(shown)
                   : shownFund?.kind === "f5Reissue" ? <Fact k="补发后"><F5ReissueOutcome ids={shownFund.ids} /></Fact>
                   : f1VoucherReverse(shown) && <Fact k={shown.status === "pending" ? "批准后" : "申请时说明"}>{f1VoucherReverse(shown)!.impact}</Fact>}>

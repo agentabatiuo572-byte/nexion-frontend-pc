@@ -8,7 +8,7 @@
  * 路径用可读英文 slug(/finance/withdrawals),id(A1–L5)仅作展示 + verify 标签。
  * status: flagship=高保真已建 · scaffold=规格就绪待开发 · planned=规格撰写中。
  */
-import { D5_MENU_NAME } from "./console-nav-labels";
+import { D5_MENU_NAME, D6_MENU_NAME, D7_MENU_NAME } from "./console-nav-labels";
 import type { LucideIcon } from "lucide-react";
 import {
   Settings,
@@ -131,8 +131,8 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "D3", name: "资金储备与应付款", path: "/finance/pool", prdAnchor: "D3", batch: "V1", status: "flagship" },
       { id: "D4", name: "账本与账单核对", path: "/finance/ledger", prdAnchor: "D4", batch: "V1", status: "flagship" },
       { id: "D5", name: D5_MENU_NAME, path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
-      { id: "D6", name: "汇率设置", path: "/finance/fx-rate", prdAnchor: "D6", batch: "V1", status: "flagship" },
-      { id: "D7", name: "越南盾提现参数", path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
+      { id: "D6", name: D6_MENU_NAME, path: "/finance/fx-rate", prdAnchor: "D6", batch: "V1", status: "flagship" },
+      { id: "D7", name: D7_MENU_NAME, path: "/finance/payout-vnd", prdAnchor: "D7", batch: "V1", status: "flagship" },
     ],
   },
   {
