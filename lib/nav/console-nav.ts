@@ -456,6 +456,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
     return upper.includes(`_${code}_`) && /_(WRITE|MANAGE|PUBLISH|EDIT)(_|$)/.test(upper);
   });
   const readOnlyConfig = new Set(snapshot.role === "support" && !supportScopeUnknown ? ["M4", "M5"].filter((code) => !supportWrites(code)) : []);
+  const canReadB5 = snapshot.authorities?.includes("overview_b5_read");
   const allowed = new Set(effectiveCodes
     .map((code) => code.trim().toUpperCase())
     .filter(Boolean)
@@ -485,6 +486,7 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
     const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
     const l2 = domain.l2
       .filter((item) => item.id !== "M6" && allowed.has(item.id.toUpperCase()) && !readOnlyConfig.has(item.id)
+        && (item.id !== "B5" || canReadB5)
         && (!supportScopeUnknown || !["M1", "M2", "M3"].includes(item.id) || item.id === "M1" && canReviewPerformanceExports))
       .flatMap((item) => {
         const node = findNode(item.id.toUpperCase(), (candidate) =>

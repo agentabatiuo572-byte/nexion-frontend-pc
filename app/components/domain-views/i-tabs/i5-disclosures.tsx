@@ -164,7 +164,7 @@ export function I5Disclosures({ ctx, errorText }: { ctx: ICtx; errorText: string
   const writes = useI5Writes({
     actions: ctx.actions,
     toast: ctx.toast,
-    canQuery: has("platform_a2_read"),
+    has,
     onSettled: async ({ op }) => {
       if (op.kind === "legal-save" || op.kind === "legal-transition") setLegalNonce((value) => value + 1);
       else if (op.kind === "privacy") setPrivacyNonce((value) => value + 1);

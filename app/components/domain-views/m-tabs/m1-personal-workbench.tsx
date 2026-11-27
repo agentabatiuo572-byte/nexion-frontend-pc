@@ -145,6 +145,9 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [saveError, setSaveError] = useState<string | null>(null);
   const [maintenanceNeedsRefresh, setMaintenanceNeedsRefresh] = useState(false);
   const [maintenancePending, setMaintenancePending] = useState<MaintenanceRecord | null>(null);
+  const [submittingMaintenanceKey, setSubmittingMaintenanceKey] = useState<string>();
+  const [maintenanceChecks, setMaintenanceChecks] = useState<Record<string, string>>({});
+  const failedMaintenance = useRef(new Map<string, MaintenanceRecord>());
   // null while unchecked or unreadable: the dialog then gives the real answer. false hides the entry (BUG-040).
   const [transferInScope, setTransferInScope] = useState<boolean | null>(null);
   const detailsGeneration = useRef(0);
@@ -346,7 +349,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     const key = crypto.randomUUID();
     maintenanceCommands.remember(fingerprint, key, { actorId: adminId, payload });
     if (!maintenanceCommands.isDurablyStored(fingerprint, key)) { maintenanceCommands.forget(fingerprint, key); setSaveError("浏览器存不下这次操作，没有提交维护调整；请允许浏览器保存网站数据后重试。"); return; }
-    setMaintenancePending(maintenanceCommands.list().find((row) => row.commandKey === key) ?? null);
+    failedMaintenance.current.delete(payload.customerId);
+    setSubmittingMaintenanceKey(key);
     setSaving(true); setSaveError(null);
     let acknowledged = false;
     try {
@@ -368,7 +372,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       if (acknowledged && invalidateCustomerOnDenied(payload.customerId, error)) return;
       // 结果未知只在上方恢复面板说一次（OP-93、DT-12），不另弹提示。
       if (detailsGeneration.current === generation) { closeDetail(); setSnapshot(null); setRowsRefresh(value => value + 1); }
-    } finally { setSaving(false); }
+    } finally { setSubmittingMaintenanceKey(undefined); setSaving(false); }
   };
   const checkMaintenance = async (record = maintenancePending) => {
     if (!record || saving || record.actorId !== adminId) return;
@@ -386,17 +390,34 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
           ? current.maintenanceEnabled === record.payload.enabled && current.maintenanceVersion > record.payload.expectedVersion
           : current.maintenanceEnabled !== record.payload.enabled && current.maintenanceVersion === record.payload.expectedVersion);
         if (!matches) throw new Error("MAINTENANCE_RECOVERY_FACTS_CHANGED");
+        if (result.status === "FAILED") failedMaintenance.current.set(record.payload.customerId, record);
         maintenanceCommands.forget(record.fingerprint, record.commandKey); setMaintenancePending(null); setSaveError(null);
+        setMaintenanceChecks(({ [record.commandKey]: _check, ...remaining }) => remaining);
         window.dispatchEvent(new Event("support-todo-changed"));
         closeDetail(); setRowsRefresh((value) => value + 1); setNotice(result.status === "FAILED" ? "上次操作没有成功，请重新确认。" : "上次操作已确认，请查看最新资料。");
-      } else setNotice("原操作结果仍然未知，请稍后再查询。");
-    } catch (error) { if (actor === actorStamp()) { closeDetail(); if (!readingCustomer || !invalidateCustomerOnDenied(record.payload.customerId, error)) setNotice("结果暂时查不到，原内容和理由已保留；客户名单还是上次读取的。"); } }
+      } else setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "原操作结果仍然未知，请稍后再查询。" }));
+    } catch (error) {
+      if (actor !== actorStamp()) return;
+      closeDetail();
+      if (!readingCustomer || !invalidateCustomerOnDenied(record.payload.customerId, error)) {
+        setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "结果暂时查不到，原内容和理由已保留；客户名单还是上次读取的。" }));
+      }
+    }
     finally { setSaving(false); }
   };
   useEffect(() => { window.dispatchEvent(new Event("m1-pending-changed")); }, [maintenancePending, saving]);
   const listRecords = rows?.records ?? [];
   const canMaintain = canBulk && Boolean(detail && detail.assignmentId && detail.agentAdminId === adminId);
-  const pendingRecords = maintenanceCommands.list().filter(record => record.actorId === adminId);
+  const pendingRecords = maintenanceCommands.list().filter(record => record.actorId === adminId && record.commandKey !== submittingMaintenanceKey);
+  const openMaintenance = (customer: SupportCustomerDetailWithProfile) => {
+    const failed = failedMaintenance.current.get(customer.customerId);
+    const original = failed && failed.actorId === adminId ? failed.payload : undefined;
+    const enabled = !customer.maintenanceEnabled;
+    setMaintenanceAction(enabled ? "resume" : "stop");
+    setReason(original && original.assignmentId === customer.assignmentId
+      && original.expectedVersion === customer.maintenanceVersion && original.enabled === enabled ? original.reason : "");
+    setReasonLeft(false); setSaveError(null);
+  };
   const todoTotal = view === "dashboard" && rows ? rows.total : null;
   const accountTone = (row: SupportCustomer): StateTone => row.accountState === "ACTIVE" ? "ok" : "done";
   const maintenanceTone = (row: SupportCustomer): StateTone => row.maintenanceEnabled === false ? "done" : row.maintenanceStatus === "DUE" ? "neutral" : row.maintenanceStatus === "OPEN" ? "progress" : "done";
@@ -425,7 +446,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   return <section className="m1-personal" data-proof="s5a-workbench">
     <RecoveryPanel title={recoveryTitle(pendingRecords.length)} explainLabel="结果未知怎么处理" explain="维护调整发出后没收到明确结果，可能已经生效。先查询原操作；查到前这位客户不能再调整维护。" items={pendingRecords.map(record => ({ key: record.commandKey, createdAt: record.createdAt,
       object: `${record.payload.enabled ? "恢复维护" : "不再维护"} · ${m1CustomerCode(record.payload.customerId)}`, tag: <StatusTag tone="warn">结果未知</StatusTag>,
-      line: "原客户和理由已保留，先查询原操作。",
+      line: maintenanceChecks[record.commandKey] ?? "原客户和理由已保留，先查询原操作。",
       actions: <Button size="sm" icon={<Search size={14} aria-hidden />} disabled={saving} onClick={() => void checkMaintenance(record)}>查询原操作</Button> }))} />
     {notice && <Notice tone="warn" action={<Button size="sm" onClick={() => setNotice(null)}>关闭提示</Button>}>{notice}</Notice>}
     {view === "dashboard" && <>
@@ -471,7 +492,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       {rows && rows.total > 0 && <Pager label="我的客户" total={rows.total} page={page} pageSize={PAGE_SIZE} sizes={[PAGE_SIZE]} onPage={setPage} onPageSize={() => undefined} />}
     </Panel>}
     {bulkOpen && <SupportBulkComposer ctx={ctx} onClose={() => setBulkOpen(false)} />}
-    {detailId && <Drawer open title="客户资料" sub={detail ? <>{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></> : "正在加载"} busy={saving} onClose={closeDetail} footer={detail && <div className="m1-drawer-actions">{invitationWriteBlock && (canMaintain && !maintenancePending || permission !== "agent" && detail.assignmentId && transferInScope !== false) && <p className="rd-toolbar-note">{invitationWriteBlock}</p>}<Button onClick={() => openChat(detail.customerId)}>联系客户</Button>{canMaintain && <Button disabledReason={maintenancePending ? "原操作结果未知，请先查询原操作。" : invitationWriteBlock} onClick={() => { setMaintenanceAction(detail.maintenanceEnabled ? "stop" : "resume"); setReason(""); setReasonLeft(false); setSaveError(null); }}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</Button>}{permission !== "agent" && detail.assignmentId && transferInScope !== false && <Button data-transfer-customer={detail.customerId} disabledReason={invitationWriteBlock} onClick={() => onTransfer?.(detail.customerId)}>正式转绑客户</Button>}</div>}>
+    {detailId && <Drawer open title="客户资料" sub={detail ? <>{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></> : "正在加载"} busy={saving} onClose={closeDetail} footer={detail && <div className="m1-drawer-actions">{invitationWriteBlock && (canMaintain && !maintenancePending || permission !== "agent" && detail.assignmentId && transferInScope !== false) && <p className="rd-toolbar-note">{invitationWriteBlock}</p>}<Button onClick={() => openChat(detail.customerId)}>联系客户</Button>{canMaintain && <Button disabled={saving} disabledReason={maintenancePending ? "原操作结果未知，请先查询原操作。" : invitationWriteBlock} onClick={() => openMaintenance(detail)}>{detail.maintenanceEnabled ? "不再维护" : "恢复维护"}</Button>}{permission !== "agent" && detail.assignmentId && transferInScope !== false && <Button data-transfer-customer={detail.customerId} disabledReason={invitationWriteBlock} onClick={() => onTransfer?.(detail.customerId)}>正式转绑客户</Button>}</div>}>
       {detailLoading ? <BlockState state="loading" title="正在加载…" /> : detailError ? <BlockState state="error" title="客户资料加载失败" detail={detailError} onRetry={() => void openDetail(detailId)} /> : detail && <>
         <div className="m1-customer-name"><SupportAvatar name={customerName(detail)} path={detail.customerAvatarRef ?? undefined} /><strong>{customerName(detail)}</strong></div>
         <Facts><Fact k="当前专属客服">{detail.agentName ?? "资料未知"}</Fact><Fact k="用户编码"><span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact>{drawerInviter && <Fact k="邀请人"><InviterValue view={drawerInviter} /></Fact>}<Fact k="账户状态"><StatusTag tone={accountTone(detail)}>{labelForAccount(detail.accountState)}</StatusTag></Fact><Fact k="维护状态"><StatusTag tone={maintenanceTone(detail)}>{labelForMaintenance(detail)}</StatusTag></Fact><Fact k="上次账户活动">{formatTime(detail.lastEffectiveAt)}</Fact><Fact k="下次维护">{formatTime(detail.nextMaintenanceAt)}</Fact></Facts>

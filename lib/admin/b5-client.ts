@@ -168,7 +168,8 @@ async function request<T>(endpoint: string, init?: RequestInit, preserveRejectio
     const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`, commandKey ? "write" : "read"),
       response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code ?? response.status, message);
     // All B5 GETs use the page's read permission. Preview uses the separate threshold write permission.
-    if (!init?.method && isPermissionDenied(error) && useAdminAuth.getState().authEpoch === authEpoch) {
+    if (!init?.method && isPermissionDenied(error) && useAdminAuth.getState().authEpoch === authEpoch
+      && window.location.pathname === B5_PATH) {
       announcePermissionDenied(B5_PATH);
     }
     if (commandKey && !preserveRejections && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);

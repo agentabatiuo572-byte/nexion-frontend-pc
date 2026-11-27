@@ -163,7 +163,7 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
             maxLength={req.reason ? reasonMax : 200}
             placeholder={req.reasonPlaceholder ?? (req.reason ? "写清场景和依据，例如：合租办公网络、已知合作账户、客服举报线索" : "可以补充处理依据")}
           />
-          {req.reason && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
+          {req.reason && policySettled && (policy || req.reasonPolicyOptional) && <span className="rd-reason-count">{reasonLength}/{reasonMax}</span>}
         </div>
         {req.recoveryUi && pendingReason !== undefined && <p className="k-locked-hint">保存的原理由，重试时原样发送，不能修改</p>}
         {req.reason && !(req.recoveryUi && pendingReason !== undefined) && policySettled && !policyBlocked && !reasonOk && (attempted || reasonLeft) ? (
