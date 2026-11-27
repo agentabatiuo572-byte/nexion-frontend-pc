@@ -554,7 +554,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const retryTransfer = contentCommand && handoffError && (!expired || contentReads[record.original.kind]?.failed?.closed);
     const knownExecuted = contentCommand && (record.contentRetryFeedback?.kind === "readback-failed" || outcome?.conclusion === "succeeded" && outcome.readError);
     const retryReason = applying ? shown?.line : mutating ? "正在提交" : querying === record.commandKey ? "正在查询原操作"
-      : state.replayBlock === "replay-rejected" ? `重试被拒：${displayAdminError(new Error(state.replayRejection!))}`
+      : state.replayBlock === "replay-rejected" ? `${RETRY_REJECTED_LABEL}：${displayAdminError(new Error(state.replayRejection!))}`
       : state.replayBlock === "needs-not-found" ? receipt ? shown?.line ?? "已查到原回执，请到操作记录与审批核对。"
         : outcome && "error" in outcome ? `原操作回执加载失败。${outcome.error}` : "先查询原操作，明确查无后才能重试。"
       : pendingReplayReason(state, "当前不能重试原操作。");
