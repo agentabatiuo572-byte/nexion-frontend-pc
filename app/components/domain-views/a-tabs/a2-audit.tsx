@@ -216,6 +216,7 @@ function ticketPermissionText(w: A2OperationRow) {
 const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
 const F4_PAYOUT_APPROVAL_PAUSED = "排行榜已暂停，恢复后再批准，或驳回。";
+const F4_SETTLEMENT_CONFIG_HOLD = "团队激励池设置不完整，补齐后再批准，或驳回。";
 const F4_RESULT_UNREADABLE = "这次结果读不到，以操作记录为准";
 
 function approvalExecutorLabel(w: A2OperationRow) {
@@ -2167,6 +2168,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
       const blockedReason = read.state === "ok" && read.paused ? F4_PAYOUT_APPROVAL_PAUSED
         : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED
+        : read.state === "ok" && read.configOnHold ? F4_SETTLEMENT_CONFIG_HOLD
         : read.state === "ok" ? read.settled ? undefined : coverageBlock
         : read.state === "failed" ? readFailureBlock : undefined;
       const buttonDisabledReason = read.state === "loading" && !blockedReason ? latestReadBlock : undefined;
