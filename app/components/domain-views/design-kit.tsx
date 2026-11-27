@@ -1717,8 +1717,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (feedback?.invalid) missing.push(feedback.message);
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
-    // 跨字段校验已对这一项报错（比如「请选择商品」），不再另列一个字段名，同一件事只说一次（VS-105）。
-    spec.fields.filter((f) => isVisible(f) && f.required !== false && !(feedback?.invalid && feedback.field === f.key)).forEach((f) => needs(f.key, f.label));
+    // 搜索选择字段：跨字段校验已对这一项报错（比如「请选择商品」）时不再另列字段名，同一件事只说一次（VS-105）；其他字段照旧。
+    spec.fields.filter((f) => isVisible(f) && f.required !== false && !(f.searchSelect && feedback?.invalid && feedback.field === f.key)).forEach((f) => needs(f.key, f.label));
     missing.push(...Object.values(multiFieldIssues(spec, state)));
     spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
       const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
