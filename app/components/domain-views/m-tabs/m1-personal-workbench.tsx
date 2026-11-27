@@ -12,6 +12,8 @@ import { fetchMRecentAdvisorConversations, type MSupportAgent } from "@/lib/admi
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportClient, isSupportScopeDenial, SupportClientError, isIndeterminateSupportError, type SupportAgentCandidate, type SupportCustomer, type SupportCustomerFilter, type SupportMaintenanceHistory, type SupportWorkbenchSnapshot } from "@/lib/admin/m-support-client";
 import { supportEnhancements, type SupportCustomerDetailWithProfile } from "@/lib/admin/m-support-enhancements";
+import { useReasonRule } from "@/lib/admin/use-reason-rule";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { SupportSeatRoleModal } from "./m1-overview";
@@ -140,6 +142,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const [historyLoading, setHistoryLoading] = useState(false);
   const [maintenanceAction, setMaintenanceAction] = useState<"stop" | "resume" | null>(null);
   const [reason, setReason] = useState("");
+  const reasonRule = useReasonRule(!!maintenanceAction);
   const [saving, setSaving] = useState(false);
   const [paymentWriteBusy, setPaymentWriteBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -343,7 +346,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     const actor = actorStamp();
     const generation = detailsGeneration.current;
     const payload: MaintenancePayload = { customerId: detail.customerId, assignmentId: detail.assignmentId, enabled: maintenanceAction === "resume", reason: reason.trim(), expectedVersion: detail.maintenanceVersion };
-    if (payload.reason.length < 8 || payload.reason.length > 200) return;
+    if (!reasonOk) return;
     const fingerprint = `maintenance:${payload.customerId}:${payload.assignmentId}:${payload.expectedVersion}:${payload.enabled}:${payload.reason}`;
     if (maintenanceCommands.list().some(row => row.actorId === adminId && row.payload.customerId === payload.customerId)) return;
     const key = crypto.randomUUID();
@@ -426,7 +429,9 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
   const maintenanceTone = (row: SupportCustomer): StateTone => row.maintenanceEnabled === false ? "done" : row.maintenanceStatus === "DUE" ? "neutral" : row.maintenanceStatus === "OPEN" ? "progress" : "done";
   const trend = overview?.performance.trend;
   const trendMax = trend?.reduce((max, point) => Math.max(max, point.executionCount, point.successfulCycleCount), 1) ?? 1;
-  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const reasonOk = reasonRule.ok(reason);
+  const reasonLoading = "正在加载，稍候即可提交。";
+  const reasonError = reasonRule.error || (reasonRule.ready && reasonLeft && !reasonOk ? reasonRule.hint(reason) : undefined);
   const actionFor = (row: SupportCustomer) => row.waitingReply ? "回复" : row.maintenanceEnabled && row.maintenanceStatus === "DUE" ? "联系维护" : "发起会话";
   const listState = rowsLoading ? <BlockState state="loading" title="正在加载客户列表…" /> : rowsError ? <BlockState state="error" title="客户列表加载失败" detail={rowsError} onRetry={() => setRowsRefresh(n => n + 1)} /> : !listRecords.length ? <BlockState state="empty" title="当前筛选下没有客户。可切换筛选或等待主管分配。" /> : null;
 
@@ -519,11 +524,11 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         <Fold title="技术信息" summary="客户、绑定与维护版本"><Facts><Fact k="系统编号">{detail.customerId}</Fact><Fact k="绑定编号">{detail.assignmentId || "—"}</Fact><Fact k="维护版本">{detail.maintenanceVersion}</Fact></Facts></Fold>
       </>}
     </Drawer>}
-    {maintenanceAction && detail && <Modal title={maintenanceAction === "stop" ? "不再维护" : "恢复维护"} busy={saving} onClose={() => setMaintenanceAction(null)} footer={<>{!maintenancePending && !maintenanceNeedsRefresh && !detailLoading && canMaintain && reasonOk && !saving && invitationWriteBlock && <p className="rd-toolbar-note">{invitationWriteBlock}</p>}<Button disabled={saving} onClick={() => setMaintenanceAction(null)}>取消</Button><Button variant="primary" disabled={saving} disabledReason={maintenancePending ? maintenanceLocked : maintenanceNeedsRefresh ? "请先重新读取客户资料" : detailLoading ? "正在重新读取客户资料" : !canMaintain ? "当前客户不再属于本人" : !reasonOk ? "请填写 8–200 字理由" : saving ? undefined : invitationWriteBlock} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenanceAction === "stop" ? "确认不再维护" : "确认恢复维护"}</Button></>}>
+    {maintenanceAction && detail && <Modal title={maintenanceAction === "stop" ? "不再维护" : "恢复维护"} busy={saving} onClose={() => setMaintenanceAction(null)} footer={<>{!maintenancePending && !maintenanceNeedsRefresh && !detailLoading && canMaintain && reasonOk && !saving && invitationWriteBlock && <p className="rd-toolbar-note">{invitationWriteBlock}</p>}<Button disabled={saving} onClick={() => setMaintenanceAction(null)}>取消</Button><Button variant="primary" disabled={saving} disabledReason={maintenancePending ? maintenanceLocked : maintenanceNeedsRefresh ? "请先重新读取客户资料" : detailLoading ? "正在重新读取客户资料" : !canMaintain ? "当前客户不再属于本人" : !reasonOk ? reasonRule.error || (reasonRule.ready ? reasonRule.hint(reason) : reasonLoading) : saving ? undefined : invitationWriteBlock} onClick={() => void saveMaintenance()}>{saving ? "提交中…" : maintenanceAction === "stop" ? "确认不再维护" : "确认恢复维护"}</Button></>}>
       <div className="m1-command-form">
       <Facts><Fact k="客户">{customerName(detail)} · <span data-mono>{m1CustomerCode(detail.customerId)}</span></Fact><Fact k="当前专属客服">{detail.agentName || "本人"}</Fact><Fact k="维护状态">{detail.maintenanceEnabled ? "主动维护" : "暂停主动维护"} → {maintenanceAction === "stop" ? "暂停主动维护" : "主动维护"}</Fact></Facts>
       <p>{maintenanceAction === "stop" ? "仅停止主动跟进，客户归属、私聊与求助保持可用。" : "旧周期不恢复，不自动产生执行或成功。"}</p>
-      <Field label="操作理由" required help={reasonLeft && !reasonOk ? undefined : "请填写 8–200 字，将记入操作记录。"} error={reasonLeft && !reasonOk ? "请填写 8–200 字的理由。" : undefined}>{control => <Textarea {...control} value={reason} maxLength={200} disabled={saving || Boolean(maintenancePending)} count={`${reason.trim().length}/200`} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
+      <Field label="操作理由" required help={reasonError ? undefined : reasonRule.ready ? `至少 ${reasonRule.min} 字，将记入操作记录。` : reasonLoading} error={reasonError}>{control => <Textarea {...control} value={reason} disabled={saving || Boolean(maintenancePending)} count={reasonRule.ready ? `${visibleReasonLength(reason)}/${reasonRule.max}` : undefined} onBlur={() => setReasonLeft(true)} onChange={e => setReason(e.target.value)} />}</Field>
       {saveError && <Notice tone="danger">{saveError}</Notice>}{maintenanceNeedsRefresh && <Button disabled={saving || detailLoading} disabledReason={saving || detailLoading ? undefined : invitationWriteBlock} onClick={() => void reloadMaintenanceDetail()}>重新读取客户资料</Button>}{maintenanceNeedsRefresh && !saving && !detailLoading && invitationWriteBlock && <p className="rd-toolbar-note">{invitationWriteBlock}</p>}{maintenanceBlocked && <Notice tone="warn">{maintenanceBlocked}</Notice>}
       </div>
     </Modal>}

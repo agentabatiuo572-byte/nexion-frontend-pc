@@ -4,7 +4,7 @@ import { m1CustomerCode } from "./m1-customer-code";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { M_RECOVERY, M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mRejectedReason, mUnknownText } from "@/lib/admin/m-recovery-copy";
+import { M_RECOVERY, M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mRejectedReason, mUnknownText } from "@/lib/admin/m-recovery-copy";
 import { createPendingMutationStore, createPendingRecovery } from "@/lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportClient, verifySupportTransfer, isDefiniteSupportRefusal, SupportClientError, type SupportAgentCandidate, type SupportCustomerDetail } from "@/lib/admin/m-support-client";
@@ -13,7 +13,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Modal, usePendingReplayDeadline, useToast } from "../design-kit";
 import { BlockState, Button, Change, Fact, Facts, Field, Fold, Notice, Select, StatusTag, Textarea } from "@/app/components/rd";
 import { SearchCheck } from "lucide-react";
-import { RecoveryPanel, pendingReplayReason, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { SupportAvatar, advisorAvatarPath } from "./support-avatar";
 import { useMOperationReason } from "./m-operation-reason";
@@ -293,7 +293,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
     ? <><Button type="button" disabled={saving} onClick={onClose}>取消</Button>
       <Button type="button" variant={recoveryState.replayBlock && !recoveryState.replayRejection ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void check()}>查询原操作</Button>
       {recoveryState.replayRejection ? canQuery && <Button type="button" disabled={saving} onClick={() => setReleasing(true)}>核实后解除</Button>
-        : <Button type="button" variant={recoveryState.replayBlock ? "secondary" : "primary"} loading={recoveryState.busy === "replay"} loadingText="提交中…" disabled={saving} disabledReason={saving ? undefined : pendingReplayReason(recoveryState, "当前账号没有办理转绑的权限，不能重试。")} onClick={() => void send(pending, true)}>按原操作重试</Button>}</>
+        : <Button type="button" variant={recoveryState.replayBlock ? "secondary" : "primary"} loading={recoveryState.busy === "replay"} loadingText="提交中…" disabled={saving} disabledReason={saving ? undefined : mReplayReason(recoveryState, "当前账号没有办理转绑的权限，不能重试。")} onClick={() => void send(pending, true)}>按原操作重试</Button>}</>
     : <><Button type="button" disabled={saving} onClick={onClose}>取消</Button>{onOpenOwn && denied && detail?.agentAdminId === adminId && <Button type="button" onClick={onOpenOwn}>查看我的客户资料</Button>}{targets && <Button type="button" variant="primary" disabled={saving} loading={saving} loadingText="提交中…" disabledReason={!chosen ? "请选择目标专属客服" : reasonRule.blocked} onClick={() => void submit()}>确认正式转绑</Button>}</>;
 
   if (releasing && pending) return <TransferRelease record={pending} returnFocus={returnFocus} onCancel={() => setReleasing(false)} onReleased={onClose} />;

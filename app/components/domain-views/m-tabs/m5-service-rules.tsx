@@ -14,8 +14,7 @@ import "./m-support-admin.css";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { createM5ManagementRecovery, useM5ManagementCommand, type M5ManagementRecord } from "@/lib/admin/use-m5-management-command";
 import { M5PendingWrites, type M5RulesSummary } from "./m5-views";
-import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView } from "@/lib/admin/m-recovery-copy";
-import { pendingReplayReason } from "../recovery-panel";
+import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView, mReplayReason } from "@/lib/admin/m-recovery-copy";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { useToast } from "../design-kit";
 import { useMOperationReason } from "./m-operation-reason";
@@ -299,7 +298,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
   const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canQuery ? EXPIRED_LINE : RETRY_EXPIRED_TEXT });
   const replayRefused = Boolean(command.recoveryState?.replayRejection);
   const querying = command.recoveryState?.busy === "query";
-  const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改服务规则" : retryExpired ? EXPIRED_LINE : pendingReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
+  const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改服务规则" : retryExpired ? EXPIRED_LINE : mReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
   const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原操作的权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
   const comparisonBefore = conflict ? current : releasedFrom;
   const comparisonAfter = conflict ? latest : current;
