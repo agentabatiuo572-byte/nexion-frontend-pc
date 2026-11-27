@@ -2205,6 +2205,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const amplifies = coverageMode === "amplifies";
     const requiresH5ApprovalCoverage = w.operationCode === "h5_power_up_config" && !!coverageMode;
     const isRefund = w.fundEffect === "ORDER_REFUND";
+    // 新增商品按冻结的商城状态：草稿和已下架批准后不上架卖，不用红色最终确认；草稿不改线上，生效标签灰底（BUG-803，VS-25、VS-101、VS-106）。
+    const e1CreateStatus = w.operationCode === "e1_sku_create" ? e1CreateSnapshot(w.after)?.status : undefined;
+    const e1CreateUnlisted = e1CreateStatus === "pending" || e1CreateStatus === "off";
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
     const briefKind = isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config";
     const timing = approvalTiming(w);
@@ -2290,7 +2293,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       briefKind,
       title: "批准审批单",
       action: <>确认执行 · {w.id}({name})</>,
-      effect: <>{subject(name)}<StatusTag tone="progress" filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
+      effect: <>{subject(name)}<StatusTag tone={e1CreateStatus === "pending" && !coverageMode ? "neutral" : "progress"} filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
         : coverageMode === "onApproval" ? <>{timing.note}{approvalCoverageCopy(w)}</> : <>{a1StatusImpact(w)?.detail}{timing.note}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && backendChecksText("批准时", "。")}</>,
@@ -2331,7 +2334,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       reasonMax: 200,
       confirmLabel: "确认批准",
       // 直接动钱的确认用红（决定 50）。
-      confirmTone: w.amplifies || isRefund ? "danger" : "primary",
+      confirmTone: (w.amplifies || isRefund) && !e1CreateUnlisted ? "danger" : "primary",
       run: async (reason) => {
         if (f4Payout) refusedPayoutReasons.current.delete(draftKey);
         if (oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);

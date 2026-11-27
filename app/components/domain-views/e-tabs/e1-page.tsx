@@ -1,8 +1,8 @@
 "use client";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { AlertTriangle, RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
-import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Field, Fold, Input, Modal, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
 import { canReadOwnRecoveryProposal, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { OperationConfirmModal, useToast, usePendingReplayDeadline } from "../design-kit";
@@ -58,6 +58,63 @@ const E1CreateControls = createContext<{
   receiptProduct?: (ticketId: string) => E1CreateProductAction | undefined;
 }>({});
 export const useE1CreateControls = () => useContext(E1CreateControls);
+
+/** 批准回执上的「查看商品资料」：有已核对的商品编号才出现，按编号打开「商品资料」，同名商品也不会开错（F02）。 */
+function E1ReceiptProductButton({ ticketId, size }: { ticketId: string; size?: "sm" }) {
+  const product = useE1CreateControls().receiptProduct?.(ticketId);
+  return product ? <Button size={size} onClick={product.open}>查看商品资料</Button> : null;
+}
+
+const OWN_CREATE_TONE: Record<string, StateTone> = { pending: "warn", approved: "done" };
+
+/**
+ * 页头「查询我的新增申请」：没有本页记录（换了浏览器、关过标签页）也能按操作编号查自己提交的新增商品（F03，OP-65）。
+ * 只读查询，不走确认（OP-10）；查到、没查到、这次没查清三种结果分开写（ST-33、ST-34）。
+ */
+function E1OwnCreateQuery() {
+  const { queryOwnCreate } = useE1CreateControls();
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState("");
+  const [ticket, setTicket] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<E1OwnCreateLookup | null>(null);
+  if (!queryOwnCreate) return null;
+  const close = () => { setOpen(false); setKey(""); setTicket(""); setResult(null); };
+  const run = async () => {
+    if (!key.trim() || busy) return;
+    setBusy(true);
+    try {
+      const found = await queryOwnCreate(key, ticket);
+      setResult(found);
+      if (found.state === "unread" && found.ticketId) setTicket(found.ticketId);
+    } finally { setBusy(false); }
+  };
+  const onEnter = (event: KeyboardEvent<HTMLInputElement>) => { if (event.key === "Enter") void run(); };
+  return <>
+    <Button icon={<SearchCheck size={14} aria-hidden />} onClick={() => setOpen(true)}>查询我的新增申请</Button>
+    {open && <Modal title="查询我的新增申请" icon={SearchCheck} busy={busy} dirty={!!key || !!ticket} onClose={close}
+      footer={<><Button disabled={busy} onClick={close}>关闭</Button><Button variant="primary" loading={busy} loadingText="查询中…" disabledReason={key.trim() ? undefined : "请先填写操作编号"} onClick={() => void run()}>查询</Button></>}>
+      <Field label="操作编号" required explain="提交新增商品时生成，在当时那条记录展开后的「技术信息」里可以复制。">
+        <Input data-mono autoComplete="off" spellCheck={false} value={key} disabled={busy} onKeyDown={onEnter} onChange={event => { setKey(event.target.value); setResult(null); }} />
+      </Field>
+      <Field label="审批单号" hint="选填" explain="填了会核对查到的是不是这张审批单。">
+        <Input data-mono autoComplete="off" spellCheck={false} value={ticket} disabled={busy} onKeyDown={onEnter} onChange={event => { setTicket(event.target.value); setResult(null); }} />
+      </Field>
+      {result?.state === "found" && <div className="rd-stack" role="status">
+        <Facts>
+          <Fact k="状态"><StatusTag tone={OWN_CREATE_TONE[result.ticket.status] ?? PROPOSAL_END[result.ticket.status]?.tone ?? "warn"}>{RECEIPT_STATUS[result.ticket.status] ?? "状态待核实"}</StatusTag></Fact>
+          <Fact k="申请">{result.ticket.action}</Fact>
+          <Fact k="审批单号"><span data-mono>{result.ticket.id}</span></Fact>
+          {result.product && <Fact k="商品编号"><span data-mono>{result.product.skuId}</span></Fact>}
+        </Facts>
+        <p className="rd-toolbar">{result.ticket.status === "pending" ? RECOVERY_LINE.pending : result.product ? "已按申请创建商品。" : PROPOSAL_END[result.ticket.status]?.text ?? "状态待核实，请到操作记录与审批核对。"}
+          {result.product && <Button size="sm" onClick={() => { const product = result.product!; close(); product.open(); }}>查看商品资料</Button>}</p>
+      </div>}
+      {result?.state === "not-found" && <p className="rd-weak" role="status">没有查到：这个操作编号下没有你提交的新增申请，核对编号后再查。</p>}
+      {result?.state === "unread" && <Notice tone="warn"><p>{result.message}</p>{result.ticketId && <p>审批单号已填好，稍后再点「查询」。</p>}</Notice>}
+    </Modal>}
+  </>;
+}
 const E1_SOURCES: readonly CatalogSource[] = ["products", "gates", "discount"];
 const ALL_SOURCES: readonly CatalogSource[] = [...E1_SOURCES, "early"];
 const SKU_EDIT_SOURCES: readonly CatalogSource[] = ["products", "gates"];
@@ -815,7 +872,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       line: row.reading ? "正在查询审批进度…" : row.resultSkuId ? `商品编号：${row.resultSkuId}`
         : row.readError === CREATE_RECEIPT_UNREAD ? E1_CREATE_NUMBER_UNREAD : RECOVERY_LINE.pending,
       note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
-      actions: <Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button>,
+      actions: <><E1ReceiptProductButton ticketId={row.id} size="sm" /><Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button></>,
       detail: <p>审批单 {row.id}{row.status === "pending" && "；批准前目录不变，这个对象暂停新修改。"}</p> })),
     ...pending.filter(record => record.commandKey !== busy).map(record => {
       const recovery = recoveryFor(record).state(record);
@@ -878,7 +935,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     } : undefined,
   }}><RdPage className="e1-page">
     {discardRecovery.dialog}
-    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? undefined : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在加载目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<Button icon={<RefreshCw size={14} />} disabled={refreshInProgress} loading={refreshInProgress} onClick={() => void refreshFromHeader()}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
+    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? undefined : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在加载目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<E1OwnCreateQuery /><Button icon={<RefreshCw size={14} />} disabled={refreshInProgress} loading={refreshInProgress} onClick={() => void refreshFromHeader()}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
       <RecoveryPanel tone={recovery.length === waitingReceipts.length + approvedCreates.length ? "progress" : "warn"} title={recoveryTitle(unknownCount, waitingReceipts.length, endedCount)} label="商品管理的修改"
@@ -913,7 +970,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           throw failure;
         }
       }} />}
-    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在加载…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptAfter(receiptDetail)}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
+    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><E1ReceiptProductButton ticketId={receiptDetail.id} /><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在加载…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptAfter(receiptDetail)}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
     {releaseMissing && <MissingProposalReleaseModal label={releaseMissing.spec.action} createdAt={releaseMissing.createdAt} keepDraft={releaseMissing.spec.command.op === "e1_sku_create"}
       onCancel={() => setReleaseMissing(null)} onConfirm={() => confirmMissing(releaseMissing)} />}
     {release && <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => {
