@@ -1717,7 +1717,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (feedback?.invalid) missing.push(feedback.message);
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
-    spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
+    // 跨字段校验已对这一项报错（比如「请选择商品」），不再另列一个字段名，同一件事只说一次（VS-105）。
+    spec.fields.filter((f) => isVisible(f) && f.required !== false && !(feedback?.invalid && feedback.field === f.key)).forEach((f) => needs(f.key, f.label));
     missing.push(...Object.values(multiFieldIssues(spec, state)));
     spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
       const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
@@ -2140,7 +2141,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
                       // 和新建任务抽屉同一种控件：改文字就取消已选，选中才写进表单值（ST-29）；框里是已选名称时点进去先全选，打字就替换它。
                       <div onFocus={(event) => { if (typed === undefined && event.target instanceof HTMLInputElement) event.target.select(); }}
                         onClick={(event) => { if (typed === undefined && event.target instanceof HTMLInputElement) event.target.select(); }}>
-                        <RdSearchSelect {...control} aria-label={f.label} placeholder={f.placeholder} empty={f.searchSelect.empty}
+                        <RdSearchSelect {...control} aria-label={f.label} placeholder={f.placeholder ?? (f.mustChoose ? "请选择" : undefined)} empty={f.searchSelect.empty}
                           value={typed ?? (chosen ? optionText(chosen) : "")}
                           onChange={(next) => { setSearchTyping((state) => ({ ...state, [f.key]: next })); if (chosen) set(f.key, ""); }}
                           options={(f.options ?? []).filter((option) => !typed?.trim() || optionText(option).toLowerCase().includes(typed.trim().toLowerCase()))

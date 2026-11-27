@@ -675,8 +675,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         return {
           kind: "multi-field",
           requireAnyChange: true,
-          // An empty choice is reported once by the required check on the field itself.
-          feedback: (value) => !value.actionRoute || options.includes(value.actionRoute)
+          // 清空或选了不在候选里的都写在这一项下面；必填检查不再另报字段名（design-kit 去重），同一件事只说一次。
+          feedback: (value) => options.includes(value.actionRoute)
             ? { invalid: false, message: "" }
             : { invalid: true, message: "请选择去完成页面", field: "actionRoute" },
           fields: [
