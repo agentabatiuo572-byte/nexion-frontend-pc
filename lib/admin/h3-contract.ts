@@ -219,6 +219,12 @@ export function parseH3Model(value: unknown): H3Model {
     if (!task.taskCode || !["MISSION", "MONTHLY"].includes(task.taskKind) || !["active", "paused", "archived"].includes(task.status)) throw new Error("H3_RESPONSE_INVALID");
     if (task.contentState !== undefined && !["UNKNOWN", "DRAFT", "OPENED"].includes(task.contentState)) throw new Error("H3_RESPONSE_INVALID");
   }
+  for (const task of row.dayOneTasks) {
+    strings(task, ["completionType", "completionEvent"]);
+    const hasCompletion = task.completionType === "event" && task.completionEvent.trim() !== "";
+    const isUnbound = task.completionType === "unbound" && task.completionEvent === "";
+    if (!hasCompletion && !isUnbound) throw new Error("H3_RESPONSE_INVALID");
+  }
   for (const item of row.weeklyMultipliers) {
     strings(item, ["p"]);
     if (item.mult !== null && typeof item.mult !== "string") throw new Error("H3_RESPONSE_INVALID");

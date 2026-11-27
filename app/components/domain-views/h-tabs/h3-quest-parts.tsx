@@ -311,8 +311,8 @@ export function expiredTag() {
 export type TaskCardProps = {
   task: QuestTask;
   name: string;
-  /** 这个任务的完成条件：按 questCode 对上的绑定。 */
-  bindings: H3QuestEventBinding[];
+  completion: string;
+  bindingCount: number;
   reward: ReactNode;
   rewardNote?: ReactNode;
   localeGaps: string[];
@@ -323,15 +323,22 @@ export type TaskCardProps = {
   menu?: MoreMenuItem[];
 };
 
-export function bindingEventText(binding: H3QuestEventBinding) {
-  return H3_BINDING_EVENT_LABELS[binding.eventType] ?? binding.eventType;
+function eventTypeText(eventType: string) {
+  return H3_BINDING_EVENT_LABELS[eventType] ?? eventType;
 }
 
-export function TaskCard({ task, name, bindings, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
+export function bindingEventText(binding: H3QuestEventBinding) {
+  return eventTypeText(binding.eventType);
+}
+
+export function taskCompletionEventText(task: QuestTask) {
+  if (task.completionType !== "event") return "";
+  return text(task.completionEvent, "").split(", ").map(eventTypeText).join("、");
+}
+
+export function TaskCard({ task, name, completion, bindingCount, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
   const status = taskStatusOf(task);
-  const enabled = bindings.filter((binding) => Number(binding.status) === 1);
-  const unbound = taskUnbound(task);
-  const warn = status === "active" && unbound;
+  const warn = activeUnbound(task);
   const route = text(task.href, "");
   return (
     <article className="h3-card" data-selected={selected ? "" : undefined} data-warn={warn ? "" : undefined} data-dim={status === "archived" ? "" : undefined} aria-label={name}>
@@ -349,11 +356,11 @@ export function TaskCard({ task, name, bindings, reward, rewardNote, localeGaps,
       <dl className="h3-card-facts">
         <div data-warn={warn ? "" : undefined}>
           <dt>做了什么算完成</dt>
-          <dd>{!unbound && enabled.length > 0
-            ? enabled.map(bindingEventText).join("、")
+          <dd>{completion
+            ? completion
             : warn
               ? <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />没绑定完成事件，用户做不完</span>
-              : <span className="h3-card-muted">{bindings.length > 0 ? `没有启用的条件（${bindings.length} 条已停用）` : "还没有完成条件"}</span>}</dd>
+              : <span className="h3-card-muted">{bindingCount > 0 ? `没有启用的条件（${bindingCount} 条已停用）` : "还没有完成条件"}</span>}</dd>
         </div>
         <div>
           <dt>点了跳到</dt>
