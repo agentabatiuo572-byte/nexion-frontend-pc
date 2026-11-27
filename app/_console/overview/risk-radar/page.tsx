@@ -669,9 +669,8 @@ export default function RiskRadarPage() {
       // 版本冲突已重读：框里写一句就够，不再弹同一句。
       if (rereadAfterConflict) setThresholdError("当前阈值已更新，请核对后再保存。");
       else {
+        // 框还开着：失败和结果未知都只写在框里，不同时弹提示（VS-107、DT-12）。
         setThresholdError(displayAdminError(cause));
-        // 框还开着、红框里已写这句时不再弹；框已关或结果未知（框里写的是另一句）才弹。
-        if (!rejected || thresholdOriginal || pendingApproval) setToast(displayAdminError(cause));
       }
     } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
