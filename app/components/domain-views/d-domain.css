@@ -131,8 +131,6 @@
 .d2-filter { display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .d2-filter-note { margin: 0; color: var(--rd-text-2); }
 .d2-segs { display: inline-flex; align-items: center; gap: var(--rd-space-1); }  /* 问号紧跟分段（VS-85） */
-/* 「清除更多筛选」放进格子底部那一行，和输入框同一条底线（00 对齐）。 */
-.d2-filter .rd-filter-more > div:not([data-cp]) { align-self: end; display: flex; align-items: center; height: var(--rd-control-h); }
 /* 列宽写在列上，筛空时各列不按表头文字重新分宽（DT-16）：状态列吃掉剩下的宽度，操作列只占按钮宽。
    默认列用百分比（1440 时约 216、136、120、200），窄时跟着收到内容宽，不抬高表格的最小宽度；加出来的列是用户选的，放不下就横向滚动（ST-03）。 */
 .d2-col-select { width: 44px; }  /* 有行时勾选格右边有 8 的内边距，表头没有；写死才不会筛空后整表左移 8 */

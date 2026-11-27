@@ -104,7 +104,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
       {more && (
         <div id={moreId} className="rd-filter-more" hidden={!moreOpen}>
           {more}
-          {onClearMore && <div><Button variant="ghost" size="sm" onClick={onClearMore}>清除更多筛选</Button></div>}
+          {onClearMore && <div className="rd-filter-more-clear"><Button variant="ghost" onClick={onClearMore}>清除更多筛选</Button></div>}
         </div>
       )}
       {(Boolean(applied?.length) || rowResult) && (
