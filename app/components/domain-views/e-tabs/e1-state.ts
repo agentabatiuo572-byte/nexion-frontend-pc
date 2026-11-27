@@ -49,10 +49,10 @@ export function e1Object(spec: ProposeSpec): string {
 
 export type E1Pending = PendingMutationRecord & {
   actorId: string; spec: ProposeSpec; verifiedNotExecuted?: true;
-  ticket?: Pick<A2OperationRow, "id" | "status" | "resultSkuId">;
+  ticket?: Pick<A2OperationRow, "id" | "status" | "resultSkuId" | "createRequestId">;
   mediaDraftId?: string; replacesDraftKey?: string; superseded?: true;
   skuForm?: SkuForm; skuBaseline?: OpsSku; operator?: string; operatorRole?: string;
-  receivedTicketId?: string; absent?: boolean; retryRejection?: string;
+  receivedTicketId?: string; receivedCreateRequestId?: string; createNumberUnread?: true; absent?: boolean; retryRejection?: string;
 };
 
 export function e1CreateRequestId(spec: ProposeSpec) {
@@ -60,12 +60,6 @@ export function e1CreateRequestId(spec: ProposeSpec) {
   return spec.command.op === "e1_sku_create" && typeof id === "string" && id ? id : undefined;
 }
 
-/** The current service binds the ticket to a server-normalized SKU from the name or old skuId. */
-export function e1LegacyCreateSkuId(spec: ProposeSpec) {
-  const { name, skuId } = spec.command.params;
-  const value = typeof skuId === "string" && skuId.trim() ? skuId : typeof name === "string" ? name : spec.obj;
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
 const validProposal = (row: E1Pending) => typeof row.actorId === "string" && !!row.actorId
   && typeof row.spec?.reason === "string" && row.spec.sourceDomain === "E1"
   && typeof row.spec?.obj === "string" && typeof row.spec?.command?.op === "string"

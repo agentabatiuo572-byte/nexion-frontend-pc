@@ -27,6 +27,7 @@ import { normalizeSessionRole } from "./session-role";
 import { TASK_CLASS_LABELS } from "./task-classes";
 import { D5_MENU_NAME, D6_MENU_NAME, D7_MENU_NAME, roleLabel } from "@/lib/nav/console-nav-labels";
 import { amountDisplay } from "@/lib/format";
+import { e1CreateNumberLabel, E1_CREATE_NUMBER_UNREAD } from "./e1-create-receipt";
 
 const SEE_APPROVAL_DETAIL = "请在审批详情核对";
 const ACCOUNT_STATUS: Record<string, string> = { enabled: "启用", disabled: "停用" };
@@ -479,12 +480,12 @@ export function e1CreateClassification(after: string) {
   return [tier, series].filter(Boolean).join(" · ");
 }
 
-export function e1CreateReviewAfter(after: string, { createRequestId, resultSkuId }: Pick<A2OperationRow, "createRequestId" | "resultSkuId">) {
+export function e1CreateReviewAfter(after: string, number?: string) {
   const fields = e1CreateSnapshot(after);
-  if (!fields) return after;
-  const { createRequestId: frozenRequestId, resultSkuId: _resultSkuId, ...sku } = fields;
-  if (!createRequestId && !frozenRequestId && !resultSkuId && typeof sku.skuId === "string" && sku.skuId) return after;
-  return JSON.stringify({ ...sku, skuId: resultSkuId ?? "待生成" });
+  if (!number) return after;
+  if (!fields) return number === E1_CREATE_NUMBER_UNREAD ? `${after} · ${number}` : after;
+  const { createRequestId: _createRequestId, resultSkuId: _resultSkuId, ...sku } = fields;
+  return JSON.stringify({ ...sku, skuId: number });
 }
 
 export function reviewPair(before: string, after: string, operationCode?: string) {
@@ -820,7 +821,7 @@ export const f1VoucherReverse = (row: { after: string; action?: string; operatio
   };
 };
 export const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; status?: A2OperationRow["status"]; disclosureReview?: A2OperationRow["disclosureReview"]; missionTarget?: A2OperationRow["missionTarget"] } & Pick<A2OperationRow, "createRequestId" | "resultSkuId">) => {
-  if (row.operationCode === "e1_sku_create") return e1CreateReviewAfter(row.after, row);
+  if (row.operationCode === "e1_sku_create") return e1CreateReviewAfter(row.after, e1CreateNumberLabel(row));
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const voucher = f1VoucherReverse(row);
@@ -943,8 +944,9 @@ type QueueChange = { main: string; sub?: string; title?: string; objectId?: stri
 
 function queueChange(ticket: A2OperationRow): (QueueChange & { preserveText?: boolean }) | undefined {
   if (ticket.operationCode === "e1_sku_create") {
-    const main = e1CreateClassification(ticket.after);
-    if (main) return { main, sub: ticket.resultSkuId ? `商品编号 ${ticket.resultSkuId}` : undefined, preserveText: true };
+    const number = e1CreateNumberLabel(ticket);
+    const main = number && e1CreateClassification(ticket.after);
+    if (number) return { main: main || number, sub: main ? number : undefined, preserveText: true };
   }
   const mission = h3MissionView(ticket);
   if (mission) return { main: `${mission.name} · 奖励 ${mission.reward}`, sub: "新建", preserveText: true };

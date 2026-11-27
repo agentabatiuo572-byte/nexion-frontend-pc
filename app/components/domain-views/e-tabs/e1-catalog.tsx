@@ -162,7 +162,7 @@ function E1PurchaseConditions({ sku, hideLeft = false }: { sku: OpsSku; hideLeft
   </Facts>;
 }
 
-export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
+export function E1Catalog({ ctx, detailId, onDetailChange: setDetailId }: { ctx: E1CatalogContext; detailId: string | null; onDetailChange: (id: string | null) => void }) {
   const { skus } = ctx;
   const canWrite = ctx.canWriteE1;
   const writeBlock = ctx.writeBlockedReason;
@@ -176,7 +176,6 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planView, setPlanView] = useState("plan");
   const [planSku, setPlanSku] = useState("");
-  const [detailId, setDetailId] = useState<string | null>(null);
   const detail = skus.find(sku => sku.id === detailId);
   const detailLoading = (!detail && ctx.e1Loading) || (detailId !== null && ctx.skuReadbackPending(detailId));
   const openDetail = (id: string) => { setDetailId(id); ctx.readPending(id); };

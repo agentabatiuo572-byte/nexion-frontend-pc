@@ -4,6 +4,7 @@ import { isFirstA2DisclosurePublish } from "./disclosure-publication-diagnostic"
 import { H2_BUY_LIST_ACTION } from "./h2-trial-purchase";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
+import { E1_CREATE_NUMBER_UNREAD } from "./e1-create-receipt";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
 import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
 import { f4Decimal } from "@/lib/admin/f4-money";
@@ -53,7 +54,7 @@ export class A2OutcomeUncertainError extends Error {
 
 /** 按原号查到的审批单缺字段：调用方按类型认，不比对显示文字。 */
 export class A2ProposalReceiptIncompleteError extends Error {
-  constructor() {
+  constructor(public readonly ticketId?: string, public readonly createRequestId?: string) {
     super("提交结果不完整，请稍后再查。");
     this.name = "A2ProposalReceiptIncompleteError";
   }
@@ -1103,7 +1104,11 @@ export async function approveA2Operation(operationId: string, reason: string, co
       createRequestId,
       ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
     });
-    ticket = fromTicket(row);
+    try { ticket = fromTicket(row); }
+    catch (error) {
+      if (commandKey && operationCode === "e1_sku_create") throw new A2OutcomeUncertainError(E1_CREATE_NUMBER_UNREAD, commandKey);
+      throw error;
+    }
   } catch (error) {
     if (commandKey && error instanceof Error && error.message === INVALID_F4_BUSINESS_RESULT) {
       throw new A2OutcomeUncertainError(error.message, commandKey);
@@ -1197,9 +1202,10 @@ function hasProposalTicketFacts(row: BackendTicket) {
     && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "");
 }
 
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" = false): Promise<A2OperationRow | null> {
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" | "e1" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
+    if (strictTicket === "e1") return readE1ProposalReceipt(row);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new A2ProposalReceiptIncompleteError();
     // A requires raw action; F does not. B5 additionally requires operation metadata and normalizes status.
     if (strictTicket && strictTicket !== "h8" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
@@ -1215,6 +1221,16 @@ export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = 
         && (!strictNotFound || "backendMessage" in failure && failure.backendMessage === "A2_PROPOSAL_NOT_FOUND")) return null;
     throw failure;
   }
+}
+
+function readE1ProposalReceipt(row: BackendTicket) {
+  const incomplete = () => new A2ProposalReceiptIncompleteError(
+    row?.mine === false || row?.operationCode && row.operationCode !== "e1_sku_create" ? undefined : optionalIdentifier(row?.id),
+    optionalIdentifier(row?.createRequestId),
+  );
+  if (!hasProposalTicketFacts(row) || !optionalIdentifier(row.id)) throw incomplete();
+  try { return fromTicket(row); }
+  catch { throw incomplete(); }
 }
 
 /** H8 consumes command metadata added in backend 111e00cd, before display normalization. */
@@ -1257,6 +1273,7 @@ export async function createA2OperationProposal(input: {
     body: JSON.stringify(input),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-proposal" }),
   });
+  if (strictTicket && input.command.op === "e1_sku_create") return readE1ProposalReceipt(row);
   if (strictOutcome && (!row || typeof row.id !== "string" || !row.id
       || strictOutcome === "proposal" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
         || typeof row.operationCode !== "string" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {

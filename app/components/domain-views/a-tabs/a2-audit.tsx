@@ -10,6 +10,7 @@ import {
   type FBatchItem, type FundTicket, type K1TicketView,
 } from "@/lib/admin/a2-approval-text";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import { approvedE1CreateSkuId, e1CreateNumberLabel, E1_CREATE_NUMBER_UNREAD, isB138SkuId, legacyE1CreateSkuId } from "@/lib/admin/e1-create-receipt";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, AUDIT_RESOURCE_NAMES } from "@/lib/admin/audit-action-names";
 import { H2_BUY_LIST_ACTION } from "@/lib/admin/h2-trial-purchase";
 import { a2ActionText, DIV_BASE_TEXT, operatorCopyText } from "@/lib/admin/operator-copy";
@@ -359,15 +360,28 @@ function f4ApprovalResultText(result: F4ApprovalBusinessResult) {
 function f4BlockedText(reasonCode: F4ApprovalAttemptResult["reasonCode"]) {
   return `这次没有执行：${f4ResultReason({ reasonCode })}。审批单仍待审批，关掉后重新打开，按最新读数再批准，或驳回。`;
 }
-function e1SkuLogSides(log: A2AuditLogRow, createTicket?: A2OperationRow, resultSkuId = log.resultSkuId): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+type E1LogTicket = { status?: string; after?: string; before?: string; createRequestId?: string; resultSkuId?: string };
+function e1LogCreateStatus(log: A2AuditLogRow) {
+  if (log.result !== "SUCCESS") return;
+  switch (log.action) {
+    case "A2_OPERATION_PROPOSED": return "pending";
+    case "A2_OPERATION_APPROVED":
+    case "E1_SKU_CREATED": return "approved";
+    case "A2_OPERATION_REJECTED": return "rejected";
+    case "A2_OPERATION_WITHDRAWN": return "withdrawn";
+    case "A2_OPERATION_EXPIRED": return "expired";
+  }
+}
+
+function e1SkuLogSides(log: A2AuditLogRow, createTicket?: E1LogTicket): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update"; number?: string } | undefined {
   if (log.resourceType === "A2_OPERATION" && (log.operationCode === "e1_sku_create" || createTicket)) {
     const before = log.beforeValue ?? createTicket?.before ?? "";
     const after = log.afterValue ?? createTicket?.after ?? "";
-    if (e1CreateSnapshot(after)) return {
-      before, after: e1CreateReviewAfter(after, {
-        createRequestId: log.createRequestId ?? createTicket?.createRequestId, resultSkuId,
-      }), operationCode: "e1_sku_create",
-    };
+    const status = createTicket?.status ?? e1LogCreateStatus(log);
+    const resultSkuId = createTicket?.resultSkuId ?? log.resultSkuId;
+    const number = e1CreateNumberLabel({ after, status, createRequestId: createTicket?.createRequestId ?? log.createRequestId, resultSkuId },
+      log.result === "SUCCESS" && isB138SkuId(resultSkuId) ? resultSkuId : undefined);
+    if (number || e1CreateSnapshot(after)) return { before, after: e1CreateReviewAfter(after, number), operationCode: "e1_sku_create", number };
   }
   // 历史日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
   const isSku = (text: string) => {
@@ -403,10 +417,11 @@ function e1ApprovalTicket(log: A2AuditLogRow) {
 }
 
 /** Approval and execution logs can resolve the frozen proposal by its ticket number. */
-function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2AuditLogRow | undefined>, resultSkuId?: string): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
+function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2AuditLogRow | undefined>, createTicket?: E1LogTicket): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
   const ticket = e1ApprovalTicket(log);
   const proposal = ticket ? proposals?.get(ticket) : undefined;
-  const sides = proposal && e1SkuLogSides(proposal, undefined, resultSkuId ?? proposal.resultSkuId);
+  const sides = proposal && e1SkuLogSides(proposal, createTicket);
+  if (log.action === "E1_SKU_CREATED" && !sides?.number) return undefined;
   if (sides) return { ticket, sides };
   if (log.action !== "E1_SKU_UPDATED") return undefined;
   const [before, after] = log.delta.split(" → ");
@@ -661,11 +676,13 @@ function approvalTiming(w: A2OperationRow) {
   if (w.operationCode === "e1_sku_create") {
     const status = e1CreateSnapshot(w.after)?.status;
     const impact = status === "on" ? "批准后创建并上架商品。"
-      : status === "pending" || status === "off" ? "批准后创建商品草稿，上架前 App / H5 Lite 上看不到。"
-        : "批准后创建商品。";
-    const coverage = coverageMode === "onApproval";
-    return { tag: coverage ? "通过覆盖率检查后执行" : "立即生效", impact,
-      drawer: `${coverage ? "批准时先检查兑付覆盖率。" : ""}${impact}点「驳回」原操作不执行。` };
+      : status === "off" ? "批准后创建商品，商城状态为已下架。"
+        : status === "pending" ? "批准后创建商品草稿，线上商城不变。" : "批准后创建商品。";
+    const coverageNote = coverageMode ? "批准时先检查兑付覆盖率。" : "";
+    const tag = status === "on" ? "批准后上架" : status === "off" ? "批准后创建为下架" : status === "pending" ? "批准后保存草稿" : "批准后创建";
+    return { tag: coverageMode ? "通过覆盖率检查后执行" : tag, impact,
+      note: coverageMode === "amplifies" ? coverageNote : undefined,
+      drawer: `${coverageNote}${impact}点「驳回」原操作不执行。` };
   }
   const monthlyChange = monthlyTargetChange(w);
   if (monthlyChange) {
@@ -899,6 +916,7 @@ type A2PendingCommand = PendingMutationRecord & {
   rule?: (DecisionRule & { unmapped?: boolean }) | null;
   operationCode?: string;
   createRequestId?: string;
+  monthlyTargetRefusal?: { code: string; text: string };
   obj?: string;
   fundEffect?: A2OperationRow["fundEffect"];
   /** 退款单的原订单号：重试前要先读到退款金额（F01）。 */
@@ -1491,27 +1509,36 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   }, [logPageRows, recordsLoading, session, tab, view]);
   const e1Proposals = e1ProposalRead?.rows === logPageRows && e1ProposalRead.session === session ? e1ProposalRead.proposals : undefined;
   const historyRows = records?.operationHistory ?? [];
-  const e1CreateTickets = useMemo(() => new Map([...(main?.operationQueue ?? []), ...(records?.operationQueue ?? [])]
-    .filter(ticket => ticket.operationCode === "e1_sku_create" && (ticket.createRequestId || ticket.resultSkuId))
-    .map(ticket => [ticket.id, ticket] as const)), [main, records]);
-  const e1CreatedSkuIds = useMemo(() => new Map([...(main?.operationHistory ?? []), ...(records?.operationHistory ?? [])]
-    .flatMap(row => row.operationCode === "e1_sku_create" && row.resultSkuId ? [[row.id, row.resultSkuId] as const] : [])
-    .concat([...e1CreateTickets.values()].flatMap(row => row.resultSkuId ? [[row.id, row.resultSkuId] as const] : []))),
-    [main, records, e1CreateTickets]);
+  const e1CreateTickets = useMemo(() => {
+    const tickets = new Map<string, E1LogTicket>();
+    for (const row of [...(main?.operationQueue ?? []), ...(records?.operationQueue ?? [])]) {
+      if (row.operationCode === "e1_sku_create") tickets.set(row.id, row);
+    }
+    for (const row of [...(main?.operationHistory ?? []), ...(records?.operationHistory ?? [])]) {
+      const ticket = tickets.get(row.id);
+      if (ticket || row.operationCode === "e1_sku_create") {
+        tickets.set(row.id, { ...ticket, status: row.st, resultSkuId: row.resultSkuId ?? ticket?.resultSkuId });
+      }
+    }
+    return tickets;
+  }, [main, records]);
   const e1LogEvidence = (log: A2AuditLogRow) => {
     const ticketId = log.resourceType === "A2_OPERATION" ? log.resourceId : e1ApprovalTicket(log);
     const ticket = ticketId ? e1CreateTickets.get(ticketId) : undefined;
-    const resultSkuId = log.resultSkuId ?? (ticketId ? e1CreatedSkuIds.get(ticketId) : undefined)
-      ?? (log.action === "E1_SKU_CREATED" && ticketId ? log.resourceId : undefined);
-    const approved = e1ApprovedLog(log, e1Proposals, resultSkuId);
-    const sides = e1SkuLogSides(log, ticket, resultSkuId) ?? approved?.sides;
-    const creating = sides?.operationCode === "e1_sku_create";
-    const name = creating ? e1CreateSnapshot(sides.after)?.name : undefined;
-    const object = typeof name === "string" && (ticket || log.operationCode === "e1_sku_create" || log.createRequestId || resultSkuId)
-      ? { id: name, kind: resultSkuId ? `商品编号 ${resultSkuId}` : undefined, raw: log.obj }
+    const logResultSkuId = (ticket || log.operationCode === "e1_sku_create" || log.action === "E1_SKU_CREATED")
+      && isB138SkuId(log.resultSkuId) ? log.resultSkuId : undefined;
+    const logTicket = ticket || logResultSkuId ? { ...ticket,
+      status: ticket?.status ?? (logResultSkuId ? "approved" : e1LogCreateStatus(log)),
+      resultSkuId: ticket?.resultSkuId ?? logResultSkuId,
+    } : undefined;
+    const approved = e1ApprovedLog(log, e1Proposals, logTicket);
+    const sides = e1SkuLogSides(log, logTicket) ?? approved?.sides;
+    const name = sides?.number ? e1CreateSnapshot(sides.after)?.name : undefined;
+    const object: ReturnType<typeof logObject> = typeof name === "string"
+      ? { id: name, raw: log.obj }
       : logObject(log);
     return { sides, approved, object,
-      classification: creating ? e1CreateClassification(sides.after) : "" };
+      classification: sides?.number ? e1CreateClassification(sides.after) : "" };
   };
   const f4ResultTexts = useMemo(() => new Map((records?.operationQueue ?? []).flatMap(ticket => {
     if (ticket.status !== "approved") return [];
@@ -1519,8 +1546,13 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     return text ? [[ticket.id, text] as const] : [];
   })), [records]);
   const historyResult = (id: string) => {
-    const skuId = e1CreatedSkuIds.get(id);
-    return skuId ? `商品编号 ${skuId}` : f4ResultTexts.get(id);
+    const ticket = e1CreateTickets.get(id);
+    if (ticket && (ticket.createRequestId || ticket.resultSkuId)) {
+      const archivedNumber = isB138SkuId(ticket.resultSkuId) ? ticket.resultSkuId : undefined;
+      const number = e1CreateNumberLabel(ticket, archivedNumber);
+      if (number) return number === E1_CREATE_NUMBER_UNREAD ? number : `商品编号 ${number}`;
+    }
+    return f4ResultTexts.get(id);
   };
   const histPages = Math.max(1, Math.ceil(historyRows.length / histPageSize));
   const histSafePage = Math.min(histPage, histPages);
@@ -1566,7 +1598,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const unknownToast = isDecisionKind(extra.kind) ? DECISION_UNKNOWN_TOAST : UNKNOWN_TOAST;
     const retained = a2Commands.get(scope);
     const key = retained ?? createA2CommandKey(prefix);
-    a2Commands.remember(scope, key, extra);
+    const savedRefusal = retained ? a2Commands.list().find(row => row.commandKey === retained)?.monthlyTargetRefusal : undefined;
+    a2Commands.remember(scope, key, savedRefusal ? { ...extra, monthlyTargetRefusal: savedRefusal } : extra);
     if (!a2Commands.isDurablyStored(scope, key)) {
       if (!retained) a2Commands.forget(scope, key);
       throw new Error("浏览器存不下这次操作，没有提交。换一个窗口再试。");
@@ -1605,6 +1638,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     if (kind === "approve" && oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
     let businessResult: F4ApprovalBusinessResult | undefined;
     let receiptBusinessResult: F4ApprovalBusinessResult | undefined;
+    const createApproval = kind === "approve" && w.operationCode === "e1_sku_create";
     const outcome = await sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
@@ -1620,15 +1654,28 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       }
     },
     async (receipt) => {
-      if (receipt.id !== w.id || receipt.status !== DECISION_STATUS[kind]) return false;
+      const skuId = createApproval ? approvedE1CreateSkuId(receipt, w.createRequestId) : undefined;
+      const oldSkuId = createApproval && !w.createRequestId ? legacyE1CreateSkuId(w) : undefined;
+      if (receipt.id !== w.id || receipt.status !== DECISION_STATUS[kind]
+        || createApproval && (receipt.operationCode !== "e1_sku_create" || !skuId || oldSkuId && skuId !== oldSkuId)) return false;
       const next = await loadMain();
       void loadFiltered(appliedRef.current);
       const decided = next.operationQueue.find((item) => item.id === w.id && item.status === DECISION_STATUS[kind]);
+      const history = next.operationHistory.find((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
+      if (createApproval && skuId) {
+        const recoveredSkuId = decided?.operationCode === "e1_sku_create" ? approvedE1CreateSkuId(decided, w.createRequestId)
+          : history?.operationCode === "e1_sku_create" ? history.resultSkuId ?? oldSkuId : undefined;
+        if (recoveredSkuId !== skuId) return false;
+      }
       businessResult = decided?.businessResult;
       receiptBusinessResult = receipt.businessResult;
-      return !!decided || next.operationHistory.some((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
+      return !!decided || !!history;
     },
     );
+    if (outcome === "unknown" && createApproval) {
+      const retained = a2Commands.list().find(row => row.fingerprint === `approve|${w.id}`);
+      if (retained) notePending(retained, `${E1_CREATE_NUMBER_UNREAD}，请查询原操作。`, "unconfirmed");
+    }
     return { outcome, businessResult, receiptBusinessResult };
   };
 
@@ -1683,7 +1730,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   /* ────────────────── 待确认条 ────────────────── */
 
   const notePending = (record: A2PendingCommand, text: string, check?: DecisionCheck) => {
-    const refusal = decisionRetryRefusals.current.get(record.commandKey);
+    const stored = record.monthlyTargetRefusal;
+    const refusal = decisionRetryRefusals.current.get(record.commandKey) ?? (stored && `按原操作重试被拒：${stored.text}。`);
     const note = refusal ? `${refusal}${text}` : text;
     setPendingNotes((current) => ({ ...current, [record.commandKey]: { text: `${businessClock(Date.now())} ${note}`, check } }));
   };
@@ -1709,7 +1757,17 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       notePending(record, displayAdminReadError(receipt.error), "readFailed");
       return receipt;
     }
+    if (receipt.state === "SUCCEEDED" && kind === "approve" && record.operationCode === "e1_sku_create") {
+      const latest = await loadMain().catch(() => undefined);
+      if (!hasOriginal()) return;
+      const ticket = latest?.operationQueue.find(row => row.id === record.target && row.status === "approved" && row.operationCode === "e1_sku_create");
+      if (!ticket || !approvedE1CreateSkuId(ticket, record.createRequestId)) {
+        notePending(record, `${E1_CREATE_NUMBER_UNREAD}，请稍后查询原操作。`, "unconfirmed");
+        return;
+      }
+    }
     if (receipt.state === "SUCCEEDED" || receipt.state === "REJECTED") {
+      const savedRefusal = a2Commands.list().find(row => row.commandKey === record.commandKey)?.monthlyTargetRefusal;
       a2Commands.forget(record.fingerprint, record.commandKey);
       syncPending();
       clearDecisionPendingNote(record);
@@ -1718,7 +1776,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         const code = receipt.businessMessage;
         legacyPayoutRefusal(kind, record.target, record.operationCode ?? recordTicket(record)?.operationCode, code);
         const approvalReason = code && kind === "approve" ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined;
-        const why = code ? decisionRefusedReason(code, code, approvalReason) : undefined;
+        const why = savedRefusal && savedRefusal.code === code ? savedRefusal.text
+          : code ? decisionRefusedReason(code, code, approvalReason) : undefined;
         // 专项原因本身已写明「这次批准没有执行」和单子现状，不再套「…没有执行：」。
         setRefusals((current) => [...current, approvalReason && why ? `${record.target}：${why}。` : DECISION_REFUSED(DECISION_VERB[kind], record.target, why)]);
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
@@ -1833,7 +1892,12 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       }
       const rejected = isExplicitRejection(cause);
       if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true) && isDecisionKind(record.kind)) {
-        const reason = decisionRefusedReason(code || undefined, why, approvalReason) ?? "系统没有给出原因";
+        const monthlyTarget = record.kind === "approve" && ["MONTHLY_TARGET_POOL_INELIGIBLE", "MONTHLY_TARGET_REWARD_OUT_OF_RANGE"].includes(code);
+        if (monthlyTarget) {
+          const original = a2Commands.list().find(row => row.commandKey === record.commandKey);
+          if (original) a2Commands.remember(original.fingerprint, original.commandKey, { ...original, monthlyTargetRefusal: { code, text: why } });
+        }
+        const reason = (monthlyTarget ? why : decisionRefusedReason(code || undefined, why, approvalReason)) ?? "系统没有给出原因";
         decisionRetryRefusals.current.set(record.commandKey, `按原操作重试被拒：${reason}。`);
         await verifyDecisionPending(record, record.kind, true);
         return;
@@ -2597,6 +2661,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       line: `${sealed ? "这版可能已经封存" : "可能已经生效"}。${expired ? RETRY_EXPIRED : d5Block ? `${d5Block}。点「查询原操作」看这次批准执行没有，或点「在操作记录里查看」。` : RECOVERY_HINT[record.kind]}`,
       result: note ? { tag: check ? <StatusTag tone={check.tone} icon={check.icon}>{check.label}</StatusTag> : <StatusTag tone="warn">结果未知</StatusTag>, line: note.text } : undefined,
       // 查询的回答已在 result 里替换这一行的结论；noteKey 只让回答变了时自动展开，不在展开内容里再写一遍。
+      note: !note && record.monthlyTargetRefusal ? `按原操作重试被拒：${record.monthlyTargetRefusal.text}。` : undefined,
       noteKey: note?.text,
       actions: <>
         <Button size="sm" disabled={!!submitting} onClick={() => void verifyPending(record)}>{record.kind === "param" ? "读取当前值" : record.kind === "retention" ? "读取最近清理" : "查询原操作"}</Button>
@@ -2789,7 +2854,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                 ) : logPageRows.map((l) => {
                   const act = logActionShown(l);
                   const { object: obj, approved: e1Approved, sides: e1Sides, classification } = e1LogEvidence(l);
-                  const e1Change = classification ? { main: classification, sub: undefined } : e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
+                  const e1Change = e1Sides?.number ? { main: classification || e1Sides.number, sub: classification ? e1Sides.number : undefined }
+                    : e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
                   const deltaText = logDeltaText(l);
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
