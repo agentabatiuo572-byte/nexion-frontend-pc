@@ -1202,8 +1202,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       }
       openActionConfirm(m);
     },
-    setF4PayoutBlock: (run, blockedReason) => setActionConfirm(current => current?.run === run && current.blockedReason !== blockedReason
-      ? { ...current, blockedReason } : current),
+    setF4PayoutBlock: (run, blockedReason, buttonDisabledReason) => setActionConfirm(current => current?.run === run
+      && (current.blockedReason !== blockedReason || current.buttonDisabledReason !== buttonDisabledReason)
+      ? { ...current, blockedReason, buttonDisabledReason } : current),
     nav,
     toast: (msg) => setToast(msg),
     can: tab === "F4" ? authority => session?.authorities.includes(authority) ?? false : can,
@@ -1740,6 +1741,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           : tab === "F5" ? f5Page?.overview.coverage
           : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         blockedReason={f4ModalRecord() ? undefined : mc.blockedReason}
+        buttonDisabledReason={f4ModalRecord() ? undefined : mc.buttonDisabledReason}
         edit={mc.edit}
         businessForm={mc.businessForm}
         getPendingReason={mc.f4Snapshot ? f4PendingReason : teamApproval?.source === "F3" ? () => pendingF3Settlement()?.spec?.reason : undefined}

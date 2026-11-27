@@ -152,10 +152,12 @@ export function F4SettleFacts({ onReadStateChange }: { onReadStateChange?: (read
   const read = useRead(fetchF4LeadershipPoolOverview);
   const projection = useRead(fetchF4VoteProjection);
   const data = read.state === "ok" ? read.data : undefined;
-  const settled = f4CurrentWeekSettled(projection.state === "ok" ? projection.data : undefined);
+  const settled = data && (data.currentWeekSettled ?? f4CurrentWeekSettled(projection.state === "ok" ? projection.data : undefined));
+  const waitingForLegacyProjection = !!data && data.currentWeekSettled === undefined && projection.state === "loading";
   useEffect(() => {
-    onReadStateChange?.(read.state === "ok" ? { state: "ok", settled: read.data.currentWeekSettled ?? false } : { state: read.state });
-  }, [read, onReadStateChange]);
+    onReadStateChange?.(read.state !== "ok" ? { state: read.state }
+      : waitingForLegacyProjection ? { state: "loading" } : { state: "ok", settled: settled === true });
+  }, [read.state, settled, waitingForLegacyProjection, onReadStateChange]);
   const { amount: pool, actual, estimated } = data ? f4CurrentWeekPool(data) : { amount: null, actual: false, estimated: false };
   return (
     <div className="f4-payout">

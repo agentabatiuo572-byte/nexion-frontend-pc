@@ -55,6 +55,7 @@ import type {
  */
 export interface McSpec {
   blockedReason?: string;
+  buttonDisabledReason?: string;
   briefKind: OperatorBriefKind | ((value: BusinessFormValue) => OperatorBriefKind);
   name: string;
   commandKey?: string;
@@ -93,7 +94,7 @@ export type Mc = (McSpec & { commandKey: string; teamApprovalOwner?: AdminSessio
 export interface FViewCtx {
   runFContinuation: <T>(commandKey: string | undefined, submit: () => T | Promise<T>) => Promise<T>;
   openActionConfirm: (m: McSpec) => void;
-  setF4PayoutBlock: (run: NonNullable<McSpec["run"]>, blockedReason: string | undefined) => void;
+  setF4PayoutBlock: (run: NonNullable<McSpec["run"]>, blockedReason?: string, buttonDisabledReason?: string) => void;
   nav: (domain: string) => void;
   toast: (msg: string) => void;
   /** UI convenience only; backend authorization remains the final boundary. */

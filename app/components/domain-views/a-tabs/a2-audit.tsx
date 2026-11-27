@@ -1556,6 +1556,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const runDecision = async (kind: A2DecisionKind, w: DecisionTicket, reason: string, by = operator) => {
     if (kind === "approve" && oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
     let businessResult: F4ApprovalBusinessResult | undefined;
+    let receiptBusinessResult: F4ApprovalBusinessResult | undefined;
     const outcome = await sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
@@ -1576,10 +1577,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       void loadFiltered(appliedRef.current);
       const decided = next.operationQueue.find((item) => item.id === w.id && item.status === DECISION_STATUS[kind]);
       businessResult = decided?.businessResult;
+      receiptBusinessResult = receipt.businessResult;
       return !!decided || next.operationHistory.some((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
     },
     );
-    return { outcome, businessResult };
+    return { outcome, businessResult, receiptBusinessResult };
   };
 
   const runParam = (key: "ttl" | "retention" | "schema", value: string, reason: string, by = operator) => sendCommand(
@@ -1751,7 +1753,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         before: queued?.before ?? "", after: queued?.after ?? "", operationCode: record.operationCode ?? queued?.operationCode,
         fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record),
         refundAmountUsdtText: record.refundAmountUsdtText ?? queued?.refundAmountUsdtText, rule: recordRule(record) };
-      const { outcome, businessResult } = record.kind === "param" ? { outcome: await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator) }
+      const { outcome, businessResult, receiptBusinessResult } = record.kind === "param" ? { outcome: await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator) }
         : record.kind === "retention" ? { outcome: await runRetention(record.reason, record.expectedRetentionMonths, record.operator) }
           : record.kind === "export" ? { outcome: await runExport(record.reason, record.filter ?? {}, record.operator) }
             : await runDecision(record.kind, ticketLike, record.reason, record.operator);
@@ -1760,8 +1762,12 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         if (isDecisionKind(record.kind)) clearDecisionPendingNote(record);
         // 披露发布批准只封存这一版，不说「已生效」（和 approvalTiming 同一单类判断）。
         const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
-        if (record.kind !== "export" && record.kind !== "retention") toast(businessResult ? `已确认：${record.label}，${f4ApprovalResultText(businessResult)}`
-          : `已确认：${record.label}${sealed ? "，这版已封存" : "已生效"}`, businessResult?.status === "NOT_EXECUTED" ? "info" : "success");
+        const fund = record.kind === "approve" ? fundTicket(ticketLike) : undefined;
+        const f4Payout = fund?.kind === "f4Payout" || fund?.kind === "f4Settle";
+        const result = record.kind === "approve" ? receiptBusinessResult ?? businessResult : businessResult;
+        if (result) toast(`已确认：${record.label}，${f4ApprovalResultText(result)}`, result.status === "NOT_EXECUTED" ? "info" : "success");
+        else if (f4Payout) toast(`已确认：${record.target} 已批准，${F4_RESULT_UNREADABLE}`, "info");
+        else if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}${sealed ? "，这版已封存" : "已生效"}`, "success");
       } else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
@@ -2153,15 +2159,18 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       openActionConfirm(current => current?.run === request.run ? { ...current, approvalWriteBlock } : current);
     };
     const latestReadBlock = "正在加载最新状态，读到后才能批准。";
+    const oldPayoutBlock = oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : undefined;
     const readFailureBlock = w.operationCode === "f4_pool_settle" ? "本周奖池读到后才能批准。" : "总榜预览读到后才能批准。";
     const fund = fundSpec(w, read => {
       // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
       const blockedReason = read.state === "ok" && read.paused ? F4_PAYOUT_APPROVAL_PAUSED
         : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED
         : read.state === "ok" ? read.settled ? undefined : coverageBlock
-        : read.state === "loading" ? latestReadBlock : readFailureBlock;
-      openActionConfirm(current => current?.run === request.run && !current.approvalWriteBlock && current.blockedReason !== blockedReason
-        ? { ...current, blockedReason } : current);
+        : read.state === "failed" ? readFailureBlock : undefined;
+      const buttonDisabledReason = read.state === "loading" && !blockedReason ? latestReadBlock : undefined;
+      openActionConfirm(current => current?.run === request.run && !current.approvalWriteBlock
+        && (current.blockedReason !== blockedReason || current.buttonDisabledReason !== buttonDisabledReason)
+        ? { ...current, blockedReason, buttonDisabledReason } : current);
     }) ?? k1Spec ?? bootSpec;
     const request: A4ActionConfirmReq = {
       briefKind,
@@ -2200,7 +2209,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         : amplifies && !coverage ? <span className="a2-coverage-unknown">{`${fundLead(w)}，兑付覆盖率暂时读不到`}</span> : fundLead(w),
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
-      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : fund?.waitsForLatestRead ? latestReadBlock : coverageBlock,
+      blockedReason: oldPayoutBlock ?? (fund?.waitsForLatestRead ? undefined : coverageBlock),
+      buttonDisabledReason: fund?.waitsForLatestRead && !oldPayoutBlock ? latestReadBlock : undefined,
       initialReason: f4Payout ? refusedPayoutReasons.current.get(draftKey) : undefined,
       reasonMin,
       reasonMax: 200,

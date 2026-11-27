@@ -43,7 +43,7 @@ export function f4CurrentWeekPool(
 ) {
   const actual = overview.currentWeekSettled === true;
   const amount = actual ? overview.weeklyInjectedAmount ?? null : overview.currentWeekPoolAmount ?? overview.currentWeekPoolUsd;
-  return { amount, actual, estimated: overview.currentWeekSettled === false };
+  return { amount, actual, estimated: overview.currentWeekSettled === false && amount !== null };
 }
 
 export function f4MonthlyCap(raw: string): string | null {

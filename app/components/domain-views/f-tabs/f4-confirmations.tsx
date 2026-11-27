@@ -94,7 +94,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
   // 不是「每周某天」时提醒哪些周会自动结算（只做显示）。
   const cadence = settlement.ready && !invalid.has("settleCron") ? settleCadenceNote(settleCron) : null;
   const unlockVRankEff = invalid.has("unlockVRank") ? invalidLabel : unlockVRank || "未配置";
-  const settled = f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
+  const settled = data.currentWeekSettled ?? f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
   const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data);
   const board = leaderboardState(data);
   const current = data.leaderboardComputePointPeriods?.[period];
@@ -291,10 +291,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     case action === "payout": {
       const run = (reason: string) => ctx.proposeF4LeaderboardPayout("allTime", reason);
       const poolBlock = ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined;
+      const loadingBlock = "正在加载最新状态，读到后才能发起。";
       spec = { briefKind: "funds",
     name: "发放总榜奖励",
     amplify: true,
-    title: "发放总榜奖励", blockedReason: poolBlock, effect: approvalTag(), confirmLabel: "提交审批",
+    title: "发放总榜奖励", blockedReason: poolBlock, buttonDisabledReason: loadingBlock, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: F4_PAYOUT_IMPACT,
       check: `奖池为 0 或没人上榜时不发钱。${F4_PAYOUT_COVERAGE}`,
@@ -305,9 +306,9 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     facts: <div className="rd-stack">
       <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)}
         onReadStateChange={read => {
-          if (read.state === "loading") return;
-          const block = read.state === "ok" ? read.paused ? F4_PAYOUT_PROPOSAL_PAUSED : poolBlock : "总榜预览读到后才能发起。";
-          ctx.setF4PayoutBlock(run, block);
+          const block = read.state === "failed" ? "总榜预览读到后才能发起。"
+            : read.state === "ok" && read.paused ? F4_PAYOUT_PROPOSAL_PAUSED : poolBlock;
+          ctx.setF4PayoutBlock(run, block, read.state === "loading" ? loadingBlock : undefined);
         }} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
