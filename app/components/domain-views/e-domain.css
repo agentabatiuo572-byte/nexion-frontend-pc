@@ -1032,7 +1032,7 @@
 .e1-section-fields > .rd-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rd-space-5) var(--rd-space-4); }
 /* 标语按中文、英文、越南语排（TX-35）；最多 255 字的句子并排会切掉，所以和资料链接一样占整行。自定义角标出现在角标下拉正下方，不挤动其他字段。 */
 .e1-tagline-fields { display: grid; gap: var(--rd-space-5); min-width: 0; }
-.e1-badge-fields { display: grid; gap: var(--rd-space-5); align-content: start; min-width: 0; }
+.e1-badge-fields { grid-column: 1; display: grid; gap: var(--rd-space-5); align-content: start; min-width: 0; }
 .e1-section-fields > .rd-form-field:has(.e1-upload, textarea, input[list], input[aria-label="资料链接"]) { grid-column: 1 / -1; }
 .e1-section-fields .rd-number { width: min(100%, 240px); }
 .e1-section-fields .rd-number .rd-input { width: 100%; }

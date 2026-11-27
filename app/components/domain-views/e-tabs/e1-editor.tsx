@@ -468,9 +468,9 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
               ? <Field label="所属系列" error={errors.seriesCode} explain={original?.seriesCode ? "这件商品已有订单或已发出设备，系列已锁定，不能再改。其他资料可以照常修改。" : "这件商品已有订单或已发出设备，系列已锁定，这里补不了；请联系技术支持核对。"}><Input aria-label="所属系列" value={skuSeriesText(original?.seriesCode)} readOnly /></Field>
               : <Field label="所属系列" required error={errors.seriesCode} explain="决定设备的产能、可跑的任务和 App 里的设备分类。有订单或发出设备后就不能再改。"><Select aria-label="所属系列" required value={form.seriesCode} disabled={busy || !original && !form.tier} onChange={v => update("seriesCode", v)} placeholder={!original && !form.tier ? "请先选择档位" : "请选择所属系列"} options={[...seriesChoices.map(code => ({ value: code, label: SKU_SERIES_NAMES[code] })), ...form.seriesCode && !seriesChoices.some(code => code === form.seriesCode) ? [{ value: form.seriesCode, label: `${skuSeriesText(form.seriesCode)}（和商品类型不符）`, disabled: true }] : []]} /></Field>}
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
+            {sortSupported && field("storeSortOrder", "商城排序", { number: true, min: E1_STORE_SORT_MIN, max: E1_STORE_SORT_MAX, step: 1, required: true,
+              hint: "填写整数，默认 0", explain: "批准后影响 App / H5 Lite「在售」的展示顺序。同为精选或同为普通商品时，数字越小越靠前。" })}
             <div className="e1-badge-fields">
-              {sortSupported && field("storeSortOrder", "商城排序", { number: true, min: E1_STORE_SORT_MIN, max: E1_STORE_SORT_MAX, step: 1, required: true,
-                hint: "填写整数，默认 0", explain: "批准后影响 App / H5 Lite「在售」的展示顺序。同为精选或同为普通商品时，数字越小越靠前。" })}
               <Field label="营销角标" error={form.badgeKind !== "custom" ? shownError("badge") : undefined} explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
                 setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"], badgeKindChanged: true }));
                 setErrors(current => ({ ...current, badge: "" }));
