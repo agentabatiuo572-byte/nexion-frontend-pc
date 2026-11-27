@@ -596,7 +596,7 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-phone-name { font-size: var(--rd-text-aux); color: var(--rd-text); overflow-wrap: anywhere; }
 .h3-phone-reward { font-size: var(--rd-text-aux); font-weight: var(--rd-weight-semibold); color: var(--rd-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .h3-phone-go { font-size: var(--rd-text-aux); color: var(--rd-text-3); }
-.h3-phone-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.h3-phone-list .h3-phone-target { grid-column: 1 / -1; }  /* 列表行窄，跳转目标占满一整行，长商品名、原路由不挤在名称列里 */
 /* 跳转目标是后台给运营核对的说明，不是 App 上的字：弱文字加转折箭头，长商品名、原路由换行不截断。 */
 .h3-phone-target { display: flex; align-items: flex-start; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h3-phone-target svg { flex: none; margin-top: 3px; }

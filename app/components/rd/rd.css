@@ -520,13 +520,15 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-search-select .rd-input { padding-right: 32px; }
 .rd-search-select-icon { position: absolute; top: 50%; right: 10px; display: inline-flex; color: var(--rd-text-3); transform: translateY(-50%); pointer-events: none; }
 .rd-search-pop { z-index: var(--rd-z-pop); width: var(--radix-popover-trigger-width); max-height: min(320px, var(--radix-popover-content-available-height)); overflow-y: auto; padding: 4px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); border: 1px solid var(--rd-line-strong); }
-/* 候选行按内容换行撑高、不截断（CP-58 M3-H08）；一行时 22 + 上下 4 不到 32，仍由 min-height 定成 32，和原来一样高。 */
+/* 候选行按内容换行撑高、不截断（CP-58 M3-H08）；一行时 22 + 上下 4 不到 32，仍由 min-height 定成 32，和原来一样高。
+   名称和右侧弱字放在同一组里：一行放得下时弱字贴右，放不下时弱字换到名称下面，名称不被挤成一字一行；打勾留在右边。 */
 .rd-search-option { display: flex; align-items: center; gap: 12px; min-height: var(--rd-control-h); padding: 4px 12px; border-radius: var(--rd-radius-tag); color: var(--rd-text); font-size: 14px; line-height: var(--rd-lh-body); cursor: pointer; user-select: none; }
 .rd-search-option[data-active] { background: var(--rd-control); }
 .rd-search-option[aria-disabled="true"] { color: var(--rd-text-disabled); cursor: not-allowed; }
+.rd-search-option-text { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: baseline; gap: 0 12px; min-width: 0; }
 .rd-search-option-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .rd-search-option[aria-selected="true"] .rd-search-option-label { font-weight: 500; }
-.rd-search-option-extra { flex: none; font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
+.rd-search-option-extra { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; font-size: var(--rd-text-aux); color: var(--rd-text-3); font-variant-numeric: tabular-nums; }
 .rd-search-option-check { flex: none; color: var(--rd-brand-ink); }
 .rd-search-state { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: var(--rd-control-h); padding: 4px 12px; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .rd-search-state[data-error] { color: var(--rd-danger); }

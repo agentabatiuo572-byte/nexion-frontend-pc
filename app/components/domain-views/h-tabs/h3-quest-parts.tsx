@@ -555,12 +555,10 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                 {tasks.map((task) => (
                   <li key={task.key}>
                     <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[task.category] ?? "其他"}</span>
-                    <span className="h3-phone-main">
-                      <span className="h3-phone-name">{previewName(task, locale)}</span>
-                      <PreviewTarget label={task.routeLabel} />
-                    </span>
+                    <span className="h3-phone-name">{previewName(task, locale)}</span>
                     {task.reward !== undefined && <span className="h3-phone-reward">{task.reward == null ? "—" : `+${task.reward}`}</span>}
                     <span className="h3-phone-go" aria-hidden="true">›</span>
+                    <PreviewTarget label={task.routeLabel} />
                   </li>
                 ))}
               </ul>

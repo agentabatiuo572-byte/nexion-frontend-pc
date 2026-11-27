@@ -176,8 +176,10 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
                   onMouseEnter={() => { if (!option.disabled) setActive(index); }}
                   onClick={() => choose(option)}
                 >
-                  <span className="rd-search-option-label">{option.label}</span>
-                  {option.extra && <span className="rd-search-option-extra">{option.extra}</span>}
+                  <span className="rd-search-option-text">
+                    <span className="rd-search-option-label">{option.label}</span>
+                    {option.extra && <span className="rd-search-option-extra">{option.extra}</span>}
+                  </span>
                   {option.value === selected && <Check className="rd-search-option-check" size={14} aria-hidden />}
                 </div>
               ))}
