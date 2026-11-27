@@ -133,13 +133,13 @@ const CONCLUSION_TEXT: Partial<Record<FundCommandEvidence["conclusion"], string>
 
 /**
  * 页面传来的技术原文（「理由 …」「操作人 … ｜ 理由 …」「拟改值：…」）拆成一项一行，进底部的技术信息折叠（DT-08、VS-109）。
- * 每项是「名称 值」或「名称：值」；没有值的（「强制保存倒挂价」）写「是」。已经单列的操作编号不重复。
+ * 每项是「名称 值」或「名称：值」，名称是一到八个汉字；对不上的整段（「强制保存倒挂价」、读不到原审批时的提示）记作「说明」。已经单列的操作编号不重复。
  */
 function techSegments(text: string | undefined, hasKey: boolean) {
   return (text ?? "").split(" ｜ ").filter(Boolean).flatMap(part => {
-    const match = part.match(/^([^\s：]+)[\s：]+([\s\S]+)$/);
-    const k = match ? match[1] : part;
-    return hasKey && k === "操作编号" ? [] : [{ k, v: match ? match[2] : "是" }];
+    const match = part.match(/^([\u4e00-\u9fff]{1,8})[\s：]+([\s\S]+)$/);
+    const k = match ? match[1] : "说明";
+    return hasKey && k === "操作编号" ? [] : [{ k, v: match ? match[2] : part }];
   });
 }
 
