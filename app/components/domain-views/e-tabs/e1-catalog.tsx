@@ -462,7 +462,7 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
         <div className="e1-product-conditions">
           <div className="e1-product-meta">
             <span className="e1-meta-item">{s.dailyEarnNEX == null ? "— · 未填写 UVT/天" : <E1Amount value={s.dailyEarnNEX} unit="UVT/天" />}</span>
-            <StatusTag tone="neutral" icon={s.trialEligible ? CheckCircle2 : Ban}>{s.trialEligible ? "允许试用" : "不可试用"}</StatusTag>
+            <StatusTag tone={s.trialEligible ? "ok" : "neutral"} icon={s.trialEligible ? CheckCircle2 : Ban}>{s.trialEligible ? "允许试用" : "不可试用"}</StatusTag>
             {s.purchaseGate && <Explain label={`${s.name}购买条件`} content={<E1PurchaseConditions sku={s} />}><span className="e1-gate-trigger"><ShieldCheck size={14} aria-hidden />购买条件</span></Explain>}
             <StatusTag tone="neutral" icon={open ? CheckCircle2 : Clock3}>{s.unlock ? ctx.e1Gates ? phaseLabel(s.unlock) : "开放阶段未读取" : "无需阶段"}</StatusTag>
           </div>
@@ -471,12 +471,32 @@ export function E1Catalog({ ctx }: { ctx: E1CatalogContext }) {
           {proposal && <Button size="sm" variant="ghost" onClick={() => ctx.openPending(proposal.id)}>有变更待审批 · {proposal.id}</Button>}
         </div>
         {canWrite && <div className="e1-product-actions">
-          {canWrite && <><Button size="sm" variant="primary" disabledReason={writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined)} onClick={() => ctx.openSku(s.id)} aria-label={`改价 / 编辑 ${s.name}`}>改价 / 编辑</Button><div className="e1-status-action"><Button size="sm" disabledReason={onBlock} aria-label={`${s.status === "on" ? "下架" : "上架"} ${s.name}`} onClick={() => ctx.openActionConfirm({ briefKind: "content", name: `${s.status === "on" ? "下架" : "上架"}商品 · ${s.name}`, op: "sku-status", target: s.id, status: s.status === "on" ? "off" : "on", detail: s.status === "on" ? "下架后从商城隐藏，不影响已售设备结算。" : "批准后按完整购买条件判断，不保证所有用户都能购买。" })}>{s.status === "on" ? "下架" : "上架"}</Button>{actionReason && <span className="e1-action-reason">{actionReason}</span>}</div></>}
           <MoreMenu label={`更多操作 ${s.name}`} items={[
             { key: "details", label: "商品资料", onSelect: () => afterMenu(() => openDetail(s.id)) },
             ...canWrite && s.status === "on" && (s.inventoryMode === "UNLIMITED" || Number(s.stock) > 0) && !open && !release && phaseCurrentKnown ? [{ key: "current-phase", label: "按当前阶段上架", disabledReason: writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.openSku(s.id, phaseCur)) }] : [],
             ...canWrite ? [{ key: "delete", label: "删除", danger: true, disabledReason: writeBlock({ op: "sku-delete", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined), onSelect: () => afterMenu(() => ctx.delSku(s.id, s.name)) }] : [],
           ]} />
+          <Button
+            size="sm"
+            disabledReason={onBlock}
+            aria-label={`${s.status === "on" ? "下架" : "上架"} ${s.name}`}
+            onClick={() => ctx.openActionConfirm({
+              briefKind: "content",
+              name: `${s.status === "on" ? "下架" : "上架"}商品 · ${s.name}`,
+              op: "sku-status",
+              target: s.id,
+              status: s.status === "on" ? "off" : "on",
+              detail: s.status === "on" ? "下架后从商城隐藏，不影响已售设备结算。" : "批准后按完整购买条件判断，不保证所有用户都能购买。",
+            })}
+          >{s.status === "on" ? "下架" : "上架"}</Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabledReason={writeBlock({ op: "sku-save", target: s.id }) || (locked ? "此对象有待审批或待核对的操作，请先核对" : undefined)}
+            onClick={() => ctx.openSku(s.id)}
+            aria-label={`改价 / 编辑 ${s.name}`}
+          >改价 / 编辑</Button>
+          {actionReason && <span className="e1-action-reason">{actionReason}</span>}
         </div>}
       </article>;
     })}</div></Panel>;
