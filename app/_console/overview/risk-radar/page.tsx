@@ -217,6 +217,7 @@ export default function RiskRadarPage() {
   const [thresholdError, setThresholdError] = useState("");
   const [otherThresholdChanges, setOtherThresholdChanges] = useState<string[]>([]);
   const [approvalRecovery, setApprovalRecovery] = useState(false);
+  const [approvalQueryError, setApprovalQueryError] = useState("");
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [subscription, setSubscription] = useState({ inApp: true, email: false, webhook: false, webhookUrl: "" });
   const [savedSubscription, setSavedSubscription] = useState(subscription);
@@ -426,6 +427,7 @@ export default function RiskRadarPage() {
     if (!session || !pendingApproval || savingThreshold) return;
     let alive = true;
     setApprovalVerifiedKey(null);
+    setApprovalQueryError("");
     void submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query")
       .then((result) => {
         if (alive && result?.ticket.status === "pending") setApprovalVerifiedKey(pendingApproval.commandKey);
@@ -436,7 +438,7 @@ export default function RiskRadarPage() {
           setNeedsFreshRadar(true); void radar.reload();
         }
       })
-      .catch((cause) => { if (alive) setThresholdError(displayAdminError(cause)); })
+      .catch((cause) => { if (alive) setApprovalQueryError(displayAdminReadError(cause)); })
       .finally(() => { if (alive) syncPending(value => value + 1); });
     return () => { alive = false; };
   }, [pendingApproval?.commandKey, radar.data?.generatedAt, savingThreshold]);
@@ -643,6 +645,7 @@ export default function RiskRadarPage() {
   };
   const queryApproval = async () => {
     if (!session || !pendingApproval) return;
+    setApprovalQueryError("");
     try {
       const result = await submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query");
       setApprovalVerifiedKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
@@ -658,7 +661,11 @@ export default function RiskRadarPage() {
           : `暂未查到原审批单。${approvalRecoveryLine(next, state.replayRejection)}`;
         setToast(line, next.canRetry ? undefined : "warn");
       }
-    } catch (cause) { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
+    } catch (cause) {
+      const message = displayAdminReadError(cause);
+      setApprovalQueryError(message);
+      if (!threshold || !approvalRecovery) setToast(message);
+    }
     finally { syncPending(value => value + 1); }
   };
   const submitThreshold = async (recover = false) => {
@@ -1130,7 +1137,8 @@ export default function RiskRadarPage() {
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
               {(thresholdError || approvalRecovery) && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? approvalExpiredNotFound ? "已过期" : approvalRejected ? RETRY_REJECTED_STATUS.label : "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
-                ? approvalNext && (approvalNext.kind === "query" ? "请先查询原审批单。" : approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection, approvalExpiredNotFound))
+                ? approvalQueryError ? `查询没有成功：${approvalQueryError} 记录继续保留，稍后再查。`
+                  : approvalNext && (approvalNext.kind === "query" ? "请先查询原审批单。" : approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection, approvalExpiredNotFound))
                 : thresholdUnknown && thresholdNext ? thresholdNext.canRetry
                   ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。"
                   : writeRecoveryLine(thresholdNext, thresholdReplay?.replayRejection) : thresholdError}</Notice>}

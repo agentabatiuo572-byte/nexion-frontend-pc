@@ -194,7 +194,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     if (target) ctx.closeActionConfirm?.(target.request);
   }
   const currentRecoveryInfo = useRef(recoveryInfo);
-  currentRecoveryInfo.current = recoveryInfo;
+  currentRecoveryInfo.current = (record) => recoveryInfo(record, canQueryM4);
   const currentRecoveryBindings = useRef(faqRecoveryBindings);
   currentRecoveryBindings.current = faqRecoveryBindings;
   const activeElement = () => document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -661,7 +661,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
       : !state.busy && !state.replayRejection && (receipt || shared.label === "没有查询权限" || !outcome && !state.expired && state.conclusion === "unknown")
         ? state.expired && !found.line.includes("24 小时") ? { ...found, line: `${RETRY_EXPIRED_TEXT}${found.line}` } : found : mRecoveryView(state, { last, canRelease });
     return { view, more: view.more, currentFact, gone, audit: gone || Boolean(state.replayRejection) || state.expired || !record.faq || view.line.includes("操作记录与审批"),
-      rejected: Boolean(state.replayRejection) && !state.busy, release: () => openRelease(record) };
+      rejected: canRelease && Boolean(state.replayRejection) && !state.busy, release: () => openRelease(record) };
   }
   const goneText = (record: MCommandRecord) => record.faq?.kind === "delete" ? "这条问答已不在列表里，看不出是不是这次删的。" : GONE_TEXT;
   const deleteRecoveryNotice = (record?: MCommandRecord) => {
