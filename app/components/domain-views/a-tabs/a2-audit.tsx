@@ -21,6 +21,7 @@ import { aTicketPermissionText } from "@/lib/admin/a-approval-names";
 import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText, H8_SETTLEMENT_APPROVAL_PERMISSION } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
+import { F4_COVERAGE_NEXT, F4_PAYOUT_COVERAGE, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_SETTLE_IMPACT, F4_SETTLEMENT_CONSEQUENCE } from "@/lib/admin/f4-money";
 import { F2BootstrapReview, f2AppLimitIssue, f2BootstrapUsesRank, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { fetchF1VRankOverview, fetchF2RatesOverview } from "@/lib/admin/f1-client";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
@@ -56,6 +57,7 @@ import {
   fetchA2RetentionLatest,
   fetchA2RetentionPreview,
   fetchA2Overview,
+  F4ApprovalBlockedError,
   a2VoucherReversalResult,
   isA2OutcomeUncertainError,
   rejectA2Operation,
@@ -69,6 +71,8 @@ import {
   type A2OperationRow,
   type A2OperationType,
   type A2Overview,
+  type F4ApprovalAttemptResult,
+  type F4ApprovalBusinessResult,
   type RetentionExecution,
   type RetentionPreview,
 } from "@/lib/admin/a2-client";
@@ -209,6 +213,8 @@ function ticketPermissionText(w: A2OperationRow) {
 
 const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
+const F4_PAYOUT_APPROVAL_PAUSED = "排行榜已暂停，恢复后再批准，或驳回。";
+const F4_RESULT_UNREADABLE = "这次结果读不到，以操作记录为准";
 
 function approvalExecutorLabel(w: A2OperationRow) {
   if (isH7VoucherApproval(w.operationCode)) return `${H7_VOUCHER_APPROVER}（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）`;
@@ -318,7 +324,38 @@ function F2LayerLimitNotice({ level, after }: { level: string; after: string }) 
 function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
   return w.mine || (!!username && username === w.operator);
 }
-const F4_COVERAGE_COPY = "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。";
+const F4_COVERAGE_COPY = "批准时如果该周期未结算，先查兑付覆盖率。读不到或低于红线就不发钱，审批单留着待审批。";
+const F4_RESULT_REASONS: Record<string, string> = {
+  F4_LEADERBOARD_ALREADY_SETTLED: "这一期已经派过",
+  F4_LEADERBOARD_NO_CANDIDATES: "没有合格的上榜名单",
+  F4_LEADERBOARD_POOL_NOT_CONFIGURED: "没有可发放的奖池",
+  F4_LEADERBOARD_NO_PAYABLE_AMOUNT: "没有可发金额",
+  F4_POOL_ALREADY_SETTLED: "本周已经结算",
+  F4_POOL_NO_ELIGIBLE_VOTERS: "没有合格的投票人",
+  F4_POOL_NO_VOLUME: "本周没有符合条件的成交额",
+  F4_POOL_MONTHLY_CAP_REACHED: "本月额度已满",
+  F4_POOL_NO_PAYABLE_AMOUNT: "没有可发金额",
+  F4_LEADERBOARD_PAUSED: "排行榜已暂停",
+  COVERAGE_BELOW_REDLINE: "兑付覆盖率低于红线",
+};
+
+/**
+ * F4 审批的真实结果，原因同一套词，前面的说法按场合换（OP-79、OP-90）：
+ * 结了单的写「入账 N 笔，合计…」或「没有发钱：原因」；被暂停、覆盖率挡下的是批准没有执行，单子还待审批，写「没有执行：原因」和下一步。
+ */
+function f4ResultReason(result: { reasonCode: string }) {
+  return F4_RESULT_REASONS[result.reasonCode] ?? "原因暂时无法显示";
+}
+
+function f4ApprovalResultText(result: F4ApprovalBusinessResult) {
+  if (result.status === "NOT_EXECUTED") return `没有发钱：${f4ResultReason(result)}`;
+  const amounts = Object.entries(result.amountsByCurrency).map(([currency, amount]) => `${payoutAmount(amount)} ${currency}`);
+  return `入账 ${count(result.creditedCount)} 笔，合计 ${amounts.join("、")}`;
+}
+
+function f4BlockedText(reasonCode: F4ApprovalAttemptResult["reasonCode"]) {
+  return `这次没有执行：${f4ResultReason({ reasonCode })}。审批单仍待审批，关掉后重新打开，按最新读数再批准，或驳回。`;
+}
 /**
  * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
  */
@@ -398,7 +435,7 @@ const enablesAutoPayout = (fund: FundTicket | undefined) => fund?.kind === "fCon
  */
 function fundLead(w: A2OperationRow): string {
   const fund = fundTicket(w);
-  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return "批准时算出有应发的金额才发钱";
+  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return F4_SETTLEMENT_CONSEQUENCE;
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return "真实放钱";
   const k1 = k1TicketView(w);
   if (k1) return k1.kind === "release" ? "批准后这笔钱不再锁住" : "放宽后可能多放收益";
@@ -623,7 +660,8 @@ function approvalTiming(w: A2OperationRow) {
   if (w.operationCode === "k1_release_param") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对规则没被改过、兑付覆盖率够，才改；点「驳回」原操作不执行。" };
   if (w.operationCode === "k1_earnings_release") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对这笔收益没变、兑付覆盖率够，才放行；点「驳回」原操作不执行。" };
   const fund = fundTicket(w);
-  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
+  // 已结算的周期批准时不查覆盖率（BE-27），标签不写「通过覆盖率检查」。
+  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，还没结算的先查兑付覆盖率，算出有应发的金额才发钱；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
   if (coverageMode === "amplifies" && fund?.kind === "fConfig" && (fund.spec?.loosen || enablesAutoPayout(fund))) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Reissue") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才补发；点「驳回」原操作不执行。" };
@@ -1119,6 +1157,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 }) {
   const { toast, openActionConfirm } = ctx;
   const oldPayoutTickets = useRef(new Set<string>());
+  const refusedPayoutReasons = useRef(new Map<string, string>());
   const [, redrawPayoutBlocks] = useState(0);
   useEffect(() => {
     try {
@@ -1426,6 +1465,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   }, [logPageRows, recordsLoading, session, tab, view]);
   const e1Proposals = e1ProposalRead?.rows === logPageRows && e1ProposalRead.session === session ? e1ProposalRead.proposals : undefined;
   const historyRows = records?.operationHistory ?? [];
+  const f4ResultTexts = useMemo(() => new Map((records?.operationQueue ?? []).flatMap(ticket => {
+    if (ticket.status !== "approved") return [];
+    const text = ticket.f4ResultUnreadable ? F4_RESULT_UNREADABLE : ticket.businessResult && f4ApprovalResultText(ticket.businessResult);
+    return text ? [[ticket.id, text] as const] : [];
+  })), [records]);
   const histPages = Math.max(1, Math.ceil(historyRows.length / histPageSize));
   const histSafePage = Math.min(histPage, histPages);
   const histPageRows = historyRows.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
@@ -1506,7 +1550,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo" | "refundAmountUsdtText"> & { rule?: DecisionRule | null };
   const runDecision = async (kind: A2DecisionKind, w: DecisionTicket, reason: string, by = operator) => {
     if (kind === "approve" && oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
-    return sendCommand(
+    let businessResult: F4ApprovalBusinessResult | undefined;
+    const outcome = await sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
       operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdtText: w.refundAmountUsdtText ?? undefined, action: w.action, ruleTaskAction: w.ruleTaskAction },
@@ -1524,10 +1569,13 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       if (receipt.id !== w.id || receipt.status !== DECISION_STATUS[kind]) return false;
       const next = await loadMain();
       void loadFiltered(appliedRef.current);
-      return next.operationQueue.some((item) => item.id === w.id && item.status === DECISION_STATUS[kind])
-        || next.operationHistory.some((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
+      const decided = next.operationQueue.find((item) => item.id === w.id && item.status === DECISION_STATUS[kind]);
+      if (kind === "approve" && decided?.f4ResultUnreadable) return false;
+      businessResult = decided?.businessResult;
+      return !!decided || next.operationHistory.some((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
     },
     );
+    return { outcome, businessResult };
   };
 
   const runParam = (key: "ttl" | "retention" | "schema", value: string, reason: string, by = operator) => sendCommand(
@@ -1693,21 +1741,23 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         before: queued?.before ?? "", after: queued?.after ?? "", operationCode: record.operationCode ?? queued?.operationCode,
         fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record),
         refundAmountUsdtText: record.refundAmountUsdtText ?? queued?.refundAmountUsdtText, rule: recordRule(record) };
-      const outcome = record.kind === "param" ? await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator)
-        : record.kind === "retention" ? await runRetention(record.reason, record.expectedRetentionMonths, record.operator)
-          : record.kind === "export" ? await runExport(record.reason, record.filter ?? {}, record.operator)
+      const { outcome, businessResult } = record.kind === "param" ? { outcome: await runParam(record.target as "ttl" | "retention" | "schema", record.value ?? "", record.reason, record.operator) }
+        : record.kind === "retention" ? { outcome: await runRetention(record.reason, record.expectedRetentionMonths, record.operator) }
+          : record.kind === "export" ? { outcome: await runExport(record.reason, record.filter ?? {}, record.operator) }
             : await runDecision(record.kind, ticketLike, record.reason, record.operator);
       // 导出和清理自己会提示「已下载」「清理完成」，不再多弹一条。
       if (outcome === "ok") {
         if (decisionRetryRefusals.current.has(record.commandKey)) clearDecisionPendingNote(record);
         // 披露发布批准只封存这一版，不说「已生效」（和 approvalTiming 同一单类判断）。
         const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
-        if (record.kind !== "export" && record.kind !== "retention") toast(`已确认：${record.label}${sealed ? "，这版已封存" : "已生效"}`, "success");
+        if (record.kind !== "export" && record.kind !== "retention") toast(businessResult ? `已确认：${record.label}，${f4ApprovalResultText(businessResult)}`
+          : `已确认：${record.label}${sealed ? "，这版已封存" : "已生效"}`, businessResult?.status === "NOT_EXECUTED" ? "info" : "success");
       } else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const code = backendCode(cause);
-      const approvalReason = record.kind === "approve" ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined;
+      const approvalReason = cause instanceof F4ApprovalBlockedError ? `${f4ResultReason(cause.result)}，批准没有执行`
+        : record.kind === "approve" ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined;
       const why = (approvalReason
         ?? (record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
       if (!a2Commands.list().some(row => row.commandKey === record.commandKey)) {
@@ -1894,29 +1944,28 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
    */
   type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string;
     coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; review?: boolean; extra?: ReactNode };
-  const fundSpec = (w: A2OperationRow): FundSpec | undefined => {
+  const fundSpec = (w: A2OperationRow, onPayoutStateChange?: (settled: boolean, paused?: boolean) => void): FundSpec | undefined => {
     const fund = fundTicket(w);
     if (!fund) return undefined;
+    // 影响句、后果句和覆盖率说明与 F4 发起框同一套（OP-69）；覆盖率说明只在问号里写一次（DT-12）。
     if (fund.kind === "f4Payout") return {
       irreversible: true,
-      impact: `名单和金额以批准那一刻的${fund.period === "总榜" ? "总榜" : "排行榜"}为准。`,
-      completion: F4_COVERAGE_COPY,
-      check: "核对这次实发、名单和发起理由，理由写清依据或工单号。",
-      detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。按旧规则提交的单须先撤回或驳回，再看新预览后重新提交。",
-      coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
+      impact: fund.period === "总榜" ? F4_PAYOUT_IMPACT : "名单和金额以批准那一刻的排行榜为准。",
+      check: "核对预计发放、名单和发起理由，理由写清依据或工单号。",
+      detail: "奖池为 0 或没人上榜时不发钱。按旧规则提交的单须先撤回或驳回，再看新预览后重新提交。",
+      coverageCheck: `${fund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
-      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts approving rules /> : undefined,
+      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts approving rules onPayoutStateChange={onPayoutStateChange} /> : undefined,
     };
     if (fund.kind === "f4Settle") return {
       irreversible: true,
-      impact: "池金额以批准那一刻所在的周为准。",
-      completion: F4_COVERAGE_COPY,
+      impact: F4_SETTLE_IMPACT,
       check: "核对本周奖池和发起理由，理由写清依据或工单号。",
-      detail: "本周已经结算过的会跳过，不补发差额；没有合格票时不发钱。",
-      coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
+      detail: "没有合格票时不发钱。",
+      coverageCheck: `${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}`,
       facts: undefined,
-      lead: <F4SettleFacts />,
+      lead: <F4SettleFacts onSettlementChange={onPayoutStateChange} />,
     };
     if (fund.kind === "fConfig") {
       const item = fund.spec;
@@ -2017,6 +2066,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 
   const approveRequest = (w: A2OperationRow): A4ActionConfirmReq => {
     const name = approvalActionName(w);
+    const f4Payout = w.operationCode === "f4_pool_settle" || w.operationCode === "f4_leaderboard_period_payout";
+    const draftKey = `${session?.adminId}:${w.id}`;
     const v8Promotion = isV8PromotionTicket(w);
     const coverageMode = approvalCoverageMode(w);
     const amplifies = coverageMode === "amplifies";
@@ -2084,9 +2135,20 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       facts: <><Fact k="要建立">L1–L7 七层规则</Fact>{rankedBootstrap && <Fact k="七层合计占订单">第 1、2 层按受益人等级</Fact>}<Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
       extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />,
     };
-    const fund = fundSpec(w) ?? k1Spec ?? bootSpec;
     const belowRedline = !!coverage && (coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct);
-    return {
+    const coverageBlock = !requiresH5ApprovalCoverage && amplifies && belowRedline
+      ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined;
+    const blockAfterWrite = (approvalWriteBlock: string) => {
+      openActionConfirm(current => current?.run === request.run ? { ...current, approvalWriteBlock } : current);
+    };
+    const fund = fundSpec(w, (settled, paused) => {
+      // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
+      const blockedReason = paused ? F4_PAYOUT_APPROVAL_PAUSED
+        : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : settled ? undefined : coverageBlock;
+      openActionConfirm(current => current?.run === request.run && !current.approvalWriteBlock && current.blockedReason !== blockedReason
+        ? { ...current, blockedReason } : current);
+    }) ?? k1Spec ?? bootSpec;
+    const request: A4ActionConfirmReq = {
       briefKind,
       title: "批准审批单",
       action: <>确认执行 · {w.id}({name})</>,
@@ -2123,26 +2185,42 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         : amplifies && !coverage ? <span className="a2-coverage-unknown">{`${fundLead(w)}，兑付覆盖率暂时读不到`}</span> : fundLead(w),
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
-      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : !requiresH5ApprovalCoverage && amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
+      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : coverageBlock,
+      initialReason: f4Payout ? refusedPayoutReasons.current.get(draftKey) : undefined,
       reasonMin,
       reasonMax: 200,
       confirmLabel: "确认批准",
       // 直接动钱的确认用红（决定 50）。
       confirmTone: w.amplifies || isRefund ? "danger" : "primary",
       run: async (reason) => {
+        if (f4Payout) refusedPayoutReasons.current.delete(draftKey);
         if (oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
         const block = w.operationCode === D5_APPROVAL_OP ? d5Trc20ApprovalBlock(w.before, w.after) : undefined;
         if (block) throw new Error(d5Trc20Reason(block, false));
         try {
-          const outcome = await runDecision("approve", w, reason);
-          if (outcome === "ok") { decisionToast("approve", w.id); setTicketId(null); }
+          const { outcome, businessResult } = await runDecision("approve", w, reason);
+          if (outcome === "ok") {
+            if (businessResult) toast(`${w.id} 已批准，${f4ApprovalResultText(businessResult)}`, businessResult.status === "NOT_EXECUTED" ? "info" : "success");
+            else decisionToast("approve", w.id);
+            setTicketId(null);
+          }
         } catch (cause) {
+          const code = cause instanceof F4ApprovalBlockedError ? cause.result.reasonCode : backendCode(cause);
+          if (f4Payout && (code === "F4_LEADERBOARD_PAUSED" || code === "COVERAGE_BELOW_REDLINE")) {
+            refusedPayoutReasons.current.set(draftKey, reason);
+            blockAfterWrite(f4BlockedText(code));
+            if (code === "COVERAGE_BELOW_REDLINE") await refreshCoverage();
+            return false;
+          }
           if (w.operationCode === "f4_leaderboard_period_payout" && backendCode(cause) === "F4_LEADERBOARD_PAYOUT_REVIEW_REQUIRED") {
             openActionConfirm(approveRequest(w));
             throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
           }
           const stale = staleReason(w, "approve", cause);
-          if (stale) openActionConfirm({ ...approveRequest(w), blockedReason: stale });
+          if (stale) {
+            blockAfterWrite(stale);
+            return false;
+          }
           // 共用的说法对直接编辑、演练都成立；审批这里还要写下一步（M8）。
           if (backendCode(cause) === "J4_PLAYBOOK_NOT_FOUND") throw new Error("应急预案不存在，可能已被删除，这张单不能批准。请驳回后按最新的预案重新发起。");
           const refused = approvalRefusedText(w.operationCode, backendCode(cause));
@@ -2153,6 +2231,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         }
       },
     };
+    return request;
   };
 
   /** 驳回只是不执行，业务什么都没变，还能重新发起：不标「不能撤销」，不用红（必须改 2，VS-106、VS-107）。 */
@@ -2176,7 +2255,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     confirmLabel: "确认驳回",
     run: async (reason) => {
       try {
-        const outcome = await runDecision("reject", w, reason);
+        const { outcome } = await runDecision("reject", w, reason);
         if (outcome === "ok") { decisionToast("reject", w.id); setTicketId(null); }
       } catch (cause) {
         const stale = staleReason(w, "reject", cause);
@@ -2202,7 +2281,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     confirmLabel: "确认撤回",
     run: async (reason) => {
       try {
-        const outcome = await runDecision("withdraw", w, reason);
+        const { outcome } = await runDecision("withdraw", w, reason);
         if (outcome === "ok") { decisionToast("withdraw", w.id); setTicketId(null); }
       } catch (cause) {
         const stale = staleReason(w, "withdraw", cause);
@@ -2552,7 +2631,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                       <Td sticky="start"><Cell main={name} sub={showObject ? object : undefined} title={`${name}\n对象：${object || "—"}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={change.title ?? `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
-                      <Td fit={!showActions}><Cell main={markers(w)} sub={w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
+                      {/* 上次被挡下的原因常显；时间在悬停提示里，完整时间在详情（ST-04、TX-25）。 */}
+                      <Td fit={!showActions}><Cell main={markers(w)} sub={w.lastApprovalAttemptResult ? `上次批准没有执行：${f4ResultReason(w.lastApprovalAttemptResult)}`
+                        : w.f4ResultUnreadable ? F4_RESULT_UNREADABLE : w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined}
+                        title={w.lastApprovalAttemptResult ? `上次批准没有执行：${f4ResultReason(w.lastApprovalAttemptResult)}\n${bizTime(w.lastApprovalAttemptResult.attemptedAt, "—")}（${zone}）`
+                          : w.f4ResultUnreadable ? F4_RESULT_UNREADABLE : undefined} /></Td>
                       {showActions && <Td sticky="end" fit><span className="rd-row-actions">{rowActions(w)}</span></Td>}
                     </Tr>
                   );
@@ -2667,15 +2750,17 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
               {!records && recordsLoading ? <TableLoading columns={5} rows={4} />
                 : histPageRows.length === 0 ? (
                   <TableMessage columns={5} role="status">{hasApplied ? "当前筛选下暂无处理历史" : "暂无处理历史"}</TableMessage>
-                ) : histPageRows.map((h) => (
-                  <Tr key={h.id} selected={h.id === historyId} onOpen={() => setHistoryId(h.id)}>
+                ) : histPageRows.map((h) => {
+                  const resultText = f4ResultTexts.get(h.id);
+                  const status = <StatusTag tone={HIST_TONE[h.st] ?? "done"}>{HIST_LABEL[h.st] ?? h.st}</StatusTag>;
+                  return <Tr key={h.id} selected={h.id === historyId} onOpen={() => setHistoryId(h.id)}>
                     <Td sticky="start"><Cell mono full main={h.id} /></Td>
                     <Td grow><Cell main={actionName(h)} title={actionName(h)} /></Td>
-                    <Td><StatusTag tone={HIST_TONE[h.st] ?? "done"}>{HIST_LABEL[h.st] ?? h.st}</StatusTag></Td>
+                    <Td>{resultText ? <Cell main={status} sub={resultText} title={resultText} /> : status}</Td>
                     <Td><Cell main={historyActorText(h.chain)} /></Td>
                     <Td><Cell num main={thisYear(bizTime(h.t, h.t))} title={bizTime(h.t, h.t)} /></Td>
-                  </Tr>
-                ))}
+                  </Tr>;
+                })}
             </tbody>
           </Table>
           {historyRows.length > 0 && <Pager label="处理历史" sizeLabel="审批结果" total={historyRows.length} page={histSafePage} pageSize={histPageSize} sizes={[4, 8, 12]}
@@ -2790,6 +2875,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     ...(shownA1Impact ? [{ label: "批准后", value: shownA1Impact.row, reason: shownA1Impact.note }] : []),
     // 发起人和理由合一行（OP-149 A2-A02）：理由是要读的句子，用正文；谁在什么时候发起写在第二行。
     { label: "发起理由", value: keepCodes(shown.reason), reason: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""} · ${bizTime(shown.rawTs, shown.ts)} 发起` },
+    ...(shown.lastApprovalAttemptResult ? [{ label: "最近一次批准", value: `没有执行：${f4ResultReason(shown.lastApprovalAttemptResult)}`,
+      reason: bizTimeFull(shown.lastApprovalAttemptResult.attemptedAt, "—") }]
+      : shown.f4ResultUnreadable ? [{ label: "最近一次批准", value: F4_RESULT_UNREADABLE }] : []),
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
   // 谁能批准、要什么权限：不是做决定要看的，收进判断要点下面的折叠，标题写结论（DP-04）。不能批准的原因写在底部决定区（OP-126、VS-108）。
@@ -2833,14 +2921,16 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const shownIrreversible = !!shown && (!!fundSpec(shown)?.irreversible || k1TicketView(shown)?.kind === "release");
   const shownFundCopy = {
     lead: shown ? `${fundLead(shown)}${!shownIrreversible ? "" : shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "，发了不能撤销" : "，不能撤销"}` : "",
-    check: shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
+    check: shownFund?.kind === "f4Payout" ? shownFund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY
+      : shownFund?.kind === "f4Settle" ? F4_SETTLE_COVERAGE
       : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
         : shownFund?.kind === "f5Reissue" ? shownCover?.check ?? ""
           : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"]
             : enablesAutoPayout(shownFund) && shownCover ? shownCover.check
               : shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`,
   };
-  const shownFundCheck = `${shownFundCopy.lead}。${shownFundCopy.check}`;
+  // 最近一次批准已经写了被覆盖率挡下，提示条只留后果，不把同一个原因再说一遍（DT-12）。
+  const shownFundCheck = shown?.lastApprovalAttemptResult?.reasonCode === "COVERAGE_BELOW_REDLINE" ? `${shownFundCopy.lead}。` : `${shownFundCopy.lead}。${shownFundCopy.check}`;
   // 和批准框同一条件、同一写法：读到覆盖率且没低于红线时是安静的一行，数字强其余弱，不带警告图标（VS-107、DP-05）。
   const shownCoverageCalm = coverage && !(coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct) ? coverage : undefined;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。
@@ -2880,6 +2970,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 
   /* 审批结果抽屉 */
   const shownHistory = historyShown.current;
+  const historyResultText = shownHistory ? f4ResultTexts.get(shownHistory.id) : undefined;
   const historyIndex = shownHistory ? histPageRows.findIndex((h) => h.id === shownHistory.id) : -1;
   const shownActors = shownHistory ? historyActors(shownHistory.chain) : null;
   const historyNote = shownHistory?.note.startsWith("原因:") ? { label: "原因", text: shownHistory.note.slice(3).trim() || "—" } : { label: "说明", text: shownHistory?.note || "—" };
@@ -3013,6 +3104,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             { label: "发起人", icon: Users, tone: "users", value: shownActors?.proposer ?? "—" },
             { label: "处理人", value: shownActors ? `${shownActors.role} ${shownActors.actor}` : historyActorText(shownHistory.chain) },
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },
+            ...(historyResultText ? [{ label: "实际结果", value: historyResultText }] : []),
             { label: historyV8Ticket ? "处理理由" : historyNote.label, value: historyNote.text },
           ]} />
           {historyV8Ticket && <A2ChangeReview before={changeBefore(historyV8Ticket)} after={changeAfter(historyV8Ticket)}

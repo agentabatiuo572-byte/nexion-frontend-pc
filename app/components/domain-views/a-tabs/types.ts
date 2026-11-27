@@ -16,15 +16,17 @@
  * A 域 amplifies:高敏资金动作(放大流出方向,e.g. 提现放行 / 课程奖励上调)单独挂;其余动作 false。
  */
 import type { DCtx } from "../d-tabs/types";
+import type { Dispatch, SetStateAction } from "react";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
 export type A4ActionConfirmReq = Parameters<DCtx["openActionConfirm"]>[0] & {
   recoverySlot?: string;
   requiresH5ApprovalCoverage?: boolean;
+  approvalWriteBlock?: string;
 };
 export type ACtx = Omit<DCtx, "openActionConfirm"> & {
-  openActionConfirm: (request: A4ActionConfirmReq) => void;
+  openActionConfirm: Dispatch<SetStateAction<A4ActionConfirmReq | null>>;
   closeActionConfirm?: (slot?: string) => void;
   actionConfirmOpen?: boolean;
 };

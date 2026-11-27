@@ -6,6 +6,7 @@ import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outco
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
 import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
+import { f4Decimal } from "@/lib/admin/f4-money";
 import { rankPurchaseRate } from "@/lib/admin/f-overview-contract";
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import { parsePhoneProposalView, type PhoneProposalView } from "@/lib/admin/phone-calibration-client";
@@ -84,6 +85,8 @@ type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
 export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
+  businessResult?: unknown;
+  lastApprovalAttemptResult?: unknown;
   roleGrantsDiff?: unknown;
   disclosureReview?: unknown;
   v8PromotionSnapshot?: unknown;
@@ -239,7 +242,26 @@ interface V8PromotionSnapshot {
   v8?: V8PromotionBenefits;
 }
 
+export type F4ApprovalBusinessResult =
+  | { status: "EXECUTED"; creditedCount: number; amountsByCurrency: Record<string, string>; settlementKey: string }
+  | { status: "NOT_EXECUTED"; reasonCode: string; settlementKey: string };
+
+export type F4ApprovalAttemptResult = {
+  status: "NOT_EXECUTED";
+  reasonCode: "F4_LEADERBOARD_PAUSED" | "COVERAGE_BELOW_REDLINE";
+  attemptedAt: string;
+};
+
+export class F4ApprovalBlockedError extends Error {
+  constructor(message: string, readonly result: F4ApprovalAttemptResult) {
+    super(message);
+  }
+}
+
 export interface A2OperationRow {
+  businessResult?: F4ApprovalBusinessResult;
+  lastApprovalAttemptResult?: F4ApprovalAttemptResult;
+  f4ResultUnreadable?: true;
   /** Persisted backend review only; null is unavailable, four empty arrays are a known empty diff. */
   roleGrantsDiff: A2RoleGrantsDiff | null;
   roleGrantsReview: A2RoleGrantsReview | null;
@@ -662,7 +684,43 @@ async function withRoleGrantsNames(rows: A2OperationRow[]): Promise<A2OperationR
     menus.status === "fulfilled" ? menus.value : undefined) } : row);
 }
 
-function fromTicket(ticket: BackendTicket): A2OperationRow {
+const INVALID_F4_BUSINESS_RESULT = "A2_F4_BUSINESS_RESULT_INVALID";
+
+function isF4SettlementOperation(operationCode: BackendTicket["operationCode"]) {
+  return operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout";
+}
+
+/** B134 omits results for older tickets. A present result must match the approval or attempt contract. */
+function readF4SettlementResult(value: unknown): F4ApprovalBusinessResult | F4ApprovalAttemptResult | undefined {
+  if (value === undefined) return undefined;
+  const invalid = () => new Error(INVALID_F4_BUSINESS_RESULT);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw invalid();
+  const { status, creditedCount, amountsByCurrency, settlementKey, reasonCode, attemptedAt } = value as Record<string, unknown>;
+  if (amountsByCurrency === null || typeof amountsByCurrency !== "object" || Array.isArray(amountsByCurrency)) throw invalid();
+  const entries = Object.entries(amountsByCurrency);
+  if (status === "NOT_EXECUTED" && creditedCount === 0 && entries.length === 0) {
+    if (typeof attemptedAt === "string" && attemptedAt.endsWith("Z") && Number.isFinite(Date.parse(attemptedAt)) && settlementKey === undefined
+      && (reasonCode === "F4_LEADERBOARD_PAUSED" || reasonCode === "COVERAGE_BELOW_REDLINE")) return { status, reasonCode, attemptedAt };
+    if (attemptedAt === undefined && typeof settlementKey === "string" && settlementKey.trim()
+      && typeof reasonCode === "string" && /^[A-Z][A-Z0-9_]*$/.test(reasonCode)) return { status, reasonCode, settlementKey };
+  }
+  if (status !== "EXECUTED" || typeof creditedCount !== "number" || !Number.isSafeInteger(creditedCount) || creditedCount <= 0
+    || typeof settlementKey !== "string" || !settlementKey.trim() || !entries.length || attemptedAt !== undefined || reasonCode !== undefined) throw invalid();
+  const amounts = entries.map(([currency, amount]) => {
+    const decimal = typeof amount === "string" ? f4Decimal(amount) : null;
+    if (!/^[A-Z][A-Z0-9]*$/.test(currency) || decimal === null || decimal.startsWith("-") || !/[1-9]/.test(decimal)) throw invalid();
+    return [currency, decimal] as const;
+  });
+  return { status, creditedCount, amountsByCurrency: Object.fromEntries(amounts), settlementKey };
+}
+
+function readF4ApprovalAttempt(value: unknown) {
+  const result = readF4SettlementResult(value);
+  if (result && !("attemptedAt" in result)) throw new Error(INVALID_F4_BUSINESS_RESULT);
+  return result;
+}
+
+function fromTicket(ticket: BackendTicket, tolerateUnreadableResult = false): A2OperationRow {
   if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
   if (ticket.objDisplayName != null && typeof ticket.objDisplayName !== "string") throw new Error("A2_TICKET_OBJECT_DISPLAY_NAME_INVALID");
   const ambassadorTicket = !!ticket.ambassadorMaterialProposal || /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
@@ -696,7 +754,19 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
   const roleGrantsDiff = readRoleGrantsDiff(ticket.roleGrantsDiff);
   const withdrawalSource = ticket.operationCode === "d5_withdrawal_limits" || !ticket.operationCode && ticket.action === "放宽提现参数" ? "D5"
     : ticket.operationCode === "d7_payout_vnd_config" || !ticket.operationCode && ticket.action === "放宽越南盾提现参数" ? "D7" : undefined;
+  let payoutResults: Pick<A2OperationRow, "businessResult" | "lastApprovalAttemptResult" | "f4ResultUnreadable"> = {};
+  if (isF4SettlementOperation(ticket.operationCode)) {
+    try {
+      const businessResult = readF4SettlementResult(ticket.businessResult);
+      if (businessResult && "attemptedAt" in businessResult) throw new Error(INVALID_F4_BUSINESS_RESULT);
+      payoutResults = { businessResult, lastApprovalAttemptResult: readF4ApprovalAttempt(ticket.lastApprovalAttemptResult) };
+    } catch (error) {
+      if (!tolerateUnreadableResult || !(error instanceof Error) || error.message !== INVALID_F4_BUSINESS_RESULT) throw error;
+      payoutResults = { f4ResultUnreadable: true };
+    }
+  }
   return {
+    ...payoutResults,
     roleGrantsDiff,
     roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
     disclosureReview: readI5DisclosureReview(ticket.disclosureReview, ticket.operationCode),
@@ -814,7 +884,7 @@ async function normalizeOverview(data: BackendOverview | null | undefined): Prom
       weeklyExpired: toNumber(stats.weeklyExpired),
       weeklyWithdrawn: toNumber(stats.weeklyWithdrawn),
     },
-    operationQueue: await withRoleGrantsNames((data?.operationQueue ?? []).map(fromTicket)),
+    operationQueue: await withRoleGrantsNames((data?.operationQueue ?? []).map(ticket => fromTicket(ticket, true))),
     operationHistory: (data?.operationHistory ?? []).map((row) => ({ ...row })),
     mechanismParams: (data?.mechanismParams ?? []).map((row) => ({ ...row, locked: !!row.locked })),
     confirmCategories: (data?.confirmCategories ?? []).map((row) => ({ ...row })),
@@ -828,6 +898,13 @@ function preserveWithdrawalChangeNumbers(text: string) {
     if (!changes) return token;
     return changes.replace(/("(?:before|after|trc20|bep20|erc20)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])|"(?:\\.|[^"\\])*"/g,
       (match, key: string | undefined, number: string | undefined) => key ? `${key}"${number}"` : match);
+  });
+}
+
+/** B134 amounts are JSON numbers. Retain the original decimal digits for the receipt. */
+function preserveF4BusinessResultAmounts(text: string) {
+  return text.replace(/("amountsByCurrency"\s*:\s*\{(?:[^"{}]|"(?:\\.|[^"\\])*")*\})|"(?:\\.|[^"\\])*"/g, (token, amounts: string | undefined) => {
+    return amounts?.replace(/("[A-Z][A-Z0-9]*"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"') ?? token;
   });
 }
 
@@ -857,7 +934,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   }
   const result = (await response.text().then(text => {
     const exactMoney = text.replace(/("(?:originalAmountUsdt|refundAmountUsdt)"\s*:\s*)(-?\d+(?:\.\d+)?)(?=\s*[,}])/g, '$1"$2"');
-    return JSON.parse(preserveWithdrawalChangeNumbers(exactMoney));
+    return JSON.parse(preserveF4BusinessResultAmounts(preserveWithdrawalChangeNumbers(exactMoney)));
   }).catch(() => null)) as ApiResult<T> | null;
   // 41a552fa checks coverage before the first F4 payout write. Other 503s remain unknown.
   const f4PayoutCoverageRefusal = init?.f4Payout === true && response.status === 503
@@ -901,8 +978,13 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
         init.commandKey,
       );
     }
-    throw Object.assign(new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
-      ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data)), {
+    const attempt = init?.f4Payout && (result?.code === 409 && result.message === "F4_LEADERBOARD_PAUSED"
+      || result?.code === 422 && result.message === "COVERAGE_BELOW_REDLINE")
+      ? readF4ApprovalAttempt((result.data as { businessResult?: unknown } | undefined)?.businessResult) : undefined;
+    if (attempt && attempt.reasonCode !== result?.message) throw new Error(INVALID_F4_BUSINESS_RESULT);
+    const message = await monthlyTargetPoolErrorText(result?.message, result?.data)
+      ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data);
+    throw Object.assign(attempt ? new F4ApprovalBlockedError(message, attempt) : new Error(message), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
       httpStatus: response.status,
       apiCode: result?.code,
@@ -957,7 +1039,7 @@ export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue =
       operationQueueInvalidCount += 1;
       continue;
     }
-    try { operationQueue.push(fromTicket(row)); }
+    try { operationQueue.push(fromTicket(row, true)); }
     catch { operationQueueInvalidCount += 1; }
   }
   return { ...await normalizeOverview({ ...data, operationQueue: [] }), operationQueue: await withRoleGrantsNames(operationQueue), operationQueueInvalidCount };
@@ -973,14 +1055,23 @@ export async function fetchA2ProposalLog(operationId: string, signal?: AbortSign
 }
 
 export async function approveA2Operation(operationId: string, reason: string, commandKey?: string, operationCode?: string) {
-  const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
-    method: "POST",
-    body: JSON.stringify({ reason }),
-    f5Status: operationCode === "f_commission_status",
-    f4Payout: operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout",
-    ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
-  });
-  return (await withRoleGrantsNames([fromTicket(row)]))[0];
+  let ticket: A2OperationRow;
+  try {
+    const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+      f5Status: operationCode === "f_commission_status",
+      f4Payout: isF4SettlementOperation(operationCode),
+      ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
+    });
+    ticket = fromTicket(row);
+  } catch (error) {
+    if (commandKey && error instanceof Error && error.message === INVALID_F4_BUSINESS_RESULT) {
+      throw new A2OutcomeUncertainError(error.message, commandKey);
+    }
+    throw error;
+  }
+  return (await withRoleGrantsNames([ticket]))[0];
 }
 
 export async function rejectA2Operation(operationId: string, reason: string, commandKey?: string) {

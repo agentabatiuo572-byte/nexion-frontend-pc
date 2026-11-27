@@ -93,6 +93,7 @@ export type Mc = (McSpec & { commandKey: string; teamApprovalOwner?: AdminSessio
 export interface FViewCtx {
   runFContinuation: <T>(commandKey: string | undefined, submit: () => T | Promise<T>) => Promise<T>;
   openActionConfirm: (m: McSpec) => void;
+  blockPausedF4Payout: (run: NonNullable<McSpec["run"]>) => void;
   nav: (domain: string) => void;
   toast: (msg: string) => void;
   /** UI convenience only; backend authorization remains the final boundary. */
