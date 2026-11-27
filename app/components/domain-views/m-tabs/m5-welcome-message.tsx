@@ -378,7 +378,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <Fact k="谁会收到">之后注册的新用户</Fact>
           <Fact k="不变的">已经注册的用户不会再收到；已发出的欢迎语不改</Fact>
         </Facts>
-        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
+        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
           <p>{recoveryLine}</p>
           <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}

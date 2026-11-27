@@ -384,7 +384,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
           <Fact k="影响谁">之后注册的用户、之后发消息的客户、还在等分配的客户</Fact>
           <Fact k="不变的">已有的绑定；改天数不补记维护</Fact>
         </Facts>
-        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
+        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
           <p>{recoveryLine}</p>
           <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}
