@@ -4,7 +4,7 @@ import { m1CustomerCode } from "./m1-customer-code";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { M_RECOVERY, M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mRejectedReason, mUnknownText } from "@/lib/admin/m-recovery-copy";
+import { M_RECOVERY, M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mUnknownText } from "@/lib/admin/m-recovery-copy";
 import { createPendingMutationStore, createPendingRecovery } from "@/lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportClient, verifySupportTransfer, isDefiniteSupportRefusal, SupportClientError, type SupportAgentCandidate, type SupportCustomerDetail } from "@/lib/admin/m-support-client";
@@ -231,7 +231,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       const cause = timedOut(signal, error);
       if (replay || written || !isDefiniteSupportRefusal(cause)) {
         setPending(record);
-        updateTransferNote(record.commandKey, replayRejection ? mRejectedReason(displayAdminError(cause), replayRejection) : mUnknownText(displayAdminError(cause)));
+        updateTransferNote(record.commandKey, replayRejection ? "" : mUnknownText(displayAdminError(cause)));
       } else {
         transferCommands.forget(record.fingerprint, record.commandKey);
         updateTransferNote(record.commandKey);

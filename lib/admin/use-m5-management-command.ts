@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { displayAdminError, displayAdminReadError } from "./error-messages";
-import { M_RECOVERY, mQueryFailedText, mRejectedReason, mUnknownText } from "./m-recovery-copy";
+import { M_RECOVERY, mQueryFailedText, mUnknownText } from "./m-recovery-copy";
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isDeterministicRejection } from "./outcome-classification";
 import { isSupportSessionExpired, SupportClientError } from "./m-support-client";
@@ -181,7 +181,7 @@ export function useM5ManagementCommand<T, B, R>(options: {
         setMessage(action === "load-latest" ? `最新内容没读到，记录和你填的内容都还在。${displayAdminReadError(error)}`
           : action === "query" ? state.conclusion === "not-found"
             ? `没有查到原操作，最新规则也没读到，记录和你填的内容都还在。${displayAdminReadError(error)}` : mQueryFailedText(displayAdminReadError(error))
-            : state.replayRejection ? mRejectedReason(displayAdminError(error), state.replayRejection) : mUnknownText(displayAdminError(error)));
+            : state.replayRejection ? "" : mUnknownText(displayAdminError(error)));
         return;
       }
       const rejected = action === "submit" && error instanceof SupportClientError && !isSupportSessionExpired(error)

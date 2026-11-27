@@ -20,7 +20,7 @@ import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } 
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { businessZone } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { M_RECOVERY, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mRejectedReason, mUnknownReason, type MRecoveryView } from "@/lib/admin/m-recovery-copy";
+import { M_RECOVERY, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mUnknownReason, type MRecoveryView } from "@/lib/admin/m-recovery-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   Button, Cell, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Input, IrreversibleTag, Modal, MoreMenu, Notice, NumberInput,
@@ -307,7 +307,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
         const reason = displayAdminError(error);
         const failure = `${rejected ? "后台拒绝了这次操作" : refusedReplay ? "后台已拒绝重试" : "结果未知"} · ${reason}`;
         // 框里已有这条原操作的结论句，未知和重试被拒只补原因。
-        if (onFailure) onFailure(rejected ? new Error(failure, { cause: error }) : new OutcomeUnknownError(refusedReplay ? mRejectedReason(reason) : mUnknownReason(reason), { cause: error }), latest);
+        if (onFailure) onFailure(rejected ? new Error(failure, { cause: error }) : new OutcomeUnknownError(refusedReplay ? "" : mUnknownReason(reason), { cause: error }), latest);
         else toast(failure, rejected ? "error" : "warn");
         return false;
       }
@@ -656,7 +656,8 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
       : shared.label === "已处理" && !state.expired ? { ...shared, line: "后台已处理，看不出成没成，请到操作记录与审批核对。" } : shared;
     const last = !outcome ? "" : "error" in outcome ? mQueryFailedText(outcome.error) : receipt ? `这次查到「${found.label}」。`
       : state.conclusion !== "not-found" ? M_RECOVERY.unsettled : state.replayRejection || state.expired ? M_RECOVERY.notFoundShort : "";
-    const view: MRecoveryView & { more?: string } = submittingKey === record.commandKey ? M_SUBMITTING_VIEW : !record.faq ? mRecoveryView(state)
+    const view: MRecoveryView & { more?: string } = submittingKey === record.commandKey ? M_SUBMITTING_VIEW : !record.faq
+      ? mRecoveryView(state, { expiredLine: "已超过 24 小时，也查不到原结果，请到操作记录与审批核对。" })
       : !state.busy && !state.replayRejection && (receipt || shared.label === "没有查询权限" || !outcome && !state.expired && state.conclusion === "unknown")
         ? state.expired && !found.line.includes("24 小时") ? { ...found, line: `${RETRY_EXPIRED_TEXT}${found.line}` } : found : mRecoveryView(state, { last });
     return { view, more: view.more, currentFact, gone, audit: gone || Boolean(state.replayRejection) || state.expired || !record.faq || view.line.includes("操作记录与审批"),

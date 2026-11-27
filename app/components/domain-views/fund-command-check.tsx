@@ -48,7 +48,7 @@ export type FundRecoveryRow = {
   actions: ReactNode;
   /** 展开后显示：这条记录特有的事实（金额、改动、页面的读回说明等）。 */
   detail?: ReactNode;
-  tech?: string;
+  tech?: string | readonly { k: string; v: string }[];
   copy?: FundCheckCopy;
 };
 
@@ -133,14 +133,19 @@ const CONCLUSION_TEXT: Partial<Record<FundCommandEvidence["conclusion"], string>
 
 /**
  * 页面传来的技术原文（「理由 …」「操作人 … ｜ 理由 …」「拟改值：…」）拆成一项一行，进底部的技术信息折叠（DT-08、VS-109）。
- * 每项是「名称 值」或「名称：值」，名称是一到八个汉字；对不上的整段（「强制保存倒挂价」、读不到原审批时的提示）记作「说明」。已经单列的操作编号不重复。
+ * 拼接文本只拆理由前的字段；理由之后还有字段的页面直接传分好的行。已经单列的操作编号不重复。
  */
-function techSegments(text: string | undefined, hasKey: boolean) {
-  return (text ?? "").split(" ｜ ").filter(Boolean).flatMap(part => {
+function techSegments(tech: FundRecoveryRow["tech"], hasKey: boolean) {
+  if (typeof tech !== "string") return tech ?? [];
+  const reason = /(?:^| ｜ )理由[ ：]([\s\S]*)$/.exec(tech);
+  const prefix = reason ? tech.slice(0, reason.index) : tech;
+  const rows = prefix.split(" ｜ ").filter(Boolean).flatMap(part => {
     const match = part.match(/^([\u4e00-\u9fff]{1,8})[\s：]+([\s\S]+)$/);
     const k = match ? match[1] : "说明";
     return hasKey && k === "操作编号" ? [] : [{ k, v: match ? match[2] : part }];
   });
+  if (reason) rows.push({ k: "理由", v: reason[1] });
+  return rows;
 }
 
 /** zoned：面板标题旁已经写了时区，展开后的查询时间不再写。 */

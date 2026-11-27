@@ -1,6 +1,7 @@
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "./pending-mutation-store";
 
 const MISSING_ORIGINAL_TEXT = "旧记录缺原请求，不能重试。";
+export const EXPIRED_PROPOSAL_NOT_FOUND_LINE = "已超过 24 小时，按原号没有查到审批单。核实后可以解除这条记录。";
 
 type RecoveryFacts = Pick<PendingRecoveryState, "expired" | "replayBlock" | "replayRejection" | "conclusion">;
 

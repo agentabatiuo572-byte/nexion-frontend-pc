@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { currentRecoveryActor } from "@/lib/admin/abe-recovery-access";
+import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { a3ContentVersionConflict, isA3ContentCommand, type A3Command, type A3ContentOriginal, type A3RecoveryProps } from "@/lib/admin/a3-mutations";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { isRetryExpired } from "@/lib/admin/pending-mutation-store";
 import { parseDeveloperDocs, parseHowContent } from "@/lib/admin/published-content-client";
+import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { LeaveSaveContinuation } from "../i-tabs/i5-writes";
 
@@ -107,6 +109,17 @@ export function useContentEditor<D extends ContentDocument>({
   latestCommands.current = commands;
 
   const original = commands.find(kind);
+  const isDocsDraft = kind === "docs" && mode === "DRAFT";
+  const reasonRule = useReasonRule(isDocsDraft && !original);
+  const draftReason = isDocsDraft ? {
+    ready: !original && reasonRule.ready,
+    error: original ? "" : reasonRule.error,
+    min: reasonRule.min,
+    count: `${visibleReasonLength(reason)}/${reasonRule.max}`,
+    blocked: original ? undefined : !reasonRule.ready ? reasonRule.error || "正在加载，稍候即可提交。"
+      : !reasonRule.ok(reason) ? reasonRule.hint(reason)
+        : reason.trim().length > 500 ? "理由包含的字符总数不能超过 500 字。" : undefined,
+  } : undefined;
   const savedForm = original && isA3ContentCommand(original) ? original.original : null;
   const direct = original?.directContentConflict;
   const originalInput = savedForm?.document;
@@ -249,7 +262,9 @@ export function useContentEditor<D extends ContentDocument>({
   const save = async (target: Mode, blocked: string | undefined, name: string, path: string) => {
     if (!canWrite || blocked || !baseline || !document || saving || readInFlight.current) return;
     const note = reason.trim();
-    if (note.length < 8 || note.length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
+    if (kind === "docs" && target === "DRAFT") {
+      if (!draftReason || draftReason.blocked) return;
+    } else if (note.length < 8 || note.length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
     const proceed = afterSave.current;
     afterSave.current = null;
     setSaving(true); setError(null);
@@ -278,7 +293,7 @@ export function useContentEditor<D extends ContentDocument>({
       proceed?.cancel?.();
     } finally { setSaving(false); }
   };
-  return { canRead, canWrite, document, baseline, baselineRead, original, loading, saving, mode, reason, setReason, error, notice,
+  return { canRead, canWrite, document, baseline, baselineRead, original, loading, saving, mode, reason, setReason, draftReason, error, notice,
     readReady, dirty, hasChanges, remainingIntent, commonBlocked, direct, readbackError, compareError, reference, referenceError,
     beginSave, cancelSave, discardReference, discardDraft, save, setDocument, setError, refresh };
 }
