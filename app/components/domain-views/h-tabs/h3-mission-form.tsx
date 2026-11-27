@@ -7,10 +7,10 @@
  */
 import { useState } from "react";
 import { ListChecks } from "lucide-react";
-import { Button, Decision, Drawer, Field, Input, Modal, Notice, NumberInput, SearchSelect, Select, StatusTag } from "@/app/components/rd";
+import { Button, Decision, Drawer, Field, InlineRetry, Input, Modal, Notice, NumberInput, SearchSelect, Select, StatusTag } from "@/app/components/rd";
 import { PreviewTarget, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS, amountText } from "./h3-quest-parts";
 import { h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
-import { H3_PRODUCT_TARGETS_READ_FAILURE, h3MissionCreationRefusal, type H3ProductActionTarget } from "@/lib/admin/h3-contract";
+import { h3MissionCreationRefusal, type H3ProductActionTarget } from "@/lib/admin/h3-contract";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
 export type H3MissionForm = Record<string, string>;
@@ -49,13 +49,15 @@ const SUBJECT_TEXT: Record<string, string> = {
   WEEKLY_T2: "每周二档任务",
 };
 
-export function H3MissionFormDrawer({ missionType, initial, productActionTargets, routeLabels, readFailed, onClose, onReview }: {
+export function H3MissionFormDrawer({ missionType, initial, productActionTargets, routeLabels, readFailed, targetsRetry, onClose, onReview }: {
   missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2";
   initial?: H3MissionForm;
   productActionTargets?: readonly H3ProductActionTarget[] | null;
   routeLabels: Record<string, string>;
   /** 抽屉开着时页面重读失败：抽屉和填的内容留着，读到前不能进下一步。 */
   readFailed?: { retrying: boolean; onRetry: () => void };
+  /** 只有商品候选没读到（其他数据都在）：在「去完成」这一项下就地写，带「重试」。 */
+  targetsRetry?: { retrying: boolean; onRetry: () => void };
   onClose: () => void;
   onReview: (value: H3MissionForm, reward: number) => void;
 }) {
@@ -69,7 +71,7 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
   const leave = (key: string) => () => setLeft((state) => state[key] ? state : { ...state, [key]: true });
   const actionRoutes = h3ActionRoutes(value.missionCode ?? "", productActionTargets);
   const actionRoute = actionRoutes.includes(value.actionRoute) ? value.actionRoute : "";
-  const routeBlocked = productActionTargets === null ? H3_PRODUCT_TARGETS_READ_FAILURE : actionRoutes.length ? undefined : productActionTargets === undefined
+  const routeBlocked = productActionTargets === null ? "商品候选没读到，读到后才能新建" : actionRoutes.length ? undefined : productActionTargets === undefined
     ? "商品候选没读到，重新读取后再选"
     : "现在没有能作回本目标的 S1 商品（已开放、能显示预计收益），上架后再选";
   const { value: reward, error: rewardError } = readMissionReward(value.rewardPoints);
@@ -91,13 +93,15 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
     <>
       <Drawer open wide onClose={close} title={`新建${subject}`} sub="建好后是已停用" icon={ListChecks} tone="role-4"
         explain="左边填，右边看它在 App 上的样子。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
-        footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
-          primary={<Button variant="primary" disabledReason={productActionTargets === null ? H3_PRODUCT_TARGETS_READ_FAILURE : readFailed ? "最新数据读到后才能继续" : creationRefusal ? displayAdminError(new Error(creationRefusal)) : routeBlocked} onClick={review}>下一步：核对并提交</Button>}
+        // 没填好时「下一步」禁用，原因只放按钮提示；点一下把各项错误亮在字段下（OP-15、OP-126），底栏不再重复列一遍。
+        footer={<Decision
+          primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : missing.length ? missing.join("；") : undefined}
+            onBlockedClick={() => setAttempted(true)} onClick={review}>下一步：核对并提交</Button>}
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h3-form-split" data-detail="" data-preview="">
           <div className="h3-form">
             {readFailed && <Notice tone="warn" title="最新数据没读到"
-              action={<Button size="sm" loading={readFailed.retrying} onClick={readFailed.onRetry}>重试读取</Button>}>
+              action={<Button size="sm" loading={readFailed.retrying} loadingText="重试中…" onClick={readFailed.onRetry}>重试</Button>}>
               填的内容还在，读到以后才能继续。
             </Notice>}
             <Field label="任务编号" required hint="英文和数字" error={shown.missionCode ?? (creationRefusal ? displayAdminError(new Error(creationRefusal)) : undefined)}>
@@ -115,12 +119,14 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
                 {(control) => <div onBlur={leave("category")}><Select {...control} aria-label="任务类别" value={value.category ?? ""} onChange={(next) => set("category", next)}
                   options={TASK_CATEGORY_OPTIONS.map((option) => ({ value: option, label: TASK_CATEGORY_LABELS[option] }))} /></div>}
               </Field>
-              <Field label="点「去完成」跳到" required help={shown.actionRoute ? undefined : routeBlocked} error={shown.actionRoute}>
+              <Field label="点「去完成」跳到" required
+                help={productActionTargets === null ? <>{routeBlocked}{targetsRetry && <> · <InlineRetry onRetry={targetsRetry.onRetry} retrying={targetsRetry.retrying} /></>}</> : shown.actionRoute ? undefined : routeBlocked}
+                error={productActionTargets === null ? undefined : shown.actionRoute}>
                 {/* 框里显示的是已选项名称时，点进去先全选，打字就替换它，不会接在名称后面去搜（Ant Design Select showSearch）。 */}
                 {(control) => <div onBlur={leave("actionRoute")}
                   onFocus={(event) => { if (routeTyping === null && event.target instanceof HTMLInputElement) event.target.select(); }}
                   onClick={(event) => { if (routeTyping === null && event.target instanceof HTMLInputElement) event.target.select(); }}>
-                  <SearchSelect {...control} aria-label="点「去完成」跳到" placeholder="选择或输入名称搜索" disabled={!actionRoutes.length}
+                  <SearchSelect {...control} aria-label="点「去完成」跳到" aria-required placeholder="选择或输入名称搜索" disabled={!actionRoutes.length}
                     value={routeTyping ?? (actionRoute ? routeText(actionRoute) : "")}
                     onChange={(next) => { setRouteTyping(next); if (value.actionRoute) set("actionRoute", ""); }}
                     options={routeOptions} selected={actionRoute || undefined} empty="没有匹配的页面或商品"

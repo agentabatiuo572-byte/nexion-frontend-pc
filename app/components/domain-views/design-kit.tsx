@@ -2028,7 +2028,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     const legend = spec.title ?? (surface ? undefined : "填写设置");
     const feedback = spec.feedback?.(value);
     const issues = surface ? multiFieldIssues(spec, value) : {};
-    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft || feedback.live) ? feedback.message : undefined);
+    // 指向搜索选择字段的跨字段报错按这一项自己离开过才报：焦点还在框里打字时不提前报（OP-15、VS-107）；其他字段照旧。
+    const leftFor = (key: string) => spec.fields.some((f) => f.key === key && f.searchSelect) ? !!leftFields[key] : formLeft;
+    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || leftFor(key) || feedback.live) ? feedback.message : undefined);
     // 只有一项时占满一行，不留半边空。
     const alone = surface && visibleFields.length === 1;
     const fieldName = (f: (typeof spec.fields)[number]) => <>
@@ -2141,7 +2143,7 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
                       // 和新建任务抽屉同一种控件：改文字就取消已选，选中才写进表单值（ST-29）；框里是已选名称时点进去先全选，打字就替换它。
                       <div onFocus={(event) => { if (typed === undefined && event.target instanceof HTMLInputElement) event.target.select(); }}
                         onClick={(event) => { if (typed === undefined && event.target instanceof HTMLInputElement) event.target.select(); }}>
-                        <RdSearchSelect {...control} aria-label={f.label} placeholder={f.placeholder ?? (f.mustChoose ? "请选择" : undefined)} empty={f.searchSelect.empty}
+                        <RdSearchSelect {...control} aria-label={f.label} aria-required={f.required !== false} placeholder={f.placeholder ?? (f.mustChoose ? "请选择" : undefined)} empty={f.searchSelect.empty}
                           value={typed ?? (chosen ? optionText(chosen) : "")}
                           onChange={(next) => { setSearchTyping((state) => ({ ...state, [f.key]: next })); if (chosen) set(f.key, ""); }}
                           options={(f.options ?? []).filter((option) => !typed?.trim() || optionText(option).toLowerCase().includes(typed.trim().toLowerCase()))

@@ -522,9 +522,10 @@ function previewName(task: PreviewTask, locale: PreviewLocale) {
   return task.names[locale] || task.names.en || task.source;
 }
 
-/** 预览里给运营核对的跳转目标：App 上只有「去完成 ›」，这一行只在后台显示。没有值写「—」（ST-45）。 */
-export function PreviewTarget({ label }: { label: string }) {
-  return <span className="h3-phone-target"><CornerDownRight size={12} aria-hidden /><span>{`跳到 ${label || "—"}`}</span></span>;
+/** 预览里给运营核对的跳转目标：App 上只有「去完成 ›」，这一行只在后台显示。没有值写「—」（ST-45）。
+ * 目标确定打不开（已读到的商品目录里没有它或没开放）时，原路由照写，后面橙黄写一句打不开（VS-107）。 */
+export function PreviewTarget({ label, unavailable = false }: { label: string; unavailable?: boolean }) {
+  return <span className="h3-phone-target"><CornerDownRight size={12} aria-hidden /><span>{`跳到 ${label || "—"}`}{unavailable && <span className="h3-phone-target-off"> · 这个商品现在打不开，用户做不了</span>}</span></span>;
 }
 
 export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
@@ -564,20 +565,25 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                 <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[hero.category] ?? "其他"}</span>
                 <b>{previewName(hero, locale)}</b>
                 <span className="h3-phone-reward">{hero.reward == null ? "—" : `+${hero.reward} UVT`}</span>
-                <span className="h3-phone-go">去完成 ›</span>
-                <PreviewTarget label={hero.routeLabel} />
+                {/* 和 App 首页一档卡一样：目标打不开时按钮写不可完成、去掉箭头，奖励照常显示（weekly-quest-hero.vue）。 */}
+                {hero.targetUnavailable
+                  ? <span className="h3-phone-go" data-off="">该任务对应业务已暂停，暂不可完成</span>
+                  : <span className="h3-phone-go">去完成 ›</span>}
+                <PreviewTarget label={hero.routeLabel} unavailable={hero.targetUnavailable} />
               </div>
             )}
             {tasks.length === 0 && kind === "dayOne" && <p className="h3-phone-empty">{empty}</p>}
             {tasks.length > 0 && (
               <ul className="h3-phone-list">
                 {tasks.map((task) => (
-                  <li key={task.key}>
+                  // 和 App 列表一样：目标打不开时名称变弱、去掉待赚金额和箭头，说明位写「该任务当前未开放」（weekly-quest-list.vue、day-one-quest-card.vue）。
+                  <li key={task.key} data-off={task.targetUnavailable ? "" : undefined}>
                     <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[task.category] ?? "其他"}</span>
                     <span className="h3-phone-name">{previewName(task, locale)}</span>
-                    {task.reward !== undefined && <span className="h3-phone-reward">{task.reward == null ? "—" : `+${task.reward}`}</span>}
-                    <span className="h3-phone-go" aria-hidden="true">›</span>
-                    <PreviewTarget label={task.routeLabel} />
+                    {!task.targetUnavailable && task.reward !== undefined && <span className="h3-phone-reward">{task.reward == null ? "—" : `+${task.reward}`}</span>}
+                    {!task.targetUnavailable && <span className="h3-phone-go" aria-hidden="true">›</span>}
+                    {task.targetUnavailable && <span className="h3-phone-off">该任务当前未开放</span>}
+                    <PreviewTarget label={task.routeLabel} unavailable={task.targetUnavailable} />
                   </li>
                 ))}
               </ul>

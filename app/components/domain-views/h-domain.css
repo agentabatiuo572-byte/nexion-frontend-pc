@@ -601,6 +601,10 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h3-phone-target { display: flex; align-items: flex-start; gap: var(--rd-space-1); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
 .h3-phone-target svg { flex: none; margin-top: 3px; }
 .h3-phone-target > span { min-width: 0; overflow-wrap: anywhere; }
+/* 目标打不开：照 App 的画法，名称和说明用次文字、说明占满一行；后台那一行的「打不开」用橙黄（VS-107）。 */
+.h3-phone-list li[data-off] .h3-phone-name, .h3-phone-go[data-off] { color: var(--rd-text-2); }
+.h3-phone-off { grid-column: 1 / -1; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-2); }
+.h3-phone-target-off { color: var(--rd-warn); }
 /* 结果未知逐条（和 G 域、H7 同一排法） */
 /* 整张列表同一套列：时间、状态和按钮上下对齐；窄时时间和按钮放第二行。 */
 .h3-rec { display: grid; grid-template-columns: minmax(112px, max-content) minmax(0, 1fr) max-content max-content auto; gap: var(--rd-space-2) var(--rd-space-4); margin: var(--rd-space-2) 0 0; padding: 0; list-style: none; }

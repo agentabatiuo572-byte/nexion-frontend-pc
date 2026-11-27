@@ -681,8 +681,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           requireAnyChange: true,
           // 清空或选了不在候选里的都写在这一项下面；必填检查不再另报字段名（design-kit 去重），同一件事只说一次。
           feedback: (value) => {
+            // 商品候选没读到：框里上方已就地说了并给「重试」，这里只说这一项怎么改（同一件事不说两遍）。
             if (targets === null && value.actionRoute !== currentActionRoute) {
-              return { invalid: true, message: H3_PRODUCT_TARGETS_READ_FAILURE, field: "actionRoute" };
+              return { invalid: true, message: "改回原页面，或重试读到商品候选后再换", field: "actionRoute" };
             }
             return options.includes(value.actionRoute)
               ? { invalid: false, message: "" }
@@ -1208,6 +1209,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           edit={mc.edit}
           businessForm={confirmBusinessForm}
           businessFormRevision={mc.missionPresentationForm ? readAt : undefined}
+          content={mc.missionPresentationForm && productActionTargets === null ? <Notice tone="warn"
+            action={<Button size="sm" loading={loading} loadingText="重试中…" onClick={() => void reload()}>重试</Button>}>商品候选没读到，读到之前不能换跳转页面。</Notice> : undefined}
           facts={mc.facts}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
@@ -1254,8 +1257,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const missionDrawer = creating && <H3MissionFormDrawer key={creating.resumed?.key ?? "h3-mission-drawer"} missionType={creating.type} onClose={() => setCreating(null)}
     initial={creating.resumed?.draft.form}
     productActionTargets={productActionTargets} routeLabels={routeLabels}
-    readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) }
-      : productActionTargets === null ? { retrying: loading, onRetry: () => void reload() } : undefined}
+    readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) } : undefined}
+    targetsRetry={productActionTargets === null ? { retrying: loading, onRetry: () => void reload() } : undefined}
     onReview={(bv, reward) => runCreateMission(creating, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv, reward)} />;
 
   if (loading && !model) return <div className="h3-page">{header}{recovery}{confirmModal}{releaseModal}<BlockState state="loading" title="用户任务正在加载…" /></div>;
