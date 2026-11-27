@@ -670,7 +670,9 @@ export default function RiskRadarPage() {
       if (rereadAfterConflict) setThresholdError("当前阈值已更新，请核对后再保存。");
       else {
         // 框还开着：失败和结果未知都只写在框里，不同时弹提示（VS-107、DT-12）。
+        // 按原操作重试被明确拒绝时 refreshAfterWrite 已经关框，框里的话看不到，才弹一次。
         setThresholdError(displayAdminError(cause));
+        if (rejected && (thresholdOriginal || pendingApproval)) setToast(displayAdminError(cause));
       }
     } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
