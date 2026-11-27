@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { ListChecks } from "lucide-react";
-import { Button, Decision, Drawer, Field, Input, Modal, Notice, NumberInput, Select, StatusTag } from "@/app/components/rd";
+import { Button, Decision, Drawer, Field, Input, Modal, Notice, NumberInput, SearchSelect, Select, StatusTag } from "@/app/components/rd";
 import { TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS, amountText } from "./h3-quest-parts";
 import { h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
 import { h3MissionCreationRefusal, type H3ProductActionTarget } from "@/lib/admin/h3-contract";
@@ -50,6 +50,9 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
   const [value, setValue] = useState<H3MissionForm>(initial ?? MISSION_FORM_INITIAL);
   const [attempted, setAttempted] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  /** 「去完成」框里正在打的字；没在打字时为 null，框里显示已选项的名称。 */
+  const [routeTyping, setRouteTyping] = useState<string | null>(null);
+  const [routeLeft, setRouteLeft] = useState(false);
   const actionRoutes = h3ActionRoutes(value.missionCode ?? "", productActionTargets);
   const actionRoute = actionRoutes.includes(value.actionRoute) ? value.actionRoute : "";
   const routeBlocked = actionRoutes.length ? undefined : productActionTargets === undefined
@@ -57,7 +60,12 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
     : "现在没有能作回本目标的 S1 商品（已开放、能显示预计收益），上架后再选";
   const errors = missionFormErrors(value, missionType, actionRoute ? undefined : routeBlocked ?? "请选择去完成页面");
   const creationRefusal = h3MissionCreationRefusal(missionType, value.missionCode?.trim() ?? "");
-  const shown = attempted ? errors : {};
+  // 刚打开不报；离开「去完成」后报这一项，点过「下一步」后全部亮出（OP-15、VS-107）。
+  const shown = attempted ? errors : routeLeft && errors.actionRoute ? { actionRoute: errors.actionRoute } : {};
+  const routeText = (route: string) => routeLabels[route] ?? route;
+  const routeQuery = routeTyping?.trim().toLowerCase() ?? "";
+  const routeOptions = actionRoutes.filter((route) => !routeQuery || routeText(route).toLowerCase().includes(routeQuery))
+    .map((route) => ({ value: route, label: routeText(route) }));
   const missing = Object.values(errors);
   const dirty = JSON.stringify(value) !== JSON.stringify(MISSION_FORM_INITIAL);
   const set = (key: string, next: string) => setValue((state) => ({ ...state, [key]: next }));
@@ -94,9 +102,14 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
                 {(control) => <Select {...control} aria-label="任务类别" value={value.category ?? ""} onChange={(next) => set("category", next)}
                   options={TASK_CATEGORY_OPTIONS.map((option) => ({ value: option, label: TASK_CATEGORY_LABELS[option] }))} />}
               </Field>
-              <Field label="点「去完成」跳到" required help={attempted ? undefined : routeBlocked} error={shown.actionRoute}>
-                {(control) => <Select {...control} aria-label="点「去完成」跳到" value={actionRoute} onChange={(next) => set("actionRoute", next)}
-                  options={actionRoutes.map((route) => ({ value: route, label: routeLabels[route] ?? route }))} />}
+              <Field label="点「去完成」跳到" required help={shown.actionRoute ? undefined : routeBlocked} error={shown.actionRoute}>
+                {(control) => <div onBlur={() => setRouteLeft(true)}>
+                  <SearchSelect {...control} aria-label="点「去完成」跳到" placeholder="选择或输入名称搜索" disabled={!actionRoutes.length}
+                    value={routeTyping ?? (actionRoute ? routeText(actionRoute) : "")}
+                    onChange={(next) => { setRouteTyping(next); if (value.actionRoute) set("actionRoute", ""); }}
+                    options={routeOptions} selected={actionRoute || undefined} empty="没有匹配的页面或商品"
+                    onSelect={(next) => { setRouteTyping(null); set("actionRoute", next); }} />
+                </div>}
               </Field>
             </div>
           </div>
