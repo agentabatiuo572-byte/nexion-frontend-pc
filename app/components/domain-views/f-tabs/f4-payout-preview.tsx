@@ -132,7 +132,8 @@ export function F4SettleFacts() {
   return (
     <div className="f4-payout">
       <Facts>
-        <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone={pending === "读不到" ? "warn" : "role-1"} unit={data && pool !== null ? "USDT" : undefined}>{pending ?? usdt(pool)}</Fact>
+        {/* 已结算时这次批准不动钱，已发的数不做关键数字（VS-102）。 */}
+        <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead={!settled} tone={pending === "读不到" ? "warn" : "role-1"} unit={data && pool !== null ? "USDT" : undefined}>{pending ?? usdt(pool)}</Fact>
         <Fact k="有资格分的人">{pending ?? `${count(data!.participantCount)} 人`}</Fact>
       </Facts>
       {/* 本周已结算：批准时跳过，和派奖「总榜已经派过」同一种提示（OP-70）。读到的是实发，不叫估算。 */}
