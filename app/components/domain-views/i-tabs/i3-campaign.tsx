@@ -1425,7 +1425,7 @@ export function I3Campaign({ ctx, errorText }: { ctx: ICtx; errorText: string | 
               <Fact k="预算">{budget === undefined || budget === "null" ? "—" : `${amountDisplay(budget)} USD（只记录，不扣款、不发奖）`}</Fact>
             </Facts>
             {c.tier === "critical" && <Notice tone="neutral">紧急通知不看用户的通知设置，也不按保留上限清理。</Notice>}
-            <Fold title="技术信息" tone="role-other" inset summary={`版本 ${c.revision}`}>
+            <Fold title="技术信息" tone="role-other" inset summary="编号、版本和原始设置">
               <Facts>
                 <Fact k="编号"><span data-mono="">{c.id}</span></Fact>
                 <Fact k="版本">{String(c.revision)}</Fact>

@@ -962,8 +962,9 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
             </section>
           ))}
         </div>
-        <Fold inset title="技术信息" summary={`修订号 ${detail.revision ?? "—"}`}>
+        <Fold inset title="技术信息" summary={detail.operator ? "修订号、操作员和内容校验值" : "修订号和内容校验值"}>
           <Facts>
+            <Fact k="修订号">{detail.revision == null ? "—" : String(detail.revision)}</Fact>
             {detail.operator && <Fact k="操作员">{operatorText(detail.operator)}</Fact>}
             <Fact k="内容校验值"><span data-mono="">{detail.contentHash || "—"}</span>{detail.contentHash && <IconButton aria-label="复制内容校验值" onClick={() => void navigator.clipboard.writeText(detail.contentHash!).then(() => toast("已复制内容校验值", "success"), () => toast("复制失败，请手动选择", "error"))}><Copy size={14} aria-hidden /></IconButton>}</Fact>
           </Facts>

@@ -395,12 +395,12 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
         setMaintenanceChecks(({ [record.commandKey]: _check, ...remaining }) => remaining);
         window.dispatchEvent(new Event("support-todo-changed"));
         closeDetail(); setRowsRefresh((value) => value + 1); setNotice(result.status === "FAILED" ? "上次操作没有成功，请重新确认。" : "上次操作已确认，请查看最新资料。");
-      } else setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "原操作结果仍然未知，请稍后再查询。" }));
+      } else setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "刚查过，还没有结果，稍后再查。" }));
     } catch (error) {
       if (actor !== actorStamp()) return;
       closeDetail();
       if (!readingCustomer || !invalidateCustomerOnDenied(record.payload.customerId, error)) {
-        setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "结果暂时查不到，原内容和理由已保留；客户名单还是上次读取的。" }));
+        setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "查询没有成功，原客户和理由已保留；名单还是上次读到的，稍后再查。" }));
       }
     }
     finally { setSaving(false); }
@@ -447,7 +447,9 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
     <RecoveryPanel title={recoveryTitle(pendingRecords.length)} explainLabel="结果未知怎么处理" explain="维护调整发出后没收到明确结果，可能已经生效。先查询原操作；查到前这位客户不能再调整维护。" items={pendingRecords.map(record => ({ key: record.commandKey, createdAt: record.createdAt,
       object: `${record.payload.enabled ? "恢复维护" : "不再维护"} · ${m1CustomerCode(record.payload.customerId)}`, tag: <StatusTag tone="warn">结果未知</StatusTag>,
       line: maintenanceChecks[record.commandKey] ?? "原客户和理由已保留，先查询原操作。",
-      actions: <Button size="sm" icon={<Search size={14} aria-hidden />} disabled={saving} onClick={() => void checkMaintenance(record)}>查询原操作</Button> }))} />
+      actions: <Button size="sm" icon={<Search size={14} aria-hidden />} disabled={saving} onClick={() => void checkMaintenance(record)}>查询原操作</Button>,
+      // 原命令号放第三层的「技术信息」折叠，可以复制给值班同事（OP-154）。
+      tech: <Fold inset title="技术信息" summary="操作编号"><Facts><Fact k="操作编号"><span data-mono>{record.commandKey}</span><Button size="sm" variant="ghost" aria-label="复制操作编号" onClick={() => { void navigator.clipboard.writeText(record.commandKey).then(() => ctx.toast("已复制操作编号", "success"), () => ctx.toast("复制失败，请手动选择", "error")); }}>复制</Button></Fact></Facts></Fold> }))} />
     {notice && <Notice tone="warn" action={<Button size="sm" onClick={() => setNotice(null)}>关闭提示</Button>}>{notice}</Notice>}
     {view === "dashboard" && <>
       {identity}

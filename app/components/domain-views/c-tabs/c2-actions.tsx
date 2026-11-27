@@ -1891,7 +1891,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             </Table>
             {ctxData.sessionsTruncated && <p className="rd-weak">该用户共有 {text(ctxData.totalSessions, "0")} 条登录记录，这里显示最近 {shownSessions.length} 条。</p>}
           </Fold>
-          <Fold inset title="技术信息" summary={`系统编号 ${shownId || "—"}`}>
+          <Fold inset title="技术信息" summary="系统编号">
             <Facts>
               <Fact k="系统编号">{shownId || "—"}</Fact>
             </Facts>

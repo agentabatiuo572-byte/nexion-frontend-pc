@@ -130,8 +130,8 @@ export function PrivacyTab({ ctx, writes, canWrite, canPublish, nonce, onHead }:
           </tbody>
         </Table>
       </Panel>
-      <Fold title="技术信息" icon={FileText} tone="role-other" summary={`修订号 ${doc.revision}`}>
-        <Facts><Fact k="正文版本"><span data-mono="">{doc.version}</span></Fact></Facts>
+      <Fold title="技术信息" icon={FileText} tone="role-other" summary="修订号和正文版本">
+        <Facts><Fact k="修订号">{String(doc.revision)}</Fact><Fact k="正文版本"><span data-mono="">{doc.version}</span></Fact></Facts>
       </Fold>
 
       <Drawer open={!!viewing} onClose={() => setViewing(null)} title="隐私政策" sub={viewing ? `${localeName(viewing)} · ${versionName(doc.version)}` : undefined} icon={FileText} tone="role-3">

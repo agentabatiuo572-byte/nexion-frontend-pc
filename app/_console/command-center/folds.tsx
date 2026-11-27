@@ -211,9 +211,11 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
                 {switchLink}
               </section>
               )}
-              {/* 尺在左、其余数字在右（VS-49）；两条比率都是 0 时不画尺，一句话写完（DP-62）。 */}
-              <Figure width={560} stack="wide" graphic={risk.bankRunRatio === 0 && ledger.pressureRatio === 0
-                ? <p className="cc-line">近 24 小时提现申请占储备 {fmtPct(risk.bankRunRatio)}，待提现总额占储备 {fmtPct(0)}；黄线 {fmtConfigPct(risk.bankRunYellowPct)}、红线 {fmtConfigPct(risk.bankRunRedlinePct)}</p>
+              {/* 尺在左、其余数字在右（VS-49）；两条都没有值时不画尺，一句话写完（DP-62）。储备为 0 时近 24 小时比率为 0 就是没有申请（后端零分母规则）。 */}
+              <Figure width={560} stack="wide" graphic={risk.bankRunRatio === 0 && (ledger.pressureRatio === 0 || ledger.pressureRatio === null && ledger.queueBacklogUsd === 0)
+                ? <p className="cc-line">{ledger.pressureRatio === null
+                  ? "储备为 0，近 24 小时没有提现申请，也没有待提现"
+                  : `近 24 小时提现申请占储备 ${fmtPct(risk.bankRunRatio)}，待提现总额占储备 ${fmtPct(0)}`}；黄线 {fmtConfigPct(risk.bankRunYellowPct)}、红线 {fmtConfigPct(risk.bankRunRedlinePct)}</p>
                 : <ThresholdMeter
                     label="提现压力和黄线、红线"
                     rows={[

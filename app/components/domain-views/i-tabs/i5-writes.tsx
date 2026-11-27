@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { Button, Fact, Modal, Notice, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
+import { Button, Fact, Facts, Fold, Modal, Notice, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -32,7 +32,7 @@ import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECo
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { OPEN_RESULT_LABELS, RecoveryPanel, TechInfo, receiptFact, receiptOf, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { OPEN_RESULT_LABELS, RecoveryPanel, businessCodeOf, receiptFact, recoveryTitle, type RecoveryItem } from "../recovery-panel";
 import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
@@ -820,7 +820,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     const outcome = outcomes[record.commandKey];
     if (record.readback) return { tone: "warn", label: "deleted" in record.readback ? "已删除" : "已保存", line: readbackLine(record.readback) };
     // 和设备页恢复行（RECOVERY_LINE.refused）同一句；不引设备页的文件。
-    if (isExplicitRejection(record.rejection)) return { tone: "warn" as const, label: "重试被拒", line: "重试被明确拒绝；核对原因后可以解除。" };
+    if (isExplicitRejection(record.rejection)) return { tone: "danger" as const, label: "重试被拒绝", line: "重试被明确拒绝；核对原因后可以解除。" };
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
       line: expired ? "超过 24 小时不能再重试，先查询原操作。" : canQuery ? "可能已经提交，先查询原操作。" : "可能已经提交，这个账号查不了原结果，到操作记录与审批核对。" };
     const shown = fundRecoveryStatus({ outcome, expired, canRetry: !expired && canWrite(record) && !retryBlock(record), canQuery: true, canClose: canInvestigateECommand("content_i5_read") });
@@ -829,6 +829,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
   const items: RecoveryItem[] = pending.map((record) => {
     const expired = record.expiresAt <= Date.now();
     const shown = statusOf(record, expired);
+    const code = businessCodeOf(outcomes[record.commandKey]);
     return { key: record.commandKey, createdAt: record.createdAt, object: record.label,
       tag: <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag>, line: shown.line,
       note: notes[record.commandKey] || undefined,
@@ -841,7 +842,11 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
       detail: !expired && !record.readback ? <p>{recoveryText(record.op, canQuery)}</p> : undefined,
-      tech: <p className="fund-row-tech"><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p> };
+      // 技术信息和商品管理、设备管理、算力配置同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。
+      tech: <Fold inset title="技术信息" summary={code === undefined ? "操作编号" : "操作编号和业务码"}><Facts>
+        <Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact>
+        {code !== undefined && <Fact k="业务码">{String(code)}</Fact>}
+      </Facts></Fold> };
   });
   const open = pending.filter((record) => OPEN_RESULT_LABELS.includes(statusOf(record, record.expiresAt <= Date.now()).label)).length;
   const notices: ReactNode = <RecoveryPanel items={items} title={recoveryTitle(pending.length - open, 0, 0, open)} explainLabel="结果未知怎么处理" explain={DIRECT_RECOVERY_INTRO}
