@@ -43,7 +43,7 @@ import {
   H3_BINDING_EVENT_LABELS, H3_BINDING_EVENT_OPTIONS, H3_BINDING_EVENT_PRODUCERS, H3_BINDING_USER_FIELDS, H3_BINDING_USER_FIELD_LABELS,
   TASK_ACTION_ROUTES, TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
   activeUnbound, amountText, bindingEventText, boolValue, casExpected, cleanPhaseKey, contractForTask, decimalOf, legacyAssetText, mulDecimal,
-  acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
+  acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskCompletionEventText, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
   H3CreationList, H3PendingLine, backendPendingTag, lockedTag, pendingChangeText,
   type FormulaRow, type H3Model, type H3RecoveryRow, type PreviewTask, type QuestTask,
 } from "./h3-quest-parts";
@@ -1240,6 +1240,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const all = [...dayOne, ...t1, ...t2];
   const nameOf = (task: QuestTask) => localizedValue(codeOf(task), "zh") || taskTitleText(text(task.task ?? task.cond));
   const bindingsOf = (task: QuestTask) => bindings.filter((binding) => binding.questCode === codeOf(task));
+  const completionOf = (task: QuestTask, list: ListKey, taskBindings: H3QuestEventBinding[]) => {
+    if (list === "dayOne") return taskCompletionEventText(task);
+    if (taskUnbound(task)) return "";
+    return taskBindings.filter((binding) => Number(binding.status) === 1).map(bindingEventText).join("、");
+  };
   const localeGaps = (task: QuestTask) => (["en", "zh", "vi"] as const).filter((locale) => !localizedValue(codeOf(task), locale)).map((locale) => LOCALE_LABEL[locale]);
   const active = all.filter((task) => taskStatusOf(task) === "active");
   const stuck = all.filter(activeUnbound);
@@ -1414,11 +1419,12 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     ? <BlockState state="empty" title="还没有任务" detail={canModuleWrite ? "点右上角新建；建好后先绑定完成条件再启用。" : "有修改权限的同事新建后会显示在这里。"} />
     : <div className="h3-cards">
       {tasks.map((task) => {
+        const taskBindings = list === "dayOne" ? [] : bindingsOf(task);
         const reward = rewardOf(task, list);
         const rewardKey = `mission.${codeOf(task)}.reward`;
         const lock = backendLock(rewardKey);
         const proposed = list !== "dayOne" && lock?.proposedValue != null ? `申请改成 ${pendingFormat(rewardKey)(lock.proposedValue)}` : undefined;
-        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} bindings={bindingsOf(task)}
+        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} completion={completionOf(task, list, taskBindings)} bindingCount={list === "dayOne" ? bindingsOf(task).length : taskBindings.length} invalidBindingCount={list === "dayOne" && !completionOf(task, list, taskBindings) ? bindingsOf(task).filter((binding) => Number(binding.status) === 1).length : 0}
           reward={reward.reward} rewardNote={proposed ? <>{reward.note && `${reward.note} · `}<span className="h3-card-proposed">{proposed}</span></> : reward.note} localeGaps={localeGaps(task)} pending={lockTag(rewardKey)}
           selected={detail?.code === codeOf(task)} onOpen={() => setDetail({ list, code: codeOf(task) })}
           primary={canModuleWrite ? taskPrimary(task) : undefined} menu={canModuleWrite ? taskMenu(task, list) : undefined} />;
@@ -1774,6 +1780,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const detailName = detailTask ? text(detailTask.task ?? detailTask.cond) : "";
   const detailArchived = detailTask ? taskStatusOf(detailTask) === "archived" : false;
   const detailBindings = detailTask ? bindingsOf(detailTask) : [];
+  const detailCompletion = detailTask && detail ? completionOf(detailTask, detail.list, detailBindings) : "";
+  const detailNeedsBinding = detail?.list === "dayOne" ? !detailCompletion : detailBindings.length === 0;
+  const detailDisabledBindings = detail?.list === "dayOne" ? [] : detailBindings.filter((binding) => Number(binding.status) !== 1);
   const detailReward = detailTask && detail ? rewardOf(detailTask, detail.list) : null;
 
   return (
@@ -1810,11 +1819,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <JudgmentPoints rows={[
             { label: "状态", value: <TaskStatusTag task={detailTask} />, reason: taskRetired(detailTask) ? "质押类每周任务已下线，不能再启用；改名称、奖励和归档照常" : undefined },
             { label: "做了什么算完成", state: activeUnbound(detailTask) ? "warn" : undefined,
-              value: !taskUnbound(detailTask) && detailBindings.some((binding) => Number(binding.status) === 1)
-                ? detailBindings.filter((binding) => Number(binding.status) === 1).map(bindingEventText).join("、")
-                : activeUnbound(detailTask) ? "没绑定完成事件，用户做不完" : "还没有启用的完成条件",
-              reason: !detailBindings.length ? "到「完成条件」页签绑定"
-                : detailBindings.some((binding) => Number(binding.status) !== 1) ? `已停用：${detailBindings.filter((binding) => Number(binding.status) !== 1).map(bindingEventText).join("、")}` : undefined },
+              value: detailCompletion || (activeUnbound(detailTask) ? "没绑定完成事件，用户做不完" : "还没有启用的完成条件"),
+              reason: detailNeedsBinding ? "到「完成条件」页签绑定"
+                : detailDisabledBindings.length ? `已停用：${detailDisabledBindings.map(bindingEventText).join("、")}` : undefined },
             { label: "点了跳到", value: TASK_ACTION_ROUTE_LABELS[text(detailTask.href, "")] ?? text(detailTask.href, "—") },
             { label: "奖励", value: detailReward?.reward, reason: backendLock(`mission.${codeOf(detailTask)}.reward`)
               ? <>{detailReward?.note && <span className="h3-detail-note">{detailReward.note}</span>}{pendingLine(`mission.${codeOf(detailTask)}.reward`)}</> : detailReward?.note },
