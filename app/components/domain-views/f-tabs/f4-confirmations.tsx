@@ -133,14 +133,17 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     coverageLead: F4_SETTLEMENT_CONSEQUENCE,
     coverageCheck: `提交时按这里的数查一次。${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}每周自动结算不做这项检查。`,
     // 估算批准时才算出来，已发的数这次不动：都不做关键数字（VS-102）；已结算的提示和批准框同一句（OP-69）。
+    // 读数、读取时间、已结算提示和批准框（F4SettleFacts）同一块、同一个顺序，读取时间紧跟读数。
     facts: <div className="rd-stack">
+      <div className="f4-payout">
       <Facts>
         <Fact k={poolActual ? "本周已结算（实发）" : poolEstimated ? "本周池（估算）" : "本周池"} unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
         <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
         <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
       </Facts>
-      {settled && <F4SettledWeekNotice />}
       {snapshot.readAt != null && <F4PoolReadTime at={snapshot.readAt} estimated={poolEstimated} />}
+      {settled && <F4SettledWeekNotice />}
+      </div>
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
     detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。没有合格票时不发钱。",

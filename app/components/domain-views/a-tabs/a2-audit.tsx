@@ -1965,7 +1965,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverageCheck: `${fund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
-      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts rules onPayoutStateChange={onPayoutStateChange} /> : undefined,
+      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts rules quietLoading onPayoutStateChange={onPayoutStateChange} /> : undefined,
       waitsForLatestRead: fund.period === "总榜",
     };
     if (fund.kind === "f4Settle") return {
@@ -2152,7 +2152,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const blockAfterWrite = (approvalWriteBlock: string) => {
       openActionConfirm(current => current?.run === request.run ? { ...current, approvalWriteBlock } : current);
     };
-    const latestReadBlock = "正在读取最新状态，稍候即可批准。";
+    const latestReadBlock = "正在加载最新状态，读到后才能批准。";
     const fund = fundSpec(w, (settled, paused) => {
       // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
       const blockedReason = paused ? F4_PAYOUT_APPROVAL_PAUSED

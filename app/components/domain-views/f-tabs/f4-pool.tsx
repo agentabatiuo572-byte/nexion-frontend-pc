@@ -134,6 +134,7 @@ export function F4Pool({ ctx, data, readAt, settlement }: { ctx: FViewCtx; data:
             <span className="f4-pool-value" data-zero={pool === null || poolText === "0" ? "" : undefined}>{poolText}{pool !== null && <small>USDT</small>}</span>
             <span className="f4-pool-note">{pool === null
               ? `暂时无法估算：${data.settlementConfigUnavailableReason || "设置不完整"}`
+              : poolActual ? "这是本周实际入账的合计。"
               : `本周已付款成交额约 ${count(data.weeklyGmvUsd)} USDT（取整）× ${ratioEff}，每月上限 ${capEff}`}</span>
           </div>
           <KeyValues rows={[

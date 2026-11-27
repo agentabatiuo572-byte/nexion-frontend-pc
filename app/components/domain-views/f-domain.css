@@ -944,6 +944,8 @@ html:not([data-theme="dark"]) .fdom .team-fund-confirm .alertbar.warn .ico {
 .f4-payout-num { font-variant-numeric: tabular-nums; }
 .f4-payout-sub { display: block; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .f4-payout-note { margin: 0; color: var(--rd-text-2); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+/* 读取时间紧跟它说明的读数，和读数同组（8px，VS-65）；后面的提示、名单仍隔 12。 */
+.f4-payout > .rd-facts + .f4-payout-note { margin-top: -4px; }
 .f4-payout-list { border: 1px solid var(--rd-line); border-radius: var(--rd-radius-control); background: var(--rd-panel); overflow: hidden; }
 .f4-payout-list[data-long] { max-height: 272px; overflow-y: auto; }
 .f4-payout-list[data-long] .rd-table th { position: sticky; top: 0; z-index: 1; }
