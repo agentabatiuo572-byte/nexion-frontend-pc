@@ -109,9 +109,9 @@ export function useContentEditor<D extends ContentDocument>({
   latestCommands.current = commands;
 
   const original = commands.find(kind);
-  const isDocsDraft = kind === "docs" && mode === "DRAFT";
-  const reasonRule = useReasonRule(isDocsDraft && !original);
-  const draftReason = isDocsDraft ? {
+  const isDocsConfirm = kind === "docs" && mode !== null;
+  const reasonRule = useReasonRule(isDocsConfirm && !original);
+  const draftReason = isDocsConfirm ? {
     ready: !original && reasonRule.ready,
     error: original ? "" : reasonRule.error,
     min: reasonRule.min,
@@ -262,7 +262,7 @@ export function useContentEditor<D extends ContentDocument>({
   const save = async (target: Mode, blocked: string | undefined, name: string, path: string) => {
     if (!canWrite || blocked || !baseline || !document || saving || readInFlight.current) return;
     const note = reason.trim();
-    if (kind === "docs" && target === "DRAFT") {
+    if (kind === "docs") {
       if (!draftReason || draftReason.blocked) return;
     } else if (note.length < 8 || note.length > 500) { setError("变更理由需为 8–500 个字符。"); return; }
     const proceed = afterSave.current;

@@ -558,9 +558,15 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       : state.replayBlock === "needs-not-found" ? receipt ? shown?.line ?? "已查到原回执，请到操作记录与审批核对。"
         : outcome && "error" in outcome ? `原操作回执加载失败。${outcome.error}` : "先查询原操作，明确查无后才能重试。"
       : pendingReplayReason(state, "当前不能重试原操作。");
+    // 这一条现在怎样：写在「改动」这一格，按钮格只放按钮，和 G 域恢复行同一种排法（VS-105）。
+    const note = contentCommand && hasReceiptLookup && (expired || shown)
+      ? <>{shown?.line ?? "已超过 24 小时，不能再重试。请查询原操作。"} {shown?.more}
+        {expired && !canInvestigateECommand("platform_a3_read") && " 请联系有调查权限的超级管理员核查结案。"}</>
+      : (hasReceiptLookup && !expired || state.replayRejection) && retryReason;
     return {
     // 说明内容的版本号带种子前缀 default-，写给人看时去掉（和编辑区同一规则）。
-    key: record.commandKey, name: record.name, change: contentCommand ? record.change.replace(" · default-", " · ") : record.change, submittedAt: record.createdAt,
+    key: record.commandKey, name: record.name, submittedAt: record.createdAt,
+    change: <>{contentCommand ? record.change.replace(" · default-", " · ") : record.change}{note && <span className="rd-note"> · {note}</span>}</>,
     tag: shown ? <StatusTag tone={shown.tone} explain={[shown.line, shown.more].filter(Boolean).join(" ")}>{shown.label}</StatusTag>
       : contentCommand && !hasReceiptLookup ? legacyContentTag(record) : expired ? isCalendar ? expiredTag("direct")
         : <StatusTag tone="neutral" icon={Hourglass} explain="已超过 24 小时，不能再重试。先查询原操作；查到的，按证据核查结案。">已过期</StatusTag>
@@ -575,7 +581,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         }}>{retryTransfer || releaseReadError && !expired ? "重试" : knownExecuted ? "重新读取" : contentCommand && !hasReceiptLookup ? "读取当前内容" : isCalendar ? "读取当前日历" : "查询原操作"}</Button>
       {closable && <Button size="sm" variant="danger-outline" disabled={applying && !handoffError || !!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
       {releaseReplayRejection && !releaseReadError && <VerifiedReleaseButton disabled={applying || !!querying || !!mutating} onClick={() => verifiedRelease.ask({
-        operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record),
+        operation: record.name, target: record.change, targetLabel: "改动", createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record),
         release: () => {
           if (contentCommand) {
             if (isRetryExpired(record)) return false;
@@ -590,10 +596,6 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       })} />}
       {a3Deduplicates(record) && !expired && <Button size="sm" disabledReason={retryReason}
         onClick={() => void recoverOriginal(record)}>按原操作重试</Button>}
-      {contentCommand && hasReceiptLookup && (expired || shown)
-        ? <span className="rd-note">{shown?.line ?? "已超过 24 小时，不能再重试。请查询原操作。"} {shown?.more}
-          {expired && !canInvestigateECommand("platform_a3_read") && " 请联系有调查权限的超级管理员核查结案。"}</span>
-        : (hasReceiptLookup && !expired || state.replayRejection) && retryReason && <span className="rd-note">{retryReason}</span>}
     </>,
   }; });
 
