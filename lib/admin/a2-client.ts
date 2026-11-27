@@ -85,6 +85,7 @@ type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
 export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
+  missionTarget?: unknown;
   businessResult?: unknown;
   lastApprovalAttemptResult?: unknown;
   roleGrantsDiff?: unknown;
@@ -259,6 +260,7 @@ export class F4ApprovalBlockedError extends Error {
 }
 
 export interface A2OperationRow {
+  missionTarget?: { actionRoute: string; productName: string | null };
   businessResult?: F4ApprovalBusinessResult;
   lastApprovalAttemptResult?: F4ApprovalAttemptResult;
   f4ResultUnreadable?: true;
@@ -462,6 +464,14 @@ function readRoleGrantsDiff(value: unknown): A2RoleGrantsDiff | null {
 
 function isSnapshotRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readH3MissionTarget(value: unknown): A2OperationRow["missionTarget"] {
+  if (!isSnapshotRecord(value)) return undefined;
+  const { actionRoute, productName } = value;
+  if (typeof actionRoute !== "string" || !/^\/pages\/\S+$/.test(actionRoute)
+    || (productName !== null && (typeof productName !== "string" || !productName.trim()))) return undefined;
+  return { actionRoute, productName };
 }
 
 function isSnapshotReward(value: unknown): value is OpsVRankRewardItem & Record<string, unknown> {
@@ -767,6 +777,7 @@ function fromTicket(ticket: BackendTicket, tolerateUnreadableResult = false): A2
   }
   return {
     ...payoutResults,
+    missionTarget: readH3MissionTarget(ticket.missionTarget),
     roleGrantsDiff,
     roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
     disclosureReview: readI5DisclosureReview(ticket.disclosureReview, ticket.operationCode),

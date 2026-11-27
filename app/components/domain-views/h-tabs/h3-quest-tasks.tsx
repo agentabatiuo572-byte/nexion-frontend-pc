@@ -13,7 +13,7 @@ import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag,
   JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useTabIds, type MoreMenuItem,
 } from "@/app/components/rd";
-import { OperationConfirmModal, PaginationExemptionList } from "../design-kit";
+import { OperationConfirmModal, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import {
@@ -22,6 +22,7 @@ import {
   type H3QuestEventBinding,
 } from "@/lib/admin/h-client";
 import { compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model } from "@/lib/admin/h3-contract";
+import { h3ActionRouteLabels, h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
 import { fetchOperatingLanguages } from "@/lib/admin/platform-experience-client";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -41,7 +42,7 @@ import type { ActionConfirmReq, ConfirmReq, HCtx } from "./types";
 import {
   AppPreview, DayOneTimeline, H3RecoveryList, PhaseStrip, TaskCard, TaskStatusTag, WeeklyFormula, taskRetired,
   H3_BINDING_EVENT_LABELS, H3_BINDING_EVENT_OPTIONS, H3_BINDING_EVENT_PRODUCERS, H3_BINDING_USER_FIELDS, H3_BINDING_USER_FIELD_LABELS,
-  TASK_ACTION_ROUTES, TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
+  TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
   activeUnbound, amountText, bindingEventText, boolValue, casExpected, cleanPhaseKey, contractForTask, decimalOf, legacyAssetText, mulDecimal,
   acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskCompletionEventText, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
   H3CreationList, H3PendingLine, backendPendingTag, lockedTag, pendingChangeText,
@@ -53,7 +54,11 @@ import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
 import { amountDisplay } from "@/lib/format";
 
-type H3ActionConfirmReq = ActionConfirmReq & { target?: string; confirmLabelForValue?: (value?: string) => string };
+type H3ActionConfirmReq = ActionConfirmReq & {
+  target?: string;
+  confirmLabelForValue?: (value?: string) => string;
+  missionPresentationForm?: (targets: H3Model["productActionTargets"], labels: Record<string, string>) => BusinessFormSpec;
+};
 type Tab = "dayOne" | "weekly" | "bindings" | "monthly";
 type ListKey = "dayOne" | "t1" | "t2";
 type Locale = "en" | "zh" | "vi";
@@ -223,6 +228,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const canAudit = reach("/platform/audit");
   const canPhase = reach("/growth/phase");
   const [model, setModel] = useState<H3Model | null>(null);
+  const productActionTargets = model?.productActionTargets;
+  const routeLabels = useMemo(() => h3ActionRouteLabels(productActionTargets), [productActionTargets]);
   const [loading, setLoading] = useState(true);
   const taskReadSequence = useRef(0);
   const refreshInFlight = useRef(false);
@@ -329,7 +336,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       if (task) return decimalOf(task.reward) !== null ? "found" : "unreadable";
       return (monthly ? complete(monthlyMissionCount, list.length) : weeklyComplete) ? "task-missing" : "unreadable";
     };
-  }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model);
+  }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model, reload);
   const refresh = async () => {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
@@ -523,7 +530,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <Fact k="任务名称">{String(bv.missionName ?? "").trim()}</Fact>
         <Fact k="任务编号"><span data-mono="">{String(bv.missionCode ?? "").trim()}</span></Fact>
         <Fact k="奖励">{reward == null ? "—" : `${amountText(reward)} UVT${missionType === "DAY_ONE" ? "（不单发，统一领新手任务奖励）" : ""}`}</Fact>
-        <Fact k="类别和跳转">{`${TASK_CATEGORY_LABELS[bv.category] ?? bv.category} · ${TASK_ACTION_ROUTE_LABELS[bv.actionRoute] ?? bv.actionRoute}`}</Fact>
+        <Fact k="类别和跳转">{`${TASK_CATEGORY_LABELS[bv.category] ?? bv.category} · ${routeLabels[bv.actionRoute] ?? bv.actionRoute}`}</Fact>
         <Fact k="建好后">已停用；绑定完成条件、启用以后用户才看得到</Fact>
         {approval ? <Fact k="什么时候生效" tone="warn">奖励大于 0：提交审批，批准后才建好</Fact> : <Fact k="什么时候生效">奖励是 0：确认后直接建好</Fact>}
         {approverFacts(approval)}
@@ -660,37 +667,43 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只改类别和跳转页面；不改奖励和完成条件。", check: "核对跳转页面能完成这个任务；理由写清依据。" },
       confirmLabel: "确认修改",
-      businessForm: {
-        kind: "multi-field",
-        requireAnyChange: true,
-        fields: [
-          {
-            key: "category",
-            label: "任务类别",
-            current: currentCategory,
-            inputKind: "select",
-            options: TASK_CATEGORY_OPTIONS,
-            optionLabels: TASK_CATEGORY_LABELS,
-            required: true,
-            showDiff: true,
-          },
-          {
-            key: "actionRoute",
-            label: "点「去完成」跳转到",
-            current: currentActionRoute,
-            inputKind: "select",
-            options: TASK_ACTION_ROUTES.includes(currentActionRoute)
-              ? TASK_ACTION_ROUTES : [currentActionRoute, ...TASK_ACTION_ROUTES],
-            optionLabels: TASK_ACTION_ROUTE_LABELS,
-            required: true,
-            showDiff: true,
-          },
-        ],
+      missionPresentationForm: (targets, labels) => {
+        const routes = h3ActionRoutes(taskCode, targets);
+        const options = routes.includes(currentActionRoute) ? routes : [currentActionRoute, ...routes];
+        return {
+          kind: "multi-field",
+          requireAnyChange: true,
+          feedback: (value) => options.includes(value.actionRoute)
+            ? { invalid: false, message: "" }
+            : { invalid: true, message: "请选择去完成页面", field: "actionRoute" },
+          fields: [
+            {
+              key: "category",
+              label: "任务类别",
+              current: currentCategory,
+              inputKind: "select",
+              options: TASK_CATEGORY_OPTIONS,
+              optionLabels: TASK_CATEGORY_LABELS,
+              required: true,
+              showDiff: true,
+            },
+            {
+              key: "actionRoute",
+              label: "点「去完成」跳转到",
+              current: currentActionRoute,
+              inputKind: "select",
+              options,
+              optionLabels: labels,
+              required: true,
+              showDiff: true,
+            },
+          ],
+        };
       },
       run: async (reason, _value, businessValue) => {
         if (!businessValue) return;
         await runWrite({ store: "mission", path: `/quest-events/tasks/${encodeURIComponent(taskCode)}/presentation`, method: "PATCH", target: taskCode,
-          body: { category: String(businessValue.category).trim(), actionRoute: String(businessValue.actionRoute).trim(), expectedCategory: currentCategory, expectedActionRoute: currentActionRoute },
+          body: { category: String(businessValue.category).trim(), actionRoute: String(businessValue.actionRoute), expectedCategory: currentCategory, expectedActionRoute: currentActionRoute },
           before: `${currentCategory} · ${currentActionRoute}`, after: `${businessValue.category} · ${businessValue.actionRoute}`, success: `任务「${label}」的类别与去完成页面已更新` }, reason);
       },
     } as H3ActionConfirmReq);
@@ -1085,7 +1098,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   };
   // 记录里存的是请求里的原值（状态码、类别码），显示时换成页面上的叫法。
   const shownValue = (value: string) => value === "" ? "—" : value.split(" · ").map(part => ({ active: "已启用", paused: "已停用", archived: "已归档", deleted: "已删除", __MISSING__: "—" })[part]
-    ?? TASK_CATEGORY_LABELS[part] ?? TASK_ACTION_ROUTE_LABELS[part] ?? part).join(" · ");
+    ?? TASK_CATEGORY_LABELS[part] ?? routeLabels[part] ?? part).join(" · ");
   // 月度奖励优先用原记录的展示币种，旧记录从对应任务核对。
   const monthlyUnit = (target: string, rewardCurrency?: string) => {
     const mission = rewardCurrency ? undefined : model?.monthlyMissions?.find((row) => `monthly.${codeOf(row)}.reward` === target);
@@ -1161,6 +1174,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   </Notice>;
 
   // 固定 key：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
+  const confirmBusinessForm = useMemo(
+    () => mc?.missionPresentationForm?.(productActionTargets, routeLabels) ?? mc?.businessForm,
+    [mc, productActionTargets, routeLabels],
+  );
   const confirmModal = mc && (<Fragment key="h3-confirm">
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
@@ -1168,7 +1185,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           detail={mc.detail}
           amplifies={mc.amplifies}
           edit={mc.edit}
-          businessForm={mc.businessForm}
+          businessForm={confirmBusinessForm}
+          businessFormRevision={mc.missionPresentationForm ? readAt : undefined}
           facts={mc.facts}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
@@ -1214,6 +1232,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   // 新建任务抽屉同理：旧操作收尾后的重读失败时不卸掉，提示没读到、读到前不能进下一步。
   const missionDrawer = creating && <H3MissionFormDrawer key={creating.resumed?.key ?? "h3-mission-drawer"} missionType={creating.type} onClose={() => setCreating(null)}
     initial={creating.resumed?.draft.form}
+    productActionTargets={productActionTargets} routeLabels={routeLabels}
     readFailed={error ? { retrying: loading, onRetry: () => void refresh().catch(cause => toast(displayAdminError(cause))) } : undefined}
     onReview={(bv) => runCreateMission(creating, creating.type === "DAY_ONE" ? "新手任务" : creating.type === "WEEKLY_T1" ? "每周一档" : "每周二档", bv)} />;
 
@@ -1424,7 +1443,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const rewardKey = `mission.${codeOf(task)}.reward`;
         const lock = backendLock(rewardKey);
         const proposed = list !== "dayOne" && lock?.proposedValue != null ? `申请改成 ${pendingFormat(rewardKey)(lock.proposedValue)}` : undefined;
-        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} completion={completionOf(task, list, taskBindings)} bindingCount={list === "dayOne" ? bindingsOf(task).length : taskBindings.length} invalidBindingCount={list === "dayOne" && !completionOf(task, list, taskBindings) ? bindingsOf(task).filter((binding) => Number(binding.status) === 1).length : 0}
+        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} routeLabel={routeLabels[text(task.href, "")]} completion={completionOf(task, list, taskBindings)} bindingCount={list === "dayOne" ? bindingsOf(task).length : taskBindings.length} invalidBindingCount={list === "dayOne" && !completionOf(task, list, taskBindings) ? bindingsOf(task).filter((binding) => Number(binding.status) === 1).length : 0}
           reward={reward.reward} rewardNote={proposed ? <>{reward.note && `${reward.note} · `}<span className="h3-card-proposed">{proposed}</span></> : reward.note} localeGaps={localeGaps(task)} pending={lockTag(rewardKey)}
           selected={detail?.code === codeOf(task)} onOpen={() => setDetail({ list, code: codeOf(task) })}
           primary={canModuleWrite ? taskPrimary(task) : undefined} menu={canModuleWrite ? taskMenu(task, list) : undefined} />;
@@ -1436,7 +1455,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     names: { en: localizedValue(codeOf(task), "en"), zh: localizedValue(codeOf(task), "zh"), vi: localizedValue(codeOf(task), "vi") },
     source: text(task.task ?? task.cond),
     category: text(task.category, "").toLowerCase(),
-    route: text(task.href, ""),
+    routeLabel: routeLabels[text(task.href, "")] ?? text(task.href, ""),
     reward: withReward ? mulDecimal(decimalOf(task.reward), h1Value, weeklyValue) : undefined,
   });
   const dayOneActive = dayOne.filter((task) => taskStatusOf(task) === "active");
@@ -1504,7 +1523,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       <Panel title="新手任务" icon={ListChecks} tone="role-2" sub={`${dayOne.length} 个 · 已启用 ${dayOneActive.length} 个`}
           explain="用户注册时拿到的是那一刻已启用、绑定了完成条件的新手任务；做完全部才能领奖。之后改任务不影响已经注册的用户。"
           actions={canModuleWrite ? <Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={missionEditorOpen} onClick={() => openMission({ type: "DAY_ONE" })}>新建新手任务</Button> : undefined}>
-          <H3CreationList rows={creationsOf(["DAY_ONE"])} typeLabel={typeLabel} auditHref={auditHref} />
+          <H3CreationList rows={creationsOf(["DAY_ONE"])} typeLabel={typeLabel} auditHref={auditHref} routeLabels={routeLabels} />
           <div className="h3-tasks-layout">
           {cards("dayOne", dayOne)}
         <AppPreview kind="dayOne" tasks={dayOneActive.map((task) => previewTask(task, false))}
@@ -1577,7 +1596,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       <Panel title="每周任务" icon={ListChecks} tone="role-2" sub={`一档 ${t1.length} 个 · 二档 ${t2.length} 个 · 已启用 ${t1Active.length + t2Active.length} 个`}
           explain="每周发布时，把那一刻已启用、绑定了完成条件的任务冻结成这一周的任务。之后改任务只影响之后发布的。"
           actions={canModuleWrite ? <><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={missionEditorOpen} onClick={() => openMission({ type: "WEEKLY_T1" })}>新建一档</Button><Button size="sm" icon={<Plus size={14} aria-hidden />} disabledReason={missionEditorOpen} onClick={() => openMission({ type: "WEEKLY_T2" })}>新建二档</Button></> : undefined}>
-          <H3CreationList rows={creationsOf(["WEEKLY_T1", "WEEKLY_T2"])} typeLabel={typeLabel} auditHref={auditHref} />
+          <H3CreationList rows={creationsOf(["WEEKLY_T1", "WEEKLY_T2"])} typeLabel={typeLabel} auditHref={auditHref} routeLabels={routeLabels} />
           <div className="h3-tasks-layout"><div className="h3-tier-groups">
           <div className="h3-sub-head">
             <h3>{`一档 · ${t1.length} 个`}</h3>
@@ -1822,7 +1841,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               value: detailCompletion || (activeUnbound(detailTask) ? "没绑定完成事件，用户做不完" : "还没有启用的完成条件"),
               reason: detailNeedsBinding ? "到「完成条件」页签绑定"
                 : detailDisabledBindings.length ? `已停用：${detailDisabledBindings.map(bindingEventText).join("、")}` : undefined },
-            { label: "点了跳到", value: TASK_ACTION_ROUTE_LABELS[text(detailTask.href, "")] ?? text(detailTask.href, "—") },
+            { label: "点了跳到", value: routeLabels[text(detailTask.href, "")] ?? text(detailTask.href, "—") },
             { label: "奖励", value: detailReward?.reward, reason: backendLock(`mission.${codeOf(detailTask)}.reward`)
               ? <>{detailReward?.note && <span className="h3-detail-note">{detailReward.note}</span>}{pendingLine(`mission.${codeOf(detailTask)}.reward`)}</> : detailReward?.note },
           ]} />

@@ -25,6 +25,17 @@ export type H3PendingMissionCreation = {
   actionRoute: string | null;
 };
 
+export const H3_PRODUCT_DETAIL_ROUTE_PREFIX = "/pages/store/detail?id=";
+
+export type H3ProductActionTarget = {
+  productNo: string;
+  name: string;
+  actionRoute: string;
+  openable: boolean;
+  seriesCode: string | null;
+  roiEligible: boolean;
+};
+
 type H3MissionNames = Partial<Record<OperatingLanguageCode, string>>;
 
 export type H3Task = Record<string, any> & {
@@ -106,6 +117,8 @@ export type H3Model = {
   dayOneTriReward: string;
   pendingApprovals?: Record<string, H3PendingApproval | null>;
   pendingMissionCreations?: H3PendingMissionCreation[];
+  /** A missing field on an older service means product targets are unknown. */
+  productActionTargets?: H3ProductActionTarget[];
   dayOneTasks: H3Task[];
   dayOneStates: Array<{ st: string; label: string; tone: string }>;
   weeklyTier1: H3Task[];

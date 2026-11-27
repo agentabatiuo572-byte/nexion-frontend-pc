@@ -1,5 +1,6 @@
 /** H3 用户任务管理表单里任务类别、去完成页面的选项叫法和旧币种名的写法。H3 页和 A2 审批单共用，两页同一个说法。 */
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
+import type { H3ProductActionTarget } from "../h3-contract";
 
 export const TASK_CATEGORY_LABELS: Record<string, string> = {
   wallet: "钱包",
@@ -18,7 +19,6 @@ export const TASK_ACTION_ROUTE_LABELS: Record<string, string> = {
   "/pages/me/devices": "我的设备",
   "/pages/earn/earn": "收益",
   "/pages/store/store": "商城",
-  "/pages/store/detail?id=stellarbox-s1": "UVELBox S1 详情",
   "/pages/team/team": "团队",
   "/pages/team/commissions": "奖励明细",
   "/pages/learn/courses": "学习中心",
@@ -26,6 +26,41 @@ export const TASK_ACTION_ROUTE_LABELS: Record<string, string> = {
   "/pages/genesis/genesis": "创世节点",
   "/pages/genesis/marketplace": "创世节点 转让市场",
 };
+
+const TASK_ACTION_ROUTES = [
+  "/pages/missions/missions",
+  "/pages/me/profile",
+  "/pages/me/wallet-cards-new",
+  "/pages/me/wallet-topup",
+  "/pages/me/wallet-exchange",
+  "/pages/me/wallet-repurchase",
+  "/pages/me/devices",
+  "/pages/earn/earn",
+  "/pages/store/store",
+  "/pages/team/team",
+  "/pages/team/commissions",
+  "/pages/learn/courses",
+  "/pages/genesis/marketplace",
+];
+
+export function h3ActionRoutes(missionCode: string, targets?: readonly H3ProductActionTarget[]): string[] {
+  const requiresRoi = missionCode.trim().toLowerCase() === "view_product_roi";
+  const productRoutes = (targets ?? [])
+    .filter(target => target.openable && (!requiresRoi || target.roiEligible))
+    .map(target => target.actionRoute);
+  return requiresRoi ? productRoutes : [...TASK_ACTION_ROUTES, ...productRoutes];
+}
+
+export function h3ActionRouteLabels(targets?: readonly H3ProductActionTarget[]): Record<string, string> {
+  if (!targets?.length) return TASK_ACTION_ROUTE_LABELS;
+  const nameCounts = new Map<string, number>();
+  for (const { name } of targets) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+  const labels = { ...TASK_ACTION_ROUTE_LABELS };
+  for (const { name, productNo, actionRoute } of targets) {
+    labels[actionRoute] = nameCounts.get(name)! > 1 ? `${name} 详情（${productNo}）` : `${name} 详情`;
+  }
+  return labels;
+}
 
 /** 后端旧名称里的 NEX 按真实类型写 UVT，并标出是旧名称。 */
 export function legacyAssetText(value: string): { text: string; legacy: boolean } {
