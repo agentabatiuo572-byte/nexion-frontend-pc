@@ -132,6 +132,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           statedBrief={actionConfirmReq.statedBrief}
           facts={actionConfirmReq.facts}
           blockedReason={actionConfirmReq.approvalWriteBlock ?? actionConfirmReq.blockedReason ?? (actionConfirmReq.requiresH5ApprovalCoverage ? h5CoverageBlock : undefined)}
+          buttonDisabledReason={actionConfirmReq.buttonDisabledReason}
           initialReason={actionConfirmReq.initialReason}
           getPendingReason={actionConfirmReq.getPendingReason}
           getPendingRecovery={actionConfirmReq.getPendingRecovery}

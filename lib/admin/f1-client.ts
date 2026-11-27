@@ -321,6 +321,8 @@ interface BackendF4LeadershipPoolOverview {
   settlementConfigUnavailableReason?: string | null;
   metrics?: BackendF4Metric[] | null;
   weeklyInjectedUsd?: number | string | null;
+  currentWeekSettled?: boolean;
+  weeklyInjectedAmount?: string;
   currentWeekPoolUsd?: number | string | null;
   weeklyGmvUsd?: number | string | null;
   poolRatio?: string | null;
@@ -1032,6 +1034,8 @@ export interface F4LeadershipPoolOverview {
   settlementConfigUnavailableReason: string;
   metrics: F4Metric[];
   weeklyInjectedUsd: number;
+  currentWeekSettled?: boolean;
+  weeklyInjectedAmount?: string;
   currentWeekPoolUsd: number | null;
   currentWeekPoolAmount?: string | null;
   weeklyGmvUsd: number;
@@ -1773,6 +1777,8 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     settlementConfigUnavailableReason: asText(data?.settlementConfigUnavailableReason),
     metrics,
     weeklyInjectedUsd: toNumber(data?.weeklyInjectedUsd),
+    currentWeekSettled: data?.currentWeekSettled,
+    weeklyInjectedAmount: data?.weeklyInjectedAmount,
     currentWeekPoolUsd: finiteDashboardNumber(data?.currentWeekPoolUsd),
     currentWeekPoolAmount: data?.currentWeekPoolUsd == null ? null : f4Decimal(data.currentWeekPoolUsd),
     weeklyGmvUsd: toNumber(data?.weeklyGmvUsd),

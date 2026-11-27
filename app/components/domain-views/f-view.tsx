@@ -21,7 +21,7 @@ import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { fDirectSettledText, fProposalEndText } from "./f-tabs/f-release";
 import { isRetryExpired, ORIGINAL_UNKNOWN_TEXT, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
-import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_PAYOUT_PROPOSAL_PAUSED, f4PeriodPrize, f4PoolRatio, f4MoneyAmplifies, f4MonthlyCap, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, f4PeriodPrize, f4PoolRatio, f4MoneyAmplifies, f4MonthlyCap, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { f4WeeklyCronIssue } from "@/lib/admin/f4-settlement-config";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
@@ -1202,8 +1202,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       }
       openActionConfirm(m);
     },
-    blockPausedF4Payout: run => setActionConfirm(current => current?.run === run
-      ? { ...current, blockedReason: F4_PAYOUT_PROPOSAL_PAUSED } : current),
+    setF4PayoutBlock: (run, blockedReason, buttonDisabledReason) => setActionConfirm(current => current?.run === run
+      && (current.blockedReason !== blockedReason || current.buttonDisabledReason !== buttonDisabledReason)
+      ? { ...current, blockedReason, buttonDisabledReason } : current),
     nav,
     toast: (msg) => setToast(msg),
     can: tab === "F4" ? authority => session?.authorities.includes(authority) ?? false : can,
@@ -1740,6 +1741,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           : tab === "F5" ? f5Page?.overview.coverage
           : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         blockedReason={f4ModalRecord() ? undefined : mc.blockedReason}
+        buttonDisabledReason={f4ModalRecord() ? undefined : mc.buttonDisabledReason}
         edit={mc.edit}
         businessForm={mc.businessForm}
         getPendingReason={mc.f4Snapshot ? f4PendingReason : teamApproval?.source === "F3" ? () => pendingF3Settlement()?.spec?.reason : undefined}

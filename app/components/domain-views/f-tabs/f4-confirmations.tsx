@@ -8,13 +8,13 @@ import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
-import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_SETTLEMENT_CONSEQUENCE, F4_SETTLE_IMPACT, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_PAYOUT_COVERAGE, F4_COVERAGE_NEXT, f4CurrentWeekPool, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_PAYOUT_PROPOSAL_PAUSED, F4_SETTLEMENT_CONSEQUENCE, F4_SETTLE_IMPACT, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_PAYOUT_COVERAGE, F4_COVERAGE_NEXT, f4CurrentWeekPool, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { unchangedFNumber } from "@/lib/admin/f-reconfirmation";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
-import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules, F4SettledWeekNotice } from "./f4-payout-preview";
+import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules, F4PoolReadTime, F4SettledWeekNotice } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
 
 /** 奖池金额（每月上限、周榜奖池）：页面先按后端同一规则查，格式不对提交不了。 */
@@ -94,8 +94,8 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
   // 不是「每周某天」时提醒哪些周会自动结算（只做显示）。
   const cadence = settlement.ready && !invalid.has("settleCron") ? settleCadenceNote(settleCron) : null;
   const unlockVRankEff = invalid.has("unlockVRank") ? invalidLabel : unlockVRank || "未配置";
-  const settled = f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
-  const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data, settled);
+  const settled = data.currentWeekSettled ?? f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
+  const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data);
   const board = leaderboardState(data);
   const current = data.leaderboardComputePointPeriods?.[period];
   const lbMinPoints = data.configValues["F.leaderboard.minComputePoints"];
@@ -133,16 +133,20 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     coverageLead: F4_SETTLEMENT_CONSEQUENCE,
     coverageCheck: `提交时按这里的数查一次。${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}每周自动结算不做这项检查。`,
     // 估算批准时才算出来，已发的数这次不动：都不做关键数字（VS-102）；已结算的提示和批准框同一句（OP-69）。
+    // 读数、读取时间、已结算提示和批准框（F4SettleFacts）同一块、同一个顺序，读取时间紧跟读数。
     facts: <div className="rd-stack">
+      <div className="f4-payout">
       <Facts>
         <Fact k={poolActual ? "本周已结算（实发）" : poolEstimated ? "本周池（估算）" : "本周池"} unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
         <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
         <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
       </Facts>
+      {snapshot.readAt != null && <F4PoolReadTime at={snapshot.readAt} estimated={poolEstimated} />}
       {settled && <F4SettledWeekNotice />}
+      </div>
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
-    detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。估算是现在读到的数，批准执行时会重新计算，可能和这里不同；没有合格票时不发钱。",
+    detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。没有合格票时不发钱。",
     run: async (reason) => {
       await ctx.proposeF4Settlement(reason);
     },
@@ -286,10 +290,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     }
     case action === "payout": {
       const run = (reason: string) => ctx.proposeF4LeaderboardPayout("allTime", reason);
+      const poolBlock = ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined;
+      const loadingBlock = "正在加载最新状态，读到后才能发起。";
       spec = { briefKind: "funds",
     name: "发放总榜奖励",
     amplify: true,
-    title: "发放总榜奖励", blockedReason: ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined, effect: approvalTag(), confirmLabel: "提交审批",
+    title: "发放总榜奖励", blockedReason: poolBlock, buttonDisabledReason: loadingBlock, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: F4_PAYOUT_IMPACT,
       check: `奖池为 0 或没人上榜时不发钱。${F4_PAYOUT_COVERAGE}`,
@@ -299,7 +305,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     coverageCheck: `提交时按这里的数查一次。${F4_PAYOUT_COVERAGE}${F4_COVERAGE_NEXT}`,
     facts: <div className="rd-stack">
       <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)}
-        onPayoutStateChange={(_, paused) => { if (paused) ctx.blockPausedF4Payout(run); }} />
+        onReadStateChange={read => {
+          const block = read.state === "failed" ? "总榜预览读到后才能发起。"
+            : read.state === "ok" && read.paused ? F4_PAYOUT_PROPOSAL_PAUSED : poolBlock;
+          ctx.setF4PayoutBlock(run, block, read.state === "loading" ? loadingBlock : undefined);
+        }} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,

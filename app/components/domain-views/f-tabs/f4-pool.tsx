@@ -11,7 +11,6 @@ import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import type { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { count, decimalText, describeSettleCron, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
-import { f4CurrentWeekSettled, type F4VoteProjection } from "@/lib/admin/f4-vote-projection";
 import { f4CurrentWeekPool } from "@/lib/admin/f4-money";
 
 /** Exact product of two decimal texts (votes × USDT per vote); display only, never rounded. */
@@ -31,7 +30,7 @@ import { f4Confirmation, presentText } from "./f4-confirmations";
 
 export { approvalCopy, approvalTag } from "./f4-confirmations";
 
-export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4LeadershipPoolOverview; settlement: ReturnType<typeof validateF4SettlementConfig> }) {
+export function F4Pool({ ctx, data, readAt, settlement }: { ctx: FViewCtx; data: F4LeadershipPoolOverview; readAt: number | null; settlement: ReturnType<typeof validateF4SettlementConfig> }) {
   const canWrite = ctx.can("network_f4_write");
   const canFund = ctx.can("network_f4_pool_fund");
   const canEditVotes = canFund && canWrite;
@@ -53,8 +52,8 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
       ? "设置刷新失败，为避免按旧设置结算，提前结算已暂停。请点「刷新」重试。"
       : `团队激励池设置不完整：${settlement.issues.map((issue) => issue.label).join("、")} 未设置或格式有误。补齐后刷新。`;
   const projection = ctx.f4VoteProjection;
-  const settled = f4CurrentWeekSettled(projection.status === "ready" ? projection.data : undefined);
-  const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data, settled);
+  const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data);
+  const poolText = usdt(pool);
   const nextSettle = settlement.ready ? stamp(data.nextSettlementAt) : "—";
   const topShare = data.topN > 0 && data.topSharePct > 0 ? `前 ${data.topN} 名约占 ${data.topSharePct}%` : "—";
 
@@ -99,7 +98,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
     return `${count(row.eligibleCount)} 人${perVote === null ? "" : ` · 每人约 ${usdt(times(row.votesPerMember, perVote))} USDT`}`;
   };
 
-  const settleSnapshot = { action: "settle", overview: data, policy: ctx.f4AmbassadorPolicy };
+  const settleSnapshot = { action: "settle", overview: data, readAt, policy: ctx.f4AmbassadorPolicy };
   const openSettle = () => ctx.openActionConfirm(f4Confirmation(ctx, settleSnapshot));
 
   const voteButton = (row: F4LeadershipPoolOverview["voteWeights"][number]) => {
@@ -132,9 +131,10 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
               {poolActual ? "本周已结算" : "本周池"}
               {poolActual ? <StatusTag tone="done">实发</StatusTag> : poolEstimated && <StatusTag tone="neutral" icon={Calculator}>估算</StatusTag>}
             </span>
-            <span className="f4-pool-value" data-zero={pool === null || Number(pool) === 0 ? "" : undefined}>{usdt(pool)}{pool !== null && <small>USDT</small>}</span>
+            <span className="f4-pool-value" data-zero={pool === null || poolText === "0" ? "" : undefined}>{poolText}{pool !== null && <small>USDT</small>}</span>
             <span className="f4-pool-note">{pool === null
               ? `暂时无法估算：${data.settlementConfigUnavailableReason || "设置不完整"}`
+              : poolActual ? "这是本周实际入账的合计。"
               : `本周已付款成交额约 ${count(data.weeklyGmvUsd)} USDT（取整）× ${ratioEff}，每月上限 ${capEff}`}</span>
           </div>
           <KeyValues rows={[
