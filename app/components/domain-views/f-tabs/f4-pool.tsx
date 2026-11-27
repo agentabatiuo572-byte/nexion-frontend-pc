@@ -11,7 +11,7 @@ import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import type { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
 import { count, decimalText, describeSettleCron, settleCadenceNote, stamp, usdt, zoneNote } from "./f4-shared";
 import type { FViewCtx } from "./types";
-import type { F4VoteProjection } from "@/lib/admin/f4-vote-projection";
+import { f4CurrentWeekSettled, type F4VoteProjection } from "@/lib/admin/f4-vote-projection";
 
 /** Exact product of two decimal texts (votes × USDT per vote); display only, never rounded. */
 function times(a: string | number, b: string) {
@@ -51,12 +51,12 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
     : ctx.f4Error
       ? "设置刷新失败，为避免按旧设置结算，提前结算已暂停。请点「刷新」重试。"
       : `团队激励池设置不完整：${settlement.issues.map((issue) => issue.label).join("、")} 未设置或格式有误。补齐后刷新。`;
-  const settled = data.weeklyInjectedUsd > 0;
+  const projection = ctx.f4VoteProjection;
+  const settled = f4CurrentWeekSettled(projection.status === "ready" ? projection.data : undefined);
   const pool = data.currentWeekPoolAmount ?? data.currentWeekPoolUsd;
   const nextSettle = settlement.ready ? stamp(data.nextSettlementAt) : "—";
   const topShare = data.topN > 0 && data.topSharePct > 0 ? `前 ${data.topN} 名约占 ${data.topSharePct}%` : "—";
 
-  const projection = ctx.f4VoteProjection;
   const estimate = projection.status === "ready" && projection.data.estimate.available ? projection.data.estimate : null;
   const perVote = estimate?.perVoteUsd ?? null;
   const byRank = new Map((estimate?.ranks ?? []).map(rank => [rank.rank, rank]));
@@ -129,7 +129,7 @@ export function F4Pool({ ctx, data, settlement }: { ctx: FViewCtx; data: F4Leade
           <div className="f4-pool-amount">
             <span className="f4-pool-label">
               {settled ? "本周已结算" : "本周池"}
-              {settled ? <StatusTag tone="done">实发</StatusTag> : <StatusTag tone="neutral" icon={Calculator}>估算</StatusTag>}
+              {settled ? <StatusTag tone="done">实发</StatusTag> : settled === false && <StatusTag tone="neutral" icon={Calculator}>估算</StatusTag>}
             </span>
             <span className="f4-pool-value" data-zero={pool === null || Number(pool) === 0 ? "" : undefined}>{usdt(pool)}{pool !== null && <small>USDT</small>}</span>
             <span className="f4-pool-note">{pool === null

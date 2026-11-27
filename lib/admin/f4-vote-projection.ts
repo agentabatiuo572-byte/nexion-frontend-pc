@@ -13,6 +13,11 @@ export type F4VoteProjection = {
   sources: string[];
 };
 
+export function f4CurrentWeekSettled(projection: F4VoteProjection | undefined) {
+  if (projection === undefined) return undefined;
+  return !projection.estimate.available && projection.estimate.reason === "CURRENT_WEEK_SETTLED";
+}
+
 export type F4VoteProjectionRead =
   | { status: "idle" | "loading" | "denied" }
   | { status: "error"; message: string }

@@ -8,7 +8,8 @@ import { useEffect, useState } from "react";
 import { BlockState, Cell, Explain, Fact, Facts, Fold, Notice, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
-import { fetchF4LeaderboardDisqualificationReadiness, fetchF4LeaderboardPayoutPreview, fetchF4LeadershipPoolOverview, type F4LeaderboardDisqualificationReadiness, type F4LeaderboardPayoutPreview } from "@/lib/admin/f1-client";
+import { fetchF4LeaderboardDisqualificationReadiness, fetchF4LeaderboardPayoutPreview, fetchF4LeadershipPoolOverview, fetchF4VoteProjection, type F4LeaderboardDisqualificationReadiness, type F4LeaderboardPayoutPreview } from "@/lib/admin/f1-client";
+import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { count, decimalText, usdt, moneyText } from "./f4-shared";
 
 type Read<T> = { state: "loading" } | { state: "failed"; error: string } | { state: "ok"; data: T; at: number };
@@ -45,9 +46,17 @@ const percentText = (value: string) => value.includes(".") ? value.replace(/0+$/
  * 总榜派奖确认框：配置的奖池之后，放这一次的人数、合计和名单。
  * 「操作记录与审批」的批准框不传 pool（奖池取预览读到的数），approving 换掉只对发起人成立的那句，rules 在名单后面接「怎么分」。
  */
-export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }: { pool?: string; approving?: boolean; rules?: boolean }) {
+export function F4PayoutPreviewFacts({ pool, approving = false, rules = false, onSettlementChange }: {
+  pool?: string; approving?: boolean; rules?: boolean; onSettlementChange?: (settled: boolean) => void;
+}) {
   const read = useRead<F4LeaderboardPayoutPreview>(() => fetchF4LeaderboardPayoutPreview("allTime"));
   const preview = read.state === "ok" ? read.data : undefined;
+  const settled = preview?.alreadySettled;
+  useEffect(() => {
+    if (settled !== undefined) onSettlementChange?.(settled);
+  }, [settled, onSettlementChange]);
+  const rankingOnly = preview?.available === false;
+  const calculation = preview?.available ? preview.payout : preview?.ranking;
   const unconfigured = preview?.reason === "F4_LEADERBOARD_POOL_NOT_CONFIGURED";
   const poolShown = pool ?? (unconfigured ? "没有可发放的奖池" : preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : "读不到");
   const pending = read.state === "loading" ? "正在加载…" : read.state === "failed" ? "读不到" : undefined;
@@ -59,23 +68,24 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
       <Facts>
         {/* 批准框里奖池也取自预览：读不到时只留「这次实发」一行，不连写三个「读不到」。 */}
         {poolShown !== "读不到" && <Fact k="总榜奖池" lead tone="role-1" unit={/\d/.test(poolShown) ? "USDT" : undefined}>{poolShown}</Fact>}
-        <Fact k={approving ? "这次实发（估算）" : "这次实发"} tone={pending === "读不到" ? "warn" : undefined}>{pending ?? (preview?.payableAmount !== undefined
-          ? <><span className="f4-payout-num">{moneyText(preview.payableAmount)}</span> USDT</>
+        <Fact k={rankingOnly ? "按名次测算" : "预计发放"} tone={pending === "读不到" ? "warn" : undefined}>{pending ?? (calculation
+          ? <><span className="f4-payout-num">{moneyText(calculation.totalAmount)}</span> USDT</>
           : "—")}</Fact>
-        {poolShown !== "读不到" && <Fact k="人数">{pending ?? (preview?.paidCount !== undefined && preview.rankedCount !== undefined
-          ? `${count(preview.paidCount)} 人拿到钱，上榜 ${count(preview.rankedCount)} 人` : "—")}</Fact>}
+        {poolShown !== "读不到" && <Fact k="人数">{pending ?? (calculation
+          ? rankingOnly ? `上榜 ${count(calculation.rankedCount)} 人`
+            : `预计发放 ${count(calculation.positiveAmountCount)} 人，上榜 ${count(calculation.rankedCount)} 人` : "—")}</Fact>}
       </Facts>
       {!!preview?.concentrationWarnings.length && <Notice tone="warn">{preview.concentrationWarnings.map(key => `${WARNING_LABEL[key]}超过 ${percentText(preview[key])}%`).join("；")}。奖金按名次权重计算。</Notice>}
       {notPaying && <Notice tone="warn">{notPaying}</Notice>}
       {read.state === "failed" && <BlockState state="error" title="派奖预览加载失败"
         detail={<>{read.error}{approving ? " 不影响批准。" : " 批准时按当时的总榜重新计算。"}</>}
         onRetry={read.retry} />}
-      {preview && preview.rows.length > 0 && (
-        <div className="f4-payout-list" data-long={preview.rows.length > 6 ? "" : undefined}>
-          <Table label="这次派奖名单" className="f4-payout-table">
-            <thead><tr><Th>名次</Th><Th>用户</Th><Th align="right">算力点</Th><Th align="right">实发（USDT）</Th></tr></thead>
+      {calculation && calculation.rows.length > 0 && (
+        <div className="f4-payout-list" data-long={calculation.rows.length > 6 ? "" : undefined}>
+          <Table label={rankingOnly ? "按名次测算名单" : "这次派奖名单"} className="f4-payout-table">
+            <thead><tr><Th>名次</Th><Th>用户</Th><Th align="right">算力点</Th><Th align="right">{rankingOnly ? "测算（USDT）" : "预计发放（USDT）"}</Th></tr></thead>
             <tbody>
-              {preview.rows.map((row) => (
+              {calculation.rows.map((row) => (
                 <Tr key={row.userId}>
                   <Td><Cell main={`第 ${row.rank} 名`} /></Td>
                   <Td><Cell mono main={row.userNo} /></Td>
@@ -123,23 +133,27 @@ export function F4DisqualifyEvidenceFact({ memberUserId }: { memberUserId: numbe
  * 「操作记录与审批」里批准本周结算时的现状：和 F4 结算确认框同一份读数（本周池、有资格分的人），打开时读一次。
  * 读不到写「读不到」，不写 0，也不挡批准。
  */
-export function F4SettleFacts() {
+export function F4SettleFacts({ onSettlementChange }: { onSettlementChange?: (settled: boolean) => void }) {
   const read = useRead(() => fetchF4LeadershipPoolOverview());
+  const projection = useRead(fetchF4VoteProjection);
   const data = read.state === "ok" ? read.data : undefined;
   const pending = read.state === "loading" ? "正在加载…" : read.state === "failed" ? "读不到" : undefined;
-  const settled = !!data && data.weeklyInjectedUsd > 0;
+  const settled = f4CurrentWeekSettled(projection.state === "ok" ? projection.data : undefined);
+  useEffect(() => {
+    if (settled !== undefined) onSettlementChange?.(settled);
+  }, [settled, onSettlementChange]);
   const pool = data ? data.currentWeekPoolAmount ?? data.currentWeekPoolUsd : null;
   return (
     <div className="f4-payout">
       <Facts>
         {/* 已结算时这次批准不动钱，已发的数不做关键数字（VS-102）。 */}
-        <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead={!settled} tone={pending === "读不到" ? "warn" : "role-1"} unit={data && pool !== null ? "USDT" : undefined}>{pending ?? usdt(pool)}</Fact>
+        <Fact k={settled ? "本周已结算（实发）" : settled === false ? "本周池（估算）" : "本周池"} lead={!settled} tone={pending === "读不到" ? "warn" : "role-1"} unit={data && pool !== null ? "USDT" : undefined}>{pending ?? usdt(pool)}</Fact>
         <Fact k="有资格分的人">{pending ?? `${count(data!.participantCount)} 人`}</Fact>
       </Facts>
-      {/* 本周已结算：批准时跳过，和派奖「总榜已经派过」同一种提示（OP-70）。读到的是实发，不叫估算。 */}
-      {settled && <Notice tone="warn">本周已经结算过，这次批准不会再发，也不补发差额。</Notice>}
+      {settled && <Notice tone="warn">当前周已结算，同一周内批准不会再发。结算哪一周以批准时为准。</Notice>}
       {read.state === "failed" && <p className="f4-payout-note">本周奖池读不到，不影响批准。</p>}
-      {read.state === "ok" && <p className="f4-payout-note">{settled ? `${businessStamp(read.at)}（${businessZone().label}）读到。` : `${businessStamp(read.at)}（${businessZone().label}）读到的估算，批准时的金额可能不同。`}</p>}
+      {read.state === "ok" && <p className="f4-payout-note">{projection.state === "failed" ? "本周是否已结算读不到，以批准时为准。"
+        : settled === false ? `${businessStamp(read.at)}（${businessZone().label}）读到的估算，批准时的金额可能不同。` : `${businessStamp(read.at)}（${businessZone().label}）读到。`}</p>}
     </div>
   );
 }

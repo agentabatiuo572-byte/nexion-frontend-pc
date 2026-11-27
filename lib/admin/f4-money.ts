@@ -28,6 +28,7 @@ export function f4PoolRatioIncreases(stored: string | undefined, value: string):
 
 export const F4_POOL_RATIO_INVALID = "请填 0–30 的普通百分数，例如 0.05 或 5%。";
 export const F4_PAYOUT_POOL_UNCONFIGURED = "总榜奖池未配置，请先配置各榜奖池。";
+export const F4_SETTLEMENT_CONSEQUENCE = "批准时算出有应发的金额才发钱";
 
 export function f4MonthlyCap(raw: string): string | null {
   const text = raw.trim().toUpperCase().replace(/[$,]/g, "");

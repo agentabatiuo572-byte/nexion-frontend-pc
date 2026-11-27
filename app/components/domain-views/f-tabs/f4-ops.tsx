@@ -20,6 +20,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { fetchF4AmbassadorMaterials, type F4AmbassadorApplication } from "@/lib/admin/f1-client";
 import { validateF4SettlementConfig } from "@/lib/admin/f4-settlement-config";
+import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { equalF4PolicyValue, f4PolicyValues } from "./f4-policy-confirm";
 import { f4Confirmation } from "./f4-confirmations";
@@ -278,7 +279,8 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
     unlockVRank: data.configValues["F.pool.unlockVRank"],
     settleCron: data.configValues["F.pool.settleCron"],
   });
-  const settled = data.weeklyInjectedUsd > 0;
+  const projection = ctx.f4VoteProjection;
+  const settled = f4CurrentWeekSettled(projection.status === "ready" ? projection.data : undefined);
   const stages = data.ambassadorApplications.map(applicationStage);
   const waitBusiness = stages.filter((stage) => stage.key === "business").length;
   const waitFinance = stages.filter((stage) => stage.key === "finance").length;
@@ -333,7 +335,7 @@ export function F4Ops({ ctx, onOpenCommissions }: { ctx: FViewCtx; onOpenCommiss
         <Stat {...tabProps("pool")} openLabel="团队激励池"
           head={<span className="f4-card-head">团队激励池</span>}
           surface={settlement.ready ? undefined : "warn"}
-          label={settled ? "本周已结算（实发）" : "本周池（估算）"}
+          label={settled ? "本周已结算（实发）" : settled === false ? "本周池（估算）" : "本周池"}
           value={data.currentWeekPoolUsd === null ? "—" : usdt(data.currentWeekPoolAmount ?? data.currentWeekPoolUsd)} unit={data.currentWeekPoolUsd === null ? undefined : "USDT"}
           tone="role-1">
           <span className="f4-card-line">

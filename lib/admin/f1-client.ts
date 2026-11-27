@@ -897,17 +897,20 @@ export interface F4ComputePointPeriod extends Omit<F4LeaderboardPeriod, "podium"
 export type F4ComputePointPeriods = Partial<Record<"today" | "week" | "month" | "all", F4ComputePointPeriod>>;
 
 export type F4PayoutPeriod = "today" | "week" | "month" | "allTime";
-export interface F4LeaderboardPayoutPreview {
-  period: F4PayoutPeriod; periodKey: string; paused: boolean; alreadySettled: boolean;
-  available: boolean; reason: string; rankingMetric: "COMPUTE_POINTS";
-  prizePoolUsdt: string; minComputePoints: string; topN: number; top1MaxPct: string; top5MaxPct: string;
-  // Not returned when the pool is absent; absence must not be turned into zero.
-  candidateCount?: number; rankedCount?: number; paidCount?: number;
-  payableAmount?: string;
-  concentrationWarnings: ("top1MaxPct" | "top5MaxPct")[];
-  rows: { rank: number; userId: number; userNo: string; computePoints: string;
-    amount: string }[];
+interface F4LeaderboardCalculation {
+  candidateCount: number;
+  rankedCount: number;
+  positiveAmountCount: number;
+  totalAmount: string;
+  rows: { rank: number; userId: number; userNo: string; computePoints: string; amount: string }[];
 }
+export type F4LeaderboardPayoutPreview = {
+  period: F4PayoutPeriod; periodKey: string; paused: boolean; alreadySettled: boolean;
+  reason: string; rankingMetric: "COMPUTE_POINTS";
+  prizePoolUsdt: string; minComputePoints: string; topN: number; top1MaxPct: string; top5MaxPct: string;
+  concentrationWarnings: ("top1MaxPct" | "top5MaxPct")[];
+} & ({ available: true; payout: F4LeaderboardCalculation }
+  | { available: false; ranking?: F4LeaderboardCalculation });
 export interface F4LeaderboardDisqualificationReadiness {
   period: "week"; periodKey: string; rankingMetric: "COMPUTE_POINTS"; minComputePoints: string;
   rows: { rank: number; memberUserId: number; userNo: string; computePoints: string;
@@ -2234,12 +2237,20 @@ export async function fetchF4LeaderboardPayoutPreview(period: F4PayoutPeriod, pe
     || row.rankingMetric !== "COMPUTE_POINTS" || !Array.isArray(row.rows)
     || !Array.isArray(row.concentrationWarnings)
     || !row.concentrationWarnings.every(key => key === "top1MaxPct" || key === "top5MaxPct")) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
-  const preview: F4LeaderboardPayoutPreview = {
+  const preview = {
     period, periodKey: row.periodKey, paused: row.paused, alreadySettled: row.alreadySettled,
-    available: row.available, reason: row.reason, rankingMetric: "COMPUTE_POINTS",
+    reason: row.reason, rankingMetric: row.rankingMetric,
     prizePoolUsdt: f4LeaderboardDecimal(row.prizePoolUsdt), minComputePoints: f4LeaderboardDecimal(row.minComputePoints),
     topN: f4LeaderboardCount(row.topN, 1), top1MaxPct: f4LeaderboardDecimal(row.top1MaxPct), top5MaxPct: f4LeaderboardDecimal(row.top5MaxPct),
     concentrationWarnings: row.concentrationWarnings,
+  } satisfies Omit<F4LeaderboardPayoutPreview, "available">;
+  // The backend omits the calculation when the configured pool is zero or absent.
+  if (!row.available && row.reason === "F4_LEADERBOARD_POOL_NOT_CONFIGURED") return { ...preview, available: false };
+  const calculation: F4LeaderboardCalculation = {
+    candidateCount: f4LeaderboardCount(row.candidateCount),
+    rankedCount: f4LeaderboardCount(row.rankedCount),
+    positiveAmountCount: f4LeaderboardCount(row.paidCount),
+    totalAmount: f4LeaderboardDecimal(row.payableAmount),
     rows: row.rows.map(value => {
       const entry = f4LeaderboardRecord(value);
       if (typeof entry.userNo !== "string" || !entry.userNo) throw new Error("F4_OVERVIEW_RESPONSE_INVALID");
@@ -2247,13 +2258,8 @@ export async function fetchF4LeaderboardPayoutPreview(period: F4PayoutPeriod, pe
         computePoints: f4LeaderboardDecimal(entry.computePoints), amount: f4LeaderboardDecimal(entry.amount) };
     }),
   };
-  if (row.reason !== "F4_LEADERBOARD_POOL_NOT_CONFIGURED") {
-    preview.candidateCount = f4LeaderboardCount(row.candidateCount);
-    preview.rankedCount = f4LeaderboardCount(row.rankedCount);
-    preview.paidCount = f4LeaderboardCount(row.paidCount);
-    preview.payableAmount = f4LeaderboardDecimal(row.payableAmount);
-  }
-  return preview;
+  return row.available ? { ...preview, available: true, payout: calculation }
+    : { ...preview, available: false, ranking: calculation };
 }
 
 export async function fetchF4LeaderboardDisqualificationReadiness(limit = 50): Promise<F4LeaderboardDisqualificationReadiness | null> {

@@ -8,7 +8,8 @@ import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
-import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_SETTLEMENT_CONSEQUENCE, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { unchangedFNumber } from "@/lib/admin/f-reconfirmation";
@@ -93,7 +94,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
   // 不是「每周某天」时提醒哪些周会自动结算（只做显示）。
   const cadence = settlement.ready && !invalid.has("settleCron") ? settleCadenceNote(settleCron) : null;
   const unlockVRankEff = invalid.has("unlockVRank") ? invalidLabel : unlockVRank || "未配置";
-  const settled = data.weeklyInjectedUsd > 0;
+  const settled = f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
   const pool = data.currentWeekPoolAmount ?? data.currentWeekPoolUsd;
   const board = leaderboardState(data);
   const current = data.leaderboardComputePointPeriods?.[period];
@@ -125,14 +126,14 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     title: "提前结算本周团队激励池",
     effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
-      impact: "批准后按执行那一刻的当前周重新计算池金额，并作为已解锁的 USDT 奖励真实入账到有资格的用户；本周已经结算过的会跳过，不补发差额。",
-      check: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。",
+      impact: "批准时按当时所在的周重新计算池金额，有应发金额时作为已解锁的 USDT 奖励入账。该周已结算就跳过，不补发差额。",
+      check: "批准时如果该周未结算，先查兑付覆盖率。读不到或低于红线就不发钱，审批单留着待审批。",
     },
     completionCopy: "批准前不结算。",
-    coverageLead: "这次结算按算出的金额真实发钱",
-    coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。每周自动结算不做这项检查。",
+    coverageLead: F4_SETTLEMENT_CONSEQUENCE,
+    coverageCheck: "提交时按这里的数查一次。批准时如果该周未结算，系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。每周自动结算不做这项检查。",
     facts: <Facts>
-      <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
+      <Fact k={settled ? "本周已结算（实发）" : settled === false ? "本周池（估算）" : "本周池"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
       <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
       <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
       {approvalFacts(POOL_FUND)}
@@ -285,12 +286,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     amplify: true,
     title: "发放总榜奖励", blockedReason: ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
-      impact: "批准后按执行那一刻的总榜，把总榜奖池按名次分给团队订单算力点最多的前 100 名（不足 100 名按实际人数），作为已解锁的 USDT 奖励真实入账。",
-      check: "总榜派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。批准时先查兑付覆盖率，不够不发。",
+      impact: "批准时按当时的总榜计算名单和金额，有应发金额时按名次给前 100 名入账已解锁的 USDT 奖励。",
+      check: "总榜派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。尚未派过的总榜，批准时先查兑付覆盖率。",
     },
     completionCopy: "批准前不派奖。",
-    coverageLead: "这次派奖按算出的金额真实发钱",
-    coverageCheck: "提交时按这里的数查一次。批准时系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
+    coverageLead: F4_SETTLEMENT_CONSEQUENCE,
+    coverageCheck: "提交时按这里的数查一次。批准尚未派过的总榜时，系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
     facts: <div className="rd-stack">
       <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
