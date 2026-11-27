@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { m5ManagementClient, supportWelcomeMessageClient, isIndeterminateSupportError, type SupportWelcomeLanguage, type SupportWelcomeMessage, type SupportWelcomeTexts } from "../../../../lib/admin/m-support-client";
 import { businessStamp, businessZone, formatBusinessTime } from "../../../../lib/admin/business-time";
 import { MessageCircleHeart, Save } from "lucide-react";
-import { BlockState, Button, Explain, Fact, Facts, Field, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
+import { BlockState, Button, Explain, Fact, Facts, Field, KeepText, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { M5PendingWrites, type M5WelcomeSummary } from "./m5-views";
 import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView, mReplayReason } from "@/lib/admin/m-recovery-copy";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
@@ -288,7 +288,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     <section className="m5-welcome" aria-label="新用户欢迎语">
       {pending && view && <M5PendingWrites submitting={command.submitting} explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：「加载最新内容」读到后这条记录就解除，改过的文字留作草稿。有结论前欢迎语不能再改。</p></>} rows={[{
         key: pending.commandKey, name: "新用户欢迎语", submittedAt, expired: retryExpired, change: changeText,
-        status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
+        status: view, note: <>{recoveryLine && <KeepText text={recoveryLine} />}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: retry && <>
           {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}
           {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原操作重试</Button>}
