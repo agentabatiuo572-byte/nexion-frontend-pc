@@ -120,7 +120,8 @@ function E1OwnCreateQuery() {
           {result.product && <Button size="sm" onClick={() => { const product = result.product!; close(); product.open(); }}>查看商品资料</Button>}</p>
       </div>}
       {result?.state === "not-found" && <p className="rd-weak" role="status">没有查到：这个操作编号下没有你提交的新增申请，核对编号后再查。</p>}
-      {(result?.state === "unread" || result?.state === "mismatch") && <Notice tone="warn"><p>{result.message}</p></Notice>}
+      {result?.state === "unread" && <BlockState compact state="error" title="新增申请加载失败" detail={result.message} onRetry={() => void run(result.submitted)} retrying={busy} />}
+      {result?.state === "mismatch" && <Notice tone="warn"><p>{result.message}</p></Notice>}
     </Modal>}
   </>;
 }
@@ -994,7 +995,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           throw failure;
         }
       }} />}
-    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><E1ReceiptProductButton ticketId={receiptDetail.id} /><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在加载…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptAfter(receiptDetail)}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
+    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><E1ReceiptProductButton ticketId={receiptDetail.id} /><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在加载…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptAfter(receiptDetail)}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.command.op === "e1_sku_create" && createTech(receiptDetail.commandKey)}{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
     {releaseMissing && <MissingProposalReleaseModal label={releaseMissing.spec.action} createdAt={releaseMissing.createdAt} keepDraft={releaseMissing.spec.command.op === "e1_sku_create"}
       onCancel={() => setReleaseMissing(null)} onConfirm={() => confirmMissing(releaseMissing)} />}
     {release && <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => {
