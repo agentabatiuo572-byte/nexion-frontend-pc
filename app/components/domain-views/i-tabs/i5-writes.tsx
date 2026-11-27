@@ -855,7 +855,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     const block = retryBlock(record, outcome);
     const canRetry = offer && !block;
     const shown = statusOf(record, outcome, expired, canRetry);
-    const help = !expired && !record.readback ? recoveryText(record.op, canQuery, canRetry, offer && (!outcome || "error" in outcome)) : undefined;
+    const help = !expired && !record.readback ? recoveryText(record.op, canQuery, canRetry, offer && !isExplicitRejection(record.rejection) && (!outcome || "error" in outcome)) : undefined;
     if (OPEN_RESULT_LABELS.includes(shown.label)) open += 1;
     const code = businessCodeOf(outcome);
     return { key: record.commandKey, createdAt: record.createdAt, object: record.label,
