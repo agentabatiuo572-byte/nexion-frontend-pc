@@ -278,7 +278,7 @@ export function H3CreationList({ rows, typeLabel, auditHref, routeLabels }: {
         return <li key={row.ticketId ?? `${row.missionCode}-${index}`}>
           <span className="h3-creating-state">{backendPendingTag(row, <>新建「{row.missionName ?? "—"}」，奖励 {reward}</>)}</span>
           <span className="h3-creating-name"><b>{row.missionName ?? "—"}</b><span data-mono="">{row.missionCode ?? "—"}</span></span>
-          <span className="h3-creating-facts">{`${typeLabel(row.missionType)} · 奖励 ${reward}`}{route && ` · 点了跳到 ${route}`}</span>
+          <span className="h3-creating-facts">{`${typeLabel(row.missionType)} · 奖励 ${reward}`}{route && ` · 点「去完成」跳到 ${route}`}</span>
           <span className="h3-pending-who">{submittedText(row.submittedBy, row.submittedAt, false)}</span>
           <span className="h3-creating-go">{href && <Link className="rd-link" href={href} prefetch={false}>看审批单</Link>}</span>
         </li>;
@@ -356,7 +356,7 @@ export function TaskCard({ task, name, routeLabel, completion, bindingCount, inv
               : <span className="h3-card-muted">{invalidBindingCount > 0 ? `没有有效的完成条件（${invalidBindingCount} 条绑定不符合约定）` : bindingCount > 0 ? `没有启用的条件（${bindingCount} 条已停用）` : "还没有完成条件"}</span>}</dd>
         </div>
         <div>
-          <dt>点了跳到</dt>
+          <dt>点「去完成」跳到</dt>
           <dd>{route ? routeLabel ?? <span data-mono="">{route}</span> : "—"}</dd>
         </div>
         <div>

@@ -675,7 +675,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         return {
           kind: "multi-field",
           requireAnyChange: true,
-          feedback: (value) => options.includes(value.actionRoute)
+          // An empty choice is reported once by the required check on the field itself.
+          feedback: (value) => !value.actionRoute || options.includes(value.actionRoute)
             ? { invalid: false, message: "" }
             : { invalid: true, message: "请选择去完成页面", field: "actionRoute" },
           fields: [
@@ -1675,7 +1676,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             </tbody>
           </Table>}
         {unrecognizedBindings.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${unrecognizedBindings.length} 条完成条件无法识别`}>
-          <p>来源或「算谁完成」是后台不认得的旧值，这里只能查看，不能启停、修改或删除；要改需技术按条件编号核查数据：{unrecognizedBindings.map((binding, index) => <Fragment key={binding.bindingCode}>{index ? "、" : ""}<span data-mono="">{binding.bindingCode}</span></Fragment>)}。</p>
+          <p>来源或「算谁完成」是后台不认得的旧值，这里只能查看，不能启停、修改或删除；请把条件编号发给技术同事核查：{unrecognizedBindings.map((binding, index) => <Fragment key={binding.bindingCode}>{index ? "、" : ""}<span data-mono="">{binding.bindingCode}</span></Fragment>)}。</p>
         </Notice></div>}
         {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件找不到对应的任务`}>
           <p>{orphans.every((binding) => binding.targetInTaskCatalog === false) ? "任务目录里没有它指向的任务。" : "这页只列新手任务和每周任务。"}先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
@@ -1856,7 +1857,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               value: detailCompletion || (activeUnbound(detailTask) ? "没绑定完成事件，用户做不完" : "还没有启用的完成条件"),
               reason: detailNeedsBinding ? "到「完成条件」页签绑定"
                 : detailDisabledBindings.length ? `已停用：${detailDisabledBindings.map(bindingEventText).join("、")}` : undefined },
-            { label: "点了跳到", value: routeLabels[text(detailTask.href, "")] ?? text(detailTask.href, "—") },
+            { label: "点「去完成」跳到", value: routeLabels[text(detailTask.href, "")] ?? text(detailTask.href, "—") },
             { label: "奖励", value: detailReward?.reward, reason: backendLock(`mission.${codeOf(detailTask)}.reward`)
               ? <>{detailReward?.note && <span className="h3-detail-note">{detailReward.note}</span>}{pendingLine(`mission.${codeOf(detailTask)}.reward`)}</> : detailReward?.note },
           ]} />
