@@ -424,7 +424,7 @@ export function validateH4OverviewEvents(events: unknown) {
     }
 }
 
-function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] {
+function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] | null {
   if (!Array.isArray(value)) throw new Error("H3_RESPONSE_INVALID");
   const targets = value.flatMap((item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return [];
@@ -436,8 +436,7 @@ function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] {
       || (seriesCode !== null && (typeof seriesCode !== "string" || !SKU_SERIES_CODES.some(code => code === seriesCode)))) return [];
     return [{ productNo, name, actionRoute, openable, seriesCode, roiEligible }];
   });
-  if (value.length > 0 && targets.length === 0) throw new Error("H3_RESPONSE_INVALID");
-  return targets;
+  return value.length > 0 && targets.length === 0 ? null : targets;
 }
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {

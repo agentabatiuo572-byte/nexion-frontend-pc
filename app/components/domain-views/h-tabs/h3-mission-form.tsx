@@ -10,7 +10,7 @@ import { ListChecks } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, Modal, Notice, NumberInput, SearchSelect, Select, StatusTag } from "@/app/components/rd";
 import { PreviewTarget, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS, amountText } from "./h3-quest-parts";
 import { h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
-import { h3MissionCreationRefusal, type H3ProductActionTarget } from "@/lib/admin/h3-contract";
+import { H3_PRODUCT_TARGETS_READ_FAILURE, h3MissionCreationRefusal, type H3ProductActionTarget } from "@/lib/admin/h3-contract";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
 export type H3MissionForm = Record<string, string>;
@@ -21,20 +21,25 @@ export const MISSION_FORM_INITIAL: H3MissionForm = { category: "explore", action
 // GrowthMissionRequest.rewardPoints is a Java Integer (also enforced at approval).
 const MAX_MISSION_REWARD_POINTS = 2_147_483_647;
 
-function missionFormErrors(state: H3MissionForm, missionType: string, routeError?: string): Record<string, string> {
+function readMissionReward(input = ""): { value: number | null; error?: string } {
+  if (!input.trim()) return { value: null, error: "请填写奖励 UVT 数" };
+  if (/[^0-9]/.test(input)) return { value: null, error: "奖励 UVT 数须为非负整数" };
+  const value = Number(input);
+  if (value > MAX_MISSION_REWARD_POINTS) {
+    return { value: null, error: `奖励不能超过 ${amountText(String(MAX_MISSION_REWARD_POINTS))} UVT` };
+  }
+  return { value };
+}
+
+function missionFormErrors(state: H3MissionForm, missionType: string, rewardError?: string, routeError?: string): Record<string, string> {
   const e: Record<string, string> = {};
   if (!state.missionCode?.trim()) e.missionCode = "请填写任务编号";
   const refusal = h3MissionCreationRefusal(missionType, state.missionCode?.trim() ?? "");
   if (refusal) e.missionCode = displayAdminError(new Error(refusal));
   if (!state.missionName?.trim()) e.missionName = "请填写任务名称";
-  if (!state.rewardPoints?.trim()) e.rewardPoints = "请填写奖励 UVT 数";
+  if (rewardError) e.rewardPoints = rewardError;
   if (!state.category?.trim()) e.category = "请选择任务类别";
   if (routeError) e.actionRoute = routeError;
-  if (!e.rewardPoints) {
-    const reward = Number(state.rewardPoints);
-    if (reward > MAX_MISSION_REWARD_POINTS) e.rewardPoints = `奖励不能超过 ${amountText(String(MAX_MISSION_REWARD_POINTS))} UVT`;
-    else if (!Number.isSafeInteger(reward) || reward < 0) e.rewardPoints = "奖励 UVT 数须为非负整数";
-  }
   return e;
 }
 
@@ -47,12 +52,12 @@ const SUBJECT_TEXT: Record<string, string> = {
 export function H3MissionFormDrawer({ missionType, initial, productActionTargets, routeLabels, readFailed, onClose, onReview }: {
   missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2";
   initial?: H3MissionForm;
-  productActionTargets?: readonly H3ProductActionTarget[];
+  productActionTargets?: readonly H3ProductActionTarget[] | null;
   routeLabels: Record<string, string>;
   /** 抽屉开着时页面重读失败：抽屉和填的内容留着，读到前不能进下一步。 */
   readFailed?: { retrying: boolean; onRetry: () => void };
   onClose: () => void;
-  onReview: (value: H3MissionForm) => void;
+  onReview: (value: H3MissionForm, reward: number) => void;
 }) {
   const [value, setValue] = useState<H3MissionForm>(initial ?? MISSION_FORM_INITIAL);
   const [attempted, setAttempted] = useState(false);
@@ -64,10 +69,11 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
   const leave = (key: string) => () => setLeft((state) => state[key] ? state : { ...state, [key]: true });
   const actionRoutes = h3ActionRoutes(value.missionCode ?? "", productActionTargets);
   const actionRoute = actionRoutes.includes(value.actionRoute) ? value.actionRoute : "";
-  const routeBlocked = actionRoutes.length ? undefined : productActionTargets === undefined
+  const routeBlocked = productActionTargets === null ? H3_PRODUCT_TARGETS_READ_FAILURE : actionRoutes.length ? undefined : productActionTargets === undefined
     ? "商品候选没读到，重新读取后再选"
     : "现在没有能作回本目标的 S1 商品（已开放、能显示预计收益），上架后再选";
-  const errors = missionFormErrors(value, missionType, actionRoute ? undefined : routeBlocked ?? "请选择去完成页面");
+  const { value: reward, error: rewardError } = readMissionReward(value.rewardPoints);
+  const errors = missionFormErrors(value, missionType, rewardError, routeBlocked ?? (actionRoute ? undefined : "请选择去完成页面"));
   const creationRefusal = h3MissionCreationRefusal(missionType, value.missionCode?.trim() ?? "");
   const shown: Record<string, string> = attempted ? errors : Object.fromEntries(Object.entries(errors).filter(([key]) => left[key]));
   const routeText = (route: string) => routeLabels[route] ?? route;
@@ -78,16 +84,15 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
   const dirty = JSON.stringify(value) !== JSON.stringify(MISSION_FORM_INITIAL);
   const set = (key: string, next: string) => setValue((state) => ({ ...state, [key]: next }));
   const close = () => { if (dirty) setLeaving(true); else onClose(); };
-  const review = () => { setAttempted(true); if (missing.length === 0) onReview(value); };
+  const review = () => { setAttempted(true); if (!readFailed && missing.length === 0 && reward !== null) onReview(value, reward); };
   const subject = SUBJECT_TEXT[missionType];
-  const reward = /^\d+$/.test(value.rewardPoints?.trim() ?? "") ? value.rewardPoints.trim() : null;
-  const needsApproval = reward != null && Number(reward) > 0;
+  const needsApproval = reward !== null && reward > 0;
   return (
     <>
       <Drawer open wide onClose={close} title={`新建${subject}`} sub="建好后是已停用" icon={ListChecks} tone="role-4"
         explain="左边填，右边看它在 App 上的样子。点「下一步」后核对、写理由再提交。建好的任务先是已停用，要先在「完成条件」里绑定用户做了什么算完成，再启用。"
         footer={<Decision note={attempted && missing.length ? `还有 ${missing.length} 项要改：${missing.join("；")}` : undefined}
-          primary={<Button variant="primary" disabledReason={readFailed ? "最新数据读到后才能继续" : creationRefusal ? displayAdminError(new Error(creationRefusal)) : routeBlocked} onClick={review}>下一步：核对并提交</Button>}
+          primary={<Button variant="primary" disabledReason={productActionTargets === null ? H3_PRODUCT_TARGETS_READ_FAILURE : readFailed ? "最新数据读到后才能继续" : creationRefusal ? displayAdminError(new Error(creationRefusal)) : routeBlocked} onClick={review}>下一步：核对并提交</Button>}
           others={<Button onClick={close}>取消</Button>} />}>
         <div className="rd-split h3-form-split" data-detail="" data-preview="">
           <div className="h3-form">
@@ -130,7 +135,7 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
               <div className="h3-phone-hero">
                 <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[value.category] ?? "其他"}</span>
                 <b>{value.missionName?.trim() || "任务名称"}</b>
-                {missionType !== "DAY_ONE" && <span className="h3-phone-reward">{reward == null ? "—" : `+${amountText(reward)} UVT`}</span>}
+                {missionType !== "DAY_ONE" && <span className="h3-phone-reward">{reward == null ? "—" : `+${amountText(String(reward))} UVT`}</span>}
                 <span className="h3-phone-go">去完成 ›</span>
                 <PreviewTarget label={actionRoute ? routeLabels[actionRoute] ?? actionRoute : ""} />
               </div>

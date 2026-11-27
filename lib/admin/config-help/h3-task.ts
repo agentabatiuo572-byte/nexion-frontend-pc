@@ -43,7 +43,7 @@ const TASK_ACTION_ROUTES = [
   "/pages/genesis/marketplace",
 ];
 
-export function h3ActionRoutes(missionCode: string, targets?: readonly H3ProductActionTarget[]): string[] {
+export function h3ActionRoutes(missionCode: string, targets?: readonly H3ProductActionTarget[] | null): string[] {
   const requiresRoi = missionCode.trim().toLowerCase() === "view_product_roi";
   const productRoutes = (targets ?? [])
     .filter(target => target.openable && (!requiresRoi || target.roiEligible))
@@ -51,7 +51,7 @@ export function h3ActionRoutes(missionCode: string, targets?: readonly H3Product
   return requiresRoi ? productRoutes : [...TASK_ACTION_ROUTES, ...productRoutes];
 }
 
-export function h3ActionRouteLabels(targets?: readonly H3ProductActionTarget[]): Record<string, string> {
+export function h3ActionRouteLabels(targets?: readonly H3ProductActionTarget[] | null): Record<string, string> {
   if (!targets?.length) return TASK_ACTION_ROUTE_LABELS;
   const nameCounts = new Map<string, number>();
   for (const { name } of targets) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);

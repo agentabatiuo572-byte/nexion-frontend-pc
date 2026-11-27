@@ -4063,6 +4063,7 @@ const ADMIN_READ_ERROR_MESSAGES: Record<string, string> = {
   CONTENT_ROUTE_NOT_FOUND: "这个入口暂时读不到内容，请联系值班人员。",
   CONTENT_BACKEND_UNAVAILABLE: SERVICE_DOWN_READ,
   PLATFORM_BACKEND_TIMEOUT: SERVICE_DOWN_READ,
+  H3_RESPONSE_INVALID: "用户任务数据格式不对，没读到，请重试。",
   H4_RESPONSE_INVALID: "收到的活动数据不完整，已停止显示。请重新读取。",
   G7_RESPONSE_INVALID: "收到的锁定计划数据不完整，已停止显示。请重新读取。",
   J4_RESPONSE_INVALID: "收到的预案数据不完整，已停止显示。请重新读取。",

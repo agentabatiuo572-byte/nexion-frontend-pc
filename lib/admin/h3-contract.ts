@@ -26,6 +26,7 @@ export type H3PendingMissionCreation = {
 };
 
 export const H3_PRODUCT_DETAIL_ROUTE_PREFIX = "/pages/store/detail?id=";
+export const H3_PRODUCT_TARGETS_READ_FAILURE = "商品候选读取失败，请重新读取。";
 
 export type H3ProductActionTarget = {
   productNo: string;
@@ -126,8 +127,8 @@ export type H3Model = {
   dayOneTriReward: string;
   pendingApprovals?: Record<string, H3PendingApproval | null>;
   pendingMissionCreations?: H3PendingMissionCreation[];
-  /** A missing field on an older service means product targets are unknown. */
-  productActionTargets?: H3ProductActionTarget[];
+  /** Missing on older services, null when the supplied candidates could not be read. */
+  productActionTargets?: H3ProductActionTarget[] | null;
   dayOneTasks: H3Task[];
   dayOneStates: Array<{ st: string; label: string; tone: string }>;
   weeklyTier1: H3Task[];

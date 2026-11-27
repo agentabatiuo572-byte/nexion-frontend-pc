@@ -67,7 +67,13 @@ export const H3_BINDING_USER_FIELD_LABELS: Record<string, string> = {
   inviter_user_id: "邀请人",
 };
 const PRODUCER_LABELS: Record<string, string> = { ORDER: "订单", REFERRAL: "邀请", LEARNING: "学习", DEVICE: "设备", COMMISSION: "团队奖励", SYSTEM: "系统" };
-export const producerText = (producer: string) => PRODUCER_LABELS[producer] ?? producer;
+function bindingLookup<T>(labels: Record<string, T>, value: string): T | undefined {
+  return Object.hasOwn(labels, value) ? labels[value] : undefined;
+}
+export const producerText = (producer: string) => bindingLookup(PRODUCER_LABELS, producer) ?? "来源待核对";
+export const bindingUserFieldText = (field: string) => bindingLookup(H3_BINDING_USER_FIELD_LABELS, field) ?? "归属待核对";
+export const bindingEventProducer = (eventType: string) => bindingLookup(H3_BINDING_EVENT_PRODUCERS, eventType);
+export const bindingEventLabel = (eventType: string) => bindingLookup(H3_BINDING_EVENT_LABELS, eventType);
 
 // ===== 取值小工具：照旧页面原样 =====
 export function text(value: unknown, fallback = "-") {
@@ -316,17 +322,30 @@ export type TaskCardProps = {
   menu?: MoreMenuItem[];
 };
 
-function eventTypeText(eventType: string) {
-  return H3_BINDING_EVENT_LABELS[eventType] ?? eventType;
+export function eventTypeText(eventType: string) {
+  return bindingEventLabel(eventType) ?? "无法识别的事件";
 }
 
 export function bindingEventText(binding: Pick<H3QuestEventBinding, "eventType">) {
   return eventTypeText(binding.eventType);
 }
 
+export function taskCompletionEvents(task: QuestTask) {
+  return task.completionType === "event" ? text(task.completionEvent, "").split(", ").filter(Boolean) : [];
+}
+
 export function taskCompletionEventText(task: QuestTask) {
-  if (task.completionType !== "event") return "";
-  return text(task.completionEvent, "").split(", ").map(eventTypeText).join("、");
+  return taskCompletionEvents(task).map(eventTypeText).join("、");
+}
+
+function invalidBindingText(count: number) {
+  return `没有有效的完成条件（${count} 条绑定不符合约定）`;
+}
+
+export function taskCompletionWarning(bindingCount: number, invalidBindingCount: number) {
+  const issue = invalidBindingCount > 0 ? invalidBindingText(invalidBindingCount)
+    : bindingCount > 0 ? "没有有效的完成条件" : "没绑定完成事件";
+  return `${issue}，用户做不完`;
 }
 
 export function TaskCard({ task, name, routeLabel, completion, bindingCount, invalidBindingCount = 0, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
@@ -352,8 +371,8 @@ export function TaskCard({ task, name, routeLabel, completion, bindingCount, inv
           <dd>{completion
             ? completion
             : warn
-              ? <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />没绑定完成事件，用户做不完</span>
-              : <span className="h3-card-muted">{invalidBindingCount > 0 ? `没有有效的完成条件（${invalidBindingCount} 条绑定不符合约定）` : bindingCount > 0 ? `没有启用的条件（${bindingCount} 条已停用）` : "还没有完成条件"}</span>}</dd>
+              ? <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />{taskCompletionWarning(bindingCount, invalidBindingCount)}</span>
+              : <span className="h3-card-muted">{invalidBindingCount > 0 ? invalidBindingText(invalidBindingCount) : bindingCount > 0 ? `没有启用的条件（${bindingCount} 条已停用）` : "还没有完成条件"}</span>}</dd>
         </div>
         <div>
           <dt>点「去完成」跳到</dt>
@@ -495,7 +514,7 @@ export function PhaseStrip({ items, currentPhase, action, mark }: {
 }
 
 // ===== App 上的样子 =====
-export type PreviewTask = { key: string; names: Record<"en" | "zh" | "vi", string>; source: string; category: string; routeLabel: string; reward?: string | null };
+export type PreviewTask = { key: string; names: Record<"en" | "zh" | "vi", string>; source: string; category: string; routeLabel: string; targetUnavailable: boolean; reward?: string | null };
 export type PreviewLocale = "zh" | "en" | "vi";
 
 function previewName(task: PreviewTask, locale: PreviewLocale) {

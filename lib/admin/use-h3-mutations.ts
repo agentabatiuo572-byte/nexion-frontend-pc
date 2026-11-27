@@ -1,6 +1,6 @@
 "use client";
 
-import { h3QuestConfigWriteRefusal, type H3Model } from "./h3-contract";
+import { H3_PRODUCT_TARGETS_READ_FAILURE, h3QuestConfigWriteRefusal, type H3Model } from "./h3-contract";
 import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
@@ -133,6 +133,15 @@ function retryBlocked(record: H3PendingCommand) {
   return state.replayBlock ? "请查询原操作" : undefined;
 }
 
+function needsProductTargets(request: H3PendingCommand["request"]) {
+  if (request.kind === "approval") return request.body.command.op === "h3_mission_create";
+  if (request.kind !== "direct") return false;
+  if (request.path === "/quest-events/missions") return true;
+  if (!request.path.endsWith("/presentation")) return false;
+  const body = JSON.parse(request.body) as { actionRoute?: string; expectedActionRoute?: string };
+  return body.actionRoute !== body.expectedActionRoute;
+}
+
 /** H3-only transport and recovery. The page owns all existing form markup. */
 export function useH3Mutations(
   toast: (message: string) => void,
@@ -140,6 +149,7 @@ export function useH3Mutations(
   readApproved: (records: readonly H3PendingCommand[]) => Promise<(record: H3PendingCommand) => ApprovedFact>,
   finish: (commandKey: string) => void,
   isFresh: (record?: H3PendingCommand) => boolean,
+  productTargetsReadFailed: () => boolean,
   model: H3Model | null,
   routeLabels: Readonly<Record<string, string>>,
   reloadTasks: () => Promise<H3Model | undefined>,
@@ -273,11 +283,15 @@ export function useH3Mutations(
   ])];
   const blocked = (target: string) => !!record(target) || model?.pendingApprovals?.[target] != null
     || model?.pendingMissionCreations?.some(approval => approval.missionCode === target) === true || pendingTargets().includes(target);
+  const productTargetsBlock = (r: H3PendingCommand) => productTargetsReadFailed() && needsProductTargets(r.request)
+    ? H3_PRODUCT_TARGETS_READ_FAILURE : undefined;
   const send = async (r: H3PendingCommand, recovering: boolean) => {
     requireActor(true, r.request.kind === "approval" ? r.request.body.command.op : undefined);
     if (recovering && !isFresh(r)) throw new Error("请先成功刷新用户任务数据，再按原操作重试。");
     if (isRetryExpired(r)) throw new Error(RETRY_EXPIRED_TEXT);
     if (r.request.kind === "legacy-region" || r.acknowledged) throw new Error("申请已建单或缺少完整原申请，请查询原操作。");
+    const blocked = productTargetsBlock(r);
+    if (blocked) throw new Error(blocked);
     try { retain(r); } catch (error) { if (!recovering) forget(r); throw error; }
     try {
       if (r.request.kind === "approval") {
@@ -366,7 +380,7 @@ export function useH3Mutations(
     recovery: h3Recovery,
     queryErrors: queryErrors.errors,
     approvedReading: (commandKey: string) => approvedReads.current.has(commandKey),
-    retryBlocked: (record: H3PendingCommand) => retryBlocked(record) ?? (!isFresh(record) ? "请先成功刷新用户任务数据" : undefined),
+    retryBlocked: (record: H3PendingCommand) => retryBlocked(record) ?? productTargetsBlock(record) ?? (!isFresh(record) ? "请先成功刷新用户任务数据" : undefined),
     async refreshTickets() {
       requireActor(false);
       // No A2 read authority is fabricated. By-key reads remain available separately.
@@ -390,7 +404,7 @@ export function useH3Mutations(
       return [overview, ...outcomes];
     },
     async retry(r: H3PendingCommand) {
-      const blocked = retryBlocked(r);
+      const blocked = retryBlocked(r) ?? productTargetsBlock(r);
       if (blocked) throw new Error(blocked);
       await h3Recovery.replay(r, record => send(record, true));
       if (r.request.kind === "approval") await readSubmitted(r);
