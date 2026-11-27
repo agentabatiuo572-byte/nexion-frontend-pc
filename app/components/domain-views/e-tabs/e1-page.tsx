@@ -13,7 +13,7 @@ import { businessClock } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
 import { fetchE3Params } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, A2ProposalReceiptIncompleteError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
-import { approvedE1CreateSkuId, E1_CREATE_NUMBER_UNREAD, isE1CreateRequestId, legacyE1CreateSkuId } from "@/lib/admin/e1-create-receipt";
+import { approvedE1CreateSkuId, e1CreateNumberLabel, E1_CREATE_NUMBER_UNREAD, isE1CreateRequestId, legacyE1CreateSkuId } from "@/lib/admin/e1-create-receipt";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
@@ -50,9 +50,11 @@ const recoveryFor = (original: E1Pending) => original.fingerprint.startsWith("sk
 type Confirmation = McSpec & Partial<E1SkuReview> & { initialBusinessValues?: Record<string, string>; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
 type E1Receipt = ProposeSpec & NonNullable<E1Pending["ticket"]> & { actorId: string; commandKey: string; object: string; createdAt: number; reading?: boolean; readError?: string };
 type E1CreateProductAction = { skuId: string; open: () => void };
-type E1OwnCreateLookup = { state: "found"; ticket: Pick<A2OperationRow, "id" | "action" | "status">; product?: E1CreateProductAction }
+type E1OwnCreateConditions = { commandKey: string; ticketId?: string };
+type E1OwnCreateLookup = { state: "found"; ticket: Pick<A2OperationRow, "id" | "action" | "status">; number?: string; product?: E1CreateProductAction }
   | { state: "not-found" }
-  | { state: "unread"; message: string; ticketId?: string };
+  | { state: "mismatch"; message: string }
+  | { state: "unread"; message: string };
 const E1CreateControls = createContext<{
   queryOwnCreate?: (commandKey: string, ticketId?: string) => Promise<E1OwnCreateLookup>;
   receiptProduct?: (ticketId: string) => E1CreateProductAction | undefined;
@@ -67,10 +69,10 @@ function E1ReceiptProductButton({ ticketId, size }: { ticketId: string; size?: "
 
 const OWN_CREATE_TONE: Record<string, StateTone> = { pending: "warn", approved: "done" };
 const OWN_CREATE_QUERY_COPY = {
-  numberUnread: "查到了这张申请，但商品编号暂时核对不了，稍后再查。",
   mismatch: "查到的申请和这个审批单号对不上，请到「操作记录与审批」核对。",
+  mismatchWithoutAudit: "查到的申请和这个审批单号对不上，请确认审批单号是否抄对。",
   progressUnread: "刚查过：还是没查到审批进度，稍后再查。",
-  incompleteResponse: "收到的数据不完整，已停止显示。",
+  incompleteResponse: "收到的数据不完整，已停止显示",
 };
 
 /**
@@ -83,24 +85,24 @@ function E1OwnCreateQuery() {
   const [key, setKey] = useState("");
   const [ticket, setTicket] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<E1OwnCreateLookup | null>(null);
+  const [result, setResult] = useState<(E1OwnCreateLookup & { submitted: E1OwnCreateConditions }) | null>(null);
   if (!queryOwnCreate) return null;
   const close = () => { setOpen(false); setKey(""); setTicket(""); setResult(null); };
-  const run = async () => {
-    const commandKey = key.trim();
-    if (!commandKey || busy) return;
+  const run = async (submitted: E1OwnCreateConditions) => {
+    if (!submitted.commandKey || busy) return;
     setBusy(true);
     try {
-      const found = await queryOwnCreate(commandKey, ticket);
-      setResult(found);
-      if (found.state === "unread" && found.ticketId) setTicket(found.ticketId);
+      const found = await queryOwnCreate(submitted.commandKey, submitted.ticketId);
+      setResult({ ...found, submitted });
     } finally { setBusy(false); }
   };
-  const onEnter = (event: KeyboardEvent<HTMLInputElement>) => { if (event.key === "Enter") void run(); };
+  const retry = result?.state === "unread" ? () => void run(result.submitted) : undefined;
+  const submit = retry ?? (() => void run({ commandKey: key.trim(), ticketId: ticket.trim() || undefined }));
+  const onEnter = (event: KeyboardEvent<HTMLInputElement>) => { if (event.key === "Enter") submit(); };
   return <>
     <Button icon={<SearchCheck size={14} aria-hidden />} onClick={() => setOpen(true)}>查询我的新增申请</Button>
     {open && <Modal title="查询我的新增申请" icon={SearchCheck} busy={busy} dirty={!!key || !!ticket} onClose={close}
-      footer={<><Button disabled={busy} onClick={close}>关闭</Button><Button variant="primary" loading={busy} loadingText="查询中…" disabledReason={key.trim() ? undefined : "请先填写操作编号"} onClick={() => void run()}>查询</Button></>}>
+      footer={<><Button disabled={busy} onClick={close}>关闭</Button><Button variant="primary" loading={busy} loadingText="查询中…" disabledReason={key.trim() ? undefined : "请先填写操作编号"} onClick={submit}>查询</Button></>}>
       <Field label="操作编号" required explain="提交新增商品时生成，在当时那条记录展开后的「技术信息」里可以复制。">
         <Input data-mono autoComplete="off" spellCheck={false} value={key} disabled={busy} onKeyDown={onEnter} onChange={event => { setKey(event.target.value); setResult(null); }} />
       </Field>
@@ -112,13 +114,13 @@ function E1OwnCreateQuery() {
           <Fact k="状态"><StatusTag tone={OWN_CREATE_TONE[result.ticket.status] ?? PROPOSAL_END[result.ticket.status]?.tone ?? "warn"}>{RECEIPT_STATUS[result.ticket.status] ?? "状态待核实"}</StatusTag></Fact>
           <Fact k="申请">{result.ticket.action}</Fact>
           <Fact k="审批单号"><span data-mono>{result.ticket.id}</span></Fact>
-          {result.product && <Fact k="商品编号"><span data-mono>{result.product.skuId}</span></Fact>}
+          {result.number && <Fact k="商品编号">{result.product ? <span data-mono>{result.product.skuId}</span> : result.number}</Fact>}
         </Facts>
         <p className="rd-toolbar">{result.ticket.status === "pending" ? RECOVERY_LINE.pending : result.product ? "已按申请创建商品。" : PROPOSAL_END[result.ticket.status]?.text ?? "状态待核实，请到操作记录与审批核对。"}
           {result.product && <Button size="sm" onClick={() => { const product = result.product!; close(); product.open(); }}>查看商品资料</Button>}</p>
       </div>}
       {result?.state === "not-found" && <p className="rd-weak" role="status">没有查到：这个操作编号下没有你提交的新增申请，核对编号后再查。</p>}
-      {result?.state === "unread" && <Notice tone="warn"><p>{result.message}</p>{result.ticketId && <p>审批单号已填好，稍后再点「查询」。</p>}</Notice>}
+      {(result?.state === "unread" || result?.state === "mismatch") && <Notice tone="warn"><p>{result.message}</p></Notice>}
     </Modal>}
   </>;
 }
@@ -859,34 +861,42 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     const known = knownCreateTicketId(original);
     const expected = expectedTicketId?.trim() || undefined;
     const ticketId = known ?? expected;
-    if (known && expected && known !== expected) return { state: "unread", ticketId, message: OWN_CREATE_QUERY_COPY.mismatch };
-    let matched = false;
+    const mismatch = { state: "mismatch", message: canOpenAudit ? OWN_CREATE_QUERY_COPY.mismatch : OWN_CREATE_QUERY_COPY.mismatchWithoutAudit } as const;
+    if (known && expected && known !== expected) return mismatch;
     try {
       const row = await fetchA2ProposalByKey(commandKey, true, "e1");
       if (!currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
-      if (!row) return ticketId ? { state: "unread", ticketId, message: OWN_CREATE_QUERY_COPY.progressUnread } : { state: "not-found" };
+      if (!row) return ticketId ? { state: "unread", message: OWN_CREATE_QUERY_COPY.progressUnread } : { state: "not-found" };
       checkCreateOwner(row, original, ticketId);
-      matched = true;
       const { id, status, resultSkuId } = createReceipt(row, original);
-      return { state: "found", ticket: { id, status, action: row.action }, product: resultSkuId ? createProductAction(resultSkuId, commandKey) : undefined };
+      return { state: "found", ticket: { id, status, action: row.action }, number: resultSkuId ?? e1CreateNumberLabel(row),
+        product: resultSkuId ? createProductAction(resultSkuId, commandKey) : undefined };
     } catch (failure) {
       if (!currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
-      if (failure instanceof A2ProposalReceiptIncompleteError) {
-        return { state: "unread", ticketId: ticketId ?? failure.ticketId, message: matched ? OWN_CREATE_QUERY_COPY.numberUnread : OWN_CREATE_QUERY_COPY.incompleteResponse };
-      }
-      if (failure instanceof E1CreateReceiptMismatchError) return { state: "unread", ticketId, message: OWN_CREATE_QUERY_COPY.mismatch };
-      return { state: "unread", ticketId, message: eReadError(failure) };
+      if (failure instanceof E1CreateReceiptMismatchError) return mismatch;
+      return { state: "unread", message: failure instanceof A2ProposalReceiptIncompleteError ? OWN_CREATE_QUERY_COPY.incompleteResponse : eReadError(failure) };
     }
   };
   const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择操作编号")); };
+  const createTech = (commandKey: string) => <Fold inset title="技术信息" summary="操作编号">
+    <Facts><Fact k="操作编号"><span data-mono>{commandKey}</span></Fact></Facts>
+    <div className="e1-table-actions"><Button size="sm" onClick={() => copy(commandKey, "已复制操作编号")}>复制操作编号</Button></div>
+  </Fold>;
   const recovery: RecoveryItem[] = [
-    ...[...waitingReceipts, ...approvedCreates].map(row => ({ key: `receipt:${row.id}`, object: row.action, createdAt: row.createdAt,
-      tag: <StatusTag tone={row.status === "pending" ? "warn" : "done"}>{row.status === "pending" && row.readError === CREATE_RECEIPT_UNREAD ? "进度没读到" : RECEIPT_STATUS[row.status]}</StatusTag>,
-      line: row.reading ? "正在查询审批进度…" : row.resultSkuId ? `商品编号：${row.resultSkuId}`
-        : row.readError === CREATE_RECEIPT_UNREAD ? E1_CREATE_NUMBER_UNREAD : RECOVERY_LINE.pending,
-      note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
-      actions: <><E1ReceiptProductButton ticketId={row.id} size="sm" /><Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button></>,
-      detail: <p>审批单 {row.id}{row.status === "pending" && "；批准前目录不变，这个对象暂停新修改。"}</p> })),
+    ...[...waitingReceipts, ...approvedCreates].map(row => {
+      const creating = row.command.op === "e1_sku_create";
+      const number = row.resultSkuId ?? (creating && isE1CreateRequestId(row.createRequestId) ? e1CreateNumberLabel(row) : undefined);
+      return { key: `receipt:${row.id}`, object: row.action, createdAt: row.createdAt,
+        tag: <StatusTag tone={row.status === "pending" ? "warn" : "done"}>{row.status === "pending" && row.readError === CREATE_RECEIPT_UNREAD ? "进度没读到" : RECEIPT_STATUS[row.status]}</StatusTag>,
+        line: row.reading ? "正在查询审批进度…"
+          : row.readError === CREATE_RECEIPT_UNREAD && !row.resultSkuId ? E1_CREATE_NUMBER_UNREAD
+            : number ? `商品编号：${number}` : RECOVERY_LINE.pending,
+        note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
+        actions: <><E1ReceiptProductButton ticketId={row.id} size="sm" /><Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button></>,
+        detail: <p>审批单 {row.id}{row.status === "pending" && "；批准前目录不变，这个对象暂停新修改。"}</p>,
+        tech: creating ? createTech(row.commandKey) : undefined,
+      };
+    }),
     ...pending.filter(record => record.commandKey !== busy).map(record => {
       const recovery = recoveryFor(record).state(record);
       const missingRelease = canReleaseMissing(record);
@@ -926,6 +936,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         actions: <>{skuDraftOps.includes(record.spec.command.op) && (record.spec.command.op === "e1_sku_create" || record.skuBaseline) && <Button size="sm" disabled={!!edit || !!confirmation || !canWrite} disabledReason={draftReadBlock}
           onClick={() => openSku(skuId, undefined, record)}>重新确认</Button>}
           <Button size="sm" onClick={() => discardRecovery.ask(() => { forgetE1(record); syncPending(); })}>放弃这份草稿</Button></>,
+        tech: record.spec.command.op === "e1_sku_create" ? createTech(record.commandKey) : undefined,
       };
     }),
     ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留", createdAt: record.createdAt,

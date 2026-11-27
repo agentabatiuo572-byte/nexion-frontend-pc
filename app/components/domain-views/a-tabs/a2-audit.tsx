@@ -679,13 +679,13 @@ function a1StatusImpact(w: A2OperationRow) {
 function approvalTiming(w: A2OperationRow) {
   const coverageMode = approvalCoverageMode(w);
   if (w.operationCode === "e1_sku_create") {
-    const status = e1CreateSnapshot(w.after)?.status;
+    const { status, unlisted } = e1CreateApprovalState(w);
     const impact = status === "on" ? "批准后创建并上架商品。"
       : status === "off" ? "批准后创建商品，商城状态为已下架。"
         : status === "pending" ? "批准后创建商品草稿，线上商城不变。" : "批准后创建商品。";
     const coverageNote = coverageMode ? "批准时先检查兑付覆盖率。" : "";
     const tag = status === "on" ? "批准后上架" : status === "off" ? "批准后创建为下架" : status === "pending" ? "批准后保存草稿" : "批准后创建";
-    return { tag: coverageMode ? "通过覆盖率检查后执行" : tag, impact,
+    return { tag: coverageMode && !unlisted ? "通过覆盖率检查后执行" : tag, impact,
       note: coverageMode === "amplifies" ? coverageNote : undefined,
       drawer: `${coverageNote}${impact}点「驳回」原操作不执行。` };
   }
@@ -1537,7 +1537,13 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       resultSkuId: ticket?.resultSkuId ?? logResultSkuId,
     } : undefined;
     const approved = e1ApprovedLog(log, e1Proposals, logTicket);
-    const sides = e1SkuLogSides(log, logTicket) ?? approved?.sides;
+    let sides = e1SkuLogSides(log, logTicket) ?? approved?.sides;
+    if (sides?.operationCode === "e1_sku_create" && isB138SkuId(sides.number) && !e1CreateSnapshot(sides.after)?.name) {
+      // A decision can carry the issued number without frozen fields. Prefer the same ticket's snapshot when available.
+      const frozenAfter = [ticket?.after, approved?.sides?.after].find(after => after && e1CreateSnapshot(after)?.name);
+      sides = { ...sides, after: frozenAfter ? e1CreateReviewAfter(frozenAfter, sides.number)
+        : JSON.stringify({ ...e1CreateSnapshot(sides.after), skuId: sides.number }) };
+    }
     const name = sides?.number ? e1CreateSnapshot(sides.after)?.name : undefined;
     const object: ReturnType<typeof logObject> = typeof name === "string"
       ? { id: name, raw: log.obj }
@@ -2210,8 +2216,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const amplifies = coverageMode === "amplifies";
     const requiresH5ApprovalCoverage = w.operationCode === "h5_power_up_config" && !!coverageMode;
     const isRefund = w.fundEffect === "ORDER_REFUND";
-    // 新增商品按冻结的商城状态：草稿和已下架批准后不上架卖，不用红色最终确认；草稿不改线上，生效标签灰底（BUG-803，VS-25、VS-101、VS-106）。
-    const { status: e1CreateStatus, unlisted: e1CreateUnlisted } = e1CreateApprovalState(w);
+    // 新增商品按冻结的商城状态：草稿和已下架批准后不上架卖，确认按钮用主色，生效标签用 neutral（BUG-803，VS-25、VS-101、VS-106）。
+    const { unlisted: e1CreateUnlisted } = e1CreateApprovalState(w);
     const coverageConsequence = fundLead(w);
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
     const briefKind = isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config";
@@ -2298,7 +2304,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       briefKind,
       title: "批准审批单",
       action: <>确认执行 · {w.id}({name})</>,
-      effect: <>{subject(name)}<StatusTag tone={e1CreateStatus === "pending" && !coverageMode ? "neutral" : "progress"} filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
+      effect: <>{subject(name)}<StatusTag tone={e1CreateUnlisted ? "neutral" : "progress"} filled>{timing.tag}</StatusTag>{(isRefund || fund?.irreversible) && <IrreversibleTag />}</>,
       detail: fund ? <>{fund.detail}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}</> : j4
         ? <>中途失败时，前面的步骤可能已经生效。到「监管要求应急处理」的执行追溯里核对每一步。谁能批准：{approvalExecutorLabel(w)}。</>
         : coverageMode === "onApproval" ? <>{timing.note}{approvalCoverageCopy(w)}</> : <>{a1StatusImpact(w)?.detail}{timing.note}{!ticketPermissionText(w) && `谁能批准：${approvalExecutorLabel(w)}。`}{decisionRule(w).backendChecks && backendChecksText("批准时", "。")}</>,
@@ -2722,10 +2728,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   /** 有结果未确认的操作时这一行也标出来，滚下去看不到上方的待确认条也知道（建议 4）。 */
   const markers = (w: A2OperationRow) => {
     const amplifies = (w.operationCode === "h5_power_up_config" ? h5PowerUpAmplifies(w) : undefined) ?? w.amplifies;
+    const { unlisted: e1CreateUnlisted } = e1CreateApprovalState(w);
     const tags = <>
       {pendingTicketIds.has(w.id) && <StatusTag tone="warn" explain={PENDING_LOCK}>结果未知</StatusTag>}
       {w.sos && <StatusTag tone="danger" icon={Siren}>应急</StatusTag>}
-      {amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>多付钱</StatusTag>)}
+      {amplifies && (enablesAutoPayout(fundTicket(w)) ? <StatusTag tone="warn" icon={Coins}>批准时查覆盖率</StatusTag> : <StatusTag tone="warn" icon={Flame}>{e1CreateUnlisted ? "上架后可能多付" : "多付钱"}</StatusTag>)}
       {/* 覆盖率挡住批准：行里标「暂不能批准」，完整原因和下一步常显在列表上方（OP-126）。 */}
       {canDecide(w, "approve") && h5ApproveBlock(w) && <StatusTag tone="warn">暂不能批准</StatusTag>}
     </>;
