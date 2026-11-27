@@ -4,7 +4,7 @@ import { m1CustomerCode } from "./m1-customer-code";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { M_RECOVERY, M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mRejectedReason, mUnknownText } from "@/lib/admin/m-recovery-copy";
+import { M_RECOVERY, M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mUnknownText } from "@/lib/admin/m-recovery-copy";
 import { createPendingMutationStore, createPendingRecovery } from "@/lib/admin/pending-mutation-store";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { supportClient, verifySupportTransfer, isDefiniteSupportRefusal, SupportClientError, type SupportAgentCandidate, type SupportCustomerDetail } from "@/lib/admin/m-support-client";
@@ -59,9 +59,9 @@ function updateTransferNote(commandKey: string, note = "") {
   noteRevision++;
   for (const listener of noteSubscribers) listener();
 }
-function transferView(record: TransferRecord) {
+function transferView(record: TransferRecord, canRelease: boolean) {
   return submittingTransfers.has(record.commandKey) ? M_SUBMITTING_VIEW
-    : mRecoveryView(transferRecovery.state(record), { last: transferNotes.get(record.commandKey) });
+    : mRecoveryView(transferRecovery.state(record), { last: transferNotes.get(record.commandKey), canRelease });
 }
 
 function transferReturnFocus(opener: HTMLElement | null, customerId: string) {
@@ -120,7 +120,7 @@ export function TransferPendingNotes({ onOpen }: { onOpen: (customerId: string) 
   usePendingReplayDeadline(records.reduce<number | undefined>((first, row) =>
     !transferRecovery.state(row).expired && (first === undefined || row.expiresAt < first) ? row.expiresAt : first, undefined));
   const items: RecoveryItem[] = records.map((record) => {
-    const state = transferRecovery.state(record), view = transferView(record);
+    const state = transferRecovery.state(record), view = transferView(record, canQuery);
     const submitting = submittingTransfers.has(record.commandKey);
     return { key: record.commandKey, createdAt: record.createdAt,
       object: `正式转绑 · ${record.customerName ?? m1CustomerCode(record.payload.customers[0].id)}`,
@@ -231,7 +231,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       const cause = timedOut(signal, error);
       if (replay || written || !isDefiniteSupportRefusal(cause)) {
         setPending(record);
-        updateTransferNote(record.commandKey, replayRejection ? mRejectedReason(displayAdminError(cause), replayRejection) : mUnknownText(displayAdminError(cause)));
+        updateTransferNote(record.commandKey, replayRejection ? "" : mUnknownText(displayAdminError(cause)));
       } else {
         transferCommands.forget(record.fingerprint, record.commandKey);
         updateTransferNote(record.commandKey);
@@ -290,7 +290,7 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
   }
 
   const querying = recoveryState?.busy === "query";
-  const view = pending && transferView(pending);
+  const view = pending && transferView(pending, canQuery);
   const footer = pending && recoveryState
     ? <><Button type="button" disabled={saving} onClick={onClose}>取消</Button>
       <Button type="button" variant={recoveryState.replayBlock && !recoveryState.replayRejection ? "primary" : "secondary"} loading={querying} loadingText="查询中…" disabled={saving} disabledReason={canQuery ? undefined : "当前账号没有客服工作台查看权限"} onClick={() => void check()}>查询原操作</Button>

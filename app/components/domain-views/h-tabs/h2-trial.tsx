@@ -1196,7 +1196,6 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   }
   const releaseBuyListModal = canRecoverBuyList && buyPending?.replayRejection && releasingBuyList === buyPending.commandKey && (
     <ReleaseModal label="调整其他可购买设备" onCancel={() => setReleasingBuyList(undefined)}
-      explain="这次解除只删除本地记录，不写入操作记录。"
       onConfirm={() => {
         pendingBuyLists.forget(buyPending.fingerprint, buyPending.commandKey);
         setReleasingBuyList(undefined);
@@ -1207,7 +1206,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const legacyReleasing = legacyApprovals.find(record => record.commandKey === legacyReleaseKey);
   const releaseModal = releasing ? (
     <ReleaseModal label={commandTitle(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒不代表原操作没生效，先到操作记录确认。解除只删掉这个标签页里的记录，后台可能仍锁着这一项。" />
+      explain="重试被拒不代表原操作没生效，先到操作记录确认。后台可能仍锁着这一项。" />
   ) : legacyReleasing && adminSession && <ReleaseModal label={`强制取消试用 · ${legacyReleasing.sid}`} explain={APPROVAL_REPLAY_RELEASE}
     onCancel={() => setLegacyReleaseKey(null)} onConfirm={() => {
       if (!releaseRejectedH2Cancellation(adminSession.adminId, legacyReleasing.commandKey)) return;

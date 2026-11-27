@@ -373,7 +373,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       next: outcome.conclusion === "succeeded" ? "记录和修改锁保留，请重新读取。" : "记录和修改锁保留，请再次查询原操作。",
     };
     if (record.replayRejection && (!outcome || !receipt || receiptRejected(receipt))) return {
-      tone: "warn" as const, label: RETRY_REJECTED_LABEL, detail: a3ContentVersionConflict(record.replayRejection) ? "内容版本已变。" : displayAdminError(record.replayRejection),
+      tone: "danger" as const, label: RETRY_REJECTED_LABEL, detail: a3ContentVersionConflict(record.replayRejection) ? "内容版本已变。" : displayAdminError(record.replayRejection),
       next: expired ? "已超过 24 小时，请查询原操作，由有调查权限的超级管理员核查结案。"
         : "记录和修改锁保留。请核实原操作结果，再用「核实后解除」。",
     };
@@ -554,7 +554,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
     const retryTransfer = contentCommand && handoffError && (!expired || contentReads[record.original.kind]?.failed?.closed);
     const knownExecuted = contentCommand && (record.contentRetryFeedback?.kind === "readback-failed" || outcome?.conclusion === "succeeded" && outcome.readError);
     const retryReason = applying ? shown?.line : mutating ? "正在提交" : querying === record.commandKey ? "正在查询原操作"
-      : state.replayBlock === "replay-rejected" ? `重试被拒：${displayAdminError(new Error(state.replayRejection!))}`
+      : state.replayBlock === "replay-rejected" ? `${RETRY_REJECTED_LABEL}：${displayAdminError(new Error(state.replayRejection!))}`
       : state.replayBlock === "needs-not-found" ? receipt ? shown?.line ?? "已查到原回执，请到操作记录与审批核对。"
         : outcome && "error" in outcome ? `原操作回执加载失败。${outcome.error}` : "先查询原操作，明确查无后才能重试。"
       : pendingReplayReason(state, "当前不能重试原操作。");

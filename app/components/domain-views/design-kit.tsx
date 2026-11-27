@@ -4222,13 +4222,19 @@ export function OperationConfirmModal({ action, title, detail, content, amplifie
   // 覆盖率读到了、够得上红线：安静的一行，数字强、其余弱，不带警告图标（VS-107、DP-05）。低于红线、读不到、没有覆盖率时照旧是提示条。
   const coverageCalm = !!coverage && !coverageUnknown && !covBlocked;
   const coverageExplain = <Explain label="这项操作对资金的影响" content={<><p>{checkCopy}</p>{coverage?.healthyPct !== undefined && !coverageUnknown && <p>健康线 {fmtConfigPct(coverage.healthyPct)}。</p>}</>} />;
+  // 提示条标题按分句换行，问号放进最后一句，不单独掉到下一行、不把一句的头留在上一行（D10-orphan、VS-85）。页面传进来的标题自己分句。
+  const whenExplain = !coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />;
+  const leadParts = typeof coverageLead === "string" ? coverageLead.split(/(?<=[，。；])/) : undefined;
+  const coverageTitle = leadParts
+    ? leadParts.map((part, index) => <span key={index} className="rd-keep">{part}{index === leadParts.length - 1 && whenExplain}</span>)
+    : <>{coverageLead}{whenExplain}</>;
   const coverageNotice = effectiveAmplifies && (
     surface ? <div className="rd-confirm-funding">
       {coverageCalm ? <p className="rd-funding-calm">
         {/* 长的后果句按分句换行，不在句末折出两三个字的孤行（TL-01）。 */}
         {typeof coverageLead === "string" ? <KeepText text={/[。；！]$/.test(coverageLead) ? coverageLead : `${coverageLead}。`} /> : <span className="rd-keep">{coverageLead}。</span>}
         <span className="rd-keep">兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageExplain}</span>
-      </p> : <RdNotice tone={covBlocked ? "danger" : "warn"} title={<>{coverageLead}{!coverage && auditSink !== "local-history" && <Explain label="什么时候检查" content={checkCopy} />}</>}>
+      </p> : <RdNotice tone={covBlocked ? "danger" : "warn"} title={coverageTitle}>
         {(coverage || coverageUnknown) && <div className="rd-funding-coverage">
           兑付覆盖率 <b>{coverageRatioText}</b>，红线 <b>{coverageRedlineText}</b>{coverageUnknown && "，暂时读不到"}
           {coverageExplain}

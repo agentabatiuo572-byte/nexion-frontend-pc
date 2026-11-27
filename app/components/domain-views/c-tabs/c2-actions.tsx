@@ -1537,7 +1537,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         : state.replayBlock ? "先查询原操作，明确查无后才能重试。" : undefined;
       return {
         key: record.fingerprint, object: `退出全部设备 · ${record.label}`, createdAt: record.createdAt,
-        tag: <StatusTag tone="warn">{record.ticketId ? "待审批" : state.replayRejection ? RETRY_REJECTED_LABEL : "结果未知"}</StatusTag>,
+        tag: <StatusTag tone={!record.ticketId && state.replayRejection ? "danger" : "warn"}>{record.ticketId ? "待审批" : state.replayRejection ? RETRY_REJECTED_LABEL : "结果未知"}</StatusTag>,
         line: record.ticketId ? `审批单 ${record.ticketId} · ${reason}` : reason ?? "没有查到原审批单，可以按原操作重试。",
         note: pendingNotes[record.commandKey],
         actions: <>
@@ -1998,6 +1998,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     {mirrorDrawer}
     {revocationRelease.dialog}
     {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-      explain="重试被拒证明不了原操作的结果，先查询原操作或到操作记录核对。解除只清掉本页这条记录，不撤销后台的操作。" />}
+      explain="重试被拒证明不了原操作的结果，先查询原操作或到操作记录核对。" />}
   </>;
 }

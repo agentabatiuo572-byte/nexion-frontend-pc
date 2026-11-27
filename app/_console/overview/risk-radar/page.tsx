@@ -34,7 +34,7 @@ import {
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import type { B5Signal } from "@/lib/admin/b5-radar-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
-import { recoveryNext } from "@/lib/admin/recovery-next";
+import { EXPIRED_PROPOSAL_NOT_FOUND_LINE, recoveryNext } from "@/lib/admin/recovery-next";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { useB5Read } from "@/lib/admin/use-b5-read";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
@@ -44,7 +44,7 @@ import { RETRY_REJECTED_NEXT, RETRY_REJECTED_STATUS } from "@/lib/admin/retry-re
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, b5Recovery, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
-import { bThresholdRecovery, discardThresholdRecoveryDraft, pendingThresholdConfigApproval, submitB5ThresholdApproval, thresholdRecoveryDrafts } from "@/lib/admin/withdrawal-config-approval";
+import { bThresholdRecovery, canReleaseExpiredB5Approval, discardThresholdRecoveryDraft, pendingThresholdConfigApproval, releaseB5ThresholdApproval, submitB5ThresholdApproval, thresholdRecoveryDrafts } from "@/lib/admin/withdrawal-config-approval";
 import { businessClock, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
@@ -119,6 +119,8 @@ interface B5PendingCommand {
   onRetry?: () => void;
   onRelease?: () => void;
   onQuery?: () => void;
+  /** 上次「读取当前值」没读到：按钮改叫「重试」（ST-35），读到后换回来。 */
+  queryFailed?: boolean;
   onRestore?: () => void;
   onDiscard?: () => void;
   recoveryLine?: string;
@@ -146,7 +148,8 @@ function approvalRecoveryNext(state: Parameters<typeof recoveryNext>[0], queryOn
   return recoveryNext({ ...state, replayBlock: queryOnly ? "readback-only" : state.replayBlock });
 }
 
-function approvalRecoveryLine(next: ReturnType<typeof recoveryNext>, rejection?: string) {
+function approvalRecoveryLine(next: ReturnType<typeof recoveryNext>, rejection?: string, expiredNotFound?: boolean) {
+  if (expiredNotFound) return EXPIRED_PROPOSAL_NOT_FOUND_LINE;
   if (next.kind === "missing") return APPROVAL_QUERY_ONLY;
   if (next.kind === "rejected") return replayRejectedLine(rejection);
   if (next.kind === "not-found") return "暂未查到原审批单，可稍后再查，或按原配置和理由重试。";
@@ -161,7 +164,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
       {items.map((item) => (
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b5-row-actions">
-            {item.onQuery && <Button size="sm" onClick={item.onQuery}>读取当前值</Button>}
+            {item.onQuery && <Button size="sm" onClick={item.onQuery}>{item.queryFailed ? "重新读取" : "读取当前值"}</Button>}
             {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
             {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
             {item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
@@ -387,6 +390,7 @@ export default function RiskRadarPage() {
   usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
   const approvalNext = approvalRecoveryState && approvalRecoveryNext(approvalRecoveryState, approvalQueryOnly);
+  const approvalExpiredNotFound = !!pendingApproval && !!approvalRecoveryState && canReleaseExpiredB5Approval(pendingApproval, approvalRecoveryState);
   const thresholdReplay = thresholdOriginal ? b5Recovery.state(thresholdOriginal) : undefined;
   const thresholdNext = thresholdReplay && recoveryNext(thresholdReplay);
   const subscriptionReplay = subscriptionOriginal ? b5Recovery.state(subscriptionOriginal) : undefined;
@@ -649,7 +653,9 @@ export default function RiskRadarPage() {
       } else if (!threshold || !approvalRecovery) {
         const state = bThresholdRecovery.state(pendingApproval);
         const next = approvalRecoveryNext(state, approvalQueryOnly);
-        const line = next.kind === "not-found" ? approvalRecoveryLine(next) : `暂未查到原审批单。${approvalRecoveryLine(next, state.replayRejection)}`;
+        const expiredNotFound = canReleaseExpiredB5Approval(pendingApproval, state);
+        const line = expiredNotFound || next.kind === "not-found" ? approvalRecoveryLine(next, state.replayRejection, expiredNotFound)
+          : `暂未查到原审批单。${approvalRecoveryLine(next, state.replayRejection)}`;
         setToast(line, next.canRetry ? undefined : "warn");
       }
     } catch (cause) { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
@@ -827,6 +833,7 @@ export default function RiskRadarPage() {
       onRelease: original && next.kind === "rejected" ? () => setReleasingWrite(original) : undefined,
       onRetry: next.canRetry ? () => recoverWrite(record) : undefined,
       onQuery: original ? () => void queryWrite(original) : undefined,
+      queryFailed: Boolean(readError),
     };
   });
 
@@ -848,9 +855,10 @@ export default function RiskRadarPage() {
     ? <Button key="threshold" variant="ghost" size={size} icon={<SlidersHorizontal size={14} aria-hidden />} disabledReason={radar.error ? "风险数据没刷新成功，请先重试" : undefined} onClick={() => openThreshold()}>调整黄线 / 红线</Button>
     : null;
   const approvalPending = pendingApproval?.commandKey === approvalVerifiedKey && pendingApproval?.b5Ticket?.status === "pending" ? { redPct: pendingApproval.values.redPct, ticketId: pendingApproval.b5Ticket.id } : null;
-  const approvalReleasable = approvalNext?.kind === "rejected" && !pendingApproval?.received && !pendingApproval?.b5Ticket;
+  const approvalRejected = approvalNext?.kind === "rejected" && !pendingApproval?.received && !pendingApproval?.b5Ticket;
+  const approvalReleasable = !approvalRecoveryState?.busy && (approvalRejected || approvalExpiredNotFound);
   const releaseApproval = () => {
-    if (!pendingApproval || !bThresholdRecovery.releaseRejectedReplay(pendingApproval)) return;
+    if (!session || !pendingApproval || !releaseB5ThresholdApproval(session.adminId, pendingApproval.commandKey)) return;
     setReleasingApproval(false); setThreshold(null); setApprovalRecovery(false);
     syncPending(value => value + 1);
     setToast("已解除本页的原操作记录");
@@ -1006,14 +1014,14 @@ export default function RiskRadarPage() {
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={canAudit} />
         {pendingApproval && (
-          <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : approvalReleasable ? RETRY_REJECTED_STATUS.label : "结果未知"}`} actionBelow
+          <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : approvalExpiredNotFound ? "已过期" : approvalRejected ? RETRY_REJECTED_STATUS.label : "结果未知"}`} actionBelow
             action={<span className="b5-row-actions">
               <Button size="sm" onClick={() => openThreshold()}>查询原操作</Button>
               {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>核实后解除</Button>}
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-              : !(threshold && approvalRecovery) && approvalNext && approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection)}</p>
+              : !(threshold && approvalRecovery) && approvalNext && approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection, approvalExpiredNotFound)}</p>
           </Notice>
         )}
         {!data ? <>
@@ -1121,8 +1129,8 @@ export default function RiskRadarPage() {
             </>}>
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
-              {(thresholdError || approvalRecovery) && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? approvalReleasable ? RETRY_REJECTED_STATUS.label : "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
-                ? approvalNext && (approvalNext.kind === "query" ? "请先查询原审批单。" : approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection))
+              {(thresholdError || approvalRecovery) && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? approvalExpiredNotFound ? "已过期" : approvalRejected ? RETRY_REJECTED_STATUS.label : "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
+                ? approvalNext && (approvalNext.kind === "query" ? "请先查询原审批单。" : approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection, approvalExpiredNotFound))
                 : thresholdUnknown && thresholdNext ? thresholdNext.canRetry
                   ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。"
                   : writeRecoveryLine(thresholdNext, thresholdReplay?.replayRejection) : thresholdError}</Notice>}

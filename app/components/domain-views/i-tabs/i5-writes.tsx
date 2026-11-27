@@ -14,13 +14,14 @@ import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { Button, Fact, Facts, Fold, Modal, Notice, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { checkDisclosureDraftReadback, DisclosureReadbackPending, type IContentActions } from "@/lib/admin/i-client";
 import type { ToastKind } from "@/lib/store/ui";
 import { saveLegalTermsDraft, transitionLegalTerms, type LegalTermsVersion } from "@/lib/admin/legal-terms-client";
 import { isOutcomeUnknownError } from "@/lib/admin/outcome-classification";
-import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, isRetryExpired, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { updatePrivacyPolicyAdmin, type PublishedContentDocument } from "@/lib/admin/published-content-client";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -33,8 +34,9 @@ import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investig
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
 import { OPEN_RESULT_LABELS, RecoveryPanel, businessCodeOf, closureLine, foundReceiptNext, receiptFact, recoveryTitle, type RecoveryItem } from "../recovery-panel";
-import { RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
-import { recoveryNext } from "@/lib/admin/recovery-next";
+import { replayRejectedFact, RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
+import { EXPIRED_PROPOSAL_NOT_FOUND_LINE, recoveryNext } from "@/lib/admin/recovery-next";
+import { usePendingReplayDeadline } from "../design-kit";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
@@ -60,6 +62,11 @@ const readbackLine = (readback: DisclosureReadbackPending["readback"]) => "delet
   ? `草稿已删除，列表里还没核对到 ${readback.version} 消失。点「查询原操作」再核对。`
   : `草稿已保存，还没核对到 ${readback.version} 的内容。点「查询原操作」再核对。`;
 type I5Pending = PendingMutationRecord & I5Write & { readback?: DisclosureReadbackPending["readback"]; rejection?: { status: number; reasonCode?: string; backendMessage?: string } };
+type I5Outcome = FundInvestigationOutcome & { expiredProposalNotFound?: true };
+
+function rejectionFact(rejection: NonNullable<I5Pending["rejection"]>) {
+  return `拒绝原因：${replayRejectedFact(rejection.reasonCode ?? rejection.backendMessage, rejection.backendMessage ?? rejection.reasonCode)}`;
+}
 
 /** The saved call identifies the original HTTP route; the server supplies its scope and hash. */
 function i5OriginalRoute(record: I5Pending): OriginalCommandRoute | undefined {
@@ -636,10 +643,11 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [recovering, setRecovering] = useState("");
   const [releasing, setReleasing] = useState<I5Pending | null>(null);
-  const [outcomes, setOutcomes] = useState<Record<string, FundInvestigationOutcome>>({});
+  const [outcomes, setOutcomes] = useState<Record<string, I5Outcome>>({});
   const [closing, setClosing] = useState<I5Pending | null>(null);
   const sync = useCallback(() => setPending(pendingWrites.list()), []);
   useEffect(() => sync(), [sync]);
+  usePendingReplayDeadline(nextRecoveryDeadline(pending));
 
   const canQuery = has("platform_a2_read");
   const canWrite = ({ target, op }: I5Write) => {
@@ -652,7 +660,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     const receiptBased = record.op.kind === "a2" || record.op.kind === "content";
     const notFound = outcome && "receipt" in outcome && outcome.receipt === null;
     const canQueryOriginal = record.op.kind !== "a2" || canQuery;
-    const expired = record.expiresAt <= Date.now();
+    const expired = isRetryExpired(record);
     const writable = !record.readback && canWrite(record);
     const next = recoveryNext({
       expired,
@@ -739,11 +747,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
       if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容", "success");
     } catch (cause) {
       const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
-      // 恢复记录锁住原请求，拒绝原因不沿用新建时的改代码或编辑指引。
-      const reason = refusal?.reasonCode === "DISCLOSURE_JURISDICTION_CODE_EXISTS" ? "这个代码已有适用范围在用。"
-        : refusal?.reasonCode === "DISCLOSURE_VERSION_SEQUENCE_INVALID" ? "原操作的版本号和系统现在分配的顺序对不上。"
-          : displayAdminError(cause);
-      note(record, refusal ? `拒绝原因：${reason}` : `重试没有成功：${reason} 原操作结果仍未知，记录继续保留。`);
+      if (!refusal) note(record, `重试没有成功：${displayAdminError(cause)} 原操作结果仍未知，记录继续保留。`);
       pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op,
         rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
       sync();
@@ -787,12 +791,20 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     } finally { setRecovering(""); }
   };
 
-  /** 按命令号查原提案。查到就有了结果，可以解除；查不到说明不了没提交，继续保留（OP-95）。 */
+  /** 过期后原号明确查无，才能人工解除这条提案记录（R1-提案过期）。 */
   const check = async (record: I5Pending) => {
     setRecovering(record.commandKey);
+    if (outcomes[record.commandKey]?.expiredProposalNotFound) {
+      setOutcomes(({ [record.commandKey]: _previous, ...remaining }) => remaining);
+    }
     try {
       const original = await fetchA2ProposalByKey(record.commandKey, true);
       if (!original) {
+        if (isRetryExpired(record)) {
+          setOutcomes(all => ({ ...all, [record.commandKey]: { receipt: null, expiredProposalNotFound: true } }));
+          note(record, "");
+          return;
+        }
         const receipt = await queryInvestigation(record);
         if (eCommandSettled(receipt)) {
           toast(settledText({ status: receipt!.originalStatus }), "success");
@@ -837,8 +849,9 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
 
   const auditHref = "/platform/audit?domain=I";
   /** 这一行的标签和结论：查过原结果的用共用面板的叫法；走审批的没查过说「可能已经提交」；重试被明确拒绝的说可以解除。 */
-  const statusOf = (record: I5Pending, outcome: FundInvestigationOutcome | undefined, next: ReturnType<typeof nextOf>): { tone: StateTone; label: string; line: string; more?: string } => {
+  const statusOf = (record: I5Pending, outcome: I5Outcome | undefined, next: ReturnType<typeof nextOf>): { tone: StateTone; label: string; line: string; more?: string } => {
     if (record.readback) return { tone: "warn", label: "deleted" in record.readback ? "已删除" : "已保存", line: readbackLine(record.readback) };
+    if (outcome?.expiredProposalNotFound) return { tone: "warn", label: "已过期", line: EXPIRED_PROPOSAL_NOT_FOUND_LINE };
     if (next.kind === "rejected") return { tone: "danger", label: RETRY_REJECTED_STATUS.label, line: REPLAY_REJECTED_NEXT };
     const expired = next.kind === "expired";
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
@@ -870,19 +883,21 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     const expired = record.expiresAt <= Date.now();
     const next = nextOf(record, outcome);
     const shown = statusOf(record, outcome, next);
+    const expiredProposalNotFound = canQuery && outcome?.expiredProposalNotFound;
+    const fact = next.kind === "rejected" && record.rejection ? rejectionFact(record.rejection) : "";
     const help = !record.readback && (!outcome || "error" in outcome || next.canRetry) ? recoveryText(record.op, canQuery, next) : undefined;
     if (next.kind === "rejected" || OPEN_RESULT_LABELS.includes(shown.label)) open += 1;
     const code = businessCodeOf(outcome);
     return { key: record.commandKey, createdAt: record.createdAt, object: record.label,
       tag: <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag>, line: shown.line,
-      note: notes[record.commandKey] || undefined,
+      note: [fact, notes[record.commandKey]].filter(Boolean).join(" ") || undefined,
       actions: <>
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原操作</Button>}
         {record.op.kind === "content" && <Button size="sm" disabled={!!recovering} onClick={() => void queryContent(record)}>查询原操作</Button>}
         {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcome, expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>{record.op.kind === "privacy" ? "读取当前政策" : "读取当前条款"}</Button>}
         {next.offer && <Button size="sm" disabled={!!recovering} disabledReason={next.block} onClick={() => void retry(record)}>按原操作重试</Button>}
-        {next.kind === "rejected" && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
+        {(next.kind === "rejected" || expiredProposalNotFound && !recovering) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
       detail: help && <p>{help}</p>,
       // 技术信息和商品管理、设备管理、算力配置同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。
@@ -908,7 +923,8 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
           await onSettled(record);
         } else toast(CLOSURE_KEPT_TEXT, "warn");
       }} />}
-    {releasing && <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)} onConfirm={() => release(releasing)} />}
+    {releasing && <ReleaseModal label={releasing.label} explain={releasing.rejection && rejectionFact(releasing.rejection)}
+      onCancel={() => setReleasing(null)} onConfirm={() => release(releasing)} />}
   </>;
 
   const lockedTargets = new Set(pending.map((record) => record.target));

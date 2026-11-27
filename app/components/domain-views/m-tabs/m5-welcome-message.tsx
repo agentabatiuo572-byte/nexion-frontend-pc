@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { m5ManagementClient, supportWelcomeMessageClient, isIndeterminateSupportError, type SupportWelcomeLanguage, type SupportWelcomeMessage, type SupportWelcomeTexts } from "../../../../lib/admin/m-support-client";
 import { businessStamp, businessZone, formatBusinessTime } from "../../../../lib/admin/business-time";
 import { MessageCircleHeart, Save } from "lucide-react";
-import { BlockState, Button, Explain, Fact, Facts, Field, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
+import { BlockState, Button, Explain, Fact, Facts, Field, KeepText, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { M5PendingWrites, type M5WelcomeSummary } from "./m5-views";
 import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView, mReplayReason } from "@/lib/admin/m-recovery-copy";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
@@ -274,10 +274,10 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const submittedAt = pending ? pending.expiresAt - PENDING_MUTATION_TTL_MS : 0;
   const updatedText = current?.updatedAt ? formatBusinessTime(current.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
   const errorTone = /查不到|还在处理|仍在处理|24 小时/.test(error) ? "warn" : "danger";
-  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canLoadLatest ? EXPIRED_LINE : RETRY_EXPIRED_TEXT });
+  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canLoadLatest ? EXPIRED_LINE : RETRY_EXPIRED_TEXT, canRelease });
   const replayRefused = Boolean(command.recoveryState?.replayRejection);
   const querying = command.recoveryState?.busy === "query";
-  const recoveryLine = view && `${view.line}${retry && !canQuery ? "查询欢迎语原结果需要超级管理员和客服工作台查看权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
+  const recoveryLine = view && `${view.line}${retry && !canQuery ? "查询欢迎语原结果需要超级管理员和客服工作台查看权限。" : ""}`;
   const comparisonBefore = conflict ? current : releasedFrom;
   const comparisonAfter = conflict ? latest : current;
   const externalChanges = comparisonBefore && comparisonAfter ? changedLanguages(comparisonBefore.texts, comparisonAfter.texts) : [];
@@ -288,7 +288,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
     <section className="m5-welcome" aria-label="新用户欢迎语">
       {pending && view && <M5PendingWrites submitting={command.submitting} explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：「加载最新内容」读到后这条记录就解除，改过的文字留作草稿。有结论前欢迎语不能再改。</p></>} rows={[{
         key: pending.commandKey, name: "新用户欢迎语", submittedAt, expired: retryExpired, change: changeText,
-        status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
+        status: view, note: <>{recoveryLine && <KeepText text={recoveryLine} />}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: retry && <>
           {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}
           {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原操作重试</Button>}
@@ -378,7 +378,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
           <Fact k="谁会收到">之后注册的新用户</Fact>
           <Fact k="不变的">已经注册的用户不会再收到；已发出的欢迎语不改</Fact>
         </Facts>
-        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
+        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
           <p>{recoveryLine}</p>
           <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}

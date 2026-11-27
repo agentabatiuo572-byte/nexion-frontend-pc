@@ -236,7 +236,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
         })} />
       {releasing && (
         <ReleaseModal label={releasing.label} onCancel={() => setReleasing(null)}
-          explain="重试被明确拒绝后，先到操作记录核实原操作。解除只移除本页这条原操作记录，原操作的结果和锁定不变。"
+          explain="重试被明确拒绝后，先到操作记录核实原操作。原操作的锁定不变。"
           onConfirm={() => { releasing.release(); setReleasing(null); releasing.after(); }} />
       )}
       {closing?.record && <FundClosureModal label={closing.label} createdAt={closing.createdAt}

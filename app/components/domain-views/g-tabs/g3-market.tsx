@@ -613,7 +613,8 @@ function G3MarketEditor() {
       key: row.commandKey, name, submittedAt: row.createdAt, ticket: row.ticketId ?? undefined,
       state: row.ticketId ? verifiedApprovals[row.commandKey] === undefined ? "last-observation" : "approval" : rejection ? "replay-rejected" : "unknown",
       change: <><Change from={show(change.current)} to={show(row.value)} />
-        {rejection && <span className="rd-note"> · {rejection}{Date.now() >= row.expiresAt && ` ${RETRY_EXPIRED_TEXT}`} <TechInfo commandKey={row.commandKey} /></span>}</>,
+        {rejection && <span className="rd-note"> · {rejection}{Date.now() >= row.expiresAt && ` ${RETRY_EXPIRED_TEXT}`}</span>}</>,
+      tech: rejection ? <TechInfo commandKey={row.commandKey} /> : undefined,
       tag: row.ticketId
         ? verifiedApprovals[row.commandKey] === undefined
           ? <ObjectTag state={{ kind: "approval", verification: "last-observation", observedAt: row.createdAt,

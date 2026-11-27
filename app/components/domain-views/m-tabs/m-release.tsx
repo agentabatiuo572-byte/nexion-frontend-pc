@@ -9,7 +9,7 @@ import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
 import { Button, Check, Fact, Facts, Modal } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
-import { ADMIN_ERROR_MESSAGES } from "@/lib/admin/error-messages";
+import { replayRejectedFact } from "@/lib/admin/retry-rejected";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 
 export type MReleaseTarget = {
@@ -18,7 +18,7 @@ export type MReleaseTarget = {
   /** 对哪一个，例如问题原文、客户。 */
   object: ReactNode;
   createdAt: number;
-  /** 后台拒绝重试时的原因码；认得的才写中文，不认得的不写。 */
+  /** 后台拒绝重试时的原因码。 */
   rejection?: string;
 };
 
@@ -43,7 +43,7 @@ export function MReleaseModal({ target, where, onCancel, onConfirm, returnFocus 
   returnFocus?: () => HTMLElement | null;
 }) {
   const [checked, setChecked] = useState(false);
-  const reason = target.rejection ? ADMIN_ERROR_MESSAGES[target.rejection] : undefined;
+  const reason = target.rejection ? replayRejectedFact(target.rejection) : undefined;
   return (
     <Modal title="解除原操作记录" icon={ShieldCheck} onClose={onCancel} returnFocus={returnFocus} footer={<>
       <Button onClick={onCancel}>取消</Button>

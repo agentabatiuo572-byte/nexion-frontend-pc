@@ -265,6 +265,7 @@ export type PendingRecoveryState = {
   busy: "query" | "replay" | undefined;
   expiresAt: number;
   expired: boolean;
+  notFoundAt?: number;
   replayBlock?: PendingReplayBlock;
   replayRejection?: string;
 };
@@ -279,7 +280,8 @@ export function createPendingRecovery<T extends PendingMutationRecord>(
     explicitRejectionCode: (error: unknown) => string | undefined;
   },
 ) {
-  const observations = new Map<string, { conclusion: PendingRecoveryConclusion; busy?: "query" | "replay" }>();
+  type Observation = Pick<PendingRecoveryState, "conclusion" | "notFoundAt"> & { busy?: PendingRecoveryState["busy"] };
+  const observations = new Map<string, Observation>();
   const listeners = new Set<() => void>();
   let revision = 0;
   const recordKey = (record: T) => JSON.stringify([record.commandOwnerId, record.fingerprint, record.commandKey, record.createdAt]);
@@ -288,7 +290,7 @@ export function createPendingRecovery<T extends PendingMutationRecord>(
     revision++;
     listeners.forEach(listener => listener());
   };
-  const publish = (key: string, observation: { conclusion: PendingRecoveryConclusion; busy?: "query" | "replay" }) => {
+  const publish = (key: string, observation: Observation) => {
     observations.set(key, observation);
     notify();
   };
@@ -314,7 +316,7 @@ export function createPendingRecovery<T extends PendingMutationRecord>(
               : !options.canReplay(record) || !store.isDurablyStored(record.fingerprint, record.commandKey) ? "unavailable"
                 : capability === "receipt" && conclusion !== "not-found" ? "needs-not-found"
                   : undefined;
-    return { capability, conclusion, busy, expiresAt, expired, replayBlock, replayRejection };
+    return { capability, conclusion, busy, expiresAt, expired, replayBlock, replayRejection, notFoundAt: observation?.notFoundAt };
   };
   const releasable = (original: T) => {
     const record = current(original);
@@ -346,7 +348,7 @@ export function createPendingRecovery<T extends PendingMutationRecord>(
           publish(key, { conclusion: "unknown" });
           return;
         }
-        publish(key, { conclusion: result.conclusion });
+        publish(key, { conclusion: result.conclusion, notFoundAt: result.conclusion === "not-found" ? Date.now() : undefined });
         return result;
       } catch (error) {
         if (observations.get(key) !== reading) return;

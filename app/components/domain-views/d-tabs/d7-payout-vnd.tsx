@@ -743,7 +743,12 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
         <p>{failed ? "" : "可能已经生效，"}这组参数有结果前不能再改。{expired ? outcome ? "" : expiredNext(target) : canInvestigate && !retryBlock && !processing ? WITHDRAWAL_REPLAY_RESEND : ""}</p>
         {notes[record.commandKey] && <p>{notes[record.commandKey]}</p>}
       </>,
-      tech: `操作编号 ${record.commandKey} ｜ 发出时版本 v${record.expectedVersion} ｜ 理由 ${record.reason} ｜ 拟改值：${valuesSummary(record.values)}${record.forceInverted ? " ｜ 强制保存倒挂价" : ""}` };
+      tech: [
+        { k: "发出时版本", v: `v${record.expectedVersion}` },
+        { k: "理由", v: record.reason },
+        { k: "拟改值", v: valuesSummary(record.values) },
+        ...(record.forceInverted ? [{ k: "说明", v: "强制保存倒挂价" }] : []),
+      ] };
   });
 
   const approvalRow = approval && ((): FundRecoveryRow => {
@@ -751,10 +756,10 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     const confirmed = approval.withdrawalSubmissionConfirmed;
     const outcome = investigationResults[approval.commandKey];
     const retryDisabled = retryApprovalBlock(approval, authorities);
-    let original: string;
+    let original: FundRecoveryRow["tech"];
     try {
       const [values, reason] = configApprovalOriginalInput("D7", approval.input);
-      original = `理由 ${reason} ｜ 拟改值：${valuesSummary(values as unknown as PayoutVndValues)}`;
+      original = [{ k: "理由", v: reason }, { k: "拟改值", v: valuesSummary(values as unknown as PayoutVndValues) }];
     } catch (cause) {
       original = cause instanceof Error ? cause.message : "原审批内容读不到";
     }

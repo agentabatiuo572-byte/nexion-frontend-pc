@@ -13,7 +13,7 @@ import {
 import { explicitRejectionCode, isExplicitRejection } from "./explicit-rejection";
 import { isPermissionDenied } from "./operation-confirm-error";
 import { isBCommandRejection } from "./b-command-rejection";
-import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord, type PendingMutationStore } from "./pending-mutation-store";
+import { createPendingMutationStore, createPendingRecovery, type PendingMutationRecord, type PendingMutationStore, type PendingRecoveryState } from "./pending-mutation-store";
 import { canCreateRecoveryProposal, canReadOwnRecoveryProposal, currentRecoveryActor, sendRecoveredDraft } from "./abe-recovery-access";
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
@@ -513,6 +513,20 @@ export const bThresholdRecovery = createPendingRecovery(attempts, {
       && rights.includes(thresholdWriteAuthority[source]);
   },
 });
+
+export function canReleaseExpiredB5Approval(record: ConfigAttempt, state: PendingRecoveryState) {
+  return !record.received && !record.b5Ticket && !state.busy && state.expired
+    && state.notFoundAt !== undefined && state.notFoundAt >= state.expiresAt;
+}
+
+/** R1-提案过期：收到原号的明确查无后，仅清除本标签页的记录。 */
+export function releaseB5ThresholdApproval(actorId: number, commandKey: string) {
+  const record = pendingThresholdConfigApproval("B5", actorId);
+  if (!record || record.commandKey !== commandKey) return false;
+  if (!canReleaseExpiredB5Approval(record, bThresholdRecovery.state(record))) return bThresholdRecovery.releaseRejectedReplay(record);
+  attempts.forget(record.fingerprint, record.commandKey);
+  return true;
+}
 
 async function submitThresholdApproval<T, S extends "B1" | "B5">(
   source: S,

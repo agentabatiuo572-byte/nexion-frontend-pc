@@ -3,7 +3,7 @@
 import { useReach } from "@/lib/nav/use-reach";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Route, Save, Tags } from "lucide-react";
-import { BlockState, Button, DiffList, Fact, Facts, Field, Modal, Notice, NumberInput, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
+import { BlockState, Button, DiffList, Fact, Facts, Field, KeepText, Modal, Notice, NumberInput, Panel, Segments, StatusTag, Textarea } from "@/app/components/rd";
 import { supportClient, m5ManagementClient, SupportClientError, type SupportRules } from "../../../../lib/admin/m-support-client";
 import { businessStamp, businessZone } from "../../../../lib/admin/business-time";
 import { createPendingMutationStore, PENDING_MUTATION_TTL_MS, RETRY_EXPIRED_TEXT } from "../../../../lib/admin/pending-mutation-store";
@@ -295,11 +295,11 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     maintenanceDays: "距上次维护满这么多天，客户进专属客服的主动维护待办。改天数不会补记维护。",
     activityWindowDays: "统计活跃客户时往回看几天，和沉睡分开算，不能大于沉睡天数。",
   };
-  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canQuery ? EXPIRED_LINE : RETRY_EXPIRED_TEXT });
+  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canQuery ? EXPIRED_LINE : RETRY_EXPIRED_TEXT, canRelease });
   const replayRefused = Boolean(command.recoveryState?.replayRejection);
   const querying = command.recoveryState?.busy === "query";
   const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改服务规则" : retryExpired ? EXPIRED_LINE : mReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
-  const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原操作的权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
+  const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原操作的权限。" : ""}`;
   const comparisonBefore = conflict ? current : releasedFrom;
   const comparisonAfter = conflict ? latest : current;
   const externalChanges = comparisonBefore && comparisonAfter ? changedFields(comparisonBefore, comparisonAfter) : [];
@@ -309,7 +309,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     <section className="m5-rules" aria-label="服务规则">
       {pending && view && <M5PendingWrites submitting={command.submitting} explain={<><p>{M_RECOVERY_INTRO}</p><p>过了 24 小时不能再重试：查不到原操作、并读到最新规则，这条记录就解除。有结论前服务规则不能再改。</p></>} rows={[{
         key: pending.commandKey, name: "服务规则", change: changeText || "规则保存", submittedAt, expired: retryExpired,
-        status: view, note: <>{recoveryLine}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
+        status: view, note: <>{recoveryLine && <KeepText text={recoveryLine} />}{(replayRefused || retryExpired) && <> <MAuditLink /></>}</>,
         actions: retry && <>
           {canQuery && <Button size="sm" loading={querying} loadingText="查询中…" disabled={saving} onClick={() => void checkPending()}>查询原操作</Button>}
           {!retryExpired && !replayRefused && <Button size="sm" variant={command.canReplay ? "primary" : "secondary"} disabled={saving} disabledReason={replayReason} onClick={restore}>按原操作重试</Button>}
@@ -384,7 +384,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
           <Fact k="影响谁">之后注册的用户、之后发消息的客户、还在等分配的客户</Fact>
           <Fact k="不变的">已有的绑定；改天数不补记维护</Fact>
         </Facts>
-        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
+        {retry && view && <Notice tone={mNoticeTone(view)} title={view.label} actionBelow action={replayRefused || retryExpired ? <MAuditLink /> : undefined}>
           <p>{recoveryLine}</p>
           <p>上次保存在 {businessStamp(submittedAt)}（{businessZone().label}）提交，内容已锁定。</p>
         </Notice>}

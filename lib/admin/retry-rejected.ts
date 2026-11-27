@@ -13,6 +13,21 @@ export const frozenNextStep = (blocked: string | undefined, query = "先查询�
 /** 共用恢复面板上这一行的标签和那句话；查到了原结果或查询失败时，用查到的。 */
 export const RETRY_REJECTED_STATUS = { tone: "danger" as const, label: RETRY_REJECTED_LABEL, line: RETRY_REJECTED_NEXT };
 
+const REPLAY_REJECTED_FACTS = new Map([
+  ["DISCLOSURE_JURISDICTION_CODE_EXISTS", "这个代码已有适用范围在用。"],
+  ["DISCLOSURE_VERSION_SEQUENCE_INVALID", "原操作的版本号和系统现在分配的顺序对不上。"],
+  ["SUPPORT_BINDING_VERSION_CONFLICT", "客户归属在原操作之后变了。"],
+  ["SUPPORT_GROUP_SCOPE_CHANGED", "分组成员在原操作之后变了。"],
+  ["SUPPORT_RULES_VERSION_CONFLICT", "服务规则在原操作之后被别人改过。"],
+  ["SUPPORT_WELCOME_VERSION_CONFLICT", "欢迎语在原操作之后被别人改过。"],
+  ["SUPPORT_FAQ_CONCURRENT_MODIFICATION", "这条问答在原操作之后被改过或换了发布状态。"],
+]);
+
+/** 已冻结的原操作只写拒绝事实，后续动作由各页的恢复状态决定。 */
+export function replayRejectedFact(code?: string, fallback = code) {
+  return (code && REPLAY_REJECTED_FACTS.get(code)) || displayAdminError(fallback);
+}
+
 export function replayRejectionText(record: Pick<PendingMutationRecord, "replayRejection">) {
   return record.replayRejection
     ? `${RETRY_REJECTED_LABEL}：${displayAdminError(record.replayRejection)} ${RETRY_REJECTED_NEXT}`

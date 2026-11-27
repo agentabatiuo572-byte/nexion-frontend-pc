@@ -2207,8 +2207,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
       coverage: amplifies && !belowRedline ? coverage : undefined,
       // 低于红线时覆盖率照旧写在这一行，资金后果仍是同一句，不被覆盖率顶掉（DT-10、DT-14）。
-      coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">{`${fundLead(w)}。`}兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
-        : amplifies && !coverage ? <span className="a2-coverage-unknown">{`${fundLead(w)}，兑付覆盖率暂时读不到`}</span> : fundLead(w),
+      coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown"><KeepText text={`${fundLead(w)}。兑付覆盖率 ${fmtPct(coverage.coverageRatio)}，低于红线 ${fmtConfigPct(coverage.redlinePct)}`} /></span>
+        : amplifies && !coverage ? <span className="a2-coverage-unknown"><KeepText text={`${fundLead(w)}，兑付覆盖率暂时读不到`} /></span> : fundLead(w),
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
       blockedReason: oldPayoutBlock ?? (fund?.waitsForLatestRead ? undefined : coverageBlock),

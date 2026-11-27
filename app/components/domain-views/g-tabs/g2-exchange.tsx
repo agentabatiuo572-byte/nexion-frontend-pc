@@ -48,7 +48,7 @@ import { gParamApprovalFeedback, useGParamApproval, type GParamRecovery } from "
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { rejectedTag } from "../verified-release";
-import { recoveryTitle } from "../recovery-panel";
+import { recoveryTitle, TechInfo } from "../recovery-panel";
 import { amountDisplay } from "@/lib/format";
 
 const OPERATOR = currentAdminOperator;
@@ -510,6 +510,7 @@ function G2ExchangePage() {
         return {
           key: record.commandKey, name: paramName(key), submittedAt: record.createdAt, ticket: record.ticket?.id, tag: recoveryTag(record),
           change: <>{change}{rejected && <GReplayRejectionNote record={record} />}</>,
+          tech: rejected ? <TechInfo commandKey={record.commandKey} /> : undefined,
           actions: <>
             <Button size="sm" disabled={recoverBusy} aria-label={`查询${paramName(key)}的原操作`} onClick={() => void recover(key, false)}>查询原操作</Button>
             {record.canRetry && <Button size="sm" disabled={recoverBusy} aria-label={`按原操作重试${paramName(key)}`} onClick={() => void recover(key, true)}>按原操作重试</Button>}

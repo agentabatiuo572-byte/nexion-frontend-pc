@@ -8,7 +8,7 @@
 import { useState, type ReactNode } from "react";
 import { Button, Change } from "@/app/components/rd";
 import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
-import { recoveryTitle } from "../recovery-panel";
+import { recoveryTitle, TechInfo } from "../recovery-panel";
 import { rejectedTag } from "../verified-release";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { A2OperationRow } from "@/lib/admin/a2-client";
@@ -69,7 +69,7 @@ export function g4RecoveryTag(record: Pick<GParamRecovery, "ticket" | "retryExpi
 
 export const G4_FIRST_DIVIDEND_TICKET_STATUS = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" } as const;
 
-export type G4ExtraRecovery = { key: string; name: string; change: ReactNode; tag: ReactNode; action: ReactNode; submittedAt?: number; ticket?: A2OperationRow };
+export type G4ExtraRecovery = { key: string; name: string; change: ReactNode; tag: ReactNode; action: ReactNode; submittedAt?: number; ticket?: A2OperationRow; tech?: ReactNode };
 
 /**
  * 有原申请时在结论下面一条提醒；概览读取中、读取失败也显示。和参数行的「调整」是两条路：新修改被禁用时这里照样能用。
@@ -125,6 +125,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
       return {
         key: record.commandKey, name, submittedAt: record.createdAt, tag: g4RecoveryTag(record, batch, obj), ticket: record.ticket?.id,
         change: <>{change}{rejected && <GReplayRejectionNote record={record} />}</>,
+        tech: rejected ? <TechInfo commandKey={record.commandKey} /> : undefined,
         actions: <>
           <Button size="sm" disabled={busy} aria-label={`查询${name}${batch ? ` ${obj}` : ""}的原操作`} onClick={() => void recover(obj, false)}>查询原操作</Button>
           {record.canRetry && <Button size="sm" disabled={busy} aria-label={`按原操作重试${name}${batch ? ` ${obj}` : ""}`} onClick={() => void recover(obj, true)}>按原操作重试</Button>}
@@ -133,7 +134,7 @@ export function G4RecoveryNotice({ approval, toast, extra = [] }: {
         </>,
       };
     }),
-    ...extra.map((row) => ({ key: row.key, name: row.name, change: row.change, tag: row.tag, actions: row.action, submittedAt: row.submittedAt, ticket: row.ticket?.id })),
+    ...extra.map((row) => ({ key: row.key, name: row.name, change: row.change, tag: row.tag, actions: row.action, submittedAt: row.submittedAt, ticket: row.ticket?.id, tech: row.tech })),
   ];
   return <GRecoveryNotice label="原操作" rows={rows}
     title={recoveryTitle(total - waitingCount - endedCount, waitingCount, endedCount)}
