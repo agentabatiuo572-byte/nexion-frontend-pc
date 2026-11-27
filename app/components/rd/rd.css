@@ -475,6 +475,7 @@ main:has(.rd-page) { scrollbar-gutter: stable; }  /* 给滚动条留位，内容
 .rd-filter-more { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; padding: 16px; border-radius: var(--rd-radius-panel); background: var(--rd-panel); }
 .rd-filter-more[hidden] { display: none; }
 .rd-filter-more > [data-wide] { grid-column: span 2; }  /* 日期一对放不进 200 宽的一列 */
+.rd-filter-more-clear { align-self: end; display: flex; }  /* 「清除更多筛选」贴格子底部，和同一行输入框同一底线；按钮和输入框都是 32 高（00 对齐、VS-63） */
 .rd-filter-range { display: flex; align-items: center; gap: 8px; min-width: 0; }  /* 成对的上下限一个字段，一对不拆到两行 */
 .rd-filter-range > .rd-input { flex: 1 1 0; min-width: 0; }
 .rd-filter-range > [aria-hidden] { flex: none; color: var(--rd-text-3); }
