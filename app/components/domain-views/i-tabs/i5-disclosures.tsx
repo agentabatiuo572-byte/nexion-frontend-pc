@@ -668,7 +668,7 @@ function DisclosureTab({ ctx, errorText, writes, has, queueNonce, onHead }: { ct
       detail: gate.key === "exchange"
         ? on
           ? <>移出后，风险披露闸门不再阻断 <b>{gate.name}</b>；兑换开关、额度、地区等其他检查照常。</>
-          : <>纳入后，全平台的新兑换和处理排队都会被拒绝，不看用户有没有确认披露。</>
+          : <>纳入后，全平台的新兑换和处理排队都会被拒绝，<span className="rd-keep">不看用户有没有确认披露。</span></>
         : on
           ? <>移出后，没确认当前披露的用户做 <b>{gate.name}</b> 也不会被拦下。这是放松合规拦截，理由写清依据。</>
           : <>纳入后，没确认当前披露的用户做 <b>{gate.name}</b> 会被拦下。</>,

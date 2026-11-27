@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { AlertCircle, Ban, FileText, Package, PauseCircle, Plus, Users } from "lucide-react";
 import { BlockState, Button, Cell, Explain, Fold, InlineRetry, KeyValues, Panel, RatioBar, StatusDistributionBar, StatusTag, Table, TableMessage, Td, Th, Tr } from "@/app/components/rd";
+import { TechInfo } from "../recovery-panel";
 import { operatorNicknameText } from "@/lib/admin/brand-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel, formatF4AmbassadorBucketRule, formatF4AmbassadorBucketTitle } from "@/lib/admin/f4-ambassador-display";
 import type { F4AmbassadorApplication, F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
@@ -220,7 +221,6 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
         explain={<>
           <p>这就是 App 上申请时用的规则：默认预算和四类各自的预算范围。保存后 App 下次打开或刷新就用新规则，已提交的申请不变。</p>
           <p>已知的四类在 PC 和 App 上显示内置的中文名称和条件，自定义的名称和条件文字不一定显示给用户。</p>
-          {policy && <p>技术信息：规则版本 {policy.policyVersion}，第 {policy.revision} 次修改。</p>}
         </>}
         actions={policy && ctx.canSubmitTeamApproval("F4") ? <Button disabledReason={ctx.f4ExpiredReason({ action: "policy", overview: data, policy })} onClick={() => ctx.openActionConfirm(f4Confirmation(ctx, { action: "policy", overview: data, policy }))}>调整申请规则</Button> : undefined}>
         {!policy ? !ctx.f4PolicyAppliedUnread && <BlockState retryKey="f4-quota-226" state="error" title="申请规则加载失败"
@@ -239,6 +239,7 @@ export function F4Quota({ ctx, data, onOpenMaterials }: { ctx: FViewCtx; data: F
                 ]} /></span>
               </li>)}
             </ul>
+            <TechInfo rows={[{ k: "规则版本", v: String(policy.policyVersion) }, { k: "修改次数", v: `${policy.revision} 次` }]} />
           </>}
       </Panel>
     </div>

@@ -1813,7 +1813,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               value: !taskUnbound(detailTask) && detailBindings.some((binding) => Number(binding.status) === 1)
                 ? detailBindings.filter((binding) => Number(binding.status) === 1).map(bindingEventText).join("、")
                 : activeUnbound(detailTask) ? "没绑定完成事件，用户做不完" : "还没有启用的完成条件",
-              reason: detailBindings.length ? `完成条件：${detailBindings.map((binding) => `${binding.bindingCode}（${Number(binding.status) === 1 ? "启用" : "停用"}）`).join("、")}` : "到「完成条件」页签绑定" },
+              reason: !detailBindings.length ? "到「完成条件」页签绑定"
+                : detailBindings.some((binding) => Number(binding.status) !== 1) ? `已停用：${detailBindings.filter((binding) => Number(binding.status) !== 1).map(bindingEventText).join("、")}` : undefined },
             { label: "点了跳到", value: TASK_ACTION_ROUTE_LABELS[text(detailTask.href, "")] ?? text(detailTask.href, "—"), reason: <span data-mono="">{text(detailTask.href, "—")}</span> },
             { label: "奖励", value: detailReward?.reward, reason: backendLock(`mission.${codeOf(detailTask)}.reward`)
               ? <>{detailReward?.note && <span className="h3-detail-note">{detailReward.note}</span>}{pendingLine(`mission.${codeOf(detailTask)}.reward`)}</> : detailReward?.note },
@@ -1849,12 +1850,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               <Fact k="以后的用户">{detail.list === "dayOne" ? "之后注册的用户" : "之后发布的每周任务"}按新设置</Fact>
             </Facts>
           </section>
-          <Fold title="技术信息" tone="role-other" inset summary="任务编号、类型和内部编号">
+          <Fold title="技术信息" tone="role-other" inset summary={detailBindings.length ? "任务编号、类型、内部编号和完成条件编号" : "任务编号、类型和内部编号"}>
             <Facts>
               <Fact k="任务编号"><span data-mono="">{codeOf(detailTask) || "—"}</span></Fact>
               <Fact k="类型"><span data-mono="">{text(detailTask.taskKind, "—")}</span></Fact>
               <Fact k="类别原值"><span data-mono="">{text(detailTask.category, "—")}</span></Fact>
               <Fact k="内部编号"><span data-mono="">{text(detailTask.id, "—")}</span></Fact>
+              {detailBindings.length > 0 && <Fact k="完成条件编号"><span data-mono="">{detailBindings.map((binding) => `${binding.bindingCode}（${Number(binding.status) === 1 ? "启用" : "停用"}）`).join("、")}</span></Fact>}
             </Facts>
           </Fold>
         </>}

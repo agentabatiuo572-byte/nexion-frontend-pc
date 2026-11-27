@@ -5,7 +5,7 @@ import { Button, Check, Explain, Fact, Facts, Field, IconButton, Input, Irrevers
 import { ADMIN_ERROR_MESSAGES, displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptCodeTech, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, sentLine, useFreshFirst, type ClosureBasis } from "./recovery-panel";
+import { CLOSURE_ACK, CLOSURE_PLACEHOLDER, CLOSURE_PLACEHOLDER_BY, ROLLBACK_HELP, SETTLED_REJECTED, closureLine, offerNotice, type ClosureOffer, SettledLine, closureConflict, closureTime, fullTitle, receiptExplain, receiptRejected, recoveryTitle, rejectedStatus, sentLine, TechInfo, useFreshFirst, type ClosureBasis } from "./recovery-panel";
 import { fundCommandResult, fundInvestigationAccess, type FundCommandBatch, type FundCommandEvidence, type FundCommandInvestigation, type FundCommandRecord, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { eCommandClosureOffer, eCommandClosureRequests } from "@/lib/admin/e-command-investigation";
 export { FAILED_EXPIRED_LINE, closureKnown, closureConflict } from "./recovery-panel";
@@ -131,6 +131,18 @@ export const REJECTED_HELP = "按后台当时的拒绝结案，记录解除。�
 
 const CONCLUSION_TEXT: Partial<Record<FundCommandEvidence["conclusion"], string>> = { SUCCEEDED: "已执行", NOT_EXECUTED: "未执行", STILL_UNKNOWN: "仍未知", REJECTED: "后台拒绝" };
 
+/**
+ * 页面传来的技术原文（「理由 …」「操作人 … ｜ 理由 …」「拟改值：…」）拆成一项一行，进底部的技术信息折叠（DT-08、VS-109）。
+ * 每项是「名称 值」或「名称：值」；没有值的（「强制保存倒挂价」）写「是」。已经单列的操作编号不重复。
+ */
+function techSegments(text: string | undefined, hasKey: boolean) {
+  return (text ?? "").split(" ｜ ").filter(Boolean).flatMap(part => {
+    const match = part.match(/^([^\s：]+)[\s：]+([\s\S]+)$/);
+    const k = match ? match[1] : part;
+    return hasKey && k === "操作编号" ? [] : [{ k, v: match ? match[2] : "是" }];
+  });
+}
+
 /** zoned：面板标题旁已经写了时区，展开后的查询时间不再写。 */
 function RecoveryRow({ row, zoned }: { row: FundRecoveryRow; zoned: boolean }) {
   const [open, setOpen] = useState(false);
@@ -141,7 +153,7 @@ function RecoveryRow({ row, zoned }: { row: FundRecoveryRow; zoned: boolean }) {
   const error = row.outcome && "error" in row.outcome ? row.outcome.error : "";
   const last = receipt?.investigation;
   const origin = row.record?.commandOrigin;
-  const tech = [row.record ? `操作编号 ${row.record.commandKey}` : "", origin ? `${origin.originalMethod} ${origin.originalPath}` : "", receiptCodeTech(receipt), row.tech ?? ""].filter(Boolean).join(" ｜ ");
+  const techRows = [...(origin ? [{ k: "原请求", v: `${origin.originalMethod} ${origin.originalPath}` }] : []), ...techSegments(row.tech, !!row.record)];
   const id = `fund-row-${row.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   return <li className="fund-row">
     <div className="fund-row-line">
@@ -160,7 +172,7 @@ function RecoveryRow({ row, zoned }: { row: FundRecoveryRow; zoned: boolean }) {
       {view.more && <p>{view.more}</p>}
       {error && <p>{error}</p>}
       {last && <p>上次核查 {formatBusinessTimeCompact(last.investigatedAt, "—")}：结论「{CONCLUSION_TEXT[last.conclusion] ?? "已有结论"}」{last.requestedConclusion !== last.conclusion && `（申请的是「${CONCLUSION_TEXT[last.requestedConclusion as FundCommandEvidence["conclusion"]] ?? last.requestedConclusion}」，证据不够）`}。</p>}
-      {tech && <p className="fund-row-tech"><Explain label="技术信息" content={tech}>技术信息</Explain></p>}
+      <TechInfo commandKey={row.record?.commandKey} receipt={receipt} rows={techRows} />
     </div>}
   </li>;
 }

@@ -44,6 +44,7 @@ import type { EditSpec } from "../design-kit";
 import { AlertTriangle } from "lucide-react";
 import { BUY_CONFLICT, BUY_READ_FIRST, BUY_READ_INVALID, BUY_SAVED, BuyListPendingNotice, EDIT_LOCKED, UNKNOWN_TOAST, BuySection, buyListRejection, buyReplayEdits, type BuyListDraft, type BuyListPending, type BuyListSubmitResult, type ReviewBuyReplay } from "./h2-trial-buy";
 import type { HCtx } from "./types";
+import { TechInfo } from "../recovery-panel";
 
 /** 整页读取失败后按「重试」读到了：焦点落在第一块的标题，不落到整页外框（BUG-710）。 */
 const H2_FIRST_SECTION = { get current() { return document.querySelector<HTMLElement>("[data-section-focus]"); } };
@@ -1112,11 +1113,12 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         <Fact k="原试用记录">{retiredCharge.source === "legacy" ? retiredCharge.record.obj : `${retiredCharge.record.owner} · ${retiredCharge.record.sid}`}</Fact>
         <Fact k="原操作理由"><span className="rd-pre">{retiredCharge.record.reason}</span></Fact>
       </Facts>
-      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。<Explain label="技术信息" content={`操作编号 ${retiredCharge.record.commandKey}`} /></p>
+      <p>强制扣款已停用，这里只查原申请，不会新建或执行扣款。</p>
       {chargeLookup.error && <p role="alert" className="rd-form-error">{chargeLookup.error}</p>}
       {chargeLookup.missing && <p role="status">没找到原申请，旧扣款入口已停用，不能重新提交。可以结束这条核对，后台记录不会删除。</p>}
       {chargeLookup.ticket && <p role="status">已找到原审批单 {chargeLookup.ticket.id} · {{ pending: "待审批，已停用，不会执行", approved: "历史已执行", rejected: "历史已取消", withdrawn: "历史已撤回", expired: "已过期" }[chargeLookup.ticket.status]}。处理结果到操作记录看。</p>}
       {reach(auditHref, "platform_a2_read") && <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(retiredCharge.record.sid)}`} prefetch={false}>到操作记录与审批核对</Link>}
+      <TechInfo commandKey={retiredCharge.record.commandKey} />
     </Modal>
   );
 
@@ -1161,8 +1163,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {proposal && !canQuery ? " 这个账号查不了原审批单，请能看操作记录的同事核查。" : ""}
         <KeepText text={expired ? " 已超过 24 小时，不能再重试，请到操作记录与审批核对。" : !canRetry ? " 这个账号已没有这项权限，不能重试。" : needQuery ? " 先查询原操作，查不到再按原操作重试。" : " 按原操作重试不会重复执行。"} />
         {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?domain=H&object=${encodeURIComponent(object)}`} prefetch={false}>到操作记录与审批核对</Link></>}
-        <Explain label="技术信息" content={`操作编号 ${record.commandKey}${proposal ? ` ｜ 用户 ${record.owner}` : ` ｜ 新值 ${record.value || "空"}`} ｜ 理由 ${record.reason}`} />
         {(!proposal || !expired || record.replayRejection) && pendingNotes[record.commandKey] && <div><KeepText text={pendingNotes[record.commandKey]} /></div>}
+        <TechInfo commandKey={record.commandKey} rows={[proposal ? { k: "用户", v: record.owner } : { k: "新值", v: record.value || "空" }, { k: "理由", v: record.reason }]} />
       </Notice>
     );
   })];
@@ -1187,7 +1189,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         {edits ? "请读取最新清单后再调整。" : <>
           请到操作记录与审批核对。
           {reach(auditHref, "platform_a2_read") && <> <Link className="rd-link" href={`${auditHref}?${new URLSearchParams({ domain: "H", action: H2_BUY_LIST_ACTION, object: buyReplayConflict.requestNo })}`} prefetch={false}>到操作记录与审批核对</Link></>}
-          <Explain label="技术信息" content={`操作编号 ${buyReplayConflict.commandKey} ｜ 改后清单 ${buyReplayConflict.productNos.join("、") || "空"} ｜ 理由 ${buyReplayConflict.reason}`} />
+          <TechInfo commandKey={buyReplayConflict.commandKey} rows={[{ k: "改后清单", v: buyReplayConflict.productNos.join("、") || "空" }, { k: "理由", v: buyReplayConflict.reason }]} />
         </>}
       </Notice>,
     );

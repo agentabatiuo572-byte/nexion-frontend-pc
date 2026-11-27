@@ -36,6 +36,7 @@ import { FundClosureModal, fundRecoveryStatus } from "../fund-command-check";
 import { SETTLED_REJECTED, foundReceiptNext, pendingReplayReason, receiptCodeTech, receiptFact, receiptOf, receiptRejected } from "../recovery-panel";
 import { canInvestigateECommand } from "@/lib/admin/e-command-investigation";
 import type { FundCommandEvidence, FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
+import { RETRY_REJECTED_LABEL } from "@/lib/admin/retry-rejected";
 import type { ACtx } from "./types";
 import { A3Calendar, type A3CalendarSummary } from "./a3-calendar";
 import { A3Experience } from "./a3-experience";
@@ -372,7 +373,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
       next: outcome.conclusion === "succeeded" ? "记录和修改锁保留，请重新读取。" : "记录和修改锁保留，请再次查询原操作。",
     };
     if (record.replayRejection && (!outcome || !receipt || receiptRejected(receipt))) return {
-      tone: "warn" as const, label: "重试被拒", detail: a3ContentVersionConflict(record.replayRejection) ? "内容版本已变。" : displayAdminError(record.replayRejection),
+      tone: "warn" as const, label: RETRY_REJECTED_LABEL, detail: a3ContentVersionConflict(record.replayRejection) ? "内容版本已变。" : displayAdminError(record.replayRejection),
       next: expired ? "已超过 24 小时，请查询原操作，由有调查权限的超级管理员核查结案。"
         : "记录和修改锁保留。请核实原操作结果，再用「核实后解除」。",
     };

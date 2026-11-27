@@ -11,7 +11,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { useReach } from "@/lib/nav/use-reach";
-import { RecoveryPanel, recoveryTitle, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
+import { RecoveryPanel, recoveryTitle, TechInfo, type RecoveryItem } from "@/app/components/domain-views/recovery-panel";
 import { FundCheckButtons, FundClosureModal, FundRecoveryPanel, fundRecoveryStatus, type FundSettled } from "../fund-command-check";
 import { checkFundCommand, fundCommandSettled, type FundCommandRecord, type FundCommandEvidence, type FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
@@ -231,7 +231,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
               {refused && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>核实后解除</Button>}
             </>,
             detail: <p><KeepText text="可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
-            tech: <p><Explain label="技术信息" content={`操作编号 ${item.key}`}>技术信息</Explain></p>,
+            tech: <TechInfo commandKey={item.key} />,
           };
         })} />
       {releasing && (

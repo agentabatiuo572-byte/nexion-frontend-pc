@@ -37,6 +37,7 @@ import { createPendingMutationStore, RETRY_EXPIRED_TEXT, type PendingMutationRec
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
+import { TechInfo } from "../recovery-panel";
 import { amountDisplay } from "@/lib/format";
 
 type Seg = "all" | "frozen" | "highrisk";
@@ -739,7 +740,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
           : pendingExpired ? <><KeepText text="已超过 24 小时，不能再重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
             : retryBlocked ? <><KeepText text="你的账号现在没有风险读权，不能按原操作重试，" /><span className="rd-keep">请到{auditLink}核对。</span></>
               : <><span className="rd-keep">点右上角「继续原导出」按原操作重试，</span><span className="rd-keep">或到{auditLink}核对。</span></>}
-        <Explain label="技术信息" content={`操作编号 ${pending.commandKey} ｜ 操作者 ${pending.operator} ｜ 理由 ${pending.reason}`} />
+        <TechInfo commandKey={pending.commandKey} rows={[{ k: "操作者", v: pending.operator }, { k: "理由", v: pending.reason }]} />
       </Notice>
     )}
 

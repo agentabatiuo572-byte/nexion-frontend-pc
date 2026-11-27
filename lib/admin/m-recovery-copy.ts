@@ -4,6 +4,7 @@
  */
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "./pending-mutation-store";
 import { recoveryNext } from "./recovery-next";
+import { RETRY_REJECTED_LABEL, RETRY_REJECTED_NEXT } from "./retry-rejected";
 
 export const M_RECOVERY = {
   unknown: "可能已经生效，先查询原操作。",
@@ -14,7 +15,7 @@ export const M_RECOVERY = {
   notFoundShort: "没有查到原操作。",
   unsettled: "后台还没有结论，稍后再查询原操作。",
   queryFailed: "没有查成，原记录还在，可以再查一次。",
-  rejected: "后台已拒绝重试，先核实原操作的结果，再解除这条记录。",
+  rejected: RETRY_REJECTED_NEXT,
 } as const;
 
 /** 面板问号里的通用说明；各页再补一句自己锁住了什么。 */
@@ -29,7 +30,7 @@ export const mQueryFailedText = (reason: string) => `${M_RECOVERY.queryFailed}${
 /** 提交或重试没有结果时的原因：已经说了「可能已经生效」的不再说一遍。 */
 export const mUnknownReason = (reason: string) => /可能已经生效|结果未知/.test(reason) ? "" : ended(reason);
 export const mUnknownText = (reason: string) => mUnknownReason(reason) && `${M_RECOVERY.unknown}${mUnknownReason(reason)}`;
-/** 重试被拒的原因，跟在「后台已拒绝重试」后面。 */
+/** 重试被拒绝的原因，写在下一步前面（标签已经写了「重试被拒绝」）。 */
 export const mRejectedReason = (reason: string) => `拒绝原因：${ended(reason)}`;
 
 export type MRecoveryView = { tone: "warn" | "progress" | "danger" | "neutral" | "done" | "ok"; label: string; line: string };
@@ -44,7 +45,7 @@ export function mReplayReason(state: PendingRecoveryState, unavailable: string) 
 export function mRecoveryView(state: PendingRecoveryState, { last = "", expiredLine = RETRY_EXPIRED_TEXT }: { last?: string; expiredLine?: string } = {}): MRecoveryView {
   if (state.busy) return { tone: "progress", label: state.busy === "query" ? "查询中" : "提交中", line: state.busy === "query" ? M_RECOVERY.querying : M_RECOVERY.replaying };
   const next = recoveryNext(state);
-  if (next.kind === "rejected") return { tone: "warn", label: "重试被拒", line: `${M_RECOVERY.rejected}${last}` };
+  if (next.kind === "rejected") return { tone: "warn", label: RETRY_REJECTED_LABEL, line: `${last}${M_RECOVERY.rejected}` };
   if (last.startsWith(M_RECOVERY.queryFailed)) return { tone: "danger", label: "查询失败", line: next.kind === "expired" ? `${last}${expiredLine}` : last };
   if (next.kind === "expired") return { tone: "warn", label: "已过期", line: `${last}${expiredLine}` };
   if (next.kind === "missing") return { tone: "neutral", label: "不能查询", line: `${next.block}请到操作记录与审批核对。` };

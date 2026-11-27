@@ -14,6 +14,7 @@ import { useAdminAuth, type AdminSession } from "@/lib/store/admin-auth";
 import { G4CatalogApprovalRequiredError, type G4Overview } from "@/lib/admin/g4-client";
 import { ArrowLeftRight } from "lucide-react";
 import { Fact, Facts, Notice as RdNotice, StatusTag as RdStatusTag } from "@/app/components/rd";
+import { TechInfo } from "../recovery-panel";
 import { Modal, OperationConfirmModal, type BusinessFormValue } from "../design-kit";
 
 export type G4TierChange = {
@@ -238,7 +239,7 @@ export function G4TierConfirm({ session, epoch, requested, readActive, canStartN
       : <>起点 {number(basis.from)}，截止和单价都填整数。{basis.nextTierId && <>改截止时下一档 <b>{basis.nextTierId}</b> 的起点会跟着调整，系列总量不变。</>}尚未发布系列时仍需单独发布，不会自动开放销售。</>}
       扩大已有系列的总量，或让还没卖出的节点涨价时，要另一位超级管理员批准；待审期间沿用原档位和原总量。只影响以后的销售，已下单的按下单时价格结算。</>}
     content={<>
-      {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>查询原操作不会把旧方案重新提交为当前配置。</p><p className="rd-note">技术信息：档位版本 {basis.expectedTiersVersion} · 原申请编号 <span data-mono>{opening.pending.commandKey}</span></p></RdNotice>}
+      {opening.pending && <RdNotice tone="warn" title="这是原档位申请"><p>查询原操作不会把旧方案重新提交为当前配置。</p><TechInfo commandKey={opening.pending.commandKey} rows={[{ k: "档位版本", v: String(basis.expectedTiersVersion) }]} /></RdNotice>}
       {session.authorities.includes("platform_a2_read") && <Link className="rd-link" href="/platform/audit?domain=G">到「操作记录与审批」查看</Link>}
     </>}
     briefKind="config" reasonMin={8} reasonMax={200} amplifies={false}
