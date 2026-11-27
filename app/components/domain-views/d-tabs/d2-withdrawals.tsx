@@ -669,10 +669,12 @@ const groupStatuses = (group: D2Group) => STATUS_GROUPS.find((item) => item.valu
 
 interface D2Filters {
   keyword: string; minAmount: string; maxAmount: string; minRiskScore: string; ipSegment: string; sortBy: string; sortDirection: string;
+  /** 提交日期，越南时间的业务日 YYYY-MM-DD，起止两天都含；只填一个就只限这一头。 */
+  createdFrom: string; createdTo: string;
 }
 interface D2Query extends D2Filters { group: D2Group; status: string; page: number; pageSize: number }
 
-const DEFAULT_FILTERS: D2Filters = { keyword: "", minAmount: "", maxAmount: "", minRiskScore: "", ipSegment: "", sortBy: "createdAt", sortDirection: "desc" };
+const DEFAULT_FILTERS: D2Filters = { keyword: "", minAmount: "", maxAmount: "", minRiskScore: "", ipSegment: "", sortBy: "createdAt", sortDirection: "desc", createdFrom: "", createdTo: "" };
 const DEFAULT_QUERY: D2Query = { ...DEFAULT_FILTERS, group: "todo", status: "", page: 1, pageSize: 10 };
 const PAGE_SIZES = [10, 20, 50] as const;
 const SORT_FIELDS = ["createdAt", "amount", "riskScore", "status"];
@@ -680,8 +682,8 @@ const AMOUNT_PATTERN = /^\d+(\.\d+)?$/;
 const riskScoreIsValid = (value: string) => value === "" || /^\d{1,3}$/.test(value) && Number(value) <= 100;
 
 function filtersOf(query: D2Query): D2Filters {
-  const { keyword, minAmount, maxAmount, minRiskScore, ipSegment, sortBy, sortDirection } = query;
-  return { keyword, minAmount, maxAmount, minRiskScore, ipSegment, sortBy, sortDirection };
+  const { keyword, minAmount, maxAmount, minRiskScore, ipSegment, sortBy, sortDirection, createdFrom, createdTo } = query;
+  return { keyword, minAmount, maxAmount, minRiskScore, ipSegment, sortBy, sortDirection, createdFrom, createdTo };
 }
 
 /** 网址参数不合法时回默认值，不筛空页面（ST-26）。 */
@@ -702,6 +704,9 @@ function queryFromUrl(params: { get: (name: string) => string | null } | null): 
     ipSegment: read("ipSegment"),
     sortBy: SORT_FIELDS.includes(read("sort")) ? read("sort") : DEFAULT_QUERY.sortBy,
     sortDirection: read("dir") === "asc" ? "asc" : DEFAULT_QUERY.sortDirection,
+    // TODO(hd-impl-d2-date-pc): 从网址读 createdFrom、createdTo（YYYY-MM-DD，不合法回空，ST-26）。
+    createdFrom: "",
+    createdTo: "",
     page: Number.isSafeInteger(page) && page > 0 ? page : DEFAULT_QUERY.page,
     pageSize: PAGE_SIZES.some((size) => size === pageSize) ? pageSize : DEFAULT_QUERY.pageSize,
   };
@@ -715,6 +720,7 @@ function writeQueryToUrl(query: D2Query, rule: string) {
     ["minAmount", query.minAmount, ""], ["maxAmount", query.maxAmount, ""], ["minRiskScore", query.minRiskScore, ""],
     ["ipSegment", query.ipSegment, ""], ["rule", rule, ""], ["sort", query.sortBy, DEFAULT_QUERY.sortBy],
     ["dir", query.sortDirection, DEFAULT_QUERY.sortDirection], ["page", query.page, 1], ["pageSize", query.pageSize, DEFAULT_QUERY.pageSize],
+    // TODO(hd-impl-d2-date-pc): 提交日期写进网址 createdFrom、createdTo（ST-23）。
   ];
   for (const [name, value, fallback] of entries) {
     if (value === fallback) params.delete(name);
@@ -743,7 +749,8 @@ function compareRows(left: D2Withdrawal, right: D2Withdrawal, sortBy: string, so
 
 /** 接口的 status 只收一个值。看整组时按状态分别取到当前页为止，合并排序后切出这一页，总数相加。 */
 async function fetchQueue(query: D2Query): Promise<PageResult<D2Withdrawal>> {
-  const filters = filtersOf(query);
+  // TODO(hd-impl-d2-date-pc): 提交日期还没传给后端（createdFrom、createdTo，见 d2-date-contract.md）。接入时不再剔除这两项。
+  const { createdFrom: _createdFrom, createdTo: _createdTo, ...filters } = filtersOf(query);
   const statuses = query.status ? [query.status] : query.group === "all" ? [] : groupStatuses(query.group);
   if (statuses.length <= 1) {
     return fetchD2Withdrawals({ ...filters, status: statuses[0] ?? "", pageNum: query.page, pageSize: query.pageSize });
@@ -915,6 +922,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [ruleFilter, setRuleFilter] = useState(() => searchParams?.get("rule")?.trim() ?? "");
   const [riskDropped, setRiskDropped] = useState("");
   const [amountRangeInvalid, setAmountRangeInvalid] = useState(false);
+  const [dateRangeInvalid, setDateRangeInvalid] = useState(false);
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
   const [d5, setD5] = useState<D5Params | null>(null);
   const [statusCounts, setStatusCounts] = useState<Record<string, number> | null>(null);
@@ -1372,25 +1380,30 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const submitQuery = () => {
     if (!riskScoreIsValid(draft.minRiskScore)) return;
     const invalidRange = draft.minAmount !== "" && draft.maxAmount !== "" && Number(draft.minAmount) > Number(draft.maxAmount);
+    // TODO(hd-impl-d2-date-pc): 占位校验，只比两个日期框自己的值；接入时按接口约定校验（格式错、起日晚于止日都不查）。
+    const invalidDates = draft.createdFrom !== "" && draft.createdTo !== "" && draft.createdFrom > draft.createdTo;
     setAmountRangeInvalid(invalidRange);
-    if (!invalidRange) setQuery((current) => ({ ...current, ...draft, page: 1 }));
+    setDateRangeInvalid(invalidDates);
+    if (!invalidRange && !invalidDates) setQuery((current) => ({ ...current, ...draft, page: 1 }));
   };
 
   const applyFilters = (patch: Partial<D2Filters>) => {
     setDraft((current) => ({ ...current, ...patch }));
     setAmountRangeInvalid(false);
+    setDateRangeInvalid(false);
     setQuery((current) => ({ ...current, ...patch, page: 1 }));
   };
 
   const resetAdvancedFilters = () => {
     setRuleFilter("");
-    applyFilters({ minAmount: "", maxAmount: "", minRiskScore: "", ipSegment: "", sortBy: "createdAt", sortDirection: "desc" });
+    applyFilters({ createdFrom: "", createdTo: "", minAmount: "", maxAmount: "", minRiskScore: "", ipSegment: "", sortBy: "createdAt", sortDirection: "desc" });
   };
 
   const clearAllFilters = () => {
     setRuleFilter("");
     setDraft(DEFAULT_FILTERS);
     setAmountRangeInvalid(false);
+    setDateRangeInvalid(false);
     setQuery((current) => ({ ...current, ...DEFAULT_FILTERS, status: "", page: 1 }));
   };
 
@@ -1616,8 +1629,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const statusOption = (status: string) => ({ value: status, label: `${STATUS_CN[status]}${statusCounts ? ` · ${statusCounts[status] ?? 0}` : ""}` });
   const currentGroup = STATUS_GROUPS.find((group) => group.value === query.group);
 
+  // 条件条写完整日期（TX-26）并标越南时间：「更多筛选」收起时，日界只在这里看得到。
+  const createdRange = query.createdFrom && query.createdTo
+    ? query.createdFrom === query.createdTo ? ` ${query.createdFrom}` : ` ${query.createdFrom} 至 ${query.createdTo}`
+    : query.createdFrom ? ` ${query.createdFrom} 起` : query.createdTo ? ` 截至 ${query.createdTo}` : "";
+  const createdChip = createdRange && `提交日期${createdRange}（越南时间）`;
   const conditionChips = [
     { key: "q", label: query.keyword && `提现单 / 用户：${query.keyword}`, patch: { keyword: "" } },
+    { key: "created", label: createdChip, patch: { createdFrom: "", createdTo: "" } },
     { key: "min", label: query.minAmount && `金额 ≥ ${query.minAmount}`, patch: { minAmount: "" } },
     { key: "max", label: query.maxAmount && `金额 ≤ ${query.maxAmount}`, patch: { maxAmount: "" } },
     { key: "risk", label: query.minRiskScore && `风险分 ≥ ${query.minRiskScore}`, patch: { minRiskScore: "" } },
@@ -1625,15 +1644,16 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     { key: "sort", label: (query.sortBy !== DEFAULT_FILTERS.sortBy || query.sortDirection !== DEFAULT_FILTERS.sortDirection) && "已改排序", patch: { sortBy: DEFAULT_FILTERS.sortBy, sortDirection: DEFAULT_FILTERS.sortDirection } },
   ].filter((chip) => chip.label).map((chip) => ({ key: chip.key, label: chip.label as string, onRemove: () => applyFilters(chip.patch) }));
   const appliedChips = ruleFilter ? [...conditionChips, { key: "rule", label: `触发规则：${ruleFilter}（只筛当前页）`, onRemove: () => setRuleFilter("") }] : conditionChips;
-  const moreCount = [query.minAmount, query.maxAmount, query.minRiskScore, query.ipSegment, ruleFilter].filter(Boolean).length
+  const moreCount = [query.createdFrom || query.createdTo, query.minAmount, query.maxAmount, query.minRiskScore, query.ipSegment, ruleFilter].filter(Boolean).length
     + (query.sortBy !== DEFAULT_FILTERS.sortBy || query.sortDirection !== DEFAULT_FILTERS.sortDirection ? 1 : 0);
   const hasConditions = appliedChips.length > 0 || query.status !== "";
   const draftChanged = (Object.keys(DEFAULT_FILTERS) as (keyof D2Filters)[]).some((key) => draft[key] !== query[key]);
 
   const riskNotice = !riskScoreIsValid(draft.minRiskScore)
-    ? `最低风险分须为 0–100 的整数。未查询${error ? "。" : `，列表${query.minRiskScore ? `仍按最低风险分 ${query.minRiskScore}` : "仍是不限风险分的结果"}。`}`
+    ? `最低风险分须为 0–100 的整数。这次没有查询${error ? "。" : `，列表${query.minRiskScore ? `仍按最低风险分 ${query.minRiskScore}` : "仍是不限风险分的结果"}。`}`
     : riskDropped && `「${riskDropped}」不是 0–100 的整数，没有生效。已改回${draft.minRiskScore ? `最低风险分 ${draft.minRiskScore}` : "不限风险分"}。`;
-  const filterNotice = amountRangeInvalid ? "最低金额不能大于最高金额。这次没有查询。" : riskNotice || (query.status === "FROZEN" ? "ERC20 丢失链上确认的单也按冻结处理，要在「打款异常，需人工核对」里查看。" : undefined);
+  const rangeProblems = `${amountRangeInvalid ? "最低金额不能大于最高金额。" : ""}${dateRangeInvalid ? "提交日期有误：开始日期不能晚于结束日期。" : ""}`;
+  const filterNotice = rangeProblems ? `${rangeProblems}这次没有查询。` : riskNotice || (query.status === "FROZEN" ? "ERC20 丢失链上确认的单也按冻结处理，要在「打款异常，需人工核对」里查看。" : undefined);
 
   const shown = drawerRow.current;
   const detailIndex = detail ? visibleRows.findIndex((row) => row.withdrawalNo === detail.withdrawalNo) : -1;
@@ -1764,8 +1784,21 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       moreCount={moreCount}
       onClearMore={resetAdvancedFilters}
       more={<>
-        <FilterField label="最低金额"><Input type="number" min="0" step="any" value={draft.minAmount} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
-        <FilterField label="最高金额"><Input type="number" min="0" step="any" value={draft.maxAmount} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); }} /></FilterField>
+        <FilterField wide label={<span>提交日期（越南时间，含起止当天）<Explain label="提交日期的说明"
+          content={`按越南时间（UTC+7）0 点分日。只填一个日期，就只限这一头。${businessZone().zoneId === "Asia/Ho_Chi_Minh" ? "" : `列表里的时间是${businessZone().label}，0 点前后提交的单，日期可能差一天。`}`} /></span>}>
+          <span className="rd-filter-range">
+            <Input aria-label="提交日期起" aria-invalid={dateRangeInvalid || undefined} type="date" value={draft.createdFrom} onChange={(event) => { setDraft({ ...draft, createdFrom: event.target.value }); setDateRangeInvalid(false); }} />
+            <span aria-hidden>–</span>
+            <Input aria-label="提交日期止" aria-invalid={dateRangeInvalid || undefined} type="date" value={draft.createdTo} onChange={(event) => { setDraft({ ...draft, createdTo: event.target.value }); setDateRangeInvalid(false); }} />
+          </span>
+        </FilterField>
+        <FilterField label="金额（USDT）">
+          <span className="rd-filter-range">
+            <Input aria-label="最低金额" aria-invalid={amountRangeInvalid || undefined} type="number" min="0" step="any" placeholder="下限" value={draft.minAmount} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); }} />
+            <span aria-hidden>–</span>
+            <Input aria-label="最高金额" aria-invalid={amountRangeInvalid || undefined} type="number" min="0" step="any" placeholder="上限" value={draft.maxAmount} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); }} />
+          </span>
+        </FilterField>
         <FilterField label="最低风险分"><Input inputMode="numeric" placeholder="0–100" aria-invalid={!riskScoreIsValid(draft.minRiskScore)} value={draft.minRiskScore} onChange={(event) => { setDraft({ ...draft, minRiskScore: event.target.value }); setRiskDropped(""); }} /></FilterField>
         <FilterField label="触发规则（只筛选当前页）"><Input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></FilterField>
         <FilterField label="IP 段"><Input placeholder="例如 192.168.1" value={draft.ipSegment} onChange={(event) => setDraft({ ...draft, ipSegment: event.target.value })} /></FilterField>
