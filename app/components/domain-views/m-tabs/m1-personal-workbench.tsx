@@ -366,10 +366,8 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       if (actor !== actorStamp()) return;
       if (!acknowledged && isExplicitRejection(error)) { maintenanceCommands.forget(fingerprint, key); setMaintenancePending(null); setMaintenanceNeedsRefresh(true); setSaveError(errorText(error)); return; }
       if (acknowledged && invalidateCustomerOnDenied(payload.customerId, error)) return;
-      if (detailsGeneration.current === generation) {
-        setNotice("操作结果未知，原内容和理由已保留，请查询原操作。");
-        closeDetail(); setSnapshot(null); setRowsRefresh(value => value + 1);
-      }
+      // 结果未知只在上方恢复面板说一次（OP-93、DT-12），不另弹提示。
+      if (detailsGeneration.current === generation) { closeDetail(); setSnapshot(null); setRowsRefresh(value => value + 1); }
     } finally { setSaving(false); }
   };
   const checkMaintenance = async (record = maintenancePending) => {
