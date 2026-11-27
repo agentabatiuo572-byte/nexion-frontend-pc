@@ -683,7 +683,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           feedback: (value) => {
             // 商品候选没读到：框里上方已就地说了并给「重试」，这里只说这一项怎么改（同一件事不说两遍）。
             if (targets === null && value.actionRoute !== currentActionRoute) {
-              return { invalid: true, message: "改回原页面，或重试读到商品候选后再换", field: "actionRoute" };
+              return { invalid: true, message: "改回原页面，或读到候选后再换", field: "actionRoute" };
             }
             return options.includes(value.actionRoute)
               ? { invalid: false, message: "" }

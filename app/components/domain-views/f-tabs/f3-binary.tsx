@@ -566,7 +566,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               <SearchSelect aria-label="搜索并选择用户编码" placeholder="搜索邀请人用户编码" value={lookupText} onChange={updateLookup} onSelect={selectUser}
                 selected={selectedUser || undefined}
                 options={Array.from(new Map(userOptions.map((row) => [row.user, row])).values()).map((row) => ({
-                  value: row.user, label: row.user, extra: `A ${amountText(row.aRaw, row.a)} · B ${amountText(row.bRaw, row.b)} · ${stateOf(row.state).label}`,
+                  // 放不下时只在 A 组后面换行：B 组和状态整块，最后一行不剩孤零零的状态词。
+                  value: row.user, label: row.user, extra: <><span className="rd-keep">A {amountText(row.aRaw, row.a)} ·</span> <span className="rd-keep">B {amountText(row.bRaw, row.b)} · {stateOf(row.state).label}</span></>,
                 }))} empty="没有匹配的用户" />
             </FilterField>
             <FilterField>
