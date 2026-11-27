@@ -690,7 +690,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         if (!rejected.includes(releasing.commandKey) || isRetryExpired(releasing)) return;
         e2Commands.forget(releasing.fingerprint, releasing.commandKey); syncPending(); close(); void refresh(query);
       }}>确认解除</Button></>}>
-      <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果，先核实。解除只删掉本页保存的这条记录，不写入操作记录，也不算核查结案。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts>{releaseCheck.check}</div>
+      <div className="rd-stack"><ReleaseBody label={`${releasing.pool.code} ${releasing.pool.name} · ${e2CommandLabel(releasing)}`} explain="重试被拒说明不了原操作的结果。" /><Facts><Fact k="首次提交">{businessStamp(releasing.createdAt)} · {businessZoneText()}</Fact><Fact k="原理由">{releasing.request.body.reason}</Fact></Facts>{releaseCheck.check}</div>
     </Modal> : dialog && <Modal title={originalExpired ? "原操作已过重试时限" : dialog.original ? "核对原操作" : dialog.kind === "random" ? "随机添加任务" : dialog.enabled ? "批量启用任务" : "批量停用任务"}
       icon={dialog.kind === "random" ? Plus : ClipboardList} tone={dialog.kind === "status" && !dialog.enabled ? "danger" : "neutral"}
       sub={dialog.original ? undefined : <StatusTag tone="progress" filled>立即生效</StatusTag>} busy={saving} dirty={!!dialog.original || !!reason || count !== "10" || classes.length > 0} onClose={close}

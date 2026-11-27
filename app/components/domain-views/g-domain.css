@@ -392,6 +392,7 @@
 .grec-ticket { font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); white-space: nowrap; }
 .grec-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .grec-zone { margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); color: var(--rd-text-3); }
+.grec-tech { grid-column: 1 / -1; min-width: 0; }  /* 技术信息是这一条最后一块，占满整行（DT-22） */
 @media (max-width: 1279px) {
   .grec li { grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content; }
   .grec-state { grid-column: 3; grid-row: 1; justify-content: flex-end; }

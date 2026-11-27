@@ -12,7 +12,6 @@ import { Explain, Notice, StatusTag } from "@/app/components/rd";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
 import type { PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { replayRejectionText } from "@/lib/admin/retry-rejected";
-import { TechInfo } from "../recovery-panel";
 import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 
 export type GRecoveryRow = {
@@ -27,10 +26,13 @@ export type GRecoveryRow = {
   ticket?: string;
   actions: ReactNode;
   state?: string;
+  /** 技术信息折叠：放在这一条最后、占满整行，和其它页同一处（OP-154、DT-22）。 */
+  tech?: ReactNode;
 };
 
+/** 被拒的原因留在「改动」这一格；操作编号放这一条最后的技术信息（GRecoveryRow.tech）。 */
 export function GReplayRejectionNote({ record }: { record: PendingMutationRecord }) {
-  return <span className="rd-note"> · {replayRejectionText(record)} <TechInfo commandKey={record.commandKey} /></span>;
+  return <span className="rd-note"> · {replayRejectionText(record)}</span>;
 }
 
 export function GRejectedRelease({ record, name, target, disabled, toast, getSnapshot, release }: {
@@ -97,6 +99,7 @@ export function GRecoveryNotice({ title, explain, lead, rows, label = "原操作
               {row.ticket && <span className="grec-ticket">审批单 <span data-mono>{row.ticket}</span></span>}
             </span>
             <span className="grec-actions">{row.actions}</span>
+            {row.tech && <div className="grec-tech">{row.tech}</div>}
           </li>
         ))}
       </ul>

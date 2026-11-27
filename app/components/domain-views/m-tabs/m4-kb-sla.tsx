@@ -639,7 +639,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
   }
 
   /** 这条原操作现在怎样：行、原框、删除框同一句。查到的回执用资金页共用的说法，其余用 M 域共用的。 */
-  function recoveryInfo(record: MCommandRecord): FaqRecoveryInfo & { more?: string } {
+  function recoveryInfo(record: MCommandRecord, canRelease = true): FaqRecoveryInfo & { more?: string } {
     const state = m4FaqRecovery.state(record);
     const outcome = outcomesNow.current[record.commandKey];
     const receipt = receiptOf(outcome);
@@ -657,9 +657,9 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     const last = !outcome ? "" : "error" in outcome ? mQueryFailedText(outcome.error) : receipt ? `这次查到「${found.label}」。`
       : state.conclusion !== "not-found" ? M_RECOVERY.unsettled : state.replayRejection || state.expired ? M_RECOVERY.notFoundShort : "";
     const view: MRecoveryView & { more?: string } = submittingKey === record.commandKey ? M_SUBMITTING_VIEW : !record.faq
-      ? mRecoveryView(state, { expiredLine: "已超过 24 小时，也查不到原结果，请到操作记录与审批核对。" })
+      ? mRecoveryView(state, { expiredLine: "已超过 24 小时，也查不到原结果，请到操作记录与审批核对。", canRelease })
       : !state.busy && !state.replayRejection && (receipt || shared.label === "没有查询权限" || !outcome && !state.expired && state.conclusion === "unknown")
-        ? state.expired && !found.line.includes("24 小时") ? { ...found, line: `${RETRY_EXPIRED_TEXT}${found.line}` } : found : mRecoveryView(state, { last });
+        ? state.expired && !found.line.includes("24 小时") ? { ...found, line: `${RETRY_EXPIRED_TEXT}${found.line}` } : found : mRecoveryView(state, { last, canRelease });
     return { view, more: view.more, currentFact, gone, audit: gone || Boolean(state.replayRejection) || state.expired || !record.faq || view.line.includes("操作记录与审批"),
       rejected: Boolean(state.replayRejection) && !state.busy, release: () => openRelease(record) };
   }
@@ -684,7 +684,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
   const pendingRows = pendingCommands.map((record) => {
     const state = m4FaqRecovery.state(record);
     const outcome = outcomes[record.commandKey];
-    const { view, more, gone, audit } = recoveryInfo(record);
+    const { view, more, gone, audit } = recoveryInfo(record, canQueryM4);
     return { key: record.commandKey,
     question: record.faq?.row.question ?? "常见问答", change: record.faq ? KIND_NAME[record.faq.kind] : "旧记录",
     submittedAt: record.createdAt, expired: state.expired,

@@ -295,11 +295,11 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
     maintenanceDays: "距上次维护满这么多天，客户进专属客服的主动维护待办。改天数不会补记维护。",
     activityWindowDays: "统计活跃客户时往回看几天，和沉睡分开算，不能大于沉睡天数。",
   };
-  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canQuery ? EXPIRED_LINE : RETRY_EXPIRED_TEXT });
+  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canQuery ? EXPIRED_LINE : RETRY_EXPIRED_TEXT, canRelease });
   const replayRefused = Boolean(command.recoveryState?.replayRejection);
   const querying = command.recoveryState?.busy === "query";
   const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改服务规则" : retryExpired ? EXPIRED_LINE : mReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
-  const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原操作的权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
+  const recoveryLine = view && `${view.line}${retry && !canQuery ? "当前账号没有查询原操作的权限。" : ""}`;
   const comparisonBefore = conflict ? current : releasedFrom;
   const comparisonAfter = conflict ? latest : current;
   const externalChanges = comparisonBefore && comparisonAfter ? changedFields(comparisonBefore, comparisonAfter) : [];

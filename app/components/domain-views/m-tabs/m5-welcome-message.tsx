@@ -274,10 +274,10 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const submittedAt = pending ? pending.expiresAt - PENDING_MUTATION_TTL_MS : 0;
   const updatedText = current?.updatedAt ? formatBusinessTime(current.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
   const errorTone = /查不到|还在处理|仍在处理|24 小时/.test(error) ? "warn" : "danger";
-  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canLoadLatest ? EXPIRED_LINE : RETRY_EXPIRED_TEXT });
+  const view = command.submitting ? M_SUBMITTING_VIEW : retry && command.recoveryState && mRecoveryView(command.recoveryState, { last: command.message, expiredLine: canLoadLatest ? EXPIRED_LINE : RETRY_EXPIRED_TEXT, canRelease });
   const replayRefused = Boolean(command.recoveryState?.replayRejection);
   const querying = command.recoveryState?.busy === "query";
-  const recoveryLine = view && `${view.line}${retry && !canQuery ? "查询欢迎语原结果需要超级管理员和客服工作台查看权限。" : ""}${retry && replayRefused && !canRelease ? "当前账号没有客服工作台查看权限，不能解除。" : ""}`;
+  const recoveryLine = view && `${view.line}${retry && !canQuery ? "查询欢迎语原结果需要超级管理员和客服工作台查看权限。" : ""}`;
   const comparisonBefore = conflict ? current : releasedFrom;
   const comparisonAfter = conflict ? latest : current;
   const externalChanges = comparisonBefore && comparisonAfter ? changedLanguages(comparisonBefore.texts, comparisonAfter.texts) : [];

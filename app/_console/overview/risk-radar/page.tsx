@@ -119,6 +119,8 @@ interface B5PendingCommand {
   onRetry?: () => void;
   onRelease?: () => void;
   onQuery?: () => void;
+  /** 上次「读取当前值」没读到：按钮改叫「重试」（ST-35），读到后换回来。 */
+  queryFailed?: boolean;
   onRestore?: () => void;
   onDiscard?: () => void;
   recoveryLine?: string;
@@ -162,7 +164,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
       {items.map((item) => (
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b5-row-actions">
-            {item.onQuery && <Button size="sm" onClick={item.onQuery}>读取当前值</Button>}
+            {item.onQuery && <Button size="sm" onClick={item.onQuery}>{item.queryFailed ? "重试" : "读取当前值"}</Button>}
             {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
             {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
             {item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
@@ -831,6 +833,7 @@ export default function RiskRadarPage() {
       onRelease: original && next.kind === "rejected" ? () => setReleasingWrite(original) : undefined,
       onRetry: next.canRetry ? () => recoverWrite(record) : undefined,
       onQuery: original ? () => void queryWrite(original) : undefined,
+      queryFailed: Boolean(readError),
     };
   });
 

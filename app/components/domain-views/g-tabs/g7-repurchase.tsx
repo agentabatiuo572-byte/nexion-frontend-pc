@@ -38,7 +38,7 @@ import { gParamApprovalFeedback, gParamAuthority, useGParamApproval, type GParam
 import { canRetryG7DirectCommand, g7DirectCommandExpired, g7DirectCommandVersion, listG7DirectCommands, subscribeG7DirectCommands, type G7DirectCommand } from "@/lib/admin/g7-direct-command";
 import { expiredTag, GRecoveryNotice, GRejectedRelease, GReplayRejectionNote, pendingTag, resolvedTag, unknownTag, type GRecoveryRow } from "./g-recovery";
 import { rejectedTag } from "../verified-release";
-import { recoveryTitle } from "../recovery-panel";
+import { recoveryTitle, TechInfo } from "../recovery-panel";
 import { amountDisplay } from "@/lib/format";
 
 /** 本页的确认框请求：在共用的 ActionConfirmReq 上只加显示用的字段，提交仍走 run。 */
@@ -404,6 +404,7 @@ function G7RepurchasePage() {
           key: record.commandKey, name, submittedAt: record.createdAt,
           state: record.ticket?.status === "pending" ? "approval-locked" : record.ticket ? "approval-resolved" : "local-frozen",
           change: <>{change}{rejected && <GReplayRejectionNote record={record} />}</>,
+          tech: rejected ? <TechInfo commandKey={record.commandKey} /> : undefined,
           tag: recoveryTag(record), ticket: record.ticket?.id,
           actions: <>
             <Button size="sm" disabled={recoverBusy} aria-label={`查询${name}的原操作`} onClick={() => void recover(key, false)}>查询原操作</Button>

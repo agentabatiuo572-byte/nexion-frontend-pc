@@ -52,6 +52,7 @@ import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { canProposeGParam, gParamApprovalFeedback, useGParamApproval } from "@/lib/admin/use-g-param-approval";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { expiredTag, GRejectedRelease, GReplayRejectionNote, unknownTag } from "./g-recovery";
+import { TechInfo } from "../recovery-panel";
 import { rejectedTag } from "../verified-release";
 import { replayRejectionText, RETRY_REJECTED_NEXT } from "@/lib/admin/retry-rejected";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -533,6 +534,7 @@ function G4GenesisPage() {
     firstDividendRecovery.push({
       key: commandKey, name, submittedAt: pendingFirstDividend.createdAt, ticket: firstDividendTicket,
       change: <>{firstDividendTicket ? `拟设比例 ${g4ParamValueText("dividend", proposedRate)}` : change}{rejected && <GReplayRejectionNote record={pendingFirstDividend} />}</>,
+      tech: rejected ? <TechInfo commandKey={commandKey} /> : undefined,
       tag: firstDividendTicket
         ? <StatusTag tone={firstDividendTicket.status === "pending" ? "warn" : "done"} explain={`${firstDividendTicket.status === "expired" ? "审批单已过期，没有执行。" : "这是最近一次核对的审批状态。"}点「查询原操作」读取最新结果。`}>{G4_FIRST_DIVIDEND_TICKET_STATUS[firstDividendTicket.status]}</StatusTag>
         : rejected ? rejectedTag() : <StatusTag tone="warn" icon={Clock3} explain="首次配置每日收益比例要另一位超级管理员批准。提交原申请时尚未配置。点「查询原操作」核对原审批单。">结果未知</StatusTag>,
@@ -606,6 +608,7 @@ function G4GenesisPage() {
         key: command.commandKey, name, submittedAt: command.createdAt,
         change: <>{change}{command.replayRejection ? <GReplayRejectionNote record={command} />
           : isG4DividendRerun(command) && canRetry && <span className="rd-note"> · {G4_DIVIDEND_REPLAY_HINT}</span>}</>,
+        tech: command.replayRejection ? <TechInfo commandKey={command.commandKey} /> : undefined,
         tag: command.replayRejection ? rejectedTag() : g4DirectCommandExpired(command) ? expiredTag("direct") : unknownTag("direct"),
         action: <>
           <Button size="sm" disabled={!!busyKey} onClick={() => { void recoverDirect(command, false).catch(() => undefined); }}>读取当前配置</Button>

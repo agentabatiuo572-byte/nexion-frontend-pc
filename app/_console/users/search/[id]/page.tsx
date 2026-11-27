@@ -2006,7 +2006,7 @@ export default function UserDetailPage() {
         facts={<Fact k="系统记录">{receiptFact(((outcome) => outcome && "receipt" in outcome ? outcome.receipt : null)(pendingOutcomes[closingCommand.commandKey]), "记录保留")}</Fact>}
         onClose={() => setClosingCommand(null)} onSubmit={(evidence) => closePending(closingCommand, evidence)} />}
       {releasing && <ReleaseModal label={resultLabel(releasing)} onCancel={() => setReleasing(null)} onConfirm={() => releasePending(releasing)}
-        explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。解除只删掉本页的这条记录，不算核查结案；这个对象可能仍被锁住。`} />}
+        explain={`${releasing.legacy ? "这条记录是升级前留下的，不能重试" : "重试被拒说明不了原操作的结果"}，先到操作记录确认原操作有没有生效。这个对象可能仍被锁住。`} />}
       {notificationEvidence && canReadNotificationEvidence
         && notificationEvidence.userKey === userKey && notificationEvidence.authEpoch === authEpoch && (
         <NotificationTimeEvidenceDrawer key={`${userKey}:${authEpoch}:${notificationEvidence.id}`}
