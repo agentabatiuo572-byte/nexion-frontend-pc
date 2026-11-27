@@ -12,7 +12,7 @@ import Link from "next/link";
 import { toast, useUI } from "@/lib/store/ui";
 import { usePathname, useRouter } from "next/navigation";
 import { ShieldOff } from "lucide-react";
-import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError } from "@/lib/admin/auth-client";
+import { currentAdminSession, recordAdminActivity, AdminActivityIdentityChangedError, type LoginResult } from "@/lib/admin/auth-client";
 import { createAdminActivityTracker } from "@/lib/admin/admin-activity";
 import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
 import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
@@ -21,6 +21,7 @@ import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/ope
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { ADMIN_SESSION_EXPIRED_EVENT, resetAdminSession } from "@/lib/admin/auth-session";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
+import { B5_PATH } from "@/lib/admin/risk-feed";
 import { ALL_L2, canAccessResolvedPath, defaultConsolePath, isRedesignedPath, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminTheme } from "@/app/components/rd/theme-switch";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -107,8 +108,10 @@ function AdminNoAccessPage({ pathname, landingPath }: { pathname: string; landin
 /** 确认框收到 403 后框已关，权限读回一变外壳里面还会重挂，所以提示单独放（OP-81、OP-132）。 */
 function PermissionDeniedToast() {
   useEffect(() => {
-    const onDenied = () => {
+    const onDenied = (event: Event) => {
       useUI.getState().dismissTimedToasts();
+      // 读取时被拒、这一页整页换成无权限页的（事件带的就是当前页）：页面已经写了没有权限，不再弹同一句（DT-12）。
+      if (event instanceof CustomEvent && event.detail === window.location.pathname) return;
       toast.warn(PERMISSION_DENIED_TEXT);
     };
     window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
@@ -146,6 +149,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const session = useAdminAuth((s) => s.session);
   const sessionResolution = useAdminAuth((s) => s.sessionResolution);
   const authEpoch = useAdminAuth((s) => s.authEpoch);
+  const [readDenied, setReadDenied] = useState<{ pathname: string; authEpoch: number }>();
   const logoutPending = useAdminAuth((s) => s.logoutPending);
   const logoutUnknown = useAdminAuth((s) => s.logoutUnknown);
   const logoutError = useAdminAuth((s) => s.logoutError);
@@ -170,6 +174,14 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     setBootstrapState("authenticated");
   };
 
+  const confirmAdminSession = useCallback((auth: LoginResult) => {
+    const { authEpoch: confirmedEpoch } = useAdminAuth.getState();
+    signIn(auth);
+    if (auth.session.authorities.includes("overview_b5_read")) {
+      setReadDenied(denial => denial?.pathname === B5_PATH && denial.authEpoch === confirmedEpoch ? undefined : denial);
+    }
+  }, [signIn]);
+
   const restoreAdminSession = useCallback(async (signal?: AbortSignal) => {
     const attempt = ++bootstrapAttemptRef.current;
     const read = { epoch: adminAuthLifecycleEpoch() };
@@ -181,7 +193,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       if (read.epoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
       bootstrapReadRef.current = null;
       if (auth) {
-        signIn(auth);
+        confirmAdminSession(auth);
         setBootstrapState("authenticated");
       } else {
         signOut();
@@ -195,7 +207,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     } finally {
       if (bootstrapReadRef.current === read) bootstrapReadRef.current = null;
     }
-  }, [signIn, signOut]);
+  }, [confirmAdminSession, signOut]);
 
   async function logoutWithoutAccess(): Promise<void> {
     const auth = useAdminAuth.getState();
@@ -284,13 +296,14 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated) return;
     let disposed = false;
     let refreshing = false;
+    let canRefreshAfterReadDenial = true;
     const refreshSession = async () => {
       if (disposed || refreshing || useAdminAuth.getState().logoutPending) return;
       refreshing = true;
       try {
         const auth = await currentAdminSession();
         if (disposed || useAdminAuth.getState().logoutPending) return;
-        if (auth) signIn(auth);
+        if (auth) confirmAdminSession(auth);
         else {
           signOut();
           setBootstrapState("anonymous");
@@ -301,17 +314,31 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         refreshing = false;
       }
     };
-    const onFocus = () => void refreshSession();
-    window.addEventListener("focus", onFocus);
-    window.addEventListener(PERMISSION_DENIED_EVENT, onFocus);
-    const timer = window.setInterval(() => void refreshSession(), SESSION_REFRESH_MS);
+    const revalidateSession = () => {
+      canRefreshAfterReadDenial = true;
+      void refreshSession();
+    };
+    const onDenied = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === "string") {
+        setReadDenied({ pathname: event.detail, authEpoch });
+        // A second denial after remount waits for the usual focus or interval refresh.
+        if (event.detail === B5_PATH) {
+          if (!canRefreshAfterReadDenial) return;
+          canRefreshAfterReadDenial = false;
+        }
+      }
+      void refreshSession();
+    };
+    window.addEventListener("focus", revalidateSession);
+    window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
+    const timer = window.setInterval(revalidateSession, SESSION_REFRESH_MS);
     return () => {
       disposed = true;
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener(PERMISSION_DENIED_EVENT, onFocus);
+      window.removeEventListener("focus", revalidateSession);
+      window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);
       window.clearInterval(timer);
     };
-  }, [bootstrapState, isAuthenticated, mounted, signIn, signOut]);
+  }, [authEpoch, bootstrapState, confirmAdminSession, isAuthenticated, mounted, signOut]);
 
   useEffect(() => {
     if (!mounted || bootstrapState !== "authenticated" || !isAuthenticated || logoutPending || logoutUnknown || !session) return;
@@ -387,7 +414,9 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   // 落地规则只在登录后用一次（Q-20）。刷新、书签直达、点侧栏都留在 /，一块都看不到的账号除外（PG-22）。
   const canStayHome = !justLoggedIn && b0HasAnyBlock(b0Blocks(authorities));
   const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/" && !canStayHome;
-  const denied = !canAccessResolvedPath(domains, pathname);
+  const denied = !canAccessResolvedPath(domains, pathname)
+    || pathname === B5_PATH && !authorities.includes("overview_b5_read")
+    || readDenied?.authEpoch === authEpoch && readDenied.pathname === pathname;
   const redirecting = isAuthenticated && landingPath !== null && shouldRedirectHome;
 
   useEffect(() => {

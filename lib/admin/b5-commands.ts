@@ -6,8 +6,21 @@ import { createPendingMutationStore, createPendingRecovery, hasPersistedPendingC
 
 import { explicitRejectionCode } from "./explicit-rejection";
 import { currentRecoveryActor } from "./abe-recovery-access";
+import { isOffsetDateTime } from "./risk-feed";
 
-export type B5ThresholdFacts = Pick<B5Radar["bankrun"], "yellowPct" | "redPct" | "version" | "ratio24h" | "light">;
+type B5PressureReading = Pick<B5Radar["bankrun"], "ratio24h" | "light">;
+export type B5ThresholdFacts = B5PressureReading & Pick<B5Radar["bankrun"], "yellowPct" | "redPct" | "version"> & {
+  radarReadAt?: string;
+  preview?: B5PressureReading & { readAt: string };
+};
+
+export function isB5ThresholdFacts(facts: B5ThresholdFacts) {
+  const validReading = (reading: B5PressureReading) =>
+    (reading.ratio24h === null || Number.isFinite(reading.ratio24h)) && ["red", "yellow", "green", "unavailable"].includes(reading.light);
+  return Number.isSafeInteger(facts.version) && [facts.yellowPct, facts.redPct].every(Number.isFinite)
+    && validReading(facts) && (facts.radarReadAt === undefined || isOffsetDateTime(facts.radarReadAt))
+    && (facts.preview === undefined || !!facts.preview && isOffsetDateTime(facts.preview.readAt) && validReading(facts.preview));
+}
 export type B5Signal = B5Radar["recentAlerts"][number];
 type Original = PendingMutationRecord & { adminId: string; path: string; body: string };
 export type B5PendingWrite = Original & (
@@ -33,12 +46,12 @@ export const b5Commands = createPendingMutationStore<Saved>({
       const input = record.body ? JSON.parse(record.body) : null;
       const version = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;
       const reason = (value: unknown) => typeof value === "string" && value.trim().length >= 8 && value.trim().length <= 200;
+      // 阈值理由由提交表单和服务端按可见字数校验。恢复时保留原请求，不用现行政策筛掉旧记录。
       if (record.kind === "threshold") return record.method === "PUT" && record.path === "/api/admin/risk/bankrun-thresholds"
-        && typeof input?.operator === "string" && reason(input.reason) && version(input.expectedVersion)
+        && typeof input?.operator === "string" && typeof input.reason === "string" && input.reason.trim() !== "" && version(input.expectedVersion)
         && typeof input.yellowPct === "number" && input.yellowPct >= 5 && input.yellowPct <= 50
         && typeof input.redPct === "number" && input.redPct >= 10 && input.redPct <= 80 && input.redPct > input.yellowPct
-        && version(record.facts.version) && input.expectedVersion === record.facts.version && Number.isFinite(record.facts.yellowPct) && Number.isFinite(record.facts.redPct)
-        && (record.facts.ratio24h === null || Number.isFinite(record.facts.ratio24h)) && ["red", "yellow", "green", "unavailable"].includes(record.facts.light);
+        && input.expectedVersion === record.facts.version && isB5ThresholdFacts(record.facts);
       if (record.kind === "subscription") return record.method === "PUT" && record.path === "/api/admin/risk/alert-subscription"
         && typeof input?.operator === "string" && version(input.expectedVersion)
         && [input.inApp, input.email, input.webhook].every(value => typeof value === "boolean") && typeof input.webhookUrl === "string"

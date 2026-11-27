@@ -88,7 +88,7 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
   }, []);
   usePendingReplayDeadline(nextRecoveryDeadline(records));
   const [phonePending, setPhonePending] = useState<E6Pending[]>([]);
-  const [old, setOld] = useState<{ commandKey: string; fingerprint: string }[]>([]);
+  const [old, setOld] = useState<ReturnType<typeof e5LegacyCommands>>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [readResults, setReadResults] = useState<Record<string, string>>({});
@@ -190,11 +190,11 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
   };
   const forgetDraft = (record: E5Command) => { e5Commands.forget(record.fingerprint, record.commandKey); sync(); };
   const items: RecoveryItem[] = [
-    ...phonePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
+    ...phonePending.map(r => ({ key: r.commandKey, object: r.label, createdAt: r.createdAt, tag: <StatusTag tone="warn">待核对</StatusTag>,
       line: "原操作在手机算力配置，到那里查询和处理。",
       actions: <Link className="rd-link" href="/devices/compute-config?tab=phones">手机算力配置</Link>,
       detail: <p>原操作在手机算力配置保留；相关设备或整个用户先暂停新操作。</p> })),
-    ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
+    ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", createdAt: row.createdAt, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
       actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
       detail: <Facts><Fact label="操作编号" value={row.commandKey} mono copy /></Facts> })),
@@ -228,15 +228,15 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
           {refused && !record.receivedTicketId && <Button size="sm" disabled={!!busy} onClick={() => { setReleaseChecked(false); setRelease(record); }}>核实后解除</Button>}
         </>,
         detail: <>
-          <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString())} 提交 · {record.device.user} · 理由：{record.reason}</p>
-          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="操作编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
+          <p>{record.device.user} · 理由：{record.reason}</p>
+          <p>{state.more}</p></>, tech: <Fold inset title="技术信息" summary="实例号、操作编号和原请求"><Facts><Fact label="实例号" value={record.device.serial} mono /><Fact label="操作编号" value={record.commandKey} mono copy /><Fact label="请求路径" value={record.path} mono /><Fact label="原请求内容" value={record.body} mono />{businessCodeOf(outcomes[record.commandKey]) !== undefined && <Fact label="业务码" value={String(businessCodeOf(outcomes[record.commandKey]))} mono />}</Facts></Fold> };
     }),
   ];
   return <CommandsContext.Provider value={{ records, phoneBlocks, legacyBlocked: old.length > 0 || !!error && !records.length && !old.length && error.includes("旧操作"), busy, execute, check, canInvestigate, setEditorOpen, forgetDraft, refresh, toast, writeBlock }}>
     {discardRecovery.dialog}
     {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
     <RecoveryPanel title={recoveryTitle(items.filter(item => !item.key.startsWith("waiting:")).length, items.filter(item => item.key.startsWith("waiting:")).length)} tone="warn"
-      explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看提交时间、说明和原请求。" items={items} />
+      explain="有结论前，相关设备或用户不能做新操作。点行首的箭头看说明和原请求。" items={items} />
     {error && !records.length && <Notice tone="warn" title={error} />}
     {closing && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt} offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={<>{closing.intent === "pause" || closing.intent === "resume" ? <Fact label="用户" value={closing.device.user} /> : <><Fact label="设备" value={closing.device.deviceName} /><Fact label="实例号" value={closing.device.serial} mono /></>}<Fact label="原理由" value={closing.reason} /></>}

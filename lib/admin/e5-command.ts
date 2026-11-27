@@ -61,9 +61,9 @@ export const e5Recovery = createPendingRecovery({ ...e5Commands, list: () => e5C
 });
 
 /** Read the two old tables without pruning evidence or touching E1/E4 records. */
-export function e5LegacyCommands(): { commandKey: string; fingerprint: string }[] {
+export function e5LegacyCommands(): { commandKey: string; fingerprint: string; createdAt?: number }[] {
   if (typeof window === "undefined") return [];
-  const rows: { commandKey: string; fingerprint: string }[] = [];
+  const rows: ReturnType<typeof e5LegacyCommands> = [];
   for (const key of ["nexion-admin-e5-device-commands-v1", "nexion-admin-e-domain-commands-v1"]) {
     const raw = sessionStorage.getItem(key);
     if (!raw) continue;
@@ -73,8 +73,10 @@ export function e5LegacyCommands(): { commandKey: string; fingerprint: string }[
       if (!value || typeof value !== "object") continue;
       const row = value as Record<string, unknown>;
       if (isPendingCommandOwnedBy(row) && typeof row.commandKey === "string" && typeof row.fingerprint === "string"
-        && (key.includes("e5-device") || /e5_device_|device-activate|device-deactivate|device-batch/.test(row.fingerprint)))
-        rows.push({ commandKey: row.commandKey, fingerprint: row.fingerprint });
+        && (key.includes("e5-device") || /e5_device_|device-activate|device-deactivate|device-batch/.test(row.fingerprint))) {
+        const { commandKey, fingerprint, createdAt } = row;
+        rows.push({ commandKey, fingerprint, createdAt: typeof createdAt === "number" && Number.isFinite(createdAt) ? createdAt : undefined });
+      }
     }
   }
   return rows;

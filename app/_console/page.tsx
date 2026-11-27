@@ -29,6 +29,7 @@ import { opsAlertHref, refreshJ1DutyAlerts, useJ1DutyAlerts } from "@/lib/admin/
 import { B5_FROM_HOME, B5_PATH } from "@/lib/admin/risk-feed";
 import { riskCategoryRows, riskCategoryTitle } from "./overview/risk-radar/categories";
 import { fmtAmount, fmtNum } from "@/lib/format";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { useReach } from "@/lib/nav/use-reach";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
@@ -82,7 +83,8 @@ export default function CommandCenter() {
 
   const [refreshKey, setRefreshKey] = useState(0);
   const bDomain = useBDomainDashboard(blocks.fund);
-  const canReadRiskFeed = blocks.fund && reach(B5_PATH);
+  const canReachRiskRadar = reach(B5_PATH, "overview_b5_read");
+  const canReadRiskFeed = blocks.fund && canReachRiskRadar;
   const pendingRisk = useBDomainDashboard(canReadRiskFeed, "OPEN_BY_CATEGORY");
   const reserve = useBlock(fetchB2Reserve, blocks.coverDays, refreshKey);
   const flows = useBlock(fetchB2LiquidityHistory, blocks.netFlow, refreshKey);
@@ -130,27 +132,28 @@ export default function CommandCenter() {
     rows.push({ key: "coverage", title: "覆盖率告警待确认", sub: "跌破红线，还没人确认", owner: "财务", href: RESERVE_PAGE, tone: "danger" });
   }
   const backfill = j1.alerts.find((alert) => alert.id === "J1-AUTO-CONFIRM");
-  if (j1.error) rows.push({ key: "j1", name: "紧急开关", onRetry: () => void refreshJ1DutyAlerts() });
+  if (j1.error) rows.push({ key: "j1", name: "紧急开关", reason: j1.error, onRetry: () => void refreshJ1DutyAlerts() });
   else if (backfill) rows.push({ key: "j1", title: `紧急开关待补录 ${backfill.count ?? 0} 项`, sub: backfill.hint, owner: "风控", href: opsAlertHref(backfill), tone: backfill.level === "high" ? "danger" : undefined });
   if (closedBusinesses) rows.push({ key: "j1-closed", title: closedBusinesses.title, sub: closedBusinesses.hint, owner: "风控", href: opsAlertHref(closedBusinesses), tone: "warn" });
   // 风控条目合成一行，点进风险提醒页的「待处理风险 · 按类型」（design-plan 板 1）。
   const risks = riskCategoryRows(pendingRisk.riskRadar.feed, reach);
   // 信号类只写条数，涉及账户数留给类型列表；副行里「·」只分隔类别（VR-01）。
   const riskRow = pendingRisk.error ? null : riskSummaryRow(risks.map((item) => ({ sev: item.sev, title: item.kind === "signal" ? `${item.name} ${fmtNum(item.count)} 条` : riskCategoryTitle(item) })), B5_FROM_HOME);
-  if (pendingRisk.error) rows.push({ key: "risk", name: "待处理风险", onRetry: () => void pendingRisk.reload() });
+  // 读取失败的行写一句原因（ST-34），按读取的口吻写，不写「提交类操作请先刷新」（OP-84）。
+  if (pendingRisk.error) rows.push({ key: "risk", name: "待处理风险", reason: displayAdminReadError(pendingRisk.error), onRetry: () => void pendingRisk.reload() });
   else if (riskRow) rows.push(riskRow);
-  if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", onRetry: orphaned.reload });
+  if (orphaned.error) rows.push({ key: "orphaned", name: "打款异常", reason: orphaned.error, onRetry: orphaned.reload });
   else if (orphaned.data) rows.push({ key: "orphaned", title: `打款异常 ${orphaned.data} 笔`, sub: "需要人工核对", owner: "财务", href: `/finance/withdrawals?status=${TX_ORPHANED}`, tone: "warn" });
-  if (approvals.error) rows.push({ key: "a2", name: "待审批操作", onRetry: approvals.reload });
+  if (approvals.error) rows.push({ key: "a2", name: "待审批操作", reason: approvals.error, onRetry: approvals.reload });
   else if (approvals.data?.stats.pendingTickets) {
     const queue = approvals.data.operationQueue.filter((row) => row.status === "pending").sort((a, b) => Date.parse(a.rawTs ?? "") - Date.parse(b.rawTs ?? "") || a.ts.localeCompare(b.ts));
     rows.push({ key: "a2", title: `待审批操作 ${approvals.data.stats.pendingTickets} 条`, sub: queue[0] && approvalDetail(queue[0]), owner: queue[0] ? approvalOwner(queue[0]) : "其他", href: "/platform/audit" });
   }
   if (reach("/finance/withdrawals")) {
-    if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", onRetry: reviewPending.reload });
+    if (reviewPending.error) rows.push({ key: "review", name: "待审核提现", reason: reviewPending.error, onRetry: reviewPending.reload });
     else if (reviewPending.data) rows.push({ key: "review", title: `待审核提现 ${reviewPending.data} 笔`, owner: "财务", href: `/finance/withdrawals?status=${REVIEW_PENDING}` });
   }
-  if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", onRetry: supportTodo.reload });
+  if (supportTodo.error) rows.push({ key: "support", name: "客服待跟进", reason: supportTodo.error, onRetry: supportTodo.reload });
   else if (supportTodo.data) {
     const managesSupport = session?.supportReadModes?.some(mode => mode === "ALL" || mode === "MANAGED");
     rows.push({ key: "support", title: `客服待跟进 ${supportTodo.data} 位`, owner: "客服", href: managesSupport ? SUPPORT_TODO_HOME : PERSONAL_TODO_HOME });
@@ -165,7 +168,7 @@ export default function CommandCenter() {
     for (const row of deviceRows) if (row.count > 0) rows.push({ key: `device-${row.state}`, title: `${row.title} ${fmtNum(row.count)} 台`, sub: row.sub, owner: "设备", href: reach("/devices/ops") ? `/devices/ops?simState=${row.state}` : undefined, tone: "warn" });
   }
   if (canShowBankReview) {
-    if (topup.error) rows.push({ key: "bank-review", name: BANK_REVIEW_LABEL, onRetry: topup.reload });
+    if (topup.error) rows.push({ key: "bank-review", name: BANK_REVIEW_LABEL, reason: topup.error, onRetry: topup.reload });
     else if (topup.data && topup.data.bankManualReviewCount > 0) rows.push({
       key: "bank-review",
       title: `${BANK_REVIEW_LABEL} ${fmtNum(topup.data.bankManualReviewCount)} 笔`,
@@ -187,7 +190,8 @@ export default function CommandCenter() {
   const businessBlocks = [business, devices, exchangeQueue, referralRewards, promotionRewards];
   const firstScreenLoading = bDomain.loading || reserve.loading || flows.loading || systemProcessing.loading
     || topup.loading || businessBlocks.some((block) => block.loading) || pendingLoading;
-  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading || [reserve, flows, ...businessBlocks].some(firstLoad);
+  const statusLoading = (bDomain.loading && !bDomain.hasData) || pendingLoading
+    || [reserve, flows, topup, systemProcessing, ...businessBlocks].some(firstLoad);
   const [readAt, setReadAt] = useState<number | null>(null);
   useEffect(() => { if (!firstScreenLoading) setReadAt(Date.now()); }, [firstScreenLoading]);
   const clock = readAt === null ? null : businessClock(readAt);
@@ -238,6 +242,7 @@ export default function CommandCenter() {
     withdrawRows: closedBusinesses ? 1 : 0,
     belowHealthy,
     pendingRows,
+    riskFeedUnavailable: canReachRiskRadar && !canReadRiskFeed,
     fundSafe: fundReady && level === "ok" && !reserve.error,
     failed: [
       ...(business.error && blocks.moneyFlows ? ["入金和提现"] : []),
@@ -245,6 +250,8 @@ export default function CommandCenter() {
       ...(business.error && blocks.newUsers ? ["注册用户"] : []),
       ...(business.error && blocks.activeUsers ? ["活跃用户"] : []),
       ...(flows.error ? ["资金进出"] : []),
+      ...(systemProcessing.error ? ["系统处理中提现"] : []),
+      ...(reviewPending.error && !reach("/finance/withdrawals") ? ["待审核提现"] : []),
       ...(topup.error && !canShowBankReview ? ["今日充值"] : []),
       ...(devices.error ? ["设备数据"] : []),
       ...(exchangeQueue.error ? ["兑换排队"] : []),
@@ -259,7 +266,7 @@ export default function CommandCenter() {
     if (pendingRisk.error) void pendingRisk.reload();
     if (reserve.error) reserve.reload();
   };
-  // 结论句的入口只放一个：资金读取失败给重试，说开关给开关页，说资金给资金总览，说提现压力就展开「风险与开关」。
+  // 结论句只给一个对应的入口。
   const briefAction = sentence.fundFailed
     ? <Button loading={bDomain.loading || reserve.loading} onClick={retryFund}>重试</Button>
     : sentence.aboutSwitch && reach("/emergency/kill-switch")
@@ -268,7 +275,9 @@ export default function CommandCenter() {
       ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={RESERVE_PAGE} prefetch={false}><span className="rd-btn-face">查看资金与应付款总览</span></Link>
       : sentence.aboutRisk
         ? <Button onClick={() => openFold("risk", "risk")}>查看风险与开关</Button>
-        : undefined;
+        : sentence.aboutRiskFeed
+          ? <Link className="rd-btn" data-variant="secondary" data-size="md" href={B5_FROM_HOME} prefetch={false}><span className="rd-btn-face">查看风险提醒</span></Link>
+          : undefined;
   const phase = rhythm.h1;
   const phaseText = phase.currentPhase ? `${phase.currentPhase} 阶段 · 第 ${phase.currentMonth}/${phase.totalMonths} 月` : "运营阶段未配置";
   const fundOpen = folds.isOpen("fund", fundAlert);

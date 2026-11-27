@@ -28,8 +28,14 @@ export type StatusSentence = {
   aboutFund?: boolean;
   /** 这句话说的是提现压力，页面给展开「风险与开关」的入口。 */
   aboutRisk?: boolean;
+  aboutRiskFeed?: boolean;
   /** 这句话说的是资金数据读取失败：页面只在这里写一次，给重试，别处不再写（VS-107）。 */
   fundFailed?: boolean;
+};
+
+const riskFeedUnavailableDetails = {
+  aboutRiskFeed: true,
+  explain: "首页的风险汇总要有「资金与应付款总览」的查看权限，你的账号没有。待处理的风险到风险提醒看。",
 };
 
 export function statusSentence(input: {
@@ -51,6 +57,8 @@ export function statusSentence(input: {
   belowHealthy: boolean;
   /** 待处理行数，不含读取失败的行。 */
   pendingRows: number;
+  /** 风险提醒可达，但首页缺少读取风控汇总所需的资金读权。 */
+  riskFeedUnavailable: boolean;
   /** 资金结论读到了而且是正常，第 7 句才写「资金安全」，提现关着时才能说不是钱的问题。 */
   fundSafe: boolean;
   /** 其他块读取失败时的名字，不能再说「一切正常」。 */
@@ -75,8 +83,13 @@ export function statusSentence(input: {
   if (input.belowHealthy) return { state: "warn", aboutFund: true, text: withDays("资金需要注意：覆盖率低于健康线"), hint: advice ?? undefined };
   if (input.tier === "WARNING") return { state: "warn", aboutFund: true, text: days ? `资金需要注意：储备只够付${days.replace("可覆盖 ", "")}` : "资金需要注意", hint: advice ?? undefined };
   if (input.pressure === "warn") return { state: "warn", aboutRisk: true, text: "提现压力到黄线，看一下风险与开关", explain: "近 24 小时提现申请或待提现总额占储备的比例到了黄线。" };
-  if (pendingRows > 0) return { state: "neutral", text: `有 ${pendingRows} 件事要处理${input.fundSafe ? "，资金安全" : ""}` };
+  if (pendingRows > 0) {
+    const text = `有 ${pendingRows} 件事要处理`;
+    if (input.riskFeedUnavailable) return { state: "neutral", text: `${text}，这里看不到风险待处理`, ...riskFeedUnavailableDetails };
+    return { state: "neutral", text: `${text}${input.fundSafe ? "，资金安全" : ""}` };
+  }
   if (input.failed.length === 1) return { state: "unknown", text: `${input.failed[0]}读取失败，状态不确定` };
   if (input.failed.length > 1) return { state: "unknown", text: "部分数据读取失败，状态不确定" };
+  if (input.riskFeedUnavailable) return { state: "unknown", text: "暂无法判断：这里看不到风险待处理", ...riskFeedUnavailableDetails };
   return { state: "ok", text: "一切正常，没有要你处理的事" };
 }

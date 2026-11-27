@@ -6,7 +6,10 @@ import { displayAdminError, displayAdminReadError, formatAdminApiError, guardedF
 import { normalizeB5Radar, normalizeB5Signal, normalizeB5SignalPage, PRESSURE_RED_LINE, type B5Radar } from "@/lib/admin/b5-radar-contract";
 import { parseStrictFiniteNumber } from "@/lib/admin/strict-number";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
+import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { parseB5MoneyJson } from "@/lib/admin/b5-money";
+import { B5_PATH } from "@/lib/admin/risk-feed";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useB5Read } from "./use-b5-read";
 
 export { normalizeB5Radar, PRESSURE_RED_LINE, type B5Radar };
@@ -147,23 +150,27 @@ function idempotencyKey(prefix: string) {
 
 async function request<T>(endpoint: string, init?: RequestInit, preserveRejections = false): Promise<T> {
   // 传输层失败归「结果未知」(原来无 try/catch,裸 TypeError 到页面就被当确定失败弃号)。
+  const commandKey = new Headers(init?.headers).get("Idempotency-Key");
+  const authEpoch = useAdminAuth.getState().authEpoch;
   let response: Response;
   try {
     response = await guardedFetch(endpoint, { ...init, cache: "no-store" });
   } catch (error) {
-    const commandKey = new Headers(init?.headers).get("Idempotency-Key");
     if (commandKey) throw new B5OutcomeUnknownError(commandKey);
     throw error;
   }
   const result = await response.text().then(parseB5MoneyJson).catch(() => null) as ApiResult<T> | null;
   const message = typeof result?.message === "string" ? result.message : undefined;
-  const commandKey = new Headers(init?.headers).get("Idempotency-Key");
   if (isAdminAuthFailure(response.status, message) || result && isAdminAuthFailure(result.code, message)) resetAdminSession();
   if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
     || !result || typeof result.code !== "number")) throw new B5OutcomeUnknownError(commandKey);
   if (!response.ok || !result || result.code !== 0 || result.data == null) {
-    const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read"),
+    const error = new B5RequestError(formatAdminApiError(message, `B5_REQUEST_FAILED_${response.status}`, commandKey ? "write" : "read"),
       response.ok && typeof result?.code === "number" ? result.code : response.status, result?.code ?? response.status, message);
+    // All B5 GETs use the page's read permission. Preview uses the separate threshold write permission.
+    if (!init?.method && isPermissionDenied(error) && useAdminAuth.getState().authEpoch === authEpoch) {
+      announcePermissionDenied(B5_PATH);
+    }
     if (commandKey && !preserveRejections && !isExplicitRejection(error)) throw new B5OutcomeUnknownError(commandKey, error.message);
     throw error;
   }
@@ -284,42 +291,64 @@ export async function updateB5SignalStatus(
 
 export function useB5Radar(key: string, enabled: boolean) {
   const radar = useB5Read(key, fetchB5Radar, enabled);
-  const { setData } = radar;
-  const [streamWarning, setStreamWarning] = useState<string | null>(null);
+  const { reload, setData } = radar;
+  const [streamStatus, setStreamStatus] = useState<{ warning: string; exhausted?: boolean } | null>(null);
+  const [connection, setConnection] = useState(0);
+  const canConnect = enabled;
 
   useEffect(() => {
-    if (!enabled) return;
-    setStreamWarning(null);
+    if (!canConnect) return;
+    setStreamStatus(null);
     let stream: EventSource | null = null;
+    let retryTimer: number | undefined;
+    let stableTimer: number | undefined;
+    let attempts = 0;
     const onRadar = (event: Event) => {
       try {
         const next = normalizeB5Radar(parseB5MoneyJson((event as MessageEvent<string>).data));
         setData(next);
-        setStreamWarning(null);
+        setStreamStatus(null);
       } catch (cause) {
-        setStreamWarning(displayAdminReadError(cause));
+        setStreamStatus({ warning: displayAdminReadError(cause) });
       }
     };
-    const connect = () => {
-      const next = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
-      next.addEventListener("radar", onRadar);
-      next.onerror = () => {
-        const closed = next.readyState === EventSource.CLOSED;
-        setStreamWarning(closed ? "自动更新断开了；页面每 30 秒刷新一次。" : "自动更新正在重连；页面先显示最近一次的数据，每 30 秒刷新一次。");
-        // EventSource doesn't expose HTTP status. Confirm a closed stream through the guarded read.
-        if (closed) void radar.reload("auto");
-      };
-      stream = next;
-    };
     const disconnect = () => {
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(stableTimer);
       if (!stream) return;
       stream.removeEventListener("radar", onRadar);
+      stream.onopen = null;
       stream.onerror = null;
       stream.close();
       stream = null;
     };
+    const connect = () => {
+      const next = new EventSource(`${B5_RADAR_ENDPOINT}/stream`);
+      stream = next;
+      next.addEventListener("radar", onRadar);
+      next.onopen = () => {
+        setStreamStatus(null);
+        stableTimer = window.setTimeout(() => { attempts = 0; }, 30_000);
+      };
+      next.onerror = () => {
+        const closed = next.readyState === EventSource.CLOSED;
+        disconnect();
+        // EventSource doesn't expose HTTP status. Check a closed stream through the guarded read.
+        if (closed && attempts === 0) void reload("auto");
+        if (attempts >= 6) {
+          setStreamStatus({ warning: "连接已断开，自动重连没有成功；每 30 秒自动刷新。", exhausted: true });
+          return;
+        }
+        setStreamStatus({ warning: "连接已断开，正在重连；下面是最近一次的数据，每 30 秒自动刷新。" });
+        retryTimer = window.setTimeout(connect, Math.min(30_000, 1000 * 2 ** attempts));
+        attempts += 1;
+      };
+    };
     const restore = (event: PageTransitionEvent) => {
-      if (event.persisted) connect();
+      if (!event.persisted) return;
+      attempts = 0;
+      setStreamStatus(null);
+      connect();
     };
     connect();
     // Full document navigation may skip React cleanup and leave the HTTP connection occupied.
@@ -330,7 +359,11 @@ export function useB5Radar(key: string, enabled: boolean) {
       window.removeEventListener("pageshow", restore);
       disconnect();
     };
-  }, [enabled, radar.reload, setData]);
+  }, [canConnect, connection, reload, setData]);
 
-  return { ...radar, streamWarning };
+  return {
+    ...radar,
+    streamWarning: canConnect ? streamStatus?.warning : undefined,
+    reconnect: canConnect && streamStatus?.exhausted ? () => setConnection(value => value + 1) : undefined,
+  };
 }

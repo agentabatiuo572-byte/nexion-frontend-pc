@@ -11,7 +11,7 @@
  *   more={<>…更多筛选里的字段…</>} moreCount={2}    数量只算已应用的条件
  *   onClearMore={clearMore}                       局部清除，只有 D2 这类页面传
  *   sort={<Select … />}
- *   result="共 128 条"
+ *   result="共 128 条"                             「条件未应用」写在「查询」旁（ST-18）；后面跟的「 · 已应用：…」和其余结果写在第二行
  *   end="涉及 15 个账户"                           贴在第一行最右端的结果数；不传时样子不变
  *   applied={[{ key: "min", label: "金额 ≥ 1000", onRemove: … }]}
  *   notice="最低风险分须为 0–100 的整数。这次没有查询。"   条件不合法时写在这里，更多筛选收着也看得到（ST-19）
@@ -51,6 +51,8 @@ export function FilterField({ label, grow, wide, children }: { label?: ReactNode
   );
 }
 
+const UNAPPLIED = "条件未应用";
+
 export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, onSubmit, querying = false, onClear, canClear = false, clearLabel = "清除筛选", action, sort, result, end, applied, notice }: {
   scope?: ReactNode;
   children?: ReactNode;
@@ -72,6 +74,12 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
   notice?: ReactNode;
 }) {
   const moreId = useId();
+  // 草稿和已应用的条件不一致时，「条件未应用」紧跟在「查询」后面（ST-18）；条件有误时仍和原因排在一行。
+  // 调用方写成「条件未应用 · 已应用：…」的，「查询」旁只放「条件未应用」，已应用的条件长短不定，放第二行，不挤按钮行。
+  const unappliedText = !notice && typeof result === "string" && result.startsWith(UNAPPLIED) ? result : undefined;
+  const unapplied = unappliedText !== undefined;
+  const appliedNote = unappliedText?.slice(UNAPPLIED.length).replace(/^\s*·\s*/, "") ?? "";
+  const rowResult = result && !notice && !unapplied ? result : appliedNote || undefined;
   const [moreOpen, setMoreOpen] = useState(false);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -88,6 +96,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
           </Button>
         )}
         {action ?? (onSubmit && <Button type="submit" disabled={querying}>查询</Button>)}
+        {unapplied && <span className="rd-filter-unapplied" role="status">{UNAPPLIED}</span>}
         {onClear && <Button variant="ghost" disabled={!canClear} onClick={onClear}>{clearLabel}</Button>}
         {sort && <span className="rd-filter-sort">{sort}</span>}
         {end && <span className="rd-filter-count" role="status">{end}</span>}
@@ -98,7 +107,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
           {onClearMore && <div><Button variant="ghost" size="sm" onClick={onClearMore}>清除更多筛选</Button></div>}
         </div>
       )}
-      {(Boolean(applied?.length) || (result && !notice)) && (
+      {(Boolean(applied?.length) || rowResult) && (
         <div className="rd-filter-row">
           {Boolean(applied?.length) && (
             <div className="rd-filter-chips">
@@ -110,7 +119,7 @@ export function FilterBar({ scope, children, more, moreCount = 0, onClearMore, o
               ))}
             </div>
           )}
-          {result && !notice && <span className="rd-filter-result" role="status">{result}</span>}
+          {rowResult && <span className="rd-filter-result" role="status">{rowResult}</span>}
         </div>
       )}
       {/* 条件有误时「条件未应用」和原因排在一行，不各占一行。 */}

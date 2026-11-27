@@ -217,7 +217,8 @@ export function approvalTitleParts(ticket: A2OperationRow) {
   const parameterKey = G_PARAM_ACTION.exec(ticket.action)?.[2];
   const parameterInAction = isGParamTicket(ticket) && (action === `调整创世参数 · ${object}`
     || parameterKey === ticket.obj && G_PARAM_NAMES[ticket.obj] === object);
-  return { action, object, objectInAction: a1ObjectInAction || delegatedObjectInAction || parameterInAction };
+  const skuInAction = isSkuReview(ticket.operationCode) && (action === `新增商品 · ${object}` || action === `编辑商品 · ${object}`);
+  return { action, object, objectInAction: a1ObjectInAction || delegatedObjectInAction || parameterInAction || skuInAction };
 }
 
 /* ────────────────── 完整变更内容 ────────────────── */
@@ -316,6 +317,11 @@ export function objectText(w: { action: string; obj: string; after?: string; obj
   if (isA1AccountTicket(w) && /^\d+$/.test(w.obj)) return w.objDisplayName && w.objDisplayName !== w.obj ? w.objDisplayName : "—";
   if (w.operationCode === "h3_weekly_region_policy" && w.obj === "growth.h3.weekly-region-policy") return "区号规则";
   if (w.disclosureReview) return w.disclosureReview.jurisdiction;
+  if (isSkuReview(w.operationCode)) {
+    // E1 准备审批单时将商品快照里的名称写进标题，obj 保留编号供查询和对象锁使用。
+    const name = /^(?:新增商品|编辑商品) · (.+)$/.exec(actionName(w))?.[1];
+    if (name) return name;
+  }
   if (w.objDisplayName && isGParamTicket(w)) return w.objDisplayName;
   if (w.objDisplayName) return a2ObjectText(w);
   if (w.operationCode === "k1_release_param") return K1_APPROVAL_PARAM_NAMES[w.obj] ?? w.obj;
@@ -448,7 +454,7 @@ export function parseReview(value: string): Review | null {
 }
 
 /** H4 stores a pool snapshot before and command values after, not two replacement configs. */
-const isSkuReview = (operationCode?: string) => operationCode === "e1_sku_create" || operationCode === "e1_sku_update";
+const isSkuReview = (operationCode?: string | null) => operationCode === "e1_sku_create" || operationCode === "e1_sku_update";
 const SKU_MEDIA_EVIDENCE = ["imageAssetId", "imageObjectKey", "imagePreviewUrl"];
 
 export function reviewPair(before: string, after: string, operationCode?: string) {

@@ -3,7 +3,7 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertB3Dashboard } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
@@ -190,7 +190,7 @@ export function useB3Funnel(filters: B3Filters, stage: string, enabled = true) {
       setData(await fetchB3Dashboard(filters, stage));
     } catch (value) {
       setData(null);
-      setError(displayAdminError(value));
+      setError(displayAdminReadError(value));
     } finally {
       setLoading(false);
     }

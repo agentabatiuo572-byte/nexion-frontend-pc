@@ -74,6 +74,7 @@
 .admin-topbar-coverage-icon { color: var(--tone); }
 .rd-top-item[data-zone="warn"], .rd-top-item[data-zone="danger"] { background: var(--tone-bg); }
 .rd-bell { display: inline-flex; align-items: center; justify-content: center; gap: 3px; padding: 0; }
+.admin-topbar-actions > .rd-bell { width: auto; min-width: 44px; padding-inline: 6px; }  /* 角标写真实合计（PG-09），位数多时按钮跟着变宽 */
 .rd-role { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--rd-panel-inner); color: var(--rd-text-2); font-size: 12px; line-height: 20px; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { .rd-top-item:hover { background: var(--rd-panel-inner); color: var(--rd-text); } }
 

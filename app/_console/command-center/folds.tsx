@@ -149,9 +149,8 @@ export function availableGates(risk: BRiskRadar) {
 
 export function pressureLevel(ledger: BLedger | null, risk: BRiskRadar | null) {
   if (!ledger || !risk) return { flow: "ok", backlog: "ok", worst: "ok" } as const;
-  const level = (pct: number) => (pct >= risk.bankRunRedlinePct ? "danger" : pct >= risk.bankRunYellowPct ? "warn" : "ok");
-  const flow = level(risk.bankRunRatio);
-  const backlog = level(ledger.pressureRatio * 100);
+  const flow = risk.bankRunSeverity === "p0" ? "danger" : risk.bankRunSeverity === "p1" ? "warn" : "ok";
+  const backlog = ledger.backlogSeverity === "p0" ? "danger" : ledger.backlogSeverity === "p1" ? "warn" : "ok";
   return { flow, backlog, worst: flow === "danger" || backlog === "danger" ? "danger" : flow === "warn" || backlog === "warn" ? "warn" : "ok" } as const;
 }
 
@@ -214,12 +213,12 @@ export function RiskFold({ ledger, risk, error, retrying, onRetry, alert, reach,
               )}
               {/* 尺在左、其余数字在右（VS-49）；两条比率都是 0 时不画尺，一句话写完（DP-62）。 */}
               <Figure width={560} stack="wide" graphic={risk.bankRunRatio === 0 && ledger.pressureRatio === 0
-                ? <p className="cc-line">近 24 小时提现申请占储备 {fmtPct(risk.bankRunRatio)}，待提现总额占储备 {fmtPct(ledger.pressureRatio * 100)}；黄线 {fmtConfigPct(risk.bankRunYellowPct)}、红线 {fmtConfigPct(risk.bankRunRedlinePct)}</p>
+                ? <p className="cc-line">近 24 小时提现申请占储备 {fmtPct(risk.bankRunRatio)}，待提现总额占储备 {fmtPct(0)}；黄线 {fmtConfigPct(risk.bankRunYellowPct)}、红线 {fmtConfigPct(risk.bankRunRedlinePct)}</p>
                 : <ThresholdMeter
                     label="提现压力和黄线、红线"
                     rows={[
                       { key: "flow", label: "近 24 小时提现申请占储备", value: risk.bankRunRatio, text: fmtPct(risk.bankRunRatio), tone: pressure.flow },
-                      { key: "backlog", label: "待提现总额占储备", value: ledger.pressureRatio * 100, text: fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
+                      { key: "backlog", label: "待提现总额占储备", value: (ledger.pressureRatio ?? 0) * 100, text: ledger.pressureRatio === null ? "储备为 0" : fmtPct(ledger.pressureRatio * 100), tone: pressure.backlog },
                     ]}
                     marks={[
                       { key: "yellow", text: `黄线 ${fmtConfigPct(risk.bankRunYellowPct)}`, value: risk.bankRunYellowPct, tone: "warn" },

@@ -11,11 +11,6 @@ const ABNORMAL_CATEGORIES = ["multi-account", "arbitrage", "trial-cycle", "withd
 
 type Light = "green" | "yellow" | "red";
 
-export function bankrunLightForRatio(ratio: number, yellowPct: number, redPct: number): Light {
-  // Parse the lines in ratio units so an exact decimal match counts as reaching the line.
-  return ratio >= Number(`${redPct}e-2`) ? "red" : ratio >= Number(`${yellowPct}e-2`) ? "yellow" : "green";
-}
-
 /** Partial projections from the backend's identified producers, never raw evidence. */
 export type B5SignalFacts = {
   tamperPath?: string;
@@ -182,12 +177,6 @@ function close(actual: number, expected: number, tolerance: number, field: strin
 
 function roundedMoneyMatches(display: number, raw: number, field: string) {
   close(display, Math.round((raw + Number.EPSILON) * 100) / 100, 0.000001, field);
-}
-
-function authoritativeRatio(numerator: number, denominator: number): number {
-  if (denominator === 0) return numerator === 0 ? 0 : 1;
-  // J1 rounds the percentage to four places before B5 converts it to a ratio.
-  return Math.round((numerator / denominator) * 1_000_000) / 1_000_000;
 }
 
 function authoritativePercentage(numerator: number, denominator: number): number {
@@ -381,10 +370,7 @@ export function normalizeB5Radar(value: unknown): B5Radar {
     if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
   } else {
     if (ratio24h === null || bankrunLight === "unavailable") invalid("bankrun.ratio24h");
-    // Legacy ratios rounded to four places; allow that half-unit plus J1's finer rounding.
-    close(ratio24h, authoritativeRatio(ratioWithdraw24hUsdt, ratioReserveUsdt), ratioReserveUsdt > 0 ? 0.000051 : 0.00000001, "bankrun.ratio24h");
-    const expectedBankrunLight = bankrunLightForRatio(ratio24h, yellowPct, redPct);
-    if (bankrunLight !== expectedBankrunLight) invalid("bankrun.light");
+    if (ratioReserveUsdt === 0 && ratio24h !== (ratioWithdraw24hUsdt > 0 ? 1 : 0)) invalid("bankrun.ratio24h");
   }
   if (pressureCalculable) {
     const expectedPressureLight = pressureRatio! >= PRESSURE_RED_LINE ? "red" : "green";

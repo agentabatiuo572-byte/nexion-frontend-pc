@@ -174,7 +174,7 @@ export interface EViewCtx {
   refreshE4: () => Promise<unknown>;
   orderState: (o: EOrder) => string;
   e4Pending: E4PendingCommand[];
-  e4ReceiptAttempts: { fingerprint: string; commandKey: string; orderNo: string }[];
+  e4ReceiptAttempts: { fingerprint: string; commandKey: string; orderNo: string; createdAt: number }[];
   checkE4Receipt: (record: EViewCtx["e4ReceiptAttempts"][number]) => Promise<void>;
   e4PendingNotes: Record<string, string>;
   e4InvestigationResults: Record<string, FundInvestigationOutcome>;

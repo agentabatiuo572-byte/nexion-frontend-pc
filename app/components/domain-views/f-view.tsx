@@ -1221,7 +1221,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF1Error(message ?? "原操作正在核对，请重新读取后再发起新修改。");
     },
     refreshF1: async () => {
-      await Promise.all([refreshF1(), refreshF1Approvals(), queryV8Review(),
+      await Promise.all([refreshF1(), refreshF1Approvals(), queryV8Review(), bDomain.reload(true),
         ...(salaryClaims.loaded ? [querySalaryClaims(salaryClaims.filters)] : []),
       ]);
     },

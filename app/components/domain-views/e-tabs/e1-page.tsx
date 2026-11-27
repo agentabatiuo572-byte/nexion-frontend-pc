@@ -9,7 +9,7 @@ import { OperationConfirmModal, useToast, usePendingReplayDeadline } from "../de
 import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { datacenterNameText } from "@/lib/admin/brand-copy";
-import { businessClock, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
 import { fetchE3Params } from "@/lib/admin/e3-client";
 import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
@@ -47,7 +47,7 @@ const monthlyRecovery = createPendingRecovery({ ...e1MonthlyCommands, list: () =
 const recoveryFor = (original: E1Pending) => original.fingerprint.startsWith("sku|") ? monthlyRecovery : catalogRecovery;
 
 type Confirmation = McSpec & Partial<E1SkuReview> & { initialBusinessValues?: Record<string, string>; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
-type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; reading?: boolean; readError?: string };
+type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; createdAt: number; reading?: boolean; readError?: string };
 const E1_SOURCES: readonly CatalogSource[] = ["products", "gates", "discount"];
 const ALL_SOURCES: readonly CatalogSource[] = [...E1_SOURCES, "early"];
 const SKU_EDIT_SOURCES: readonly CatalogSource[] = ["products", "gates"];
@@ -179,7 +179,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     setVerifiedDrafts(records.filter(row => row.verifiedNotExecuted));
     setReceipts(rows => [
       ...rows.filter(row => !records.some(record => record.ticket?.id === row.id)),
-      ...records.flatMap(row => row.ticket ? [{ ...row.spec, id: row.ticket.id, commandKey: row.commandKey, object: e1Object(row.spec), status: row.ticket.status }] : []),
+      ...records.flatMap(row => row.ticket ? [{ ...row.spec, id: row.ticket.id, commandKey: row.commandKey, object: e1Object(row.spec), status: row.ticket.status, createdAt: row.createdAt }] : []),
     ]);
     setLegacy(e1LegacyCommands(actor));
     setMedia(e1MediaCommands.list().filter(r => r.actorId === actor));
@@ -395,7 +395,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       store.remember(record.fingerprint, record.commandKey, { ...record, ticket: { id: result.id, status: "pending" } });
       if (result.status !== "pending") await check(record, { propagate: true, readback: false });
       toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
-      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status }]);
+      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status, createdAt: record.createdAt }]);
       closeOwnEditor();
       if (ownEditor) ownConfirmation?.afterSubmitted?.();
     } catch (failure) {
@@ -462,7 +462,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         const spec = full.spec;
         const object = e1Object(spec);
         if (row.status !== "pending" && readback) void reloadCatalog(proposalSources(spec), { readback: { commandKey: full.commandKey, object } });
-        setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, id: row.id, commandKey: record.commandKey, object, status: row.status }]);
+        setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, id: row.id, commandKey: record.commandKey, object, status: row.status, createdAt: full.createdAt }]);
         if (row.status === "pending") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, receivedTicketId: row.id, ticket: { id: row.id, status: "pending" } });
         else if (result?.conclusion === "rejected") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, ticket: undefined, verifiedNotExecuted: true });
         else recoveryFor(full).settleFromQuery(full, "succeeded");
@@ -619,9 +619,8 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
   const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择操作编号")); };
-  const sent = (at: number) => `${formatBusinessTimeCompact(new Date(at).toISOString(), "—")} 提交`;
   const recovery: RecoveryItem[] = [
-    ...waitingReceipts.map(row => ({ key: `receipt:${row.id}`, object: row.action,
+    ...waitingReceipts.map(row => ({ key: `receipt:${row.id}`, object: row.action, createdAt: row.createdAt,
       tag: <StatusTag tone="warn">待审批</StatusTag>,
       line: row.reading ? "正在查询审批进度…" : RECOVERY_LINE.pending,
       note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
@@ -642,6 +641,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
             : readRetryBlock ? { tag: "结果未知", line: readRetryBlock, more: "原记录继续保留。" }
               : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
                 : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
+      // 待确认条常显原操作和提交时间（OP-93 第 1 项、OP-154）：提交时间由共用恢复条写在结论句前面，这里和展开后都不再写。
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
         tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
         actions: <>
@@ -650,9 +650,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>核实后解除</Button>}
         </>,
         detail: <>
-          <p>{sent(record.createdAt)}，理由：{record.spec.reason}</p>
+          <p>理由：{record.spec.reason}</p>
           <p>{state.more}</p>
-          {!canOpenAudit && <p>请把操作编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制操作编号")}>复制操作编号</Button></div></Fold> };
+          {!canOpenAudit && <p>请把操作编号发给能查看操作记录与审批的管理员核对。</p>}</>, tech: <Fold inset title="技术信息" summary="原对象和操作编号"><Facts><Fact k="原对象">{record.spec.obj}</Fact><Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact></Facts><div className="e1-table-actions"><Button size="sm" onClick={() => copy(JSON.stringify(record.spec, null, 2), "已复制完整原请求")}>复制完整原请求</Button><Button size="sm" onClick={() => copy(record.commandKey, "已复制操作编号")}>复制操作编号</Button></div></Fold> };
     }),
     ...verifiedDrafts.map(record => {
       const skuId = record.spec.command.op === "e1_sku_update" ? record.spec.obj : undefined;
@@ -665,15 +665,15 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           <Button size="sm" onClick={() => discardRecovery.ask(() => { forgetE1(record); syncPending(); })}>放弃这份草稿</Button></>,
       };
     }),
-    ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留",
+    ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留", createdAt: record.createdAt,
       tag: <StatusTag tone="warn">缺完整原请求</StatusTag>, line: "旧记录缺原请求，只能查询，不能重试或解除。", note: notes[record.commandKey],
       actions: canQuery ? <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} onClick={() => void check(record)}>查询原操作</Button> : undefined,
-      detail: <><p>{sent(record.createdAt)}；升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary={record.commandKey}><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
+      detail: <><p>升级前的记录没有原理由。</p></>, tech: <Fold inset title="技术信息" summary="完整旧记录"><Button size="sm" onClick={() => copy(JSON.stringify(record, null, 2), "已复制完整旧记录")}>复制完整旧记录</Button></Fold> })),
     ...media.filter(record => record.commandKey !== mediaSending).map(record => ({ key: record.commandKey, object: record.fileName, createdAt: record.createdAt,
       tag: <StatusTag tone="warn">上传结果未知</StatusTag>, line: isRetryExpired(record) ? RECOVERY_LINE.expired : "重新打开商品、选同一个文件，可以原样重试。",
       actions: e1MediaHasOwner(record) ? <Button size="sm" disabledReason={readBlock({ op: "sku-save", target: record.skuId })} onClick={() => openSku(record.skuId || undefined, undefined, undefined, record)}>核对媒体上传</Button>
         : canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined,
-      detail: <p>{sent(record.createdAt)}；原文件摘要和原请求已保留。</p> })),
+      detail: <p>原文件摘要和原请求已保留。</p> })),
   ];
   const unknownCount = recovery.length - waitingReceipts.length - verifiedDrafts.length;
   return <RdPage className="e1-page">
@@ -682,7 +682,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
       <RecoveryPanel tone={recovery.length === waitingReceipts.length ? "progress" : "warn"} title={recoveryTitle(unknownCount, waitingReceipts.length, verifiedDrafts.length)} label="商品管理的修改"
-        explain="有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
+        explain="有结论前，这些对象不能提交新修改。点行首的箭头看说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
       <E1Catalog ctx={ctx} />
     </>}
     <E1Editor request={edit} gates={gates} currentPhaseId={currentPhase.phaseId} writable={canWrite && !editorReadBlock} writeBlockedReason={editorReadBlock} currentSku={currentSku} onClose={() => { setEdit(null); setSkuConflict(null); }} busy={editorBusy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onRevisionAccepted={() => { setSkuConflict(null); setAttemptKey(""); }} onReview={review => { setAttemptKey(""); setConfirmation({ ...review, briefKind: "config", name: `${review.beforeSku ? "编辑" : "新增"}商品 · ${review.sku.name}`, op: "sku-save", gates, isNew: !review.beforeSku }); }} />

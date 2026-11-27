@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminReadError } from "@/lib/admin/error-messages";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 
 export type Block<T> = { data: T | null; error: string | null; loading: boolean; reload: () => void };
@@ -22,7 +22,7 @@ export function useBlock<T>(load: () => Promise<T>, enabled: boolean, refreshKey
       (cause: unknown) => {
         if (id !== latest.current) return;
         if (isPermissionDenied(cause)) announcePermissionDenied();
-        setState({ data: null, error: displayAdminError(cause), loading: false });
+        setState({ data: null, error: displayAdminReadError(cause), loading: false });
       },
     );
   }, [load]);

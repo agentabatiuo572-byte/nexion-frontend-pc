@@ -217,6 +217,10 @@
 .ui-support-contact-picker .ui-bulk-contact-list label:focus-within { outline: 2px solid var(--brand); outline-offset: -2px; }
 
 /* 结果未知的恢复面板：一个 Notice，里面每条一行，列对齐；同 A6 的恢复列表。 */
+/* 放大类改动、覆盖率够得上红线时的一行（共用确认框）：数字强、其余弱，不带警告图标（VS-107、DP-05）。 */
+.rd-funding-calm { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-body); line-height: var(--rd-lh-body); }
+.rd-funding-calm b { font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.fund-rows-zone { display: inline-block; margin-left: var(--rd-space-2); white-space: nowrap; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); font-weight: 400; }  /* 标题旁只放数据：行上提交时间的时区，一个面板写一次（TX-25、VS-65） */
 .fund-rows { list-style: none; margin: var(--rd-space-2) 0 0; padding: 0; display: flex; flex-direction: column; }
 .fund-row + .fund-row { border-top: 1px solid var(--rd-line); }
 .fund-row-line { display: grid; grid-template-columns: minmax(200px, 280px) 104px minmax(0, 1fr) auto; align-items: center; gap: var(--rd-space-3); min-height: 40px; padding: 4px 0; }

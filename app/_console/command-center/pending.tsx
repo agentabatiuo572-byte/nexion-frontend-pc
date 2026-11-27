@@ -22,7 +22,7 @@ export type PendingRow = {
   tone?: StateTone;
 };
 
-export type PendingFailure = { key: string; name: string; onRetry: () => void };
+export type PendingFailure = { key: string; name: string; reason?: string; onRetry: () => void };
 
 const OWNER: Record<PendingRow["owner"], { icon?: LucideIcon; tone?: DomainTone }> = {
   财务: { icon: Wallet, tone: "money" },
@@ -70,10 +70,10 @@ export function PendingPanel({ rows, failures, loading, aside }: { rows: readonl
   const rest = rows.slice(LIMIT);
   const isFailure = (row: PendingRow | PendingFailure): row is PendingFailure => "onRetry" in row;
   return (
-    <Panel plain title="待处理" icon={ListChecks} tone="role-other" className="cc-pending" aria-busy={loading || undefined} sub={failures > 0 ? "部分来源读取失败，数量可能不全" : undefined} actions={aside}>
+    <Panel plain title="待处理" icon={ListChecks} tone="role-other" className="cc-pending" aria-busy={loading || undefined} sub={failures > 0 ? "部分来源加载失败，数量可能不全" : undefined} actions={aside}>
       <TodoList label="待处理">
         {shown.map((row) => isFailure(row)
-          ? <TodoFailed key={row.key} title={`${row.name}读取失败`} onRetry={row.onRetry} />
+          ? <TodoFailed key={row.key} title={`${row.name}加载失败`} reason={row.reason} onRetry={row.onRetry} />
           : <TodoItem key={row.key} href={row.href} title={row.icon ? <><row.icon className="cc-pending-icon" size={14} strokeWidth={1.9} aria-hidden />{row.title}</> : row.title} sub={row.sub} tone={row.tone} owner={row.owner} ownerIcon={OWNER[row.owner].icon} ownerTone={OWNER[row.owner].tone} />)}
       </TodoList>
       {loading && <div className="rd-block-loading" role="status" aria-label="正在加载…"><span className="rd-skeleton" /></div>}
@@ -83,7 +83,7 @@ export function PendingPanel({ rows, failures, loading, aside }: { rows: readonl
           {rest.map((row, index) => (
             <Fragment key={row.key}>
               {index > 0 && "、"}
-              {isFailure(row) ? <>{row.name}读取失败 · <InlineRetry label={`重试读取${row.name}`} onRetry={row.onRetry} /></> : row.href ? <Link href={row.href} prefetch={false}>{row.title}</Link> : row.title}
+              {isFailure(row) ? <>{row.name}加载失败 · <InlineRetry label={`重试读取${row.name}`} onRetry={row.onRetry} /></> : row.href ? <Link href={row.href} prefetch={false}>{row.title}</Link> : row.title}
             </Fragment>
           ))}
         </p>

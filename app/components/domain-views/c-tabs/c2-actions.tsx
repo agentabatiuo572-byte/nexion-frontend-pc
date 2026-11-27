@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Ban, CheckCircle2, Copy, Eye, Inbox, Info, ListChecks, LogOut, RefreshCw, SearchCheck, ShieldCheck, Snowflake, User, UserRound } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle2, Copy, Eye, Inbox, Info, ListChecks, LogOut, RefreshCw, SearchCheck, ShieldCheck, Snowflake, User, UserRound } from "lucide-react";
 import {
   BlockState, Button, Cell, Change, Conclusion, Decision, Drawer, Explain, Fact, Facts, FilterBar, FilterField, Fold, IconButton,
   InlineMeter, InlineRetry, Input, JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Pager, Panel, ReleaseModal,
@@ -22,7 +22,7 @@ import { useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import { fetchAccountDeletion, fetchAccountDeletions, updateAccountDeletion, AccountDeletionRequestError, type AccountDeletionRequest, type AccountDeletionStatus } from "@/lib/admin/account-deletion-client";
 import { A2OutcomeUncertainError, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { nexGridBrandText, operatorNicknameText, platformSessionDeviceText, userNicknameText } from "@/lib/admin/brand-copy";
-import { businessClock, businessDay, businessZone, formatBusinessTimeCompact, formatBusinessTimeFull, parseBusinessTime } from "@/lib/admin/business-time";
+import { businessClock, businessDay, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { formatAccountStatus, formatC1DeviceStatus, formatC1RiskBand, formatC1SessionStatus, riskBandFromScore, riskBandTone } from "@/lib/admin/c1-detail-display";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { canReadOwnRecoveryProposal, nextRecoveryDeadline } from "@/lib/admin/abe-recovery-access";
@@ -1495,7 +1495,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   /* ── 页头、待确认、带入、结论、统计带 ── */
   const header = (
     <PageHeader pageId="C2" title="账户操作" summary={<AutoGloss>冻结或恢复用户账户，管理名单和注销申请。</AutoGloss>}
-      back={back ? <Link className="rd-link" href={back.href} prefetch={false}>{back.label}</Link> : undefined}
+      back={back ? <Link href={back.href} prefetch={false}><ArrowLeft size={14} aria-hidden /> {back.label}</Link> : undefined}
       meta={<span className="rd-toolbar">
         <span>{readAt && `${businessClock(readAt)} 读取（${zone}）`}<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></span>
         <Button variant="ghost" size="sm" icon={<RefreshCw size={14} aria-hidden />} loading={overview.loading || deletionCounts.loading} onClick={refreshAll}>刷新</Button>
@@ -1523,7 +1523,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Button size="sm" disabled={busy} loading={submitting === record.fingerprint} disabledReason={expired ? RETRY_EXPIRED_TEXT : canRetry(record) ? undefined : RETRY_NO_PERMISSION} onClick={() => void retryPending(record)}>按原操作重试</Button>
           {refused && <Button size="sm" disabled={busy} onClick={() => setReleasing(record)}>核实后解除</Button>}
         </>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）发出。{expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试只发原内容，不会重复执行。"}</p>,
+        detail: <p>{expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试只发原内容，不会重复执行。"}</p>,
         tech: techRows(record),
       };
     }),
@@ -1544,14 +1544,14 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Button size="sm" disabled={busy} disabledReason={reason} onClick={() => void recoverRevocation(record, true)}>按原操作重试</Button>
           {state.replayRejection && !record.ticketId && <VerifiedReleaseButton disabled={busy} onClick={() => revocationRelease.ask({ operation: "退出全部设备", target: record.label, createdAt: record.createdAt, getSnapshot: sessionRevocationRecovery.releaseSnapshot(record), release: () => { const released = sessionRevocationRecovery.release(record); syncPending(); return released; } })} />}
         </>,
-        detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{zone}）提交审批。重试使用原操作编号和原理由。</p>,
+        detail: <p>重试使用原操作编号和原理由。</p>,
         tech: techRows(record),
       };
     }),
   ];
   const pendingNotices = <RecoveryPanel title={recoveryTitle(recoveryItems.length)} explainLabel="结果未知怎么处理"
     explain="这些操作发出后没收到明确结果，可能已经生效。先查询原操作；按原操作重试只发原内容，不会重复执行。有结果前，相关账户、名单或申请不能再操作。"
-    foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>去操作记录与审批 →</Link> : <span>请有操作记录读权限的同事核对。</span>}
+    foot={canReadAudit ? <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批核对</Link> : <span>请有操作记录读权限的同事核对。</span>}
     items={recoveryItems} />;
 
   const focusNotice = focusUserCode && canReadC2 && (
@@ -1655,7 +1655,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
               {frozenView ? <>
                 <Th>冻结来源 · 原因</Th>
                 <Th>冻结时间 · 操作人</Th>
-                <Th align="right">一起冻结的提现 <Explain label="一起冻结的提现怎么算" content="因为这次账户冻结一起停住的提现单。恢复账户时一起恢复，之后按原来的提现流程处理。" /></Th>
+                <Th align="right"><Explain label="一起冻结的提现怎么算" content="因为这次账户冻结一起停住的提现单。恢复账户时一起恢复，之后按原来的提现流程处理。">一起冻结的提现</Explain></Th>
               </> : <Th>账户状态</Th>}
               <Th>注册时间</Th>
               {accountActions && <Th sticky="end">操作</Th>}
@@ -1894,7 +1894,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <Fold inset title="技术信息" summary={`系统编号 ${shownId || "—"}`}>
             <Facts>
               <Fact k="系统编号">{shownId || "—"}</Fact>
-              {shownStatus === "FROZEN" && <Fact k="冻结时间">{formatBusinessTimeFull(fact?.frozenAt, "—")}</Fact>}
             </Facts>
           </Fold>
         </div>}

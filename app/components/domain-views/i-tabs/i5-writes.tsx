@@ -15,7 +15,6 @@ import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { Button, Fact, Modal, Notice, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { checkDisclosureDraftReadback, DisclosureReadbackPending, type IContentActions } from "@/lib/admin/i-client";
@@ -830,7 +829,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
         {!expired && !record.readback && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原操作重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
-      detail: <p>{formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（{businessZone().label}）发出。{!expired && !record.readback && recoveryText(record.op, canQuery)}</p>,
+      detail: !expired && !record.readback ? <p>{recoveryText(record.op, canQuery)}</p> : undefined,
       tech: <p className="fund-row-tech"><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p> };
   });
   const open = pending.filter((record) => OPEN_RESULT_LABELS.includes(statusOf(record, record.expiresAt <= Date.now()).label)).length;

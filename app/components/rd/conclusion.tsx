@@ -8,6 +8,7 @@
  * <Conclusion state="danger" strong>资金安全：危险，只够覆盖 <b>4</b> 天</Conclusion>   strong 只给资金告警这类必须最醒目的
  * <Conclusion state="unknown">资金状态：暂时无法判断</Conclusion>
  * <Conclusion state="neutral" icon={ListChecks}>有 3 件事要处理</Conclusion>   有日常待办但没有异常，不上色
+ * <Conclusion state="progress" icon={RefreshCw}>评分规则 v3 生效中，120 人正在排队重算</Conclusion>   进行中（VS-20 蓝）：图标按在做的事选，调用方必须给
  *
  * - hint 只写有没有事、该做什么（建议、点哪里）；这句话怎么算、口径、为什么，传 explain 收进句尾的提示图标（DP-06）。
  * - 组件不算结论。状态来自现有阈值和比较方式，页面传进来，不新增算法。
@@ -29,11 +30,16 @@ const STATE: Record<"ok" | "neutral" | "warn" | "danger" | "unknown", { tone: St
   unknown: { tone: "done", icon: CircleHelp },
 };
 
-export function Conclusion({ state, icon, lead, strong, hint, explain, explainTitle = "这句话怎么算", action, children }: { state: keyof typeof STATE; icon?: LucideIcon; lead?: boolean; strong?: boolean; hint?: ReactNode; explain?: ReactNode; explainTitle?: string; action?: ReactNode; children: ReactNode }) {
-  const { tone, icon: fallback } = STATE[state];
+/** 进行中没有默认图标：在做的事各不相同（重算、发送、同步），由调用方给。 */
+type ConclusionIcon = { state: "progress"; icon: LucideIcon } | { state: keyof typeof STATE; icon?: LucideIcon };
+
+export function Conclusion({ state, icon, lead, strong, hint, explain, explainTitle = "这句话怎么算", action, children }: ConclusionIcon & { lead?: boolean; strong?: boolean; hint?: ReactNode; explain?: ReactNode; explainTitle?: string; action?: ReactNode; children: ReactNode }) {
+  // 进行中和正常一样安静（面板底），只有图标底用进行中蓝（VS-20、VS-23）。
+  const tone: StateTone | "role-other" = state === "progress" ? "progress" : STATE[state].tone;
+  const tile = state === "progress" ? icon : icon ?? STATE[state].icon;
   return (
     <div className="rd-conclusion" role={state === "danger" ? "alert" : "status"} data-tone={tone} data-lead={lead ? "" : undefined} data-alarm={state === "warn" || state === "danger" ? "" : undefined} data-strong={strong && state === "danger" ? "" : undefined}>
-      <IconTile tone={tone} icon={icon ?? fallback} size={36} />
+      <IconTile tone={tone} icon={tile} size={36} />
       <div className="rd-conclusion-text">
         {children}
         {explain && <Explain label={explainTitle} content={explain} />}

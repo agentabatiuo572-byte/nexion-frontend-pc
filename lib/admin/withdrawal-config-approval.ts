@@ -21,7 +21,7 @@ import type { F4AmbassadorPolicyUpdate } from "./f1-client";
 import type { H8Original } from "./h8-reward-mutation";
 import type { FDomainAttempt } from "./f2-approval";
 import type { B1CommandFacts } from "./b1-commands";
-import type { B5ThresholdFacts } from "./b5-commands";
+import { isB5ThresholdFacts, type B5ThresholdFacts } from "./b5-commands";
 import { fetchD5WithdrawalParams } from "./d-client";
 import { displayAdminReadError } from "./error-messages";
 import { d5Trc20ReplayBlock } from "./trc20-closed";
@@ -490,10 +490,7 @@ function readThresholdAttempt<T extends keyof ThresholdApprovalValues>(source: T
       throw new Error("原审批内容不完整，请到操作记录核对。");
     }
   }
-  if (source === "B5" && record.b5Facts && (!Number.isSafeInteger(record.b5Facts.version)
-    || ![record.b5Facts.yellowPct, record.b5Facts.redPct].every(Number.isFinite)
-    || record.b5Facts.ratio24h !== null && !Number.isFinite(record.b5Facts.ratio24h)
-    || !["red", "yellow", "green", "unavailable"].includes(record.b5Facts.light))) {
+  if (source === "B5" && record.b5Facts && !isB5ThresholdFacts(record.b5Facts)) {
     throw new Error("原审批内容不完整，请到操作记录核对。");
   }
   return { ...record, values: input[0] as ThresholdApprovalValues[T], reason: input[1] };

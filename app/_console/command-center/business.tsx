@@ -23,7 +23,8 @@ import type { Block } from "./use-block";
 const signed = (value: string) => `${/^-/.test(value) || /^0(?:\.0*)?$/.test(value) ? "" : "+"}${moneyText(value)}`;
 const cardState = (block: Block<unknown>) => (block.data !== null ? "ready" : block.error ? "failed" : "loading");
 /** 一个笔数分项：读不到时就在这一行重试，不当 0。 */
-const countRow = (k: string, block: Block<number>) => ({ k, v: block.error ? <>暂时读不到 · <InlineRetry onRetry={block.reload} /></> : block.data === null ? "…" : `${fmtNum(block.data)} 笔` });
+/** 读不到时原因收进问号（ST-34），这一行只写「暂时读不到」和重试。 */
+const countRow = (k: string, block: Block<number>) => ({ k, v: block.error ? <>暂时读不到<Explain label={`${k}为什么读不到`} content={block.error} /> · <InlineRetry onRetry={block.reload} /></> : block.data === null ? "…" : `${fmtNum(block.data)} 笔` });
 /** 后端这一期没有返回这一块：账号没有这一项的读取权限，不是 0。 */
 const DENIED = <>没有查看权限<Explain label="为什么没有" content="你的账号没有这一项的查看权限。需要看，请管理员在「运营账号与权限」里开通。" /></>;
 const REFUND_UNKNOWN = "这段时间有退款单查不到实际退了多少，所以先不算销售额。到「订单进度」查这些订单。";
@@ -313,7 +314,7 @@ export function BusinessPanel({ blocks, period: chosen, onPeriodChange, business
               ? <Link className="rd-link pointer-events-auto" href={rewardDetail.href} prefetch={false}>{rewardDetail.label}</Link>
               : rewardDetail.label,
             v: rewardDetail.block.error
-              ? <>暂时读不到 · <InlineRetry onRetry={rewardDetail.block.reload} /></>
+              ? <>暂时读不到<Explain label={`${rewardDetail.label}为什么读不到`} content={rewardDetail.block.error} /> · <InlineRetry onRetry={rewardDetail.block.reload} /></>
               : rewardDetail.block.data === null ? "…" : `${fmtNum(rewardDetail.block.data)} ${rewardDetail.unit}`,
           }] : []}
           href={reward.href}

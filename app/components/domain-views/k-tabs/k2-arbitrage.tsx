@@ -630,7 +630,8 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `标记套利账户 · ${r.cells[0]}`,
       title: "标记套利账户",
-      detail: "标记为套利并附上证据，不冻结、不动钱。之后相关账户不再获得新人礼，以它们为新人或邀请人的邀请奖励也不再发放。",
+      // 执行摘要的「说明」只写影响句和事实区没写的（VS-105）；这几句影响句都写了。
+      detail: "",
       effect: <>{IMMEDIATE}<IrreversibleTag>本页不能撤销</IrreversibleTag></>,
       content: rowFacts(r),
       statedBrief: {
@@ -651,7 +652,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `拦截新人礼 · ${r.cells[0]}`,
       title: "拦截新人礼",
-      detail: "之后不再给这组账户发新人礼，以它们为新人或邀请人的邀请奖励也不发，已到账的不动。",
+      detail: "",
       effect: <>{IMMEDIATE}<IrreversibleTag>本页不能撤销</IrreversibleTag></>,
       content: rowFacts(r),
       statedBrief: {
@@ -672,7 +673,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       errorHandled: (error) => error instanceof K1OutcomeUncertainError || isExplicitRejection(error),
       action: `标记刷榜账户 · ${r.cells[0]}`,
       title: "标记刷榜账户",
-      detail: "标记为刷榜，作为排行榜的风险证据；取消排行榜资格要去「奖励池、名额与排行榜」操作。",
+      detail: "",
       effect: <>{IMMEDIATE}<IrreversibleTag>本页不能撤销</IrreversibleTag></>,
       content: rowFacts(r),
       statedBrief: {
@@ -692,7 +693,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       ...recovery(attempt),
       action: `冻结关联账户 · ${r.cells[0]}`,
       title: retained ? "按原操作重试 · 冻结关联账户" : "冻结关联账户",
-      detail: `冻结 ${r.cluster || r.rowId} 这组关联账户，套利证据会一起记入操作记录。`,
+      detail: "套利证据会一起记入操作记录。",
       effect: <StatusTag tone="progress" filled explain="另一位超级管理员批准后才执行，不能自己批。批准前账户、登录和提现都不变。">批准后生效</StatusTag>,
       confirmLabel: "提交审批",
       facts: (
@@ -733,7 +734,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       ...recovery(attempt),
       action: `调整检测阈值 · ${p.name}`,
       title: `${retained ? "按原操作重试 · " : ""}调整${help?.label ?? p.name}`,
-      detail: `${p.name} · 当前 ${boardBaselineText(p.value)}。`,
+      detail: "",
       effect: IMMEDIATE,
       confirmLabel: "确认修改",
       // 检测阈值不动钱，后端也不查覆盖率，不挂「多付钱」提示（后端事实：三阈值摘要不符）。
@@ -784,7 +785,7 @@ export function K2Arbitrage({ ctx, rereadPending, onRereadRequired, onCommandsCh
       initialReason: draft?.reason,
       action: `调整验证码设置 · ${definition.label}`,
       title: `${retained ? "按原操作重试 · " : ""}${firstConfig ? "首次配置" : "调整"}${definition.label}`,
-      detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。`,
+      detail: "",
       effect: firstConfig
         ? <StatusTag tone="progress" filled explain="首次配置要另一位超级管理员批准后才写入，不能自己批。批准前 App 仍按系统默认值处理。">批准后生效</StatusTag>
         : IMMEDIATE,

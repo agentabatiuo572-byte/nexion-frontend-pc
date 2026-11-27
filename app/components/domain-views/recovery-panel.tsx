@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, X } from "lucide-react";
-import { Button, Explain, IconButton, Notice, type StateTone } from "@/app/components/rd";
+import { Button, Explain, IconButton, KeepText, Notice, type StateTone } from "@/app/components/rd";
 import { eCommandCanConcludeRejected, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
 
 /** Map the shared replay gate to the existing disabled-reason slot. */
@@ -232,11 +232,24 @@ export function fullTitle(element: HTMLSpanElement | null) {
   element.toggleAttribute("data-truncated", element.scrollWidth > element.clientWidth);
 }
 
+/**
+ * 行上常显的提交时间（OP-93 第 1 项）：写在结论句前面，对象一格放不下会被省略号截掉。资金面板的行也用它（同一个样子）。
+ * 调用方的句子里已经写了同一个时间的（导出记录「… 发出后没收到结果」），不再写第二遍。时区在面板标题旁写一次（TX-25）。
+ * 没记下时间的旧记录，时间的位置写「—」（TX-26），不留空。
+ * verb：时间后面的动词，消息写「发出」，其余「提交」。
+ */
+export function sentLine(createdAt: number | undefined, line: string, verb = "提交") {
+  if (createdAt === undefined) return line ? `— ${verb}，${line}` : `— ${verb}`;
+  const stamp = businessStamp(createdAt);
+  if (line.includes(stamp)) return line;
+  return line ? `${stamp} ${verb}，${line}` : `${stamp} ${verb}`;
+}
+
 export type RecoveryItem = {
   key: string;
   /** 操作和对象，一行写得下。 */
   object: ReactNode;
-  /** 发出时间：两分钟内发出的新记录排到最前（见 useFreshFirst）。 */
+  /** 发出时间：常显在这一行的结论句前面，旧记录没有时写「—」；两分钟内发出的新记录排到最前（见 useFreshFirst）。 */
   createdAt?: number;
   /** 状态标签（StatusTag），六个字以内。 */
   tag: ReactNode;
@@ -249,7 +262,7 @@ export type RecoveryItem = {
   /** note 不是纯文字时用它判断回答变没变。 */
   noteKey?: string;
   actions?: ReactNode;
-  /** 展开后显示：发出时间、较长的说明。 */
+  /** 展开后显示：较长的说明。提交时间已经常显在行上，这里不再写。 */
   detail?: ReactNode;
   /** 原请求和操作编号，放在展开内容的最后。 */
   tech?: ReactNode;
@@ -257,10 +270,12 @@ export type RecoveryItem = {
 
 /**
  * 结果未知、待审批这类记录的通用面板，和资金页的面板同一个样子（同一组 fund-* 类）：设备域、账户操作、客服组管理用它。
- * 一行标题加问号里的通用说明；每条一行（箭头和对象、状态标签、一句结论、右侧按钮），点行首箭头看细节；默认露三条。
+ * 一行标题加问号里的通用说明；每条一行（箭头和对象、状态标签、提交时间和一句结论、右侧按钮），点行首箭头看细节；默认露三条。
  */
-export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎么处理", note, foot, items, tone = "warn", label = "结果未知的操作" }: {
+export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎么处理", note, foot, items, tone = "warn", label = "结果未知的操作", verb }: {
   title: ReactNode; explain?: ReactNode; explainLabel?: string;
+  /** 行上时间后面的动词：消息（M3）写「发出」，不传照旧「提交」。 */
+  verb?: string;
   /** 整个面板共用的一句常显说明，写在标题下、各行之上，一处只说一次（比如各行的按钮暂时不能点的原因，OP-126）。 */
   note?: ReactNode;
   foot?: ReactNode; items: readonly RecoveryItem[]; tone?: StateTone; label?: string;
@@ -277,7 +292,8 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
   });
   if (!items.length) return null;
   const shownItems = all ? ordered : ordered.slice(0, 3);
-  return <div ref={box}><Notice tone={tone} title={<>{title}{explain && <Explain label={explainLabel} content={explain} />}</>}>
+  const timed = items.some(item => item.createdAt !== undefined);
+  return <div ref={box}><Notice tone={tone} title={<>{title}{explain && <Explain label={explainLabel} content={explain} />}{timed && <span className="fund-rows-zone">时间为{businessZone().label}</span>}</>}>
     {note && <p className="fund-rows-note">{note}</p>}
     <ul className="fund-rows" aria-label={label}>{shownItems.map(item => {
       const expanded = open.includes(item.key);
@@ -289,7 +305,8 @@ export function RecoveryPanel({ title, explain, explainLabel = "这些记录怎�
             <ChevronRight className="fund-row-chevron" size={14} aria-hidden /><span className="fund-row-title" ref={fullTitle}>{item.object}</span>
           </button>
           {item.result?.tag ?? item.tag}
-          <span className="fund-row-text">{item.result?.line ?? item.line}</span>
+          {/* 一个分句整段换行：前面多了提交时间，不在「重复 / 建单。」这种地方折出孤字（TL-01）。 */}
+          <span className="fund-row-text"><KeepText text={sentLine(item.createdAt, item.result?.line ?? item.line, verb)} /></span>
           <span className="fund-row-actions">{item.actions}</span>
         </div>
         {expanded && <div className="fund-row-detail" id={id}><p className="fund-row-full">{item.object}</p>{item.detail}{item.note && <div role="status">{item.note}</div>}{item.tech}</div>}

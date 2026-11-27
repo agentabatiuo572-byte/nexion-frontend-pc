@@ -17,7 +17,6 @@ import { withLegacyReplayRejection, nextRecoveryDeadline, sendRecoveredDraft, ca
 import { fetchDirectCommandReceipt } from "@/lib/admin/direct-command-receipt";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import type { E2YieldComparison } from "@/lib/admin/e2-client";
-import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { activateE5Device, deactivateE5Device, fetchE5Devices, setE5UserDevicesPaused } from "@/lib/admin/e5-client";
 import { savePhoneRisk, fetchPhoneRisk, fetchPhoneRiskReceipt, type PhoneRiskReceipt, type PhoneRiskOverview, type PhoneRiskUpdate } from "@/lib/admin/phone-risk-client";
 import { canInvestigateECommand, discoverECommand, investigateECommand, eCommandSettled, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
@@ -491,7 +490,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     : m.recovery.state(r).replayRejection ?? r.retryRejection;
   const technical = (r: E6Pending) => <div className="e6-fold-content"><p>操作编号：<code>{r.commandKey}</code></p><p>原对象：{r.label}</p>{r.payload.kind === "device" && <p>原状态：{r.payload.input.before}</p>}{businessCodeOf(outcomes[r.commandKey]) !== undefined && <p>业务码：<code>{businessCodeOf(outcomes[r.commandKey])}</code></p>}<pre className="e6-json">{JSON.stringify({ scope: r.scope, request: JSON.parse(r.body) }, null, 2)}</pre>{m.technicalErrors[r.commandKey] && <pre className="e6-json">{m.technicalErrors[r.commandKey]}</pre>}</div>;
   const items: RecoveryItem[] = [
-    ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, tag: <StatusTag tone="warn">待核对</StatusTag>,
+    ...(section === "phones" ? m.devicePending.map(r => ({ key: r.commandKey, object: r.label, createdAt: r.createdAt, tag: <StatusTag tone="warn">待核对</StatusTag>,
       line: "原操作在设备管理，到那里查询和处理。", actions: <Link className="rd-link" href="/devices/ops">设备管理</Link>,
       detail: <p>原操作在设备管理保留；相关设备或用户先暂停新操作。</p> })) : []),
     ...records.map(r => {
@@ -546,10 +545,10 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
           }}>准备新变更</Button>}
           {(refused && !r.ticketId) && <Button size="sm" disabled={!refused && m.isBusy(r.commandKey)} onClick={() => m.setRelease(r)}>核实后解除</Button>}
         </>,
-        detail: <><p>{formatBusinessTimeCompact(new Date(r.createdAt).toISOString(), "—")} 提交，理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary={r.commandKey}>{technical(r)}</Fold> };
+        detail: <><p>理由：{r.payload.input.reason}</p><p>{state.more}</p><TicketVerdict record={r} /></>, tech: <Fold inset title="技术信息" summary="操作编号、原对象和原请求">{technical(r)}</Fold> };
     }),
     ...m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => ({
-      key: r.commandKey, object: "升级前的原提案", tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
+      key: r.commandKey, object: "升级前的原提案", createdAt: r.createdAt, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试或解除；到操作记录与审批核对。",
       detail: <p>操作编号：<code>{r.commandKey}</code></p> })),
   ];
@@ -558,7 +557,7 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     {settled.map(item => <SettledLine key={item.key} label={item.label} text={item.text} onDismiss={() => setSettled(list => list.filter(other => other.key !== item.key))} />)}
     {discardRecovery.dialog}
     <RecoveryPanel title={recoveryTitle(items.length - items.filter(item => item.key.startsWith("waiting:")).length - records.filter(r => r.terminal || isE6VerifiedDraft(r)).length, items.filter(item => item.key.startsWith("waiting:")).length, records.filter(r => r.terminal || isE6VerifiedDraft(r)).length)} tone="warn"
-      explain="原内容和理由都已保存；有结论前，这些对象不能提交新修改。点行首的箭头看提交时间、说明和原请求。" foot={m.canAudit ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined} items={items} />
+      explain="原内容和理由都已保存；有结论前，这些对象不能提交新修改。点行首的箭头看说明和原请求。" foot={m.canAudit ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined} items={items} />
     {closing && (closing.payload.kind === "device" || closing.payload.kind === "risk") && <CommandClosureModal label={closing.label} commandKey={closing.commandKey} createdAt={closing.createdAt}
       offer={eCommandClosureOffer(outcomes[closing.commandKey], isRetryExpired(closing))}
       facts={<>{closing.payload.kind === "device" && <Fact k="原状态">{closing.payload.input.before}</Fact>}<Fact k="原理由">{closing.payload.input.reason}</Fact></>}

@@ -32,7 +32,7 @@ import {
   type B5InboxItem,
 } from "@/lib/admin/b5-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { bankrunLightForRatio, type B5Signal } from "@/lib/admin/b5-radar-contract";
+import type { B5Signal } from "@/lib/admin/b5-radar-contract";
 import { visibleReasonLength } from "@/lib/admin/a2-client";
 import { useReasonRule } from "@/lib/admin/use-reason-rule";
 import { useB5Read } from "@/lib/admin/use-b5-read";
@@ -44,7 +44,7 @@ import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, b5Recovery, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
 import { bThresholdRecovery, discardThresholdRecoveryDraft, pendingThresholdConfigApproval, submitB5ThresholdApproval, thresholdRecoveryDrafts } from "@/lib/admin/withdrawal-config-approval";
-import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { maskAuditActor } from "@/lib/admin/audit-actor";
 import { useReach } from "@/lib/nav/use-reach";
@@ -176,8 +176,9 @@ export default function RiskRadarPage() {
   const [yellowInput, setYellowInput] = useState("");
   const [redInput, setRedInput] = useState("");
   const [reason, setReason] = useState("");
-  const [preview, setPreview] = useState<(Awaited<ReturnType<typeof previewB5Thresholds>> & { key: string }) | null>(null);
+  const [preview, setPreview] = useState<(NonNullable<B5ThresholdFacts["preview"]> & { key: string }) | null>(null);
   const [previewError, setPreviewError] = useState("");
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [thresholdError, setThresholdError] = useState("");
   const [otherThresholdChanges, setOtherThresholdChanges] = useState<string[]>([]);
   const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(null);
@@ -341,7 +342,13 @@ export default function RiskRadarPage() {
   const redPct = Number(redInput);
   const thresholdValid = Number.isFinite(yellowPct) && yellowPct >= 5 && yellowPct <= 50
     && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
-  const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const thresholdRule = useReasonRule(!!threshold && !thresholdOriginal && !approvalRecovery);
+  const thresholdReason = reason.trim();
+  const reasonLength = visibleReasonLength(thresholdReason);
+  const reasonValid = thresholdRule.ready && reasonLength >= thresholdRule.min && reasonLength <= thresholdRule.max;
+  const reasonHint = !thresholdRule.ready ? thresholdRule.error || "正在加载，稍候即可提交。"
+    : reasonLength < thresholdRule.min ? `操作理由还差 ${thresholdRule.min - reasonLength} 字`
+      : reasonLength > thresholdRule.max ? `操作理由多了 ${reasonLength - thresholdRule.max} 字` : undefined;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
   usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
@@ -366,11 +373,6 @@ export default function RiskRadarPage() {
     : "";
   const currentPreview = preview?.key === previewKey ? preview : null;
   const previewReady = !!currentPreview && !previewError;
-  const previewPressure = threshold && currentPreview ? {
-    ratio24h: currentPreview.ratio24h,
-    light: currentPreview.ratio24h === null ? currentPreview.light
-      : bankrunLightForRatio(currentPreview.ratio24h, threshold.yellowPct, threshold.redPct),
-  } : null;
   const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now()) || !!(thresholdOriginal && isRetryExpired(thresholdOriginal));
   const thresholdLocked = savingThreshold || !!thresholdOriginal || !!approvalRecovery || lookupOnly;
   const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdOriginal
@@ -408,18 +410,18 @@ export default function RiskRadarPage() {
     setPreviewError("");
     const timer = window.setTimeout(() => {
       previewB5Thresholds(yellowPct, redPct, thresholdVersion)
-        .then((value) => {
-          if (alive) setPreview({ ...value, key: previewKey });
+        .then(({ ratio24h, light }) => {
+          if (alive) setPreview({ ratio24h, light, readAt: new Date().toISOString(), key: previewKey });
         })
         .catch((cause) => {
-          if (alive) setPreviewError(displayAdminError(cause));
+          if (alive) setPreviewError(displayAdminReadError(cause));
         });
     }, 250);
     return () => {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [canThreshold, newWriteBlocked, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct]);
+  }, [canThreshold, newWriteBlocked, thresholdOriginal, approvalRecovery, previewKey, thresholdVersion, yellowPct, redPct, previewAttempt]);
 
   const subscriptionChannelsChanged = useMemo(
     () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
@@ -616,18 +618,22 @@ export default function RiskRadarPage() {
     if (!session || !threshold || !canSubmitThreshold) return;
     setSavingThreshold(true); setThresholdError("");
     let original = thresholdOriginal;
-    const facts = !original && !pendingApproval && previewPressure ? { ...threshold, ...previewPressure } : threshold;
+    const facts: B5ThresholdFacts = !original && !pendingApproval && currentPreview ? {
+      ...(latestThreshold ?? threshold),
+      radarReadAt: radar.at ?? undefined,
+      preview: { ratio24h: currentPreview.ratio24h, light: currentPreview.light, readAt: currentPreview.readAt },
+    } : threshold;
     try {
       if (requiresApproval) {
         const result = await submitB5ThresholdApproval(session, pendingApproval?.values ?? { expectedVersion: threshold.version, yellowPct, redPct },
-          pendingApproval?.reason ?? reason.trim(), fetchB5Radar, pendingApproval ? "retry" : "new", facts, thresholdDraftKey);
+          pendingApproval?.reason ?? thresholdReason, fetchB5Radar, pendingApproval ? "retry" : "new", facts, thresholdDraftKey);
         if (!result) return;
         setApprovalVerifiedKey(result.ticket.status === "pending" ? pendingThresholdConfigApproval("B5", session.adminId)?.commandKey ?? null : null);
         setToast(result.acknowledgement);
       } else {
         original ??= rememberB5Command(String(session.adminId), THRESHOLD_SLOT, "b5-threshold", {
           kind: "threshold", method: "PUT", path: "/api/admin/risk/bankrun-thresholds", facts,
-          body: JSON.stringify({ yellowPct, redPct, expectedVersion: threshold.version, reason: reason.trim(), operator }),
+          body: JSON.stringify({ yellowPct, redPct, expectedVersion: threshold.version, reason: thresholdReason, operator }),
         }) as Extract<B5PendingWrite, { kind: "threshold" }>;
         setThresholdOriginal(original);
         const saved = original;
@@ -652,14 +658,21 @@ export default function RiskRadarPage() {
           const fresh = await radar.reload();
           rereadAfterConflict = !!fresh && versionConflict;
         }
-      } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
+      } else if (requiresApproval) {
+        const saved = pendingThresholdConfigApproval("B5", session.adminId);
+        if (saved) {
+          setThreshold(saved.b5Facts ?? null);
+          setApprovalRecovery("lookup");
+        }
+      }
       setThresholdUnknown(!!original && !rejected);
       // 版本冲突已重读：框里写一句就够，不再弹同一句。
       if (rereadAfterConflict) setThresholdError("当前阈值已更新，请核对后再保存。");
       else {
+        // 框还开着：失败和结果未知都只写在框里，不同时弹提示（VS-107、DT-12）。
+        // 按原操作重试被明确拒绝时 refreshAfterWrite 已经关框，框里的话看不到，才弹一次。
         setThresholdError(displayAdminError(cause));
-        // 框还开着、红框里已写这句时不再弹；框已关或结果未知（框里写的是另一句）才弹。
-        if (!rejected || thresholdOriginal || pendingApproval) setToast(displayAdminError(cause));
+        if (rejected && (thresholdOriginal || pendingApproval)) setToast(displayAdminError(cause));
       }
     } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
@@ -815,11 +828,12 @@ export default function RiskRadarPage() {
     <Conclusion state="warn" hint={`先看${first.name}。${inboxHint}`}>风险提醒：<b>{issues.length}</b> 项要注意，{issues.map((item) => item.name).join("、")}</Conclusion>
   );
 
-  const meta = data && (
+  const meta = (data || radar.streamWarning) && (
     <span className="b5-meta">
-      数据时间 {timeText(data.generatedAt)}
-      <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" />
-      {radar.streamWarning && <span className="b5-muted"> · {radar.streamWarning.replace(/。$/, "")}</span>}
+      {data && <>数据时间 {timeText(data.generatedAt)}
+        <Explain label="数据多久更新" content="打开页面时读一次，之后每 30 秒自动重读；站内告警和告警订阅不跟着自动重读。" /></>}
+      {radar.streamWarning && <span className="b5-muted">{data && " · "}{radar.streamWarning.replace(/。$/, "")}</span>}
+      {radar.reconnect && <Button size="sm" variant="ghost" onClick={radar.reconnect}>重新连接</Button>}
     </span>
   );
   const refreshAll = () => {
@@ -848,13 +862,14 @@ export default function RiskRadarPage() {
     if (dimension && canTriageDimension(dimension)) void triage(dimension);
     return true;
   };
-  // 「真正去哪办」：排查去处只写「去处理」里点得开的页；表头问号是整张名单的，名单筛成一类时才写那一类的页（design-plan 板 2）。
+  // 「真正去哪办」：排查去处只写「去处理」里点得开的页；表头问号是整张名单的，名单筛成一类时写那一类的页，没筛类型时指向每行的「去处理」（design-plan 板 2）。
   const triagePage = (target: string | null | undefined) => {
     const link = signalTreatmentLink(target, canCross, canTriage, canTriageTarget);
     return link && link.mode !== "unreachable" ? TARGET_NAME[link.target] ?? null : null;
   };
   const listCategory = query.signalType ? "TAMPER" : query.category.length === 1 ? query.category[0] : null;
-  const listHandlingHint = handlingHint(triagePage(listCategory && CATEGORY_TARGETS[listCategory]), canFreeze);
+  const listHandlingHint = listCategory ? handlingHint(triagePage(CATEGORY_TARGETS[listCategory]), canFreeze)
+    : Object.values(CATEGORY_TARGETS).some((target) => triagePage(target)) ? `排查到每行「去处理」写的页面，${handlingHint(null, canFreeze)}` : handlingHint(null, canFreeze);
   const triageState = (target: string) => {
     const dimension = QUEUE_TRIAGE[target];
     if (!triaging || !dimension || !canTriageDimension(dimension)) return undefined;
@@ -981,13 +996,14 @@ export default function RiskRadarPage() {
               <div className="b5-signals-pane">
                 <RiskCategoryPanel data={categories} selectedKey={selectedCategory} onSelect={selectCategory} onRetry={() => void loadCategories()} />
                 <SignalList data={listState} filters={listFilters} page={listPage} onRetry={() => void list.reload()}
-                  table={{ canTriage, handlingHint: listHandlingHint, actionBlocked: listActionBlock, triageBlocked: listTriageBlock, pendingSignalNos, updating: updatingSignal, reach: canCross, canTriageTarget, selected: openSignal, onOpen: openDetail,
+                  table={{ canTriage, handlingHint: listHandlingHint, actionBlocked: listActionBlock, triageBlocked: listTriageBlock, pendingSignalNos, updating: updatingSignal, reach: canCross, canTriageTarget, selected: openSignal, onOpen: list.loading ? undefined : openDetail,
                     onTriage: queueTriage, triageState, onStatus: openSignalStatus }} />
               </div>
             ) : (
               <Panel flush data-capability="b5-subscriber-inbox">
                 <TabNote label="站内告警的范围" explain="只列发给你的站内告警，最多 100 条，不分页。确认已读只记录你看过，不改信号的处理进度。">
-                  {!inboxReadAt ? inboxError ? "读取失败" : "正在加载…" : `发给你的 ${inbox.length} 条 · ${unacked} 条没确认`}
+                  {/* 读取失败已由下面的失败卡写标题和原因，这里只写范围，不再写一遍「读取失败」（DT-12）。 */}
+                  {!inboxReadAt ? inboxError ? "发给你的站内告警" : "正在加载…" : `发给你的 ${inbox.length} 条 · ${unacked} 条没确认`}
                 </TabNote>
                 {inboxError && inboxReadAt && <StaleNotice stale={{ at: inboxReadAt, auto: false }} onRetry={() => setInboxReload(value => value + 1)} />}
                 <InboxTable state={inboxReadAt ? "ready" : inboxError ? "error" : "loading"} items={inbox} error={inboxError}
@@ -1009,25 +1025,33 @@ export default function RiskRadarPage() {
           onStatus={(alert, target) => openSignalStatus(alert, target, true)} />
 
       {threshold && (() => {
-        const pressure = thresholdOriginal || approvalRecovery ? threshold : previewPressure ?? data?.bankrun ?? threshold;
+        const recovering = !!thresholdOriginal || !!approvalRecovery;
+        const pressure = thresholdOriginal?.facts ?? (approvalRecovery ? threshold : latestThreshold ?? threshold);
+        const radarReadAt = recovering ? (thresholdOriginal?.facts ?? threshold).radarReadAt : radar.at;
+        const outcome = recovering ? (thresholdOriginal?.facts ?? threshold).preview : previewReady ? currentPreview : null;
+        const sameReading = outcome?.ratio24h === pressure.ratio24h;
+        const sameDecision = sameReading && outcome?.light === pressure.light;
+        const pct = (value: number | null) => value === null ? "暂无法计算" : ratioPct(value);
+        const lightTag = (light: typeof pressure.light) => <StatusTag tone={light === "red" ? "danger" : light === "yellow" ? "warn" : light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(light)}</StatusTag>;
+        const readAt = (at: string | null | undefined, zone: boolean) => outcome && !sameReading && at
+          ? <span className="rd-keep">（{businessClock(parseBusinessTime(at))} 读到{zone ? `，${businessZone().label}` : ""}）</span> : null;
         const raising = redPct > threshold.redPct;
         const redDirection = !Number.isFinite(redPct) || redPct === threshold.redPct ? null : raising
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
         const yellowDirection = !Number.isFinite(yellowPct) || yellowPct === threshold.yellowPct ? null : yellowPct > threshold.yellowPct
           ? <StatusTag tone="warn" icon={LockOpen}>放宽</StatusTag> : <StatusTag tone="done" icon={Lock}>收紧</StatusTag>;
         const orderError = thresholdValid ? undefined : "黄线 5%–50%，红线 10%–80%，红线要高于黄线";
-        const recovering = !!thresholdOriginal || !!approvalRecovery;
         const submitLabel = recovering ? "按原操作重试" : requiresApproval ? "提交审批" : "确认调整";
         const blocked = !canThreshold ? formatAdminApiError("ADMIN_PERMISSION_DENIED", "ADMIN_PERMISSION_DENIED") : staleThreshold ? "阈值刚被改过，关掉重新打开再调整"
           : !thresholdValid ? "先把黄线、红线填在范围内"
             : !recovering && !thresholdChanged ? "没有修改"
-            : !reasonValid && approvalRecovery !== "retry" ? "理由要写 8–200 个字"
+            : !recovering && !reasonValid ? reasonHint
               : !previewReady && approvalRecovery !== "retry" ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
                 : undefined;
         return (
-          <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty
+          <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty={thresholdChanged || !!thresholdReason}
             sub={requiresApproval
-              ? <StatusTag tone="warn" icon={LockOpen} explain="提高红线要另一位超级管理员批准，自己不能批。批准前线被别人改过的，这张单会被拒。">批准后生效</StatusTag>
+              ? <StatusTag tone="progress" filled explain="提高红线要另一位超级管理员批准，自己不能批。批准前线被别人改过的，这张单会被拒。">批准后生效</StatusTag>
               : <StatusTag tone="progress" filled>立即生效</StatusTag>}
             onClose={() => setThreshold(null)}
             footer={<>
@@ -1038,7 +1062,6 @@ export default function RiskRadarPage() {
             </>}>
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
-              {previewError && <Notice tone="danger" title="预览失败">{previewError}</Notice>}
               {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
                 ? approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原操作」；查不到时 24 小时内可以按原操作重试，不会建第二张单。"
                 : thresholdUnknown ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。" : thresholdError}</Notice>}
@@ -1052,11 +1075,18 @@ export default function RiskRadarPage() {
                 note={redDirection ? (raising ? "红线调高，自动暂停提现会更晚触发。" : "红线调低，自动暂停提现会更早触发，立即生效。") : undefined}>
                 {(control) => <NumberInput {...control} aria-label="红线（10%–80%）" unit="%" min={10} max={80} value={redInput} disabled={thresholdLocked} onChange={(event) => setRedInput(event.target.value)} />}
               </DiffField>
-              <p className="b5-preview" role="status">
-                {recovering ? "提交时" : "现在"}的提现压力 {pressure.ratio24h === null ? "暂无法计算" : ratioPct(pressure.ratio24h)}，标「{formatB5RiskLight(pressure.light)}」{recovering ? "。" : "；"}
-                {recovering ? null : previewReady && currentPreview ? <>按新的线会标 <StatusTag tone={currentPreview.light === "red" ? "danger" : currentPreview.light === "yellow" ? "warn" : currentPreview.light === "green" ? "ok" : "neutral"}>{formatB5RiskLight(currentPreview.light)}</StatusTag></>
-                  : previewKey && !previewError ? "正在按新的线计算…" : "填好两条线后显示按新的线会标什么。"}
-              </p>
+              {/* 两次读数各写一行，同一种说法：按哪条线、读到多少、标什么；读数不同才写各自的读取时间，时区跟第一个时间写一次（TX-25）。 */}
+              <div className="b5-preview" role="status">
+                {outcome && sameDecision
+                  ? <p>提现压力 {pct(pressure.ratio24h)}，按{recovering ? "原来" : "现在"}的线和新的线都标 {lightTag(outcome.light)}</p>
+                  : <>
+                    <p>按{recovering ? "原来" : "现在"}的线：{recovering && !radarReadAt ? "提交时" : ""}提现压力 {pct(pressure.ratio24h)}，标 {lightTag(pressure.light)}{readAt(radarReadAt, true)}</p>
+                    {outcome ? <p>按新的线：提现压力 {pct(outcome.ratio24h)}，会标 {lightTag(outcome.light)}{readAt(outcome.readAt, !radarReadAt)}</p>
+                      : !recovering && !previewError && <p>按新的线：{previewKey ? "正在计算…" : "填好两条线后显示会标什么"}</p>}
+                  </>}
+              </div>
+              {/* 预览只是读：失败时写成读取失败卡，原输入留着，只重读预览（ST-34、ST-35、OP-84）。 */}
+              {!recovering && previewError && <BlockState compact state="error" title="按新的线的预览加载失败" detail={previewError} onRetry={() => setPreviewAttempt(value => value + 1)} />}
               <Notice tone="neutral">
                 <p>和「紧急停用开关」共用，那边也跟着变。</p>
                 <p>两边看同一个提现压力，到红线那边自动暂停提现。</p>
@@ -1070,8 +1100,11 @@ export default function RiskRadarPage() {
                   </Facts>
                 </Notice>
               )}
-              <Field label="调整理由" required error={reason && !reasonValid && !thresholdLocked ? "理由要写 8–200 个字" : undefined}>
-                <Textarea value={reason} disabled={thresholdLocked} maxLength={200} rows={3} placeholder="8–200 字，例如：工单号、调整依据" count={`${reason.trim().length} / 200`} onChange={(event) => setReason(event.target.value)} />
+              {/* 理由规则读不到：和共用确认框同一个样子，橙黄提示条；读取中写在字段名后面（OP-22、DT-22）。 */}
+              {!recovering && thresholdRule.error && <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><Notice tone="warn">{thresholdRule.error}</Notice></div>}
+              <Field label="操作理由" required hint={recovering ? undefined : thresholdRule.ready ? `至少 ${thresholdRule.min} 字` : thresholdRule.error ? undefined : "正在加载，稍候即可提交。"}
+                error={!recovering && thresholdRule.ready && reason && !reasonValid && !thresholdLocked ? reasonHint : undefined}>
+                <Textarea value={reason} disabled={thresholdLocked} rows={3} placeholder="例如：工单号、调整依据" count={!recovering && thresholdRule.ready ? `${reasonLength}/${thresholdRule.max}` : undefined} onChange={(event) => setReason(event.target.value)} />
               </Field>
             </div>
           </Modal>
@@ -1178,40 +1211,41 @@ export default function RiskRadarPage() {
         const busy = updatingSignal === alert.signalNo;
         const line = signalFacts(alert).line;
         const level = SEVERITY[alert.level];
+        const statusChanged = statusRead.state === "changed" && !statusOriginal;
         const replay = statusOriginal && b5Recovery.state(statusOriginal);
         const blocked = !canTriage ? READ_ONLY : replay
           ? replay.expired ? RETRY_EXPIRED_TEXT : replay.replayBlock ? "原请求不能重试" : undefined
           : statusRead.state === "loading" ? "正在读取这条的当前进度…"
             : statusRead.state === "error" ? "这条的当前进度没读到"
               : statusRead.state === "conflict" ? "这条已被别人改过"
-                : statusRead.state === "changed" ? "这条的当前进度已经变了，不能继续这次标记"
-                  : signalActionBlock(openSignal === alert.signalNo)
-                    ?? (!statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : valid ? undefined : hint);
+                : signalActionBlock(openSignal === alert.signalNo)
+                  ?? (!statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : valid ? undefined : hint);
         return (
-          <Modal title={`标记${signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty
+          <Modal title={`标记${signalName(alert)}为${STATUS_TEXT[target]}`} icon={ShieldCheck} busy={busy} dirty={Boolean(statusReason.trim())}
             sub={<StatusTag tone="neutral" icon={FileText} explain="只更新这条信号的处理进度并留操作记录。不会解冻账户、不会放行提现、不会重发告警，也不改站内告警的已读。">只记录进度</StatusTag>}
             onClose={closeStatus}
-            footer={<>
+            footer={statusChanged ? <Button onClick={closeStatus}>关闭</Button> : <>
               <Button disabled={busy} onClick={closeStatus}>取消</Button>
               <Button variant="primary" loading={busy} loadingText="提交中…" disabledReason={blocked}
                 onClick={() => void changeSignalStatus()}>{statusUnknown ? "按原操作重试" : statusRead.state === "loading" ? "正在读取这条的当前进度…" : target === "handled" ? "确认标记已处理" : "确认标记已解决"}</Button>
             </>}>
             <div className="b5-dialog">
-              <p className="b5-line">不会解除风控，也不会放行提现；{handlingHint(triagePage(triageTarget(alert)), canFreeze)}</p>
+              {statusChanged ? <Notice tone="warn">这条已被别人改过，不用再标记。</Notice>
+                : <p className="b5-line">不会解除风控，也不会放行提现；{handlingHint(triagePage(triageTarget(alert)), canFreeze)}</p>}
               <Facts>
                 <Fact k="风险信号">{signalName(alert)}{line ? ` · ${line}` : ""}</Fact>
                 <Fact k="级别"><StatusTag tone={levelTone(alert)} icon={level.icon}>{level.text}</StatusTag></Fact>
                 <Fact k="用户"><span data-mono>{alert.userNo ?? `#${alert.userId}`}</span></Fact>
                 <Fact k="信号号"><RefText value={alert.signalNo} /></Fact>
                 <Fact k="记录时间">{timeText(alert.createdAt)}</Fact>
-                <Fact k="处理进度">{statusRead.state === "changed" && !statusOriginal ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
+                <Fact k={statusChanged ? "最新进度" : "处理进度"}>{statusChanged ? HANDLING[alert.handlingStatus].text : <Change from={HANDLING[alert.handlingStatus].text} to={STATUS_TEXT[target]} />}</Fact>
               </Facts>
-              {statusRead.state !== "changed" || statusOriginal ? <Field label="操作理由" required hint={`至少 ${statusRule.min} 字`}
-                help={!statusOriginal && !statusRule.ready ? statusRule.error || "正在加载，稍候即可提交。" : undefined}
+              {!statusChanged && !statusOriginal && statusRule.error && <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><Notice tone="warn">{statusRule.error}</Notice></div>}
+              {!statusChanged && <Field label="操作理由" required hint={statusOriginal ? undefined : statusRule.ready ? `至少 ${statusRule.min} 字` : statusRule.error ? undefined : "正在加载，稍候即可提交。"}
                 error={!statusOriginal && statusRule.ready && statusReason ? hint : undefined}>
-                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusOriginal ? 200 : statusRule.max}
-                  rows={3} placeholder={isTamper(alert) ? "例如：已核对拦截记录，账户安全设置未改变" : "例如：已核对这条记录和账户近期操作"} count={`${length}/${statusOriginal ? 200 : statusRule.max}`} onChange={(event) => setStatusReason(event.target.value)} />
-              </Field> : null}
+                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusRule.policy?.max}
+                  rows={3} placeholder={isTamper(alert) ? "例如：已核对拦截记录，账户安全设置未改变" : "例如：已核对这条记录和账户近期操作"} count={statusRule.ready ? `${length}/${statusRule.max}` : undefined} onChange={(event) => setStatusReason(event.target.value)} />
+              </Field>}
               {!statusOriginal && statusRead.state === "error" && <BlockState state="error" title="这条的当前进度没读到" detail={statusRead.error} onRetry={() => void loadStatus(statusDialog)} />}
               {!statusOriginal && statusRead.state === "conflict" && <Notice tone="warn">
                 <ConflictBar message="这条已被别人改过" onRead={() => loadStatus(statusDialog, true)} />

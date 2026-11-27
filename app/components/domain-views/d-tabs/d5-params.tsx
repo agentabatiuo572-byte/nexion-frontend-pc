@@ -11,7 +11,7 @@ import { eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
  */
 import { useReach } from "@/lib/nav/use-reach";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { displayAdminError } from "@/lib/admin/error-messages";
+import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode, isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { fmtConfigPct } from "@/lib/format";
@@ -745,7 +745,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       }
       return next;
     } catch (err) {
-      if (id === requestId.current) setError(afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : errorText(err));
+      if (id === requestId.current) setError(afterApproval ? WITHDRAWAL_CONFIG_READ_FAILED : displayAdminReadError(err));
       return null;
     } finally {
       if (id === requestId.current) setLoading(false);
@@ -1264,8 +1264,9 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       {pendingNotices}
       {queueNoticeOutsideConfig}
       {queueReadNotice}
+      {/* 标题已写「加载失败」，说明只写原因和后果，不重复标题（DT-12）。 */}
       <BlockState state="error" title="提现参数加载失败" detail={error === WITHDRAWAL_CONFIG_READ_FAILED
-        ? error : <>提现参数加载失败，旧值已清空，修改已暂停。{error && <> {error.replace(/^提现参数/, "")}</>}</>} onRetry={refresh} />
+        ? error : <>旧值已清空，修改已暂停。{error && error.replace(/^提现参数/, "")}</>} onRetry={refresh} />
       {releaseModal}
     </>;
   }

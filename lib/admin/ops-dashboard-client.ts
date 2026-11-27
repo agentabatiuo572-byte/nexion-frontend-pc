@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminReadError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { UNAVAILABLE_GATES } from "@/lib/admin/j-client";
 
 type ApiResult<T> = {
@@ -202,7 +202,7 @@ async function readKillSwitchAlerts() {
   const response = await guardedFetch("/api/admin/emergency/kill-switches/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `J1_ALERTS_${response.status}`));
+    throw Object.assign(new Error(payload?.message || `J1_ALERTS_${response.status}`), { status: response.status });
   }
   if (!Array.isArray(payload.data.autoConfirmations)) {
     throw new Error("J1_ALERTS_FIELD_REQUIRED:autoConfirmations");
@@ -302,7 +302,7 @@ export async function fetchJ2GeoAlerts(): Promise<OpsDashboardAlert[]> {
   const response = await guardedFetch("/api/admin/emergency/geo-block/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `J2_ALERTS_${response.status}`));
+    throw Object.assign(new Error(payload?.message || `J2_ALERTS_${response.status}`), { status: response.status });
   }
   if (!Array.isArray(payload.data.alerts)) {
     throw new Error("J2_ALERTS_FIELD_REQUIRED:alerts");
@@ -314,7 +314,7 @@ export async function fetchJ3TamperConfigAlerts(): Promise<OpsDashboardAlert[]> 
   const response = await guardedFetch("/api/admin/emergency/tamper/config-alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `J3_ALERTS_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `J3_ALERTS_${response.status}`, "read")), { status: response.status });
   }
   if (!Array.isArray(payload.data.alerts)) {
     throw new Error("篡改告警数据不完整，请稍后重试。");
@@ -326,7 +326,7 @@ export async function fetchC2HighRiskAlerts(): Promise<OpsDashboardAlert[]> {
   const response = await guardedFetch("/api/admin/users/account-actions/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
-    throw new Error(formatAdminApiError(payload?.message, `C2_ALERTS_${response.status}`));
+    throw Object.assign(new Error(formatAdminApiError(payload?.message, `C2_ALERTS_${response.status}`, "read")), { status: response.status });
   }
   if (!Array.isArray(payload.data.alerts)) {
     throw new Error("C2_ALERTS_FIELD_REQUIRED:alerts");
@@ -362,7 +362,7 @@ export async function refreshJ1DutyAlerts() {
     if (requestSequence !== j1DutyAlertRequestSequence) return;
     publishJ1DutyAlertSnapshot({
       alerts: [],
-      error: "紧急停用告警加载失败，请稍后重试",
+      error: displayAdminReadError(error),
       settled: true,
     });
   }
@@ -416,8 +416,8 @@ export function useJ2GeoAlerts(enabled: boolean) {
       try {
         const alerts = await fetchJ2GeoAlerts();
         if (alive) setSnapshot({ alerts, error: null });
-      } catch {
-        if (alive) setSnapshot({ alerts: [], error: "地区访问告警加载失败，请稍后重试" });
+      } catch (error) {
+        if (alive) setSnapshot({ alerts: [], error: displayAdminReadError(error) });
       }
     };
     void refresh();
@@ -444,8 +444,8 @@ export function useJ3TamperConfigAlerts(enabled: boolean) {
       try {
         const alerts = await fetchJ3TamperConfigAlerts();
         if (alive) setSnapshot({ alerts, error: null });
-      } catch {
-        if (alive) setSnapshot({ alerts: [], error: "篡改告警加载失败，请稍后重试" });
+      } catch (error) {
+        if (alive) setSnapshot({ alerts: [], error: displayAdminReadError(error) });
       }
     };
     void refresh();
@@ -472,8 +472,8 @@ export function useC2HighRiskAlerts(enabled: boolean) {
       try {
         const alerts = await fetchC2HighRiskAlerts();
         if (alive) setSnapshot({ alerts, error: null });
-      } catch {
-        if (alive) setSnapshot({ alerts: [], error: "高风险账户告警加载失败，请稍后重试" });
+      } catch (error) {
+        if (alive) setSnapshot({ alerts: [], error: displayAdminReadError(error) });
       }
     };
     void refresh();

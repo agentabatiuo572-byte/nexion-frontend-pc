@@ -19,7 +19,7 @@ import {
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
+import { businessClock, businessZone, formatBusinessTimeCompact, parseBusinessTime } from "@/lib/admin/business-time";
 import { PAYOUT_VND_HELP, PAYOUT_VND_SOURCE_HELP } from "@/lib/admin/config-help/d7-payout-vnd";
 import { DOutcomeUnknownError, DRequestError, isDOutcomeUnknownError } from "@/lib/admin/d-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -349,6 +349,7 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   const refresh = () => {
     const run = () => {
       void reload();
+      void bDomain.reload(true);
       approvals.refreshApprovals();
     };
     if (editing) requestClose(run);
@@ -713,7 +714,6 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
   };
 
   const auditLink = canReachAudit && <Link className="rd-link" href="/platform/audit?domain=D" prefetch={false} onClick={guard("/platform/audit?domain=D")}>到操作记录与审批核对</Link>;
-  const sentAt = (record: PendingMutationRecord) => `${formatBusinessTimeCompact(new Date(record.createdAt).toISOString(), "—")}（${zone}）发出`;
   const expiredNext = (record: FundCommandRecord) => {
     const access = fundInvestigationAccess(record);
     return access.unavailableReason ? "" : access.canSubmit ? EXPIRED_CLOSE_HERE : EXPIRED_CLOSE_OTHER;
@@ -832,7 +832,8 @@ export function D7PayoutVnd({ ctx }: { ctx: DCtx }) {
     items={visibleQueueRows.map((ticket) => {
       const stale = approvals.queueRowStale(ticket.id);
       const changes = withdrawalProposalChanges("D7", ticket);
-      return { key: ticket.id, object: `放宽单 ${ticket.id}`, tag: <StatusTag tone="warn">{stale ? "上次待审批" : "待审批"}</StatusTag>,
+      const submittedAt = parseBusinessTime(ticket.rawTs ?? "");
+      return { key: ticket.id, object: `放宽单 ${ticket.id}`, createdAt: Number.isFinite(submittedAt) ? submittedAt : undefined, tag: <StatusTag tone="warn">{stale ? "上次待审批" : "待审批"}</StatusTag>,
         line: `${proposalLine(changes)}${stale ? "上次读取的结果，正在刷新待批列表。" : approvals.queueLine}`,
         // 读不懂时这一行已经写了「拟改值没读到」，展开后不再写一遍（DT-12）。
         detail: changes ? proposalFacts(changes) : undefined };

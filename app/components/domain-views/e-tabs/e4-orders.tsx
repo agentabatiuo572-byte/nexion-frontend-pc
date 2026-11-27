@@ -184,7 +184,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
 
     <FundRecoveryPanel
       link={reach("/platform/audit", "platform_a2_read") ? <Link className="rd-link" href="/platform/audit?domain=E">到操作记录与审批核对</Link> : undefined}
-      rows={[...ctx.e4ReceiptAttempts.map((record): FundRecoveryRow => ({ key: record.commandKey, title: record.orderNo, expired: false, canRetry: false,
+      rows={[...ctx.e4ReceiptAttempts.map((record): FundRecoveryRow => ({ key: record.commandKey, title: record.orderNo, createdAt: record.createdAt, expired: false, canRetry: false,
         status: { tone: "warn", label: "结果未知", line: ctx.canQueryE4 ? "可能已经建了审批单，查到之前不要重复处理。" : "可能已经建了审批单，请有操作记录读取权限的同事核对。" },
         actions: ctx.canQueryE4 && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} loading={ctx.e4Retrying === record.fingerprint} disabled={!!ctx.e4Retrying} onClick={() => void ctx.checkE4Receipt(record)}>查询原操作</Button>,
         tech: `操作编号 ${record.commandKey}` })),
