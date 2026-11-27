@@ -131,7 +131,7 @@
 .d2-filter { display: flex; flex-direction: column; gap: var(--rd-space-3); }
 .d2-filter-note { margin: 0; color: var(--rd-text-2); }
 .d2-segs { display: inline-flex; align-items: center; gap: var(--rd-space-1); }  /* 问号紧跟分段（VS-85） */
-/* 列宽写在列上，筛空时各列不按表头文字重新分宽（DT-16）：状态列吃掉剩下的宽度，操作列只占按钮宽。
+/* 列宽写在列上，有行、筛空、加载占位时各列边界一样（DT-16）：状态列吃掉剩下的宽度，操作列写死宽度。
    默认列用百分比（1440 时约 216、136、120、200），窄时跟着收到内容宽，不抬高表格的最小宽度；加出来的列是用户选的，放不下就横向滚动（ST-03）。 */
 .d2-col-select { width: 44px; }  /* 有行时勾选格右边有 8 的内边距，表头没有；写死才不会筛空后整表左移 8 */
 .d2-col-no { width: 18.5%; }
@@ -142,7 +142,7 @@
 .d2-col-fee { width: 144px; }
 .d2-col-account { width: 200px; }
 .d2-col-lifecycle { width: 220px; }
-.d2-col-action { width: 1%; }
+.d2-col-action { width: 114px; }  /* 写死：有行时按钮撑开、筛空时收回，状态列会跟着变宽变窄。114 放得下最宽的一种（只有「拒绝并退款」），「放行」加「更多」是 104 */
 
 /* 提现单抽屉 */
 .d2-history { display: flex; flex-direction: column; gap: var(--rd-space-4); }

@@ -938,12 +938,16 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [ruleFilter, setRuleFilter] = useState(() => searchParams?.get("rule")?.trim() ?? "");
   const [riskDropped, setRiskDropped] = useState("");
   const [amountRangeInvalid, setAmountRangeInvalid] = useState(false);
+  /** 金额框被浏览器拦下（负数、不是数字），按框记。 */
+  const [amountBad, setAmountBad] = useState({ min: false, max: false });
   const [dateError, setDateError] = useState<"invalid" | "incomplete" | null>(null);
   const [dateInputRevision, setDateInputRevision] = useState(0);
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
   const [d5, setD5] = useState<D5Params | null>(null);
   const [statusCounts, setStatusCounts] = useState<Record<string, number> | null>(null);
   const [countsFailed, setCountsFailed] = useState(false);
+  /** 分组数量读到的时刻（业务时区时分），读不到时为空。 */
+  const [countsReadAt, setCountsReadAt] = useState("");
   /** 提现总开关。null 是还没读到；读不到写 unknown，放行时后端还会再查。 */
   const [withdrawGate, setWithdrawGate] = useState<"open" | "closed" | "unknown" | null>(null);
   const [developmentCapabilities, setDevelopmentCapabilities] = useState<D2DevelopmentCapabilities | null>(null);
@@ -1092,10 +1096,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (seq !== countSeq.current) return;
       setStatusCounts(Object.fromEntries(ALL_STATUSES.map((status, index) => [status, pages[index].total])));
       setCountsFailed(false);
+      setCountsReadAt(businessClock(Date.now()));
     } catch {
       if (seq !== countSeq.current) return;
       setStatusCounts(null);
       setCountsFailed(true);
+      setCountsReadAt("");
     }
   };
 
@@ -1418,7 +1424,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     setDateError("incomplete");
   };
 
+  // 负数或不是数字时浏览器不提交表单，原因写到筛选条下（ST-19），不弹浏览器自己的提示。
+  const handleInvalidAmount = (side: "min" | "max") => (event: FormEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    setAmountBad((current) => ({ ...current, [side]: true }));
+  };
+
   const submitQuery = () => {
+    // 走到这里说明浏览器的检查都过了，金额框不再算填错。
+    setAmountBad({ min: false, max: false });
     if (!riskScoreIsValid(draft.minRiskScore)) return;
     const invalidRange = draft.minAmount !== "" && draft.maxAmount !== "" && Number(draft.minAmount) > Number(draft.maxAmount);
     const invalidDates = [draft.createdFrom, draft.createdTo].some((value) => value !== "" && !isWithdrawalDate(value))
@@ -1437,6 +1451,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const applyFilters = (patch: Partial<D2Filters>) => {
     setDraft((current) => ({ ...current, ...patch }));
     setAmountRangeInvalid(false);
+    setAmountBad({ min: false, max: false });
     if (patch.createdFrom === "" && patch.createdTo === "") resetDateInputs();
     else setDateError(null);
     setQuery((current) => ({ ...current, ...patch, page: 1 }));
@@ -1451,6 +1466,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     setRuleFilter("");
     setDraft(DEFAULT_FILTERS);
     setAmountRangeInvalid(false);
+    setAmountBad({ min: false, max: false });
     resetDateInputs();
     setQuery((current) => ({ ...DEFAULT_QUERY, pageSize: current.pageSize }));
   };
@@ -1695,6 +1711,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const moreCount = [query.createdFrom || query.createdTo, query.minAmount, query.maxAmount, query.minRiskScore, query.ipSegment, ruleFilter].filter(Boolean).length
     + (query.sortBy !== DEFAULT_FILTERS.sortBy || query.sortDirection !== DEFAULT_FILTERS.sortDirection ? 1 : 0);
   const hasConditions = appliedChips.length > 0 || query.status !== "";
+  // 空列表的说法只看真正缩小结果的条件；排序、只筛当前页的触发规则不算（ST-33）。
+  const narrowsResults = query.status !== "" || [query.keyword, query.createdFrom, query.createdTo, query.minAmount, query.maxAmount, query.minRiskScore, query.ipSegment].some(Boolean);
   const draftChanged = (Object.keys(DEFAULT_FILTERS) as (keyof D2Filters)[]).some((key) => draft[key] !== query[key]);
 
   const riskNotice = !riskScoreIsValid(draft.minRiskScore)
@@ -1703,15 +1721,16 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const dateProblem = dateError === "incomplete" ? "提交日期没填完整。"
     : isReversedDateRange(draft.createdFrom, draft.createdTo)
       ? "提交日期有误：开始日期不能晚于结束日期。" : ADMIN_ERROR_MESSAGES[DATE_RANGE_INVALID];
-  const rangeProblems = `${amountRangeInvalid ? "最低金额不能大于最高金额。" : ""}${dateError ? dateProblem : ""}`;
+  const amountFormatProblem = amountBad.min || amountBad.max ? `${amountBad.min && amountBad.max ? "最低金额和最高金额" : amountBad.min ? "最低金额" : "最高金额"}要填 0 或正数。` : "";
+  const rangeProblems = `${amountFormatProblem}${amountRangeInvalid ? "最低金额不能大于最高金额。" : ""}${dateError ? dateProblem : ""}`;
   const filterNotice = rangeProblems ? `${rangeProblems}这次没有查询。` : riskNotice || undefined;
   // 筛「冻结」时的去向说明不是填错，不占筛选条的提示位（ST-19），写在筛选条下面。
   const frozenNote = query.status === "FROZEN" ? "ERC20 丢失链上确认的单也按冻结处理，要在「打款异常，需人工核对」里查看。" : undefined;
   // 列表时间比越南时间快（北京时间快 60 分钟）时，越南时间晚上提交的单在列表里是第二天；慢时，凌晨提交的单是前一天。
   const listShift = businessOffsetMinutes() - 7 * 60;
-  const vnClock = (minutes: number) => `${Math.floor(minutes / 60)} 点${minutes % 60 ? ` ${minutes % 60} 分` : ""}`;
-  const listDayHint = listShift > 0 ? `列表时间是${businessZone().label}：越南时间 ${vnClock(24 * 60 - listShift)}后提交的单，列表里显示为第二天。`
-    : listShift < 0 ? `列表时间是${businessZone().label}：越南时间 ${vnClock(-listShift)}前提交的单，列表里显示为前一天。` : "";
+  const vnClock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  const listDayHint = listShift > 0 ? `列表时间是${businessZone().label}：越南时间 ${vnClock(24 * 60 - listShift)} 起提交的单，列表里显示为第二天。`
+    : listShift < 0 ? `列表时间是${businessZone().label}：越南时间 ${vnClock(-listShift)} 前提交的单，列表里显示为前一天。` : "";
 
   const shown = drawerRow.current;
   const detailIndex = detail ? visibleRows.findIndex((row) => row.withdrawalNo === detail.withdrawalNo) : -1;
@@ -1831,7 +1850,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       scope={<>
         <span className="d2-segs">
           <Segments label="提现状态分组" value={query.group} items={segments} onChange={setGroup} />
-          <Explain label="分组数量的说明" content="数量是全部的，不随筛选变。" />
+          <Explain label="分组数量的说明" content={`数量是全部的，不随筛选变。${countsReadAt ? `${countsReadAt} 读取（${businessZone().label}）。` : ""}`} />
         </span>
         <FilterField>
           {currentGroup
@@ -1858,9 +1877,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </FilterField>
         <FilterField label="金额（USDT）">
           <span className="rd-filter-range">
-            <Input aria-label="最低金额（USDT）" aria-invalid={amountRangeInvalid || undefined} type="number" min="0" step="any" placeholder="下限" value={draft.minAmount} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); }} />
+            <Input aria-label="最低金额（USDT）" aria-invalid={amountRangeInvalid || amountBad.min || undefined} type="number" min="0" step="any" placeholder="下限" value={draft.minAmount} onInvalid={handleInvalidAmount("min")} onChange={(event) => { setDraft({ ...draft, minAmount: event.target.value }); setAmountRangeInvalid(false); setAmountBad((current) => ({ ...current, min: false })); }} />
             <span aria-hidden>–</span>
-            <Input aria-label="最高金额（USDT）" aria-invalid={amountRangeInvalid || undefined} type="number" min="0" step="any" placeholder="上限" value={draft.maxAmount} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); }} />
+            <Input aria-label="最高金额（USDT）" aria-invalid={amountRangeInvalid || amountBad.max || undefined} type="number" min="0" step="any" placeholder="上限" value={draft.maxAmount} onInvalid={handleInvalidAmount("max")} onChange={(event) => { setDraft({ ...draft, maxAmount: event.target.value }); setAmountRangeInvalid(false); setAmountBad((current) => ({ ...current, max: false })); }} />
           </span>
         </FilterField>
         <FilterField label="最低风险分"><Input inputMode="numeric" placeholder="0–100" aria-invalid={!riskScoreIsValid(draft.minRiskScore)} value={draft.minRiskScore} onChange={(event) => { setDraft({ ...draft, minRiskScore: event.target.value }); setRiskDropped(""); }} /></FilterField>
@@ -1923,10 +1942,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
               : !writesEnabled ? <TableMessage columns={tableColumnCount} role="alert">提现数据暂不可用。 <Button size="sm" onClick={() => { setPage(1); void loadCounts(); void loadGate(); }}>重试</Button></TableMessage>
                 : visibleRows.length === 0 ? <TableMessage columns={tableColumnCount} role="status">
                   {rows.records.length > 0 ? <>当前页没有匹配，其他页可能有。 <Button size="sm" onClick={() => setRuleFilter("")}>清除触发规则</Button></>
-                    : hasConditions ? <>没有符合条件的提现单。 <Button size="sm" onClick={clearAllFilters}>清除筛选</Button></>
+                    : narrowsResults ? <>没有符合条件的提现单。 <Button size="sm" onClick={clearAllFilters}>清除筛选</Button></>
                       : query.group === "todo" ? <>现在没有要处理的提现。用户提交后，要人工审核的会出现在这里。 <Button size="sm" onClick={() => setGroup("all")}>看全部提现</Button></>
                         : query.group === "all" ? "暂无提现记录。用户提交提现后会出现在这里。"
-                          : query.group === "system" ? "暂无系统处理中的提现。刚提交、冷却中和放行后还没到账的单会出现在这里。" : "暂无已结束的提现。已到账和已退款的单会出现在这里。"}
+                          : query.group === "system" ? "暂无系统处理中的提现。刚提交、冷却中和放行后还没到账的单会出现在这里。" : `暂无已结束的提现。状态是「${STATUS_CN.CONFIRMED}」或「${STATUS_CN.REFUNDED}」的单会出现在这里。`}
                 </TableMessage>
                   : visibleRows.map((row) => {
                     const selectedNow = selected.has(row.withdrawalNo);
