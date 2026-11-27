@@ -354,7 +354,7 @@ function f4ApprovalResultText(result: F4ApprovalBusinessResult) {
 }
 
 function f4BlockedText(reasonCode: F4ApprovalAttemptResult["reasonCode"]) {
-  return `${f4ResultReason({ reasonCode })}。审批单仍待审批。这次没有执行。关掉后重新打开，按最新读数再批准，或驳回。`;
+  return `这次没有执行：${f4ResultReason({ reasonCode })}。审批单仍待审批，关掉后重新打开，按最新读数再批准，或驳回。`;
 }
 /**
  * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
