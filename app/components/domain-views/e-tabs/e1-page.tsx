@@ -1,8 +1,8 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { AlertTriangle, RefreshCw, RotateCcw, SearchCheck, Server } from "lucide-react";
-import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Fold, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag } from "@/app/components/rd";
+import { BlockState, Button, Change, ConflictBar, DiffList, Explain, Facts, Fact, Field, Fold, Input, Modal, Notice, Drawer, PageHeader, RdPage, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
 import { canReadOwnRecoveryProposal, sendRecoveredDraft } from "@/lib/admin/abe-recovery-access";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { OperationConfirmModal, useToast, usePendingReplayDeadline } from "../design-kit";
@@ -12,7 +12,8 @@ import { datacenterNameText } from "@/lib/admin/brand-copy";
 import { businessClock } from "@/lib/admin/business-time";
 import { fetchE1Products, fetchE1GenerationGates, fetchE1Discount, inspectE1StoreDisplayControls, type E1BundleDiscount, type E1GenerationGateData } from "@/lib/admin/e1-client";
 import { fetchE3Params } from "@/lib/admin/e3-client";
-import { A2OutcomeUncertainError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, A2ProposalReceiptIncompleteError, createA2CommandKey, createA2OperationProposal, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
+import { approvedE1CreateSkuId, e1CreateNumberLabel, E1_CREATE_NUMBER_UNREAD, isE1CreateRequestId, legacyE1CreateSkuId } from "@/lib/admin/e1-create-receipt";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { useReach } from "@/lib/nav/use-reach";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
@@ -28,8 +29,8 @@ import { E1_CURRENT_PHASE_UNVERIFIED, e1CurrentPhase, e1SkuOpening, resolveE1Pha
 import { E1Catalog, E1_MISSING_SERIES_REASON, type E1CatalogContext } from "./e1-catalog";
 import { useCatalogSource, type CatalogReadOptions, type CatalogSource } from "./e1-catalog-read";
 import { E1Editor, type E1EditRequest, type E1SkuReview } from "./e1-editor";
-import { PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
-import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, e1DisplayEffect, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
+import { MissingProposalReleaseModal, PROPOSAL_END, RECOVERY_LINE, RecoveryPanel, eReadError, recoveryTitle, type RecoveryItem } from "./e-command-check";
+import { e1Commands, e1MonthlyCommands, e1Pending, forgetE1, e1LegacyCommands, e1LegacyObject, e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, e1Number, e1Decimal, e1Amount, e1TargetPrecision, e1Object, e1ShownDiff, e1SkuDiff, e1Value, e1DisplayEffect, e1CreateRequestId, type E1Pending, type E1Legacy, type E1MediaPending } from "./e1-state";
 
 import { withLegacyReplayRejection, nextRecoveryDeadline, currentRecoveryActor, canCreateRecoveryProposal } from "@/lib/admin/abe-recovery-access";
 
@@ -47,7 +48,83 @@ const monthlyRecovery = createPendingRecovery({ ...e1MonthlyCommands, list: () =
 const recoveryFor = (original: E1Pending) => original.fingerprint.startsWith("sku|") ? monthlyRecovery : catalogRecovery;
 
 type Confirmation = McSpec & Partial<E1SkuReview> & { initialBusinessValues?: Record<string, string>; gates?: E1GenerationGateData | null; discount?: E1BundleDiscount | null; early?: Record<string, string> };
-type E1Receipt = ProposeSpec & { id: string; commandKey: string; object: string; status: string; createdAt: number; reading?: boolean; readError?: string };
+type E1Receipt = ProposeSpec & NonNullable<E1Pending["ticket"]> & { actorId: string; commandKey: string; object: string; createdAt: number; reading?: boolean; readError?: string };
+type E1CreateProductAction = { skuId: string; open: () => void };
+type E1OwnCreateConditions = { commandKey: string; ticketId?: string };
+type E1OwnCreateLookup = { state: "found"; ticket: Pick<A2OperationRow, "id" | "action" | "status">; number?: string; product?: E1CreateProductAction }
+  | { state: "not-found" }
+  | { state: "mismatch"; message: string }
+  | { state: "unread"; message: string };
+const E1CreateControls = createContext<{
+  queryOwnCreate?: (commandKey: string, ticketId?: string) => Promise<E1OwnCreateLookup>;
+  receiptProduct?: (ticketId: string) => E1CreateProductAction | undefined;
+}>({});
+export const useE1CreateControls = () => useContext(E1CreateControls);
+
+/** 批准回执上的「查看商品资料」：有已核对的商品编号才出现，按编号打开「商品资料」，同名商品也不会开错（F02）。 */
+function E1ReceiptProductButton({ ticketId, size }: { ticketId: string; size?: "sm" }) {
+  const product = useE1CreateControls().receiptProduct?.(ticketId);
+  return product ? <Button size={size} onClick={product.open}>查看商品资料</Button> : null;
+}
+
+const OWN_CREATE_TONE: Record<string, StateTone> = { pending: "warn", approved: "done" };
+const OWN_CREATE_QUERY_COPY = {
+  mismatch: "查到的申请和这个审批单号对不上，请到「操作记录与审批」核对。",
+  mismatchWithoutAudit: "查到的申请和这个审批单号对不上，请确认审批单号是否抄对。",
+  progressUnread: "刚查过：还是没查到审批进度，稍后再查。",
+  incompleteResponse: "收到的数据不完整，已停止显示",
+};
+
+/**
+ * 页头「查询我的新增申请」：没有本页记录（换了浏览器、关过标签页）也能按操作编号查自己提交的新增商品（F03，OP-65）。
+ * 只读查询，不走确认（OP-10）；查到、没查到、这次没查清三种结果分开写（ST-33、ST-34）。
+ */
+function E1OwnCreateQuery() {
+  const { queryOwnCreate } = useE1CreateControls();
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState("");
+  const [ticket, setTicket] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<(E1OwnCreateLookup & { submitted: E1OwnCreateConditions }) | null>(null);
+  if (!queryOwnCreate) return null;
+  const close = () => { setOpen(false); setKey(""); setTicket(""); setResult(null); };
+  const run = async (submitted: E1OwnCreateConditions) => {
+    if (!submitted.commandKey || busy) return;
+    setBusy(true);
+    try {
+      const found = await queryOwnCreate(submitted.commandKey, submitted.ticketId);
+      setResult({ ...found, submitted });
+    } finally { setBusy(false); }
+  };
+  const retry = result?.state === "unread" ? () => void run(result.submitted) : undefined;
+  const submit = retry ?? (() => void run({ commandKey: key.trim(), ticketId: ticket.trim() || undefined }));
+  const onEnter = (event: KeyboardEvent<HTMLInputElement>) => { if (event.key === "Enter") submit(); };
+  return <>
+    <Button icon={<SearchCheck size={14} aria-hidden />} onClick={() => setOpen(true)}>查询我的新增申请</Button>
+    {open && <Modal title="查询我的新增申请" icon={SearchCheck} busy={busy} dirty={!!key || !!ticket} onClose={close}
+      footer={<><Button disabled={busy} onClick={close}>关闭</Button><Button variant="primary" loading={busy} loadingText="查询中…" disabledReason={key.trim() ? undefined : "请先填写操作编号"} onClick={submit}>查询</Button></>}>
+      <Field label="操作编号" required explain="提交新增商品时生成，在当时那条记录展开后的「技术信息」里可以复制。">
+        <Input data-mono autoComplete="off" spellCheck={false} value={key} disabled={busy} onKeyDown={onEnter} onChange={event => { setKey(event.target.value); setResult(null); }} />
+      </Field>
+      <Field label="审批单号" hint="选填" explain="填了会核对查到的是不是这张审批单。">
+        <Input data-mono autoComplete="off" spellCheck={false} value={ticket} disabled={busy} onKeyDown={onEnter} onChange={event => { setTicket(event.target.value); setResult(null); }} />
+      </Field>
+      {result?.state === "found" && <div className="rd-stack" role="status">
+        <Facts>
+          <Fact k="状态"><StatusTag tone={OWN_CREATE_TONE[result.ticket.status] ?? PROPOSAL_END[result.ticket.status]?.tone ?? "warn"}>{RECEIPT_STATUS[result.ticket.status] ?? "状态待核实"}</StatusTag></Fact>
+          <Fact k="申请">{result.ticket.action}</Fact>
+          <Fact k="审批单号"><span data-mono>{result.ticket.id}</span></Fact>
+          {result.number && <Fact k="商品编号">{result.product ? <span data-mono>{result.product.skuId}</span> : result.number}</Fact>}
+        </Facts>
+        <p className="rd-toolbar">{result.ticket.status === "pending" ? RECOVERY_LINE.pending : result.product ? "已按申请创建商品。" : PROPOSAL_END[result.ticket.status]?.text ?? "状态待核实，请到操作记录与审批核对。"}
+          {result.product && <Button size="sm" onClick={() => { const product = result.product!; close(); product.open(); }}>查看商品资料</Button>}</p>
+      </div>}
+      {result?.state === "not-found" && <p className="rd-weak" role="status">没有查到：这个操作编号下没有你提交的新增申请，核对编号后再查。</p>}
+      {result?.state === "unread" && <BlockState compact state="error" title="新增申请加载失败" detail={result.message} onRetry={() => void run(result.submitted)} retrying={busy} />}
+      {result?.state === "mismatch" && <Notice tone="warn"><p>{result.message}</p></Notice>}
+    </Modal>}
+  </>;
+}
 const E1_SOURCES: readonly CatalogSource[] = ["products", "gates", "discount"];
 const ALL_SOURCES: readonly CatalogSource[] = [...E1_SOURCES, "early"];
 const SKU_EDIT_SOURCES: readonly CatalogSource[] = ["products", "gates"];
@@ -85,9 +162,53 @@ const E1_UNKNOWN = "结果还不确定，原请求和理由已保留；请先查
 const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。";
 const RETRY_REQUIRES_LOOKUP = "先查询原操作，查不到才能重试";
 const CATALOG_READ_BLOCK = "商品目录读取成功前不能提交修改";
+const CREATE_RECEIPT_UNREAD = `${E1_CREATE_NUMBER_UNREAD}，请按原操作查询。`;
+class E1CreateReceiptMismatchError extends Error {
+  constructor() {
+    super("查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。");
+  }
+}
 const endToast = (obj: string, id: string, status: string) => PROPOSAL_END[status] ? `${obj} · 审批单 ${id} ${PROPOSAL_END[status].tag}：${PROPOSAL_END[status].text}` : `${obj} · 审批单 ${id} 状态待核实`;
 
+function knownCreateTicketId(original?: E1Pending) {
+  return original?.ticket?.id ?? original?.receivedTicketId;
+}
+
+function checkCreateOwner(row: A2OperationRow, original?: E1Pending, ticketId = knownCreateTicketId(original)) {
+  const rightOperation = row.operationCode === "e1_sku_create"
+    || !row.operationCode && original?.spec.action === row.action;
+  if (!row.mine || !rightOperation || ticketId && row.id !== ticketId
+    || row.createRequestId && original && row.createRequestId !== e1CreateRequestId(original.spec)) {
+    throw new E1CreateReceiptMismatchError();
+  }
+}
+
+function createReceipt(row: A2OperationRow, original?: E1Pending): NonNullable<E1Pending["ticket"]> {
+  const resultSkuId = row.status === "approved" ? approvedE1CreateSkuId(row, original?.receivedCreateRequestId ?? original?.ticket?.createRequestId) : undefined;
+  const knownRequestId = original?.receivedCreateRequestId ?? original?.ticket?.createRequestId;
+  if (row.status === "approved" ? !resultSkuId
+    : !isE1CreateRequestId(row.createRequestId) && (knownRequestId || !legacyE1CreateSkuId(row))) {
+    throw new A2ProposalReceiptIncompleteError(row.id, row.createRequestId);
+  }
+  if (original?.ticket?.status === "approved" && (row.status !== "approved" || original.ticket.resultSkuId !== resultSkuId)) {
+    throw new E1CreateReceiptMismatchError();
+  }
+  return { id: row.id, status: row.status, createRequestId: row.createRequestId, resultSkuId };
+}
+
+function receiptAfter(receipt: E1Receipt) {
+  const skuNumber = receipt.resultSkuId ?? (receipt.command.op !== "e1_sku_create" ? undefined
+    : receipt.status === "approved" || receipt.readError === CREATE_RECEIPT_UNREAD ? E1_CREATE_NUMBER_UNREAD
+      : receipt.status === "pending" ? undefined : "未生成");
+  if (!skuNumber) return receipt.after;
+  const number = /(^|；)商品编号：[^；]*/;
+  return number.test(receipt.after)
+    ? receipt.after.replace(number, (_, prefix: string) => `${prefix}商品编号：${skuNumber}`)
+    : `商品编号：${skuNumber}；${receipt.after}`;
+}
+
 function e1Error(error: unknown) {
+  if (error instanceof A2ProposalReceiptIncompleteError) return CREATE_RECEIPT_UNREAD;
   if (isA2OutcomeUncertainError(error)) return E1_UNKNOWN;
   const value = error as { backendMessage?: string; message?: string } | null;
   const code = value?.backendMessage ?? value?.message ?? "";
@@ -109,8 +230,10 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const reach = useReach();
   const canOpenAudit = reach("/platform/audit", "platform_a2_read");
   const forceUnlock = authorities.includes("device_e1_generation_gate_force_unlock"), forceLock = authorities.includes("device_e1_generation_gate_force_lock");
-  const [receipts, setReceipts] = useState<E1Receipt[]>([]);
+  const [receiptRows, setReceipts] = useState<E1Receipt[]>([]);
+  const receipts = receiptRows.filter(row => row.actorId === actor);
   const [receiptDetailId, setReceiptDetailId] = useState<string | null>(null);
+  const [productDetailId, setProductDetailId] = useState<string | null>(null);
   const receiptDetail = receipts.find(row => row.id === receiptDetailId);
   const receipt = receipts.at(-1);
   const [businessValues, setBusinessValues] = useState<Record<string, string>>({});
@@ -159,6 +282,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   useSyncExternalStore(catalogRecovery.subscribe, catalogRecovery.getRevision, () => 0);
   useSyncExternalStore(monthlyRecovery.subscribe, monthlyRecovery.getRevision, () => 0);
   const [release, setRelease] = useState<E1Pending | null>(null);
+  const [releaseMissing, setReleaseMissing] = useState<E1Pending | null>(null);
   const [conflict, setConflict] = useState<readonly CatalogSource[] | null>(null);
   // 首次提交被后端明确拒绝：同一份输入再点也会被拒，按钮停住，给「返回修改」（只管这个框的界面状态）。
   const [refused, setRefused] = useState<{ on: Confirmation; text: string } | null>(null);
@@ -175,16 +299,31 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     : confirmation?.op === "sku-save" && attemptKey === busy);
   const syncPending = useCallback(() => {
     const records = e1Pending(actor);
+    const replaced = new Set(records.map(row => row.replacesDraftKey));
     setPending(records.filter(row => !row.verifiedNotExecuted && !row.ticket));
-    setVerifiedDrafts(records.filter(row => row.verifiedNotExecuted));
+    setVerifiedDrafts(records.filter(row => row.verifiedNotExecuted && !row.superseded && !replaced.has(row.commandKey)));
     setReceipts(rows => [
-      ...rows.filter(row => !records.some(record => record.ticket?.id === row.id)),
-      ...records.flatMap(row => row.ticket ? [{ ...row.spec, id: row.ticket.id, commandKey: row.commandKey, object: e1Object(row.spec), status: row.ticket.status, createdAt: row.createdAt }] : []),
+      ...rows.filter(row => row.actorId === actor && !records.some(record => record.commandKey === row.commandKey
+        && (record.ticket || record.spec.command.op === "e1_sku_create"))),
+      ...records.flatMap(row => row.ticket ? [{
+        ...rows.find(receipt => receipt.commandKey === row.commandKey && receipt.actorId === actor),
+        ...row.spec, ...row.ticket, actorId: actor, commandKey: row.commandKey, object: e1Object(row.spec), createdAt: row.createdAt,
+        ...(row.createNumberUnread ? { readError: CREATE_RECEIPT_UNREAD } : {}),
+      }] : []),
     ]);
     setLegacy(e1LegacyCommands(actor));
     setMedia(e1MediaCommands.list().filter(r => r.actorId === actor));
   }, [actor]);
   const storeFor = (record: E1Pending) => record.fingerprint.startsWith("sku|") ? e1MonthlyCommands : e1Commands;
+  const rememberCreateTicket = (record: E1Pending, id?: string, requestId?: string, unread?: true) => {
+    const current = e1Pending(actor).find(row => row.commandKey === record.commandKey);
+    if (!current || !id && !unread || id && knownCreateTicketId(current) && knownCreateTicketId(current) !== id
+      || requestId && requestId !== e1CreateRequestId(current.spec)) return;
+    const stored = { ...current, receivedTicketId: id ?? knownCreateTicketId(current),
+      receivedCreateRequestId: requestId ?? current.receivedCreateRequestId, createNumberUnread: unread };
+    storeFor(current).remember(current.fingerprint, current.commandKey, stored);
+    return stored;
+  };
   useEffect(syncPending, [syncPending]);
   const catalogIncomplete = !error && skus.length === 0 && invalid.length > 0;
   const catalogReadBlock = loading || error || catalogIncomplete ? CATALOG_READ_BLOCK : undefined;
@@ -267,12 +406,15 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         toast(endToast(receipt.action, receipt.id, result.status));
       }
     } catch (failure) {
-      setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, readError: displayAdminReadError(failure) } : row));
+      setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row,
+        readError: failure instanceof A2ProposalReceiptIncompleteError ? CREATE_RECEIPT_UNREAD : displayAdminReadError(failure),
+      } : row));
     } finally {
       setReceipts(rows => rows.map(row => row.id === receipt.id ? { ...row, reading: false } : row));
     }
   };
   const waitingReceipts = receipts.filter(row => row.status === "pending");
+  const approvedCreates = receipts.filter(row => row.status === "approved" && row.resultSkuId);
   const refreshFromHeader = async () => {
     setCheckingReceipts(true);
     try { await Promise.all(waitingReceipts.map(refreshReceipt)); }
@@ -299,12 +441,14 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (skuId && !sku) return;
     if (mediaRecord && (!e1MediaHasOwner(mediaRecord) || mediaRecord.skuId !== (skuId ?? ""))) return;
     const saved = exactDraft;
+    if (saved && !verifiedDrafts.some(row => row.commandKey === saved.commandKey)) return;
     if (sku && saved && !saved.skuBaseline) return;
     const params = saved?.spec.command.params;
-    const target = params ? { ...params, id: saved!.spec.obj, dailyEarnNEX: params.dailyEarnNex,
+    const target = params ? { ...params, id: sku?.id ?? "", dailyEarnNEX: params.dailyEarnNex,
       phoneDailyEarnNEX: params.phoneDailyEarnNex, unlock: params.unlockPhase } as unknown as OpsSku : undefined;
+    const draftId = sku ? undefined : mediaRecord?.draftId ?? saved?.mediaDraftId ?? (saved && e1CreateRequestId(saved.spec)) ?? crypto.randomUUID();
     draftKey.current = saved?.commandKey;
-    setEdit({ sku, unlock, nonce: Date.now(), draftId: sku ? undefined : mediaRecord?.draftId ?? crypto.randomUUID(),
+    setEdit({ sku, unlock, nonce: Date.now(), draftId, createRequestId: !sku && saved ? crypto.randomUUID() : draftId,
       mediaCommandKey: mediaRecord?.commandKey, mediaDraftForm: mediaRecord?.draftForm,
       recovered: target ? { form: saved?.skuForm ?? skuToForm(target), mediaSku: target, baseline: saved?.skuBaseline } : undefined });
   };
@@ -348,6 +492,10 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       sku: skus.find(s => s.id === input.target), gates, discount, early: { ...early } });
   };
   const retryReadBlock = (record: E1Pending) => {
+    if (record.spec.command.op === "e1_sku_create") {
+      const block = skuMediaBlock(undefined, record.mediaDraftId ?? e1CreateRequestId(record.spec));
+      if (block) return block;
+    }
     const object = e1Object(record.spec);
     const blocks = { products: catalogReadBlock, gates: gatesReadBlock, discount: discountReadBlock, early: earlyReadBlock };
     const reads = { products: productRead, gates: gateRead, discount: discountRead, early: earlyRead };
@@ -386,9 +534,24 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           operator: original.operator!, operatorRole: original.operatorRole!, type: spec.type,
           amplifies: !!spec.amplifies, sos: !!spec.sos, roleGate: spec.gateLabel, reason: spec.reason, sourceDomain: spec.sourceDomain,
           command: spec.command, target: spec.target, targets: spec.targets,
-        }, original.commandKey, true);
+        }, original.commandKey, true, spec.command.op === "e1_sku_create");
       };
       const result = await (retry ? recovery.replay(record, post) : post(record));
+      if (spec.command.op === "e1_sku_create") {
+        checkCreateOwner(result, record);
+        record = rememberCreateTicket(record, result.id, result.createRequestId) ?? record;
+        // The old idempotent POST is the original response, even after a decision.
+        if (retry && !result.createRequestId) {
+          await check(record, { propagate: true });
+          return;
+        }
+        const ticket = createReceipt(result, record);
+        storeCreateReceipt(record, ticket);
+        toast(ticket.status === "pending" ? `已提交，等待审批后执行 · 审批单 ${ticket.id}` : endToast(spec.action, ticket.id, ticket.status));
+        closeOwnEditor();
+        if (ownEditor) ownConfirmation?.afterSubmitted?.();
+        return;
+      }
       record = { ...record, receivedTicketId: result.id };
       store.remember(record.fingerprint, record.commandKey, record);
       if (retry) {
@@ -398,15 +561,18 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       store.remember(record.fingerprint, record.commandKey, { ...record, ticket: { id: result.id, status: "pending" } });
       if (result.status !== "pending") await check(record, { propagate: true, readback: false });
       toast(`已提交，等待审批后执行 · 审批单 ${result.id}`);
-      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status, createdAt: record.createdAt }]);
+      setReceipts(rows => [...rows.filter(row => row.object !== e1Object(spec)), { ...spec, actorId: actor, id: result.id, commandKey: record.commandKey, object: e1Object(spec), status: result.status, createdAt: record.createdAt }]);
       closeOwnEditor();
       if (ownEditor) ownConfirmation?.afterSubmitted?.();
     } catch (failure) {
+      if (record.spec.command.op === "e1_sku_create" && failure instanceof A2ProposalReceiptIncompleteError) {
+        record = rememberCreateTicket(record, failure.ticketId, failure.createRequestId, true) ?? record;
+      }
       const response = failure as { httpStatus?: number; apiCode?: number; backendMessage?: string; message?: string };
       const firstRejection = !record.receivedTicketId && !retry && !isA2OutcomeUncertainError(failure) && response.httpStatus !== undefined
         && isDeterministicRejection(response.httpStatus, response.apiCode);
       if (firstRejection) forgetE1(record);
-      const shown = record.receivedTicketId ? TICKET_UNREAD : e1Error(failure);
+      const shown = failure instanceof A2ProposalReceiptIncompleteError ? CREATE_RECEIPT_UNREAD : record.receivedTicketId ? TICKET_UNREAD : e1Error(failure);
       setNotes(n => ({ ...n, [record.commandKey]: shown }));
       if (!firstRejection && !isExplicitRejection(failure)) closeOwnEditor();
       const skuReview = !retry && confirmation?.op === "sku-save" ? confirmation : null;
@@ -427,55 +593,106 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const submit = async (spec: ProposeSpec) => {
     if (!canWrite || !actor || sending.current) throw new Error("正在提交或账号没有提交权限，本次没有提交");
     const object = e1Object(spec);
-    const mediaBlock = object.startsWith("device_sku|") && (skuMediaBlock(spec.obj)
-      ?? (spec.command.op === "e1_sku_create" ? skuMediaBlock(undefined, edit?.draftId) : undefined));
+    const creating = spec.command.op === "e1_sku_create";
+    const mediaBlock = creating ? skuMediaBlock(undefined, edit?.draftId)
+      : object.startsWith("device_sku|") ? skuMediaBlock(spec.obj) : undefined;
     if (mediaBlock) throw new Error(mediaBlock);
     if (e1Pending(actor).some(r => !r.verifiedNotExecuted && e1Object(r.spec) === object) || locked(object.split("|")[0], object.split("|").slice(1).join("|"))) throw new Error("此对象有待审批或待核对的操作，请先核对原操作");
     const commandKey = createA2CommandKey("e1-proposal"), fingerprint = `${actor}|${object}`;
     const savedSpec = JSON.parse(JSON.stringify(spec)) as ProposeSpec;
-    e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec, operator: session!.operator || session!.username, operatorRole: roleLabel(session!.role), skuForm: confirmation?.form, skuBaseline: confirmation?.beforeSku });
+    const draft = verifiedDrafts.find(row => row.commandKey === draftKey.current && row.spec.command.op === spec.command.op
+      && (creating || e1Object(row.spec) === object));
+    e1Commands.remember(fingerprint, commandKey, { actorId: actor, spec: savedSpec, operator: session!.operator || session!.username, operatorRole: roleLabel(session!.role),
+      skuForm: confirmation?.form, skuBaseline: confirmation?.beforeSku,
+      ...(creating ? { mediaDraftId: edit?.draftId, replacesDraftKey: draft?.commandKey } : {}),
+    });
     if (!e1Commands.isDurablyStored(fingerprint, commandKey)) { e1Commands.forget(fingerprint, commandKey); throw new Error("浏览器无法保存原操作，本次没有提交。请检查浏览器设置后重试。"); }
     syncPending();
     setAttemptKey(commandKey);
-    const draft = e1Pending(actor).find(row => row.commandKey === draftKey.current && row.verifiedNotExecuted && e1Object(row.spec) === object && row.spec.command.op === spec.command.op);
     const replacement = e1Commands.list().find(r => r.commandKey === commandKey)!;
     await sendRecoveredDraft(() => send(replacement, false), () => e1Commands.isDurablyStored(fingerprint, commandKey), draft && (() => {
-      forgetE1(draft);
+      if (creating) storeFor(draft).remember(draft.fingerprint, draft.commandKey, { ...draft, superseded: true });
+      else forgetE1(draft);
       if (draftKey.current === draft.commandKey) draftKey.current = undefined;
       syncPending();
     }));
   };
+
+  const storeCreateReceipt = (original: E1Pending, ticket: NonNullable<E1Pending["ticket"]>, readback = true) => {
+    const verifiedNotExecuted = ticket.status !== "pending" && ticket.status !== "approved" ? true : undefined;
+    storeFor(original).remember(original.fingerprint, original.commandKey, {
+      ...original, receivedTicketId: ticket.id, ticket, verifiedNotExecuted, createNumberUnread: undefined,
+    });
+    if (readback && (ticket.status === "pending" || ticket.status === "approved")) {
+      const object = ticket.resultSkuId ? `device_sku|${ticket.resultSkuId}` : e1Object(original.spec);
+      void reloadCatalog(proposalSources(original.spec), { readback: { commandKey: original.commandKey, object } });
+    }
+  };
+
   const check = async (record: { commandKey: string }, { propagate = false, readback = true } = {}) => {
     const full = e1Pending(actor).find(r => r.commandKey === record.commandKey && !r.verifiedNotExecuted);
     try {
       const result = full ? await recoveryFor(full).query(full, async original => {
-        const ticket = await fetchA2ProposalByKey(original.commandKey, true, "f");
-        if (ticket && (!ticket.mine || ticket.obj !== original.spec.obj || original.receivedTicketId && ticket.id !== original.receivedTicketId
+        const creating = original.spec.command.op === "e1_sku_create";
+        const ticket = await fetchA2ProposalByKey(original.commandKey, true, creating ? "e1" : "f");
+        if (ticket && creating) checkCreateOwner(ticket, original);
+        const create = ticket && creating ? createReceipt(ticket, original) : undefined;
+        if (ticket && !create && (!ticket.mine || ticket.obj !== original.spec.obj || original.receivedTicketId && ticket.id !== original.receivedTicketId
           || (ticket.operationCode ? ticket.operationCode !== original.spec.command.op : ticket.action !== original.spec.action))) throw new A2OutcomeUncertainError("查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。", original.commandKey);
-        if (!ticket && original.receivedTicketId) throw new A2OutcomeUncertainError(TICKET_UNREAD, original.commandKey);
-        return { ticket, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown"
+        if (!ticket && knownCreateTicketId(original)) throw new A2OutcomeUncertainError(TICKET_UNREAD, original.commandKey);
+        return { ticket, create, conclusion: !ticket ? "not-found" : ticket.status === "pending" ? "unknown"
           : ticket.status === "approved" ? "succeeded" : "rejected" } as const;
       }) : undefined;
       if (full && !result) return;
       const row = full ? result!.ticket : await fetchA2ProposalByKey(record.commandKey, true, "f");
-      if (!row) { setNotes(n => ({ ...n, [record.commandKey]: full ? "刚查过：没有这张审批单。" : "按原请求没有查到审批单。旧记录不能重试或解除，请到操作记录与审批核对。" })); return; }
+      if (!row) {
+        setNotes(n => ({ ...n, [record.commandKey]: full ? "刚查过：没有这张审批单。" : "按原请求没有查到审批单。旧记录不能重试或解除，请到操作记录与审批核对。" }));
+        return result?.conclusion;
+      }
       setNotes(n => ({ ...n, [record.commandKey]: `审批单 ${row.id} · ${RECEIPT_STATUS[row.status] ?? "状态待核实"}` }));
       toast(row.status === "pending" ? `查到了审批单 ${row.id}，还在等批准` : endToast(full?.spec.action ?? "原操作", row.id, row.status));
       if (full) {
         const spec = full.spec;
+        if (result?.create) {
+          storeCreateReceipt(full, result.create, readback && (result.create.status === "approved" || result.create.status !== full.ticket?.status));
+          syncPending();
+          return;
+        }
         const object = e1Object(spec);
         if (row.status !== "pending" && readback) void reloadCatalog(proposalSources(spec), { readback: { commandKey: full.commandKey, object } });
-        setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, id: row.id, commandKey: record.commandKey, object, status: row.status, createdAt: full.createdAt }]);
+        setReceipts(rows => [...rows.filter(receipt => receipt.object !== object), { ...spec, actorId: actor, id: row.id, commandKey: record.commandKey, object, status: row.status, createdAt: full.createdAt }]);
         if (row.status === "pending") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, receivedTicketId: row.id, ticket: { id: row.id, status: "pending" } });
         else if (result?.conclusion === "rejected") storeFor(full).remember(full.fingerprint, full.commandKey, { ...full, ticket: undefined, verifiedNotExecuted: true });
         else recoveryFor(full).settleFromQuery(full, "succeeded");
         syncPending();
       }
     } catch (failure) {
-      const message = full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? (failure as Error).message : `这次没查到：${eReadError(failure)}`;
+      if (full?.spec.command.op === "e1_sku_create" && failure instanceof A2ProposalReceiptIncompleteError) {
+        rememberCreateTicket(full, failure.ticketId, failure.createRequestId, true);
+        syncPending();
+      }
+      const message = failure instanceof A2ProposalReceiptIncompleteError && full?.spec.command.op === "e1_sku_create" ? CREATE_RECEIPT_UNREAD
+        : full?.receivedTicketId ? TICKET_UNREAD : isA2OutcomeUncertainError(failure) ? failure.message : `这次没查到：${eReadError(failure)}`;
       setNotes(n => ({ ...n, [record.commandKey]: message }));
       if (propagate) throw failure;
     }
+  };
+
+  const canReleaseMissing = (record: E1Pending) => canQuery && !record.verifiedNotExecuted && !knownCreateTicketId(record)
+    && isRetryExpired(record) && recoveryFor(record).state(record).conclusion === "not-found";
+  const confirmMissing = async (record: E1Pending) => {
+    const current = () => e1Pending(actor).find(row => row.commandKey === record.commandKey);
+    const original = current();
+    if (!original || !canReleaseMissing(original)) throw new Error("请先按原操作核对审批单。");
+    const conclusion = await check(original, { propagate: true });
+    const latest = current();
+    if (conclusion !== "not-found" || !latest || !canReleaseMissing(latest)) throw new Error("这次没有确认原操作未建单。");
+    if (latest.spec.command.op === "e1_sku_create") {
+      const store = storeFor(latest);
+      store.remember(latest.fingerprint, latest.commandKey, { ...latest, verifiedNotExecuted: true });
+      if (!current()?.verifiedNotExecuted) throw new Error("这次没有保存核对结果，请重试。");
+    } else forgetE1(latest);
+    syncPending(); setReleaseMissing(null); toast("已解除这条记录", "success");
   };
 
   const confirm = async (reason: string, value?: string, business?: Record<string, string>) => {
@@ -496,8 +713,10 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         || sortSupported && sku.storeSortOrder === undefined) {
         throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
       }
-      op = old ? "e1_sku_update" : "e1_sku_create"; obj = sku.id;
-      context = { ...sku, skuId: sku.id, computePoints: mc.form?.computePoints.trim() || sku.computePoints };
+      if (!old && !edit?.createRequestId) throw new Error("原操作数据不完整，请核对后重新打开入口");
+      op = old ? "e1_sku_update" : "e1_sku_create"; obj = old ? sku.id : sku.name;
+      context = { ...sku, ...(old ? { skuId: sku.id } : { createRequestId: edit?.createRequestId }),
+        computePoints: mc.form?.computePoints.trim() || sku.computePoints };
       if (old && sku.storeSortOrder === old.storeSortOrder) delete context.storeSortOrder;
       for (const key of ["price", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", ...sku.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] as const : []] as const) {
         if (mc.form?.[key].trim()) context[key] = mc.form[key].trim();
@@ -613,7 +832,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   const KEY_FACT_FIELDS: Record<string, string[]> = { price: ["price"], name: ["name"], allowedPoolCodes: ["allowedPoolCodes"], monthlyTargetUsdt: ["monthlyTargetUsdt", "monthlyTargetBandPct"], monthlyTargetBandPct: ["monthlyTargetUsdt", "monthlyTargetBandPct"], datacenter: ["datacenter"] };
   const restDiff = skuDiff?.filter(row => row.before !== row.after || !KEY_FACT_FIELDS[row.key] || changedKey(...KEY_FACT_FIELDS[row.key])) ?? [];
   const restUnchanged = restDiff.filter(row => row.before === row.after);
-  const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (mc.sku ? e1Object(r.spec) === `device_sku|${mc.sku.id}` : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
+  const currentSkuObject = reviewingSku && !mc?.beforeSku && edit?.createRequestId ? `device_sku_create|${edit.createRequestId}`
+    : mc?.sku ? `device_sku|${mc.sku.id}` : undefined;
+  const currentPending = mc ? pending.find(r => r.commandKey === attemptKey || (currentSkuObject ? e1Object(r.spec) === currentSkuObject : mc.generationGateId ? e1Object(r.spec) === `device_generation_gate|${mc.generationGateId}` : mc.phaseId ? e1Object(r.spec) === `device_phase|${mc.phaseId}` : mc.op === "bundle-discount" ? e1Object(r.spec) === "store_bundle_discount|canonical" : mc.op === "early-access" ? e1Object(r.spec) === "device_release_early_access|trade-in" : false)) : undefined;
   const ctx: E1CatalogContext = {
     skus, canWriteE1: canWrite, e1InvalidSkus: invalid, e1Loading: loading, e1Error: error, catalogIncomplete, e1InitialLoading: loading && (!products || catalogIncomplete), skuReadbackPending,
     e1Gates: gates, e1BundleDiscount: discount, currentPhase, refreshE1: source => reloadCatalog([source]),
@@ -625,36 +846,82 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     forceUnlock, forceLock, locked, openSku, openActionConfirm: openConfirm, toast,
     delSku: (id, name) => openConfirm({ briefKind: "config", name: `删除商品 · ${name}`, op: "sku-delete", target: id, detail: "从商城移除后用户无法再购买，已售设备和原订单不受影响。", businessForm: { kind: "destructive-reason", target: name, impact: "从商城移除，用户无法再购买；已售设备和原订单不受影响。" } }),
   };
+  const createProductAction = (skuId: string, commandKey: string): E1CreateProductAction => ({
+    skuId,
+    open: () => {
+      if (!currentRecoveryActor(actor) || !canRead) return;
+      setReceiptDetailId(null);
+      setProductDetailId(skuId);
+      ctx.readPending(skuId);
+      void reloadCatalog(["products"], { readback: { commandKey, object: `device_sku|${skuId}` } });
+    },
+  });
+  const queryOwnCreate = async (commandKey: string, expectedTicketId?: string): Promise<E1OwnCreateLookup> => {
+    if (!canRead || !canQuery || !currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
+    const original = e1Pending(actor).find(row => row.commandKey === commandKey);
+    const known = knownCreateTicketId(original);
+    const expected = expectedTicketId?.trim() || undefined;
+    const ticketId = known ?? expected;
+    const mismatch = { state: "mismatch", message: canOpenAudit ? OWN_CREATE_QUERY_COPY.mismatch : OWN_CREATE_QUERY_COPY.mismatchWithoutAudit } as const;
+    if (known && expected && known !== expected) return mismatch;
+    try {
+      const row = await fetchA2ProposalByKey(commandKey, true, "e1");
+      if (!currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
+      if (!row) return ticketId ? { state: "unread", message: OWN_CREATE_QUERY_COPY.progressUnread } : { state: "not-found" };
+      checkCreateOwner(row, original, ticketId);
+      const { id, status, resultSkuId } = createReceipt(row, original);
+      return { state: "found", ticket: { id, status, action: row.action }, number: resultSkuId ?? e1CreateNumberLabel(row),
+        product: resultSkuId ? createProductAction(resultSkuId, commandKey) : undefined };
+    } catch (failure) {
+      if (!currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
+      if (failure instanceof E1CreateReceiptMismatchError) return mismatch;
+      return { state: "unread", message: failure instanceof A2ProposalReceiptIncompleteError ? OWN_CREATE_QUERY_COPY.incompleteResponse : eReadError(failure) };
+    }
+  };
   const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择操作编号")); };
+  const createTech = (commandKey: string) => <Fold inset title="技术信息" summary="操作编号">
+    <Facts><Fact k="操作编号"><span data-mono>{commandKey}</span></Fact></Facts>
+    <div className="e1-table-actions"><Button size="sm" onClick={() => copy(commandKey, "已复制操作编号")}>复制操作编号</Button></div>
+  </Fold>;
   const recovery: RecoveryItem[] = [
-    ...waitingReceipts.map(row => ({ key: `receipt:${row.id}`, object: row.action, createdAt: row.createdAt,
-      tag: <StatusTag tone="warn">待审批</StatusTag>,
-      line: row.reading ? "正在查询审批进度…" : RECOVERY_LINE.pending,
-      note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
-      actions: <Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button>,
-      detail: <p>审批单 {row.id}；批准前目录不变，这个对象暂停新修改。</p> })),
+    ...[...waitingReceipts, ...approvedCreates].map(row => {
+      const creating = row.command.op === "e1_sku_create";
+      const number = row.resultSkuId ?? (creating && isE1CreateRequestId(row.createRequestId) ? e1CreateNumberLabel(row) : undefined);
+      return { key: `receipt:${row.id}`, object: row.action, createdAt: row.createdAt,
+        tag: <StatusTag tone={row.status === "pending" ? "warn" : "done"}>{row.status === "pending" && row.readError === CREATE_RECEIPT_UNREAD ? "进度没读到" : RECEIPT_STATUS[row.status]}</StatusTag>,
+        line: row.reading ? "正在查询审批进度…"
+          : row.readError === CREATE_RECEIPT_UNREAD && !row.resultSkuId ? E1_CREATE_NUMBER_UNREAD
+            : number ? `商品编号：${number}` : RECOVERY_LINE.pending,
+        note: row.readError ? `这次没查到审批进度：${row.readError}` : undefined,
+        actions: <><E1ReceiptProductButton ticketId={row.id} size="sm" /><Button size="sm" disabled={row.reading} onClick={() => openReceipt(row.id)}>{row.readError ? "重新查询" : "查看审批状态"}</Button></>,
+        detail: <p>审批单 {row.id}{row.status === "pending" && "；批准前目录不变，这个对象暂停新修改。"}</p>,
+        tech: creating ? createTech(row.commandKey) : undefined,
+      };
+    }),
     ...pending.filter(record => record.commandKey !== busy).map(record => {
       const recovery = recoveryFor(record).state(record);
-      const canRelease = !!recovery.replayRejection && !record.receivedTicketId;
+      const missingRelease = canReleaseMissing(record);
+      const canRelease = !!recovery.replayRejection && !knownCreateTicketId(record);
       const readRetryBlock = retryReadBlock(record);
       const retryDisabledReason = !canWrite ? "当前账号不能重试"
         : busy ? "正在提交原操作"
           : recovery.expired ? RETRY_EXPIRED_TEXT
             : record.receivedTicketId ? "审批单已经建了，只能查询"
               : readRetryBlock ?? (recovery.replayBlock ? RETRY_REQUIRES_LOOKUP : undefined);
-      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: "点「查询原操作」再查。" }
+      const state = record.receivedTicketId ? { tag: "进度没读到", line: RECOVERY_LINE.created, more: `已查到审批单 ${record.receivedTicketId}，点「查询原操作」再查。` }
         : canRelease ? { tag: "重试被拒绝", line: RECOVERY_LINE.refused, more: "解除前先核对原操作有没有生效。" }
+          : missingRelease ? { tag: "结果未知", line: "按原请求没有查到审批单；可以核实后解除。", more: "确认解除时会再按原操作查询。" }
           : recovery.expired ? { tag: "结果未知", line: RETRY_EXPIRED_TEXT, more: "原记录继续保留。" }
             : readRetryBlock ? { tag: "结果未知", line: readRetryBlock, more: "原记录继续保留。" }
               : recovery.conclusion === "not-found" ? { tag: "结果未知", line: RECOVERY_LINE.absent, more: "重试不会重复建单。" }
                 : { tag: "结果未知", line: RECOVERY_LINE.unknown, more: "重试只发原内容和原理由。" };
       // 待确认条常显原操作和提交时间（OP-93 第 1 项、OP-154）：提交时间由共用恢复条写在结论句前面，这里和展开后都不再写。
       return { key: record.commandKey, object: record.spec.action, createdAt: record.createdAt,
-        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? recovery.replayRejection ?? record.retryRejection,
+        tag: <StatusTag tone={state.tag === "重试被拒绝" ? "danger" : "warn"}>{state.tag}</StatusTag>, line: state.line, note: notes[record.commandKey] === E1_UNKNOWN ? undefined : notes[record.commandKey] ?? (record.createNumberUnread ? CREATE_RECEIPT_UNREAD : recovery.replayRejection ?? record.retryRejection),
         actions: <>
           {canQuery && <Button size="sm" icon={<SearchCheck size={14} aria-hidden />} disabled={!!busy} onClick={() => void check(record)}>查询原操作</Button>}
-          {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原操作重试</Button>}
-          {canRelease && <Button size="sm" disabled={!!busy} onClick={() => setRelease(record)}>核实后解除</Button>}
+          {<Button size="sm" disabledReason={retryDisabledReason} onClick={() => { void send(record, true).catch(failure => toast(failure instanceof A2ProposalReceiptIncompleteError ? CREATE_RECEIPT_UNREAD : e1Pending(actor).find(r => r.commandKey === record.commandKey)?.receivedTicketId ? TICKET_UNREAD : e1Error(failure))); }}>按原操作重试</Button>}
+          {(missingRelease || canRelease) && <Button size="sm" disabled={!!busy} onClick={() => { if (missingRelease) setReleaseMissing(record); else setRelease(record); }}>核实后解除</Button>}
         </>,
         detail: <>
           <p>理由：{record.spec.reason}</p>
@@ -670,6 +937,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         actions: <>{skuDraftOps.includes(record.spec.command.op) && (record.spec.command.op === "e1_sku_create" || record.skuBaseline) && <Button size="sm" disabled={!!edit || !!confirmation || !canWrite} disabledReason={draftReadBlock}
           onClick={() => openSku(skuId, undefined, record)}>重新确认</Button>}
           <Button size="sm" onClick={() => discardRecovery.ask(() => { forgetE1(record); syncPending(); })}>放弃这份草稿</Button></>,
+        tech: record.spec.command.op === "e1_sku_create" ? createTech(record.commandKey) : undefined,
       };
     }),
     ...legacy.map(record => ({ key: record.commandKey, object: e1LegacyObject(record).split("|").slice(1).join("|") || "原对象未保留", createdAt: record.createdAt,
@@ -682,15 +950,22 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
         : canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined,
       detail: <p>原文件摘要和原请求已保留。</p> })),
   ];
-  const unknownCount = recovery.length - waitingReceipts.length - verifiedDrafts.length;
-  return <RdPage className="e1-page">
+  const endedCount = approvedCreates.length + verifiedDrafts.length;
+  const unknownCount = recovery.length - waitingReceipts.length - endedCount;
+  return <E1CreateControls.Provider value={{
+    queryOwnCreate: canRead && canQuery ? queryOwnCreate : undefined,
+    receiptProduct: canRead ? ticketId => {
+      const approved = approvedCreates.find(row => row.id === ticketId);
+      return approved?.resultSkuId ? createProductAction(approved.resultSkuId, approved.commandKey) : undefined;
+    } : undefined,
+  }}><RdPage className="e1-page">
     {discardRecovery.dialog}
-    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? undefined : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在加载目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<Button icon={<RefreshCw size={14} />} disabled={refreshInProgress} loading={refreshInProgress} onClick={() => void refreshFromHeader()}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
+    <PageHeader pageId="E1" title="商品管理与上架条件" meta={!canRead ? "未读取目录" : error ? undefined : readAt ? <>{readAt} 读取<Explain label="数据时间说明" content="打开和点「刷新」时读取，不自动刷新。" /></> : "正在加载目录"} readOnly={!canWrite ? "当前账号只读" : undefined} actions={<>{onOpenHosting && <Button id="e1-hosting-entry" icon={<Server size={14} aria-hidden />} onClick={onOpenHosting}>托管机房</Button>}<E1OwnCreateQuery /><Button icon={<RefreshCw size={14} />} disabled={refreshInProgress} loading={refreshInProgress} onClick={() => void refreshFromHeader()}>刷新</Button>{canWrite && <Button variant="primary" disabledReason={skuReadBlock || (edit ? "请先完成当前商品草稿" : undefined)} onClick={() => openSku()}>+ 新增商品</Button>}</>} />
     {!canRead ? <BlockState state="denied" title="没有商品目录读取权限" /> : <>
       {receipt && error && <Notice tone="warn" title="申请已提交，目录暂时读不到"><p>{receipt.obj} · 审批单 {receipt.id}</p></Notice>}
-      <RecoveryPanel tone={recovery.length === waitingReceipts.length ? "progress" : "warn"} title={recoveryTitle(unknownCount, waitingReceipts.length, verifiedDrafts.length)} label="商品管理的修改"
+      <RecoveryPanel tone={recovery.length === waitingReceipts.length + approvedCreates.length ? "progress" : "warn"} title={recoveryTitle(unknownCount, waitingReceipts.length, endedCount)} label="商品管理的修改"
         explain="有结论前，这些对象不能提交新修改。点行首的箭头看说明和原请求。" foot={canOpenAudit ? <Link className="rd-link" href="/platform/audit">到操作记录与审批核对</Link> : undefined} items={recovery} />
-      <E1Catalog ctx={ctx} />
+      <E1Catalog ctx={ctx} detailId={productDetailId} onDetailChange={setProductDetailId} />
     </>}
     <E1Editor request={edit} gates={gates} currentPhaseId={currentPhase.phaseId} writable={canWrite && !editorReadBlock} writeBlockedReason={editorReadBlock} currentSku={currentSku} onClose={() => { setEdit(null); setSkuConflict(null); }} busy={editorBusy} toast={toast} onMediaChange={key => { setMediaSending(key ?? ""); syncPending(); }} onRevisionAccepted={() => { setSkuConflict(null); setAttemptKey(""); }} onReview={review => { setAttemptKey(""); setConfirmation({ ...review, briefKind: "config", name: `${review.beforeSku ? "编辑" : "新增"}商品 · ${review.sku.name}`, op: "sku-save", gates, isNew: !review.beforeSku }); }} />
     {mc && <OperationConfirmModal action={mc.name} title={mc.title ?? mc.name.split(" · ")[0]} briefKind={mc.briefKind} detail={mc.detail ?? "核对完整变更，批准后生效。"} edit={mc.edit} businessForm={mc.businessForm?.kind === "multi-field" ? { ...mc.businessForm, onFieldChange: (key, next) => { const value = mc.businessForm?.kind === "multi-field" && mc.businessForm.onFieldChange ? mc.businessForm.onFieldChange(key, next) : next; setBusinessValues(value); setRefused(null); return value; } } : mc.businessForm}
@@ -720,10 +995,19 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
           throw failure;
         }
       }} />}
-    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在加载…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptDetail.after}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
+    {receiptDetail && <Drawer open title="商品变更审批" sub={receiptDetail.obj} onClose={() => setReceiptDetailId(null)} footer={<div className="e1-receipt-actions"><E1ReceiptProductButton ticketId={receiptDetail.id} /><Button disabled={receiptDetail.reading} onClick={() => { void refreshReceipt(receiptDetail); }}>{receiptDetail.reading ? "正在加载…" : "重新读取审批状态"}</Button><Button onClick={() => setReceiptDetailId(null)}>关闭</Button>{canOpenAudit && <Link className="rd-link" href="/platform/audit">操作记录与审批</Link>}</div>}><Facts><Fact k="审批单号">{receiptDetail.id}</Fact><Fact k="状态">{RECEIPT_STATUS[receiptDetail.status] ?? "状态待核实"}</Fact><Fact k="操作">{receiptDetail.action}</Fact><Fact k="原值">{receiptDetail.before}</Fact><Fact k="新值">{receiptAfter(receiptDetail)}</Fact><Fact k="原理由">{receiptDetail.reason}</Fact></Facts>{receiptDetail.command.op === "e1_sku_create" && createTech(receiptDetail.commandKey)}{receiptDetail.readError && <Notice tone="warn" title="审批状态暂时读不到"><p>{receiptDetail.readError}；{receiptDetail.status === "pending" ? "对象锁保留，可重新读取。" : "保留已核对的审批结果，可重新读取。"}</p></Notice>}<p>{receiptDetail.status === "pending" ? approvalText(receiptDetail.command.op) : "审批已结束，这张审批单不再锁住商品；请按现在的目录重新核对后编辑。"}</p></Drawer>}
+    {releaseMissing && <MissingProposalReleaseModal label={releaseMissing.spec.action} createdAt={releaseMissing.createdAt} keepDraft={releaseMissing.spec.command.op === "e1_sku_create"}
+      onCancel={() => setReleaseMissing(null)} onConfirm={() => confirmMissing(releaseMissing)} />}
     {release && <ReleaseModal label={release.spec.action} onCancel={() => setRelease(null)} onConfirm={() => {
-      if (recoveryFor(release).releaseRejectedReplay(release)) { syncPending(); setRelease(null); toast("已解除这条记录", "success"); }
+      const recovery = recoveryFor(release);
+      if (release.spec.command.op === "e1_sku_create") {
+        if (!recovery.releaseSnapshot(release)()) return;
+        const store = storeFor(release);
+        store.remember(release.fingerprint, release.commandKey, { ...release, verifiedNotExecuted: true });
+        if (!store.list().some(row => row.commandKey === release.commandKey && row.verifiedNotExecuted)) return;
+      } else if (!recovery.releaseRejectedReplay(release)) return;
+      syncPending(); setRelease(null); toast("已解除这条记录", "success");
     }} />}
     {toastNode}
-  </RdPage>;
+  </RdPage></E1CreateControls.Provider>;
 }

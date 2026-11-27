@@ -1,7 +1,7 @@
 "use client";
 import { useState, type ReactNode } from "react";
 import { SearchCheck, ShieldCheck } from "lucide-react";
-import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, KeepText, Modal, Notice, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
+import { Button, Check, Explain, Facts, Fact, Field, Input, IrreversibleTag, KeepText, Modal, Notice, RELEASE_CHECK_LABEL, RELEASE_CHECK_REASON, Select, StatusTag, Textarea, type StateTone, type Tone } from "@/app/components/rd";
 import { ADMIN_ERROR_MESSAGES, displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
 import { formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -208,12 +208,14 @@ export { RecoveryPanel, SettledLine, closureKnown, recoveryTitle, type RecoveryI
  * Release of an approval request the backend has no record of (expired, never created).
  * The confirm re-queries by the original request; a ticket found then keeps the record.
  */
-export function MissingProposalReleaseModal({ label, createdAt, onCancel, onConfirm }: { label: ReactNode; createdAt: number; onCancel: () => void; onConfirm: () => Promise<void> }) {
+export function MissingProposalReleaseModal({ label, createdAt, keepDraft, onCancel, onConfirm }: { label: ReactNode; createdAt: number; keepDraft?: boolean; onCancel: () => void; onConfirm: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [verified, setVerified] = useState(false);
   return <Modal title="解除原操作记录" icon={ShieldCheck} busy={busy} onClose={onCancel} footer={<>
     <Button disabled={busy} onClick={onCancel}>取消</Button>
-    <Button variant="primary" loading={busy} loadingText="正在再查一次…" onClick={async () => {
+    <Button variant="primary" disabledReason={verified ? undefined : RELEASE_CHECK_REASON} loading={busy} loadingText="正在再查一次…" onClick={async () => {
+      if (!verified || busy) return;
       setBusy(true); setError("");
       try { await onConfirm(); }
       catch (failure) { setError(eReadError(failure)); }
@@ -222,8 +224,9 @@ export function MissingProposalReleaseModal({ label, createdAt, onCancel, onConf
   </>}>
     <div className="rd-stack">
       <Facts><Fact k="原操作">{label}</Fact><Fact k="提交时间">{formatBusinessTimeCompact(new Date(createdAt).toISOString(), "—")}</Fact></Facts>
-      <p>按原请求查不到这张审批单，说明没建成。解除后这条记录清掉，可以重新提交。</p>
-      <p className="rd-note">确认时会再查一次；这次查到了审批单就不解除。</p>
+      <p>按原请求没有查到这张审批单。{keepDraft ? "解除后可继续修改草稿，原操作编号仍可查询。" : "解除后这条记录清掉，可以重新提交。"}</p>
+      <p className="rd-note">确认时会再查一次。只有再次确认查无审批单，才会解除。</p>
+      <Check label={RELEASE_CHECK_LABEL} checked={verified} disabled={busy} onChange={event => setVerified(event.target.checked)} />
       {error && <Notice tone="warn" title="这次没有解除">{error}</Notice>}
     </div>
   </Modal>;

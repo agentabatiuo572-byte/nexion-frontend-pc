@@ -4,6 +4,7 @@ import { isFirstA2DisclosurePublish } from "./disclosure-publication-diagnostic"
 import { H2_BUY_LIST_ACTION } from "./h2-trial-purchase";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { monthlyTargetPoolErrorText } from "@/lib/admin/monthly-target-pool-error";
+import { E1_CREATE_NUMBER_UNREAD } from "./e1-create-receipt";
 import type { F4AmbassadorMaterialProposal } from "@/lib/admin/f1-client";
 import { ambassadorApprovalBlocker } from "@/lib/admin/f4-ambassador-display";
 import { f4Decimal } from "@/lib/admin/f4-money";
@@ -53,7 +54,7 @@ export class A2OutcomeUncertainError extends Error {
 
 /** 按原号查到的审批单缺字段：调用方按类型认，不比对显示文字。 */
 export class A2ProposalReceiptIncompleteError extends Error {
-  constructor() {
+  constructor(public readonly ticketId?: string, public readonly createRequestId?: string) {
     super("提交结果不完整，请稍后再查。");
     this.name = "A2ProposalReceiptIncompleteError";
   }
@@ -85,6 +86,8 @@ type A2FundEffect = "REWARD_SUSPENSION" | "REWARD_RESUMPTION" | "ORDER_REFUND";
 export type A2RuleTaskAction = "CREATE" | "UPDATE" | "ENABLE" | "DISABLE";
 
 interface BackendTicket {
+  createRequestId?: string | null;
+  resultSkuId?: string | null;
   missionTarget?: unknown;
   businessResult?: unknown;
   lastApprovalAttemptResult?: unknown;
@@ -129,6 +132,7 @@ interface BackendTicket {
 interface BackendHistory {
   ruleTaskAction?: A2RuleTaskAction | null;
   operationCode?: string | null;
+  resultSkuId?: string | null;
   id: string;
   action: string;
   st: string;
@@ -152,6 +156,9 @@ interface BackendConfirmCategory {
 }
 
 interface BackendAuditLog {
+  operationCode?: string | null;
+  createRequestId?: string | null;
+  resultSkuId?: string | null;
   id?: number | string | null;
   traceId?: string | null;
   action?: string | null;
@@ -260,6 +267,8 @@ export class F4ApprovalBlockedError extends Error {
 }
 
 export interface A2OperationRow {
+  createRequestId?: string;
+  resultSkuId?: string;
   missionTarget?: { actionRoute: string; productName: string | null };
   businessResult?: F4ApprovalBusinessResult;
   lastApprovalAttemptResult?: F4ApprovalAttemptResult;
@@ -314,6 +323,7 @@ export interface A2OperationRow {
 export interface A2OperationHistory {
   ruleTaskAction?: A2RuleTaskAction | null;
   operationCode?: string | null;
+  resultSkuId?: string;
   id: string;
   action: string;
   st: string;
@@ -345,6 +355,11 @@ export interface A2AuditLogRow {
   action: string;
   actionLabel?: string;
   approvalAction?: string;
+  operationCode?: string;
+  createRequestId?: string;
+  resultSkuId?: string;
+  beforeValue?: string;
+  afterValue?: string;
   obj: string;
   resourceType?: string;
   resourceId?: string;
@@ -730,6 +745,10 @@ function readF4ApprovalAttempt(value: unknown) {
   return result;
 }
 
+function optionalIdentifier(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function fromTicket(ticket: BackendTicket, tolerateUnreadableResult = false): A2OperationRow {
   if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
   if (ticket.objDisplayName != null && typeof ticket.objDisplayName !== "string") throw new Error("A2_TICKET_OBJECT_DISPLAY_NAME_INVALID");
@@ -793,6 +812,8 @@ function fromTicket(ticket: BackendTicket, tolerateUnreadableResult = false): A2
     canReject: ticket.canReject,
     ...(ticket.coverageCheckOnApproval === true ? { coverageCheckOnApproval: true } : {}),
     ...(ticket.operationCode ? { operationCode: ticket.operationCode } : {}),
+    createRequestId: optionalIdentifier(ticket.createRequestId),
+    resultSkuId: normalizeStatus(ticket.status) === "approved" ? optionalIdentifier(ticket.resultSkuId) : undefined,
     ...(ticket.retiredOperation === true ? { retiredOperation: true } : {}),
     fundEffect: ticket.fundEffect ?? undefined,
     refundOrderNo: ticket.refundOrderNo ?? undefined,
@@ -867,6 +888,11 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
     action,
     actionLabel: auditActionFieldLabel(action, detail.field),
     approvalAction: resourceType === "A2_OPERATION" ? asText(detail.action, "") : undefined,
+    operationCode: optionalIdentifier(log.operationCode ?? detail.operationCode),
+    createRequestId: optionalIdentifier(log.createRequestId ?? detail.createRequestId),
+    resultSkuId: optionalIdentifier(log.resultSkuId ?? detail.resultSkuId),
+    beforeValue: typeof detail.before === "string" ? detail.before : undefined,
+    afterValue: typeof detail.after === "string" ? detail.after : undefined,
     obj,
     resourceType,
     resourceId: asText(log.resourceId, ""),
@@ -896,7 +922,9 @@ async function normalizeOverview(data: BackendOverview | null | undefined): Prom
       weeklyWithdrawn: toNumber(stats.weeklyWithdrawn),
     },
     operationQueue: await withRoleGrantsNames((data?.operationQueue ?? []).map(ticket => fromTicket(ticket, true))),
-    operationHistory: (data?.operationHistory ?? []).map((row) => ({ ...row })),
+    operationHistory: (data?.operationHistory ?? []).map((row) => ({ ...row,
+      resultSkuId: row.st === "approved" ? optionalIdentifier(row.resultSkuId) : undefined,
+    })),
     mechanismParams: (data?.mechanismParams ?? []).map((row) => ({ ...row, locked: !!row.locked })),
     confirmCategories: (data?.confirmCategories ?? []).map((row) => ({ ...row })),
     recentLogs: (data?.recentLogs ?? []).map(fromLog),
@@ -919,7 +947,7 @@ function preserveF4BusinessResultAmounts(text: string) {
   });
 }
 
-async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Status?: boolean; f4Payout?: boolean }) {
+async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string; strictOutcome?: boolean | "proposal"; f5Status?: boolean; f4Payout?: boolean; createRequestId?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -993,7 +1021,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
       || result?.code === 422 && result.message === "COVERAGE_BELOW_REDLINE")
       ? readF4ApprovalAttempt((result.data as { businessResult?: unknown } | undefined)?.businessResult) : undefined;
     if (attempt && attempt.reasonCode !== result?.message) throw new Error(INVALID_F4_BUSINESS_RESULT);
-    const message = await monthlyTargetPoolErrorText(result?.message, result?.data)
+    const message = await monthlyTargetPoolErrorText(result?.message, result?.data, init?.createRequestId)
       ?? formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data);
     throw Object.assign(attempt ? new F4ApprovalBlockedError(message, attempt) : new Error(message), {
       status: response.ok && typeof result?.code === "number" ? result.code : response.status,
@@ -1065,7 +1093,7 @@ export async function fetchA2ProposalLog(operationId: string, signal?: AbortSign
   return row ? fromLog(row) : undefined;
 }
 
-export async function approveA2Operation(operationId: string, reason: string, commandKey?: string, operationCode?: string) {
+export async function approveA2Operation(operationId: string, reason: string, commandKey?: string, operationCode?: string, createRequestId?: string) {
   let ticket: A2OperationRow;
   try {
     const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
@@ -1073,9 +1101,14 @@ export async function approveA2Operation(operationId: string, reason: string, co
       body: JSON.stringify({ reason }),
       f5Status: operationCode === "f_commission_status",
       f4Payout: isF4SettlementOperation(operationCode),
+      createRequestId,
       ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
     });
-    ticket = fromTicket(row);
+    try { ticket = fromTicket(row); }
+    catch (error) {
+      if (commandKey && operationCode === "e1_sku_create") throw new A2OutcomeUncertainError(E1_CREATE_NUMBER_UNREAD, commandKey);
+      throw error;
+    }
   } catch (error) {
     if (commandKey && error instanceof Error && error.message === INVALID_F4_BUSINESS_RESULT) {
       throw new A2OutcomeUncertainError(error.message, commandKey);
@@ -1169,9 +1202,10 @@ function hasProposalTicketFacts(row: BackendTicket) {
     && ["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "");
 }
 
-export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" = false): Promise<A2OperationRow | null> {
+export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = false, strictTicket: false | "a" | "f" | "metadata" | "h8" | "e1" = false): Promise<A2OperationRow | null> {
   try {
     const row = await a2Request<BackendTicket>(`/operations/proposals/by-idempotency-key?${new URLSearchParams({ idempotencyKey: commandKey })}`);
+    if (strictTicket === "e1") return readE1ProposalReceipt(row);
     if (!row || typeof row.id !== "string" || !row.id || typeof row.status !== "string") throw new A2ProposalReceiptIncompleteError();
     // A requires raw action; F does not. B5 additionally requires operation metadata and normalizes status.
     if (strictTicket && strictTicket !== "h8" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
@@ -1187,6 +1221,16 @@ export async function fetchA2ProposalByKey(commandKey: string, strictNotFound = 
         && (!strictNotFound || "backendMessage" in failure && failure.backendMessage === "A2_PROPOSAL_NOT_FOUND")) return null;
     throw failure;
   }
+}
+
+function readE1ProposalReceipt(row: BackendTicket) {
+  const incomplete = () => new A2ProposalReceiptIncompleteError(
+    row?.mine === false || row?.operationCode && row.operationCode !== "e1_sku_create" ? undefined : optionalIdentifier(row?.id),
+    optionalIdentifier(row?.createRequestId),
+  );
+  if (!hasProposalTicketFacts(row) || !optionalIdentifier(row.id)) throw incomplete();
+  try { return fromTicket(row); }
+  catch { throw incomplete(); }
 }
 
 /** H8 consumes command metadata added in backend 111e00cd, before display normalization. */
@@ -1225,9 +1269,11 @@ export async function createA2OperationProposal(input: {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",
     strictOutcome,
+    createRequestId: input.command.op === "e1_sku_create" ? optionalIdentifier(input.command.params.createRequestId) : undefined,
     body: JSON.stringify(input),
     ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-proposal" }),
   });
+  if (strictTicket && input.command.op === "e1_sku_create") return readE1ProposalReceipt(row);
   if (strictOutcome && (!row || typeof row.id !== "string" || !row.id
       || strictOutcome === "proposal" && (typeof row.obj !== "string" || typeof row.mine !== "boolean"
         || typeof row.operationCode !== "string" || !["pending", "approved", "rejected", "withdrawn", "expired"].includes(row.status ?? "")))) {
