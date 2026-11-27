@@ -658,7 +658,13 @@ export default function RiskRadarPage() {
           const fresh = await radar.reload();
           rereadAfterConflict = !!fresh && versionConflict;
         }
-      } else if (requiresApproval && pendingThresholdConfigApproval("B5", session.adminId)) setApprovalRecovery("lookup");
+      } else if (requiresApproval) {
+        const saved = pendingThresholdConfigApproval("B5", session.adminId);
+        if (saved) {
+          setThreshold(saved.b5Facts ?? null);
+          setApprovalRecovery("lookup");
+        }
+      }
       setThresholdUnknown(!!original && !rejected);
       // 版本冲突已重读：框里写一句就够，不再弹同一句。
       if (rereadAfterConflict) setThresholdError("当前阈值已更新，请核对后再保存。");
