@@ -1069,11 +1069,11 @@ export const HIGH_OPS: HighOpDef[] = [
     amplifies: false,
     type: "param",
     gateLabel: "另一位有批准权限和商品业务权限的管理员",
-    targetType: "device_sku",
+    targetType: "device_sku_create",
     // A2 derives amplification from approved before/after target bounds; client metadata is not a decision.
     // Response-only estimates are omitted; explicit clearing retains the manual earnings in this request.
-    buildCommand: (ctx) => ({ domain: "E", op: "e1_sku_create", params: canonicalE1SkuParams(ctx) }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_sku", id: String(ctx.skuId) }),
+    buildCommand: ({ id: _id, skuId: _skuId, ...ctx }) => ({ domain: "E", op: "e1_sku_create", params: canonicalE1SkuParams(ctx) }),
+    buildTarget: (ctx) => ({ domain: "E", type: "device_sku_create", id: String(ctx.createRequestId) }),
   },
   {
     op: "e1_sku_update",

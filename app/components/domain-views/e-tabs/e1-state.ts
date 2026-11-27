@@ -1,4 +1,5 @@
 import type { OpsSku } from "@/lib/admin/platform-types";
+import type { A2OperationRow } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import type { SkuForm } from "./data";
 import { skuSeriesText } from "@/lib/admin/device-monthly-target";
@@ -46,7 +47,25 @@ export function e1Object(spec: ProposeSpec): string {
   return target ? `${target.type}|${target.id}` : `${spec.command.op}|${spec.obj}`;
 }
 
-export type E1Pending = PendingMutationRecord & { actorId: string; spec: ProposeSpec; verifiedNotExecuted?: true; ticket?: { id: string; status: "pending" }; skuForm?: SkuForm; skuBaseline?: OpsSku; operator?: string; operatorRole?: string; receivedTicketId?: string; absent?: boolean; retryRejection?: string };
+export type E1Pending = PendingMutationRecord & {
+  actorId: string; spec: ProposeSpec; verifiedNotExecuted?: true;
+  ticket?: Pick<A2OperationRow, "id" | "status" | "resultSkuId">;
+  mediaDraftId?: string; replacesDraftKey?: string; superseded?: true;
+  skuForm?: SkuForm; skuBaseline?: OpsSku; operator?: string; operatorRole?: string;
+  receivedTicketId?: string; absent?: boolean; retryRejection?: string;
+};
+
+export function e1CreateRequestId(spec: ProposeSpec) {
+  const id = spec.command.params.createRequestId;
+  return spec.command.op === "e1_sku_create" && typeof id === "string" && id ? id : undefined;
+}
+
+/** The current service binds the ticket to a server-normalized SKU from the name or old skuId. */
+export function e1LegacyCreateSkuId(spec: ProposeSpec) {
+  const { name, skuId } = spec.command.params;
+  const value = typeof skuId === "string" && skuId.trim() ? skuId : typeof name === "string" ? name : spec.obj;
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
 const validProposal = (row: E1Pending) => typeof row.actorId === "string" && !!row.actorId
   && typeof row.spec?.reason === "string" && row.spec.sourceDomain === "E1"
   && typeof row.spec?.obj === "string" && typeof row.spec?.command?.op === "string"
@@ -169,6 +188,7 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
   return [...fields, ...translationRows].map(field => {
     if ("before" in field) return field;
     const { key, label, unit } = field;
+    if (!before && key === "id") return { key, label, before: "未创建", after: "待生成", note: undefined };
     const value = (sku: OpsSku) => e1Value(key === "badge" ? skuBadgeReviewText(sku.badge) : sku[key], unit, shown);
     const input = raw && numericInputs.includes(key)
       ? key === "displaySoldBase" ? after.displaySoldBase?.toString() : raw[key as keyof SkuForm]

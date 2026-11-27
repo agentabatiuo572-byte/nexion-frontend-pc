@@ -24,7 +24,7 @@ import { currentRecoveryActor, rebaseRecoveryFields } from "@/lib/admin/abe-reco
 import { e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
 
-export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number; draftId?: string; mediaCommandKey?: string; mediaDraftForm?: SkuForm;
+export type E1EditRequest = { sku?: OpsSku; unlock?: string; nonce: number; draftId?: string; createRequestId?: string; mediaCommandKey?: string; mediaDraftForm?: SkuForm;
   recovered?: { form: SkuForm; mediaSku: OpsSku; baseline?: OpsSku } };
 export type E1SkuReview = {
   sku: OpsSku;

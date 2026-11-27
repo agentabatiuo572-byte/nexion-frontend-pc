@@ -452,7 +452,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku, displayControlsSupporte
   const productType = existing?.productType ?? (isShare ? "SHARE" : "DEVICE");
   const stockTrim = f.stock.trim();
   const sku: OpsSku = {
-    name: f.name.trim(), id: f.id.trim() || existing?.id || f.name.trim(),
+    name: f.name.trim(), id: existing?.id ?? "",
     tier: f.tier, seriesCode: f.seriesCode || undefined, tagline: f.tagline.trim() || undefined,
     taglineTranslations: skuTaglineTranslationUpdate(f, existing?.taglineTranslations),
     // An untouched legacy badge is kept as stored, except a preset written in Chinese (e.g. 升级首选), which the

@@ -221,7 +221,7 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; createRequestId?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -238,7 +238,7 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data)
+    throw new Error(await monthlyTargetPoolErrorText(result?.message, result?.data, init?.createRequestId)
       ?? formatAdminApiError(result?.message, `E1_REQUEST_FAILED_${response.status}`, init?.method && init.method !== "GET" ? "write" : "read", result?.data));
   }
 
@@ -530,20 +530,23 @@ function fromSkuWriteResponse(sku: BackendSku): OpsSku {
   return fromSku(sku);
 }
 
-export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, reason: string, operator: string, displayControlsSupported = false) {
-  const body = JSON.stringify(toSkuPayload(sku, reason, operator, displayControlsSupported));
+export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, reason: string, operator: string, displayControlsSupported = false, createRequestId?: string) {
+  const payload = toSkuPayload(sku, reason, operator, displayControlsSupported);
+  if (!previousSkuId && !createRequestId) throw new Error("E1_CREATE_REQUEST_ID_REQUIRED");
   const saved = previousSkuId
     ? await e1Request<BackendSku>(`/skus/${encodeURIComponent(previousSkuId)}`, {
         method: "PUT",
-        body,
+        body: JSON.stringify(payload),
         headers: sku.updatedAt ? { "X-Product-Revision": sku.updatedAt } : undefined,
         idempotencyPrefix: "e1-sku-save",
       })
     : await e1Request<BackendSku>("/skus", {
         method: "POST",
-        body,
+        body: JSON.stringify({ ...payload, skuId: undefined, createRequestId }),
+        createRequestId,
         idempotencyPrefix: "e1-sku-create",
       });
+  if (typeof saved?.skuId !== "string" || !saved.skuId.trim()) throw new Error("E1_SKU_RESPONSE_INVALID:skuId");
   return fromSkuWriteResponse(saved);
 }
 

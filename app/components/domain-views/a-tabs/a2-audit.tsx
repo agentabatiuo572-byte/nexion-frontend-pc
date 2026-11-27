@@ -2,7 +2,7 @@
 import { approvalShownObject } from "@/lib/admin/a2-approval-summary";
 import {
   a2AccountStatusText, a2Pair, a2Shown, a2TicketKey, actionName, approvalActionName, approvalDisplayChanges, approvalQueueChange, approvalReviewValues, approvalTitleParts,
-  CHANGE_LABELS, CHANGE_UNAVAILABLE, changeAfter, changeBefore, changeSummary, derivedBaseRateShown,
+  CHANGE_LABELS, CHANGE_UNAVAILABLE, changeAfter, changeBefore, changeSummary, derivedBaseRateShown, e1CreateClassification, e1CreateReviewAfter, e1CreateSnapshot,
   F5_STATE_FROM, F5_STATE_NAME, F_BATCH_DIGEST, F_CONFIG_CODES, f1VoucherReverse, fBatchLabel, fBatchLogItems, fBatchPages, fBatchTicket, fundTicket,
   G_PARAM_ACTION, g3PolicyExecutionTiming, gParamText, h3ConfigName, h3MissionView, isG3Policy, isGParamTicket, isRecord,
   isRoleGrantsTicket, isRowList, isV8PromotionAction, isV8PromotionTicket, j1GateName, k1Amount, k1Source, k1TicketView,
@@ -359,10 +359,17 @@ function f4ApprovalResultText(result: F4ApprovalBusinessResult) {
 function f4BlockedText(reasonCode: F4ApprovalAttemptResult["reasonCode"]) {
   return `这次没有执行：${f4ResultReason({ reasonCode })}。审批单仍待审批，关掉后重新打开，按最新读数再批准，或驳回。`;
 }
-/**
- * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
- */
-function e1SkuLogSides(log: Pick<A2AuditLogRow, "action" | "domain" | "resourceType" | "delta">): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+function e1SkuLogSides(log: A2AuditLogRow, createTicket?: A2OperationRow, resultSkuId = log.resultSkuId): { before: string; after: string; operationCode: "e1_sku_create" | "e1_sku_update" } | undefined {
+  if (log.resourceType === "A2_OPERATION" && (log.operationCode === "e1_sku_create" || createTicket)) {
+    const before = log.beforeValue ?? createTicket?.before ?? "";
+    const after = log.afterValue ?? createTicket?.after ?? "";
+    if (e1CreateSnapshot(after)) return {
+      before, after: e1CreateReviewAfter(after, {
+        createRequestId: log.createRequestId ?? createTicket?.createRequestId, resultSkuId,
+      }), operationCode: "e1_sku_create",
+    };
+  }
+  // 历史日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
   const isSku = (text: string) => {
     try { const value: unknown = JSON.parse(text); return isRecord(value) && typeof value.skuId === "string"; } catch { return false; }
   };
@@ -388,16 +395,20 @@ function e1SkuLogSides(log: Pick<A2AuditLogRow, "action" | "domain" | "resourceT
   return undefined;
 }
 function e1ApprovalTicket(log: A2AuditLogRow) {
-  if (log.action === "E1_SKU_UPDATED") return /^a2-approve-(WO-\d+-\d+)-/.exec(log.idempotencyKey ?? "")?.[1];
+  if (log.action === "E1_SKU_UPDATED" || log.action === "E1_SKU_CREATED") {
+    return /^a2-approve-(WO-\d+-\d+)-/.exec(log.idempotencyKey ?? "")?.[1];
+  }
+  if (log.resourceType === "A2_OPERATION" && log.action !== "A2_OPERATION_PROPOSED"
+    && log.operationCode === "e1_sku_create") return log.resourceId || undefined;
 }
 
-/** The execution audit only records price. Look up the frozen proposal by the ticket in the approval command. */
-function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2AuditLogRow | undefined>): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
-  if (log.action !== "E1_SKU_UPDATED") return undefined;
+/** Approval and execution logs can resolve the frozen proposal by its ticket number. */
+function e1ApprovedLog(log: A2AuditLogRow, proposals?: ReadonlyMap<string, A2AuditLogRow | undefined>, resultSkuId?: string): { ticket?: string; sides?: ReturnType<typeof e1SkuLogSides>; price?: string } | undefined {
   const ticket = e1ApprovalTicket(log);
   const proposal = ticket ? proposals?.get(ticket) : undefined;
-  const sides = proposal && e1SkuLogSides(proposal);
+  const sides = proposal && e1SkuLogSides(proposal, undefined, resultSkuId ?? proposal.resultSkuId);
   if (sides) return { ticket, sides };
+  if (log.action !== "E1_SKU_UPDATED") return undefined;
   const [before, after] = log.delta.split(" → ");
   if (!/^\d+(\.\d+)?$/.test(before ?? "") || !/^\d+(\.\d+)?$/.test(after ?? "")) return undefined;
   // 有没有变按原文比；售价按全站金额写法，原文不同而写法一样时两边照原文写（a2Pair）。
@@ -647,6 +658,15 @@ function a1StatusImpact(w: A2OperationRow) {
 
 function approvalTiming(w: A2OperationRow) {
   const coverageMode = approvalCoverageMode(w);
+  if (w.operationCode === "e1_sku_create") {
+    const status = e1CreateSnapshot(w.after)?.status;
+    const impact = status === "on" ? "批准后创建并上架商品。"
+      : status === "pending" || status === "off" ? "批准后创建商品草稿，上架前 App / H5 Lite 上看不到。"
+        : "批准后创建商品。";
+    const coverage = coverageMode === "onApproval";
+    return { tag: coverage ? "通过覆盖率检查后执行" : "立即生效", impact,
+      drawer: `${coverage ? "批准时先检查兑付覆盖率。" : ""}${impact}点「驳回」原操作不执行。` };
+  }
   const monthlyChange = monthlyTargetChange(w);
   if (monthlyChange) {
     // 框顶的影响句只写这次改了什么，一行写完；不变的部分进「说明」（OP-48），理由框打开就看得到（D8-reason）。
@@ -878,6 +898,7 @@ type A2PendingCommand = PendingMutationRecord & {
   /** 旧待确认的展示上下文；资格只读后端回执，原键恢复仍由服务端核权。 */
   rule?: (DecisionRule & { unmapped?: boolean }) | null;
   operationCode?: string;
+  createRequestId?: string;
   obj?: string;
   fundEffect?: A2OperationRow["fundEffect"];
   /** 退款单的原订单号：重试前要先读到退款金额（F01）。 */
@@ -1470,11 +1491,37 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   }, [logPageRows, recordsLoading, session, tab, view]);
   const e1Proposals = e1ProposalRead?.rows === logPageRows && e1ProposalRead.session === session ? e1ProposalRead.proposals : undefined;
   const historyRows = records?.operationHistory ?? [];
+  const e1CreateTickets = useMemo(() => new Map([...(main?.operationQueue ?? []), ...(records?.operationQueue ?? [])]
+    .filter(ticket => ticket.operationCode === "e1_sku_create" && (ticket.createRequestId || ticket.resultSkuId))
+    .map(ticket => [ticket.id, ticket] as const)), [main, records]);
+  const e1CreatedSkuIds = useMemo(() => new Map([...(main?.operationHistory ?? []), ...(records?.operationHistory ?? [])]
+    .flatMap(row => row.operationCode === "e1_sku_create" && row.resultSkuId ? [[row.id, row.resultSkuId] as const] : [])
+    .concat([...e1CreateTickets.values()].flatMap(row => row.resultSkuId ? [[row.id, row.resultSkuId] as const] : []))),
+    [main, records, e1CreateTickets]);
+  const e1LogEvidence = (log: A2AuditLogRow) => {
+    const ticketId = log.resourceType === "A2_OPERATION" ? log.resourceId : e1ApprovalTicket(log);
+    const ticket = ticketId ? e1CreateTickets.get(ticketId) : undefined;
+    const resultSkuId = log.resultSkuId ?? (ticketId ? e1CreatedSkuIds.get(ticketId) : undefined)
+      ?? (log.action === "E1_SKU_CREATED" && ticketId ? log.resourceId : undefined);
+    const approved = e1ApprovedLog(log, e1Proposals, resultSkuId);
+    const sides = e1SkuLogSides(log, ticket, resultSkuId) ?? approved?.sides;
+    const creating = sides?.operationCode === "e1_sku_create";
+    const name = creating ? e1CreateSnapshot(sides.after)?.name : undefined;
+    const object = typeof name === "string" && (ticket || log.operationCode === "e1_sku_create" || log.createRequestId || resultSkuId)
+      ? { id: name, kind: resultSkuId ? `商品编号 ${resultSkuId}` : undefined, raw: log.obj }
+      : logObject(log);
+    return { sides, approved, object,
+      classification: creating ? e1CreateClassification(sides.after) : "" };
+  };
   const f4ResultTexts = useMemo(() => new Map((records?.operationQueue ?? []).flatMap(ticket => {
     if (ticket.status !== "approved") return [];
     const text = ticket.f4ResultUnreadable ? F4_RESULT_UNREADABLE : ticket.businessResult && f4ApprovalResultText(ticket.businessResult);
     return text ? [[ticket.id, text] as const] : [];
   })), [records]);
+  const historyResult = (id: string) => {
+    const skuId = e1CreatedSkuIds.get(id);
+    return skuId ? `商品编号 ${skuId}` : f4ResultTexts.get(id);
+  };
   const histPages = Math.max(1, Math.ceil(historyRows.length / histPageSize));
   const histSafePage = Math.min(histPage, histPages);
   const histPageRows = historyRows.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
@@ -1553,7 +1600,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     }
   };
 
-  type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo" | "refundAmountUsdtText"> & { rule?: DecisionRule | null };
+  type DecisionTicket = TicketIdentity & Pick<A2OperationRow, "id" | "refundOrderNo" | "refundAmountUsdtText" | "createRequestId"> & { rule?: DecisionRule | null };
   const runDecision = async (kind: A2DecisionKind, w: DecisionTicket, reason: string, by = operator) => {
     if (kind === "approve" && oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
     let businessResult: F4ApprovalBusinessResult | undefined;
@@ -1561,12 +1608,12 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const outcome = await sendCommand(
     `${kind}|${w.id}`,
     { kind, label: `${DECISION_VERB[kind]} · ${actionName(w)}`, target: w.id, reason, operator: by, rule: w.rule !== undefined ? w.rule : decisionRule(w),
-      operationCode: w.operationCode, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdtText: w.refundAmountUsdtText ?? undefined, action: w.action, ruleTaskAction: w.ruleTaskAction },
+      operationCode: w.operationCode, createRequestId: w.createRequestId, obj: w.obj, fundEffect: w.fundEffect, refundOrderNo: w.refundOrderNo, refundAmountUsdtText: w.refundAmountUsdtText ?? undefined, action: w.action, ruleTaskAction: w.ruleTaskAction },
     `a2-${kind}-${w.id}`,
     async (key) => {
       if (kind === "reject") return rejectA2Operation(w.id, reason, key);
       if (kind === "withdraw") return withdrawA2Operation(w.id, reason, by, key);
-      try { return await approveA2Operation(w.id, reason, key, w.operationCode); }
+      try { return await approveA2Operation(w.id, reason, key, w.operationCode, w.createRequestId); }
       catch (cause) {
         legacyPayoutRefusal(kind, w.id, w.operationCode, backendCode(cause));
         throw cause;
@@ -1752,6 +1799,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     try {
       const queued = recordTicket(record);
       const ticketLike = { id: record.target, action: record.action ?? queued?.action ?? record.target, obj: record.obj ?? queued?.obj ?? "",
+        createRequestId: record.createRequestId ?? queued?.createRequestId,
         ruleTaskAction: record.ruleTaskAction ?? queued?.ruleTaskAction,
         before: queued?.before ?? "", after: queued?.after ?? "", operationCode: record.operationCode ?? queued?.operationCode,
         fundEffect: record.fundEffect ?? queued?.fundEffect, refundOrderNo: recordOrderNo(record),
@@ -2103,10 +2151,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     // 一行放得下（必须改 14）；时点只写在「生效时间」一处（建议 8）。
     // 摘要标题行只放得下 20 字左右，长了会折出孤字（D10）；细节写在「说明」和事实区。
     const impact = v8Promotion ? "立即升到 V8，首次到达按配置发奖。"
-      : scheduled || monthlyTargetChange(w) ? timing.impact
+      : scheduled || monthlyTargetChange(w) || w.operationCode === "e1_sku_create" ? timing.impact
       : j4 ? "逐步执行，失败时可能只执行了一部分。"
-        // 新增商品批准后只是草稿（显示规则 5）；覆盖率检查提示另在事实区。
-        : w.operationCode === "e1_sku_create" ? "批准后创建商品草稿，上架前 App / H5 Lite 上看不到。"
         : coverageMode === "onApproval" ? "先查兑付覆盖率，够了才执行，不够不动。"
           : g3 ? "按生效时间执行，改线上配置。"
             // 发布只封存这一版，用户看哪版由 I5 的生效版本决定（i5-disclosures 发布框同一说法）。
@@ -2742,10 +2788,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   </TableMessage>
                 ) : logPageRows.map((l) => {
                   const act = logActionShown(l);
-                  const obj = logObject(l);
-                  const e1Approved = e1ApprovedLog(l, e1Proposals);
-                  const e1Sides = e1SkuLogSides(l) ?? e1Approved?.sides;
-                  const e1Change = e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
+                  const { object: obj, approved: e1Approved, sides: e1Sides, classification } = e1LogEvidence(l);
+                  const e1Change = classification ? { main: classification, sub: undefined } : e1Sides && changeSummary(e1Sides.before, e1Sides.after, [], e1Sides.operationCode);
                   const deltaText = logDeltaText(l);
                   return (
                     <Tr key={l.id} selected={l.id === logId} onOpen={() => setLogId(l.id)}>
@@ -2781,7 +2825,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                 : histPageRows.length === 0 ? (
                   <TableMessage columns={5} role="status">{hasApplied ? "当前筛选下暂无处理历史" : "暂无处理历史"}</TableMessage>
                 ) : histPageRows.map((h) => {
-                  const resultText = f4ResultTexts.get(h.id);
+                  const resultText = historyResult(h.id);
                   const status = <StatusTag tone={HIST_TONE[h.st] ?? "done"}>{HIST_LABEL[h.st] ?? h.st}</StatusTag>;
                   return <Tr key={h.id} selected={h.id === historyId} onOpen={() => setHistoryId(h.id)}>
                     <Td sticky="start"><Cell mono full main={h.id} /></Td>
@@ -2977,15 +3021,16 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 
   /* 操作记录抽屉 */
   const shownLog = logShown.current;
-  const shownLogApproved = shownLog ? e1ApprovedLog(shownLog, e1Proposals) : undefined;
-  const shownLogE1 = shownLog ? e1SkuLogSides(shownLog) ?? shownLogApproved?.sides : undefined;
+  const shownLogE1Evidence = shownLog ? e1LogEvidence(shownLog) : undefined;
+  const shownLogApproved = shownLogE1Evidence?.approved;
+  const shownLogE1 = shownLogE1Evidence?.sides;
   const shownLogDelta = shownLog ? logDeltaText(shownLog) : undefined;
   const logIndex = shownLog ? logPageRows.findIndex((l) => l.id === shownLog.id) : -1;
   const needIdem = shownLog ? shownLog.action.includes("withdraw") || shownLog.action.includes("balance") || shownLog.action.includes("operation_confirmed") : false;
   const requestNo = shownLog?.action === H2_BUY_LIST_ACTION
     ? shownLog.bizNo || "—"
     : shownLog?.idempotencyKey || (needIdem ? "缺失" : "—");
-  const shownLogObject = shownLog ? logObject(shownLog) : undefined;
+  const shownLogObject = shownLogE1Evidence?.object;
   const shownLogTech: { k: string; v: string; long?: boolean }[] = shownLog ? [
     { k: "IP", v: shownLog.ip },
     { k: "操作编号", v: requestNo },
@@ -3000,7 +3045,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 
   /* 审批结果抽屉 */
   const shownHistory = historyShown.current;
-  const historyResultText = shownHistory ? f4ResultTexts.get(shownHistory.id) : undefined;
+  const historyResultText = shownHistory ? historyResult(shownHistory.id) : undefined;
   const historyIndex = shownHistory ? histPageRows.findIndex((h) => h.id === shownHistory.id) : -1;
   const shownActors = shownHistory ? historyActors(shownHistory.chain) : null;
   const historyNote = shownHistory?.note.startsWith("原因:") ? { label: "原因", text: shownHistory.note.slice(3).trim() || "—" } : { label: "说明", text: shownHistory?.note || "—" };
