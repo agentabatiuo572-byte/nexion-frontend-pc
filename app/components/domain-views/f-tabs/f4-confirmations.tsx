@@ -8,7 +8,7 @@ import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
-import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_SETTLEMENT_CONSEQUENCE, F4_SETTLE_IMPACT, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_PAYOUT_COVERAGE, F4_COVERAGE_NEXT, f4CurrentWeekPool, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_PAYOUT_PROPOSAL_PAUSED, F4_SETTLEMENT_CONSEQUENCE, F4_SETTLE_IMPACT, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_PAYOUT_COVERAGE, F4_COVERAGE_NEXT, f4CurrentWeekPool, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
@@ -290,10 +290,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     }
     case action === "payout": {
       const run = (reason: string) => ctx.proposeF4LeaderboardPayout("allTime", reason);
+      const poolBlock = ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined;
       spec = { briefKind: "funds",
     name: "发放总榜奖励",
     amplify: true,
-    title: "发放总榜奖励", blockedReason: ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined, effect: approvalTag(), confirmLabel: "提交审批",
+    title: "发放总榜奖励", blockedReason: poolBlock, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
       impact: F4_PAYOUT_IMPACT,
       check: `奖池为 0 或没人上榜时不发钱。${F4_PAYOUT_COVERAGE}`,
@@ -303,7 +304,11 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     coverageCheck: `提交时按这里的数查一次。${F4_PAYOUT_COVERAGE}${F4_COVERAGE_NEXT}`,
     facts: <div className="rd-stack">
       <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)}
-        onPayoutStateChange={(_, paused) => { if (paused) ctx.blockPausedF4Payout(run); }} />
+        onReadStateChange={read => {
+          if (read.state === "loading") return;
+          const block = read.state === "ok" ? read.paused ? F4_PAYOUT_PROPOSAL_PAUSED : poolBlock : "总榜预览读到后才能发起。";
+          ctx.setF4PayoutBlock(run, block);
+        }} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,

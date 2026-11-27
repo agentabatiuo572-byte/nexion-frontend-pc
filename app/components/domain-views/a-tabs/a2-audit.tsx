@@ -20,7 +20,7 @@ import { V8PromotionFacts } from "../f-tabs/v8-promotion-facts";
 import { aTicketPermissionText } from "@/lib/admin/a-approval-names";
 import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText, H8_SETTLEMENT_APPROVAL_PERMISSION } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
-import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
+import { F4PayoutPreviewFacts, F4SettleFacts, type F4PayoutReadState } from "../f-tabs/f4-payout-preview";
 import { F4_COVERAGE_NEXT, F4_PAYOUT_COVERAGE, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_SETTLE_IMPACT, F4_SETTLEMENT_CONSEQUENCE } from "@/lib/admin/f4-money";
 import { F2BootstrapReview, f2AppLimitIssue, f2BootstrapUsesRank, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { fetchF1VRankOverview, fetchF2RatesOverview } from "@/lib/admin/f1-client";
@@ -1953,7 +1953,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
    */
   type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string;
     coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; waitsForLatestRead?: boolean; review?: boolean; extra?: ReactNode };
-  const fundSpec = (w: A2OperationRow, onPayoutStateChange?: (settled: boolean | undefined, paused?: boolean) => void): FundSpec | undefined => {
+  const fundSpec = (w: A2OperationRow, onReadStateChange?: (read: F4PayoutReadState) => void): FundSpec | undefined => {
     const fund = fundTicket(w);
     if (!fund) return undefined;
     // 影响句、后果句和覆盖率说明与 F4 发起框同一套（OP-69）；覆盖率说明只在问号里写一次（DT-12）。
@@ -1965,7 +1965,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverageCheck: `${fund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
-      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts rules quietLoading onPayoutStateChange={onPayoutStateChange} /> : undefined,
+      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts rules quietLoading onReadStateChange={onReadStateChange} /> : undefined,
       waitsForLatestRead: fund.period === "总榜",
     };
     if (fund.kind === "f4Settle") return {
@@ -1975,7 +1975,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       detail: "没有合格票时不发钱。",
       coverageCheck: `${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}`,
       facts: undefined,
-      lead: <F4SettleFacts onSettlementChange={onPayoutStateChange} />,
+      lead: <F4SettleFacts onReadStateChange={onReadStateChange} />,
       waitsForLatestRead: true,
     };
     if (fund.kind === "fConfig") {
@@ -2153,11 +2153,13 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       openActionConfirm(current => current?.run === request.run ? { ...current, approvalWriteBlock } : current);
     };
     const latestReadBlock = "正在加载最新状态，读到后才能批准。";
-    const fund = fundSpec(w, (settled, paused) => {
+    const readFailureBlock = w.operationCode === "f4_pool_settle" ? "本周奖池读到后才能批准。" : "总榜预览读到后才能批准。";
+    const fund = fundSpec(w, read => {
       // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
-      const blockedReason = paused ? F4_PAYOUT_APPROVAL_PAUSED
+      const blockedReason = read.state === "ok" && read.paused ? F4_PAYOUT_APPROVAL_PAUSED
         : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED
-        : settled === undefined ? latestReadBlock : settled ? undefined : coverageBlock;
+        : read.state === "ok" ? read.settled ? undefined : coverageBlock
+        : read.state === "loading" ? latestReadBlock : readFailureBlock;
       openActionConfirm(current => current?.run === request.run && !current.approvalWriteBlock && current.blockedReason !== blockedReason
         ? { ...current, blockedReason } : current);
     }) ?? k1Spec ?? bootSpec;

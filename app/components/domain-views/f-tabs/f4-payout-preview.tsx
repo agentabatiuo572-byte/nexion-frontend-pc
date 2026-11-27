@@ -7,13 +7,14 @@
 import { useEffect, useState } from "react";
 import { BlockState, Cell, Explain, Fact, Facts, Fold, Notice, StatusTag, Table, Td, Th, Tr } from "@/app/components/rd";
 import { displayAdminReadError } from "@/lib/admin/error-messages";
-import { businessClock, businessStamp, businessZone } from "@/lib/admin/business-time";
+import { businessClock, businessZone } from "@/lib/admin/business-time";
 import { fetchF4LeaderboardDisqualificationReadiness, fetchF4LeaderboardPayoutPreview, fetchF4LeadershipPoolOverview, fetchF4VoteProjection, type F4LeaderboardDisqualificationReadiness, type F4LeaderboardPayoutPreview } from "@/lib/admin/f1-client";
 import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { f4CurrentWeekPool } from "@/lib/admin/f4-money";
 import { count, decimalText, usdt, moneyText } from "./f4-shared";
 
 type Read<T> = { state: "loading" } | { state: "failed"; error: string } | { state: "ok"; data: T; at: number };
+export type F4PayoutReadState = { state: "loading" | "failed" } | { state: "ok"; settled: boolean; paused?: boolean };
 
 function useRead<T>(read: () => Promise<T | null>) {
   const [result, setResult] = useState<Read<T>>({ state: "loading" });
@@ -50,15 +51,15 @@ const percentText = (value: string) => value.includes(".") ? value.replace(/0+$/
  * 能发时写估算和读取时间；不会发时只写不会发和原因，按名次测算的名单收进折叠、标明这次不发。
  * 金额批准时才算出来，奖池是配置不是这次动的钱：框里不放关键数字（VS-102）。
  */
-export function F4PayoutPreviewFacts({ pool, rules = false, quietLoading = false, onPayoutStateChange }: {
+export function F4PayoutPreviewFacts({ pool, rules = false, quietLoading = false, onReadStateChange }: {
   /** 批准框：读完前确认按钮的原因已经写着在加载，读数区只写「—」，不再说第二遍（ST-31、DT-12）。 */
-  pool?: string; rules?: boolean; quietLoading?: boolean; onPayoutStateChange?: (settled: boolean | undefined, paused?: boolean) => void;
+  pool?: string; rules?: boolean; quietLoading?: boolean; onReadStateChange?: (read: F4PayoutReadState) => void;
 }) {
   const read = useRead<F4LeaderboardPayoutPreview>(() => fetchF4LeaderboardPayoutPreview("allTime"));
   const preview = read.state === "ok" ? read.data : undefined;
   useEffect(() => {
-    onPayoutStateChange?.(read.state === "loading" ? undefined : preview?.alreadySettled ?? false, preview?.paused);
-  }, [read.state, preview, onPayoutStateChange]);
+    onReadStateChange?.(read.state === "ok" ? { state: "ok", settled: read.data.alreadySettled, paused: read.data.paused } : { state: read.state });
+  }, [read, onReadStateChange]);
   const payable = preview?.available === true;
   const calculation = payable ? preview.payout : preview?.ranking;
   const unconfigured = preview?.reason === "F4_LEADERBOARD_POOL_NOT_CONFIGURED";
@@ -99,10 +100,8 @@ export function F4PayoutPreviewFacts({ pool, rules = false, quietLoading = false
       {payable ? list : list && <Fold inset title="按名次测算，这次不发" summary={`上榜 ${count(calculation.rankedCount)} 人，测算合计 ${moneyText(calculation.totalAmount)} USDT`}>
         <div className="rd-stack">{warnings}{list}</div>
       </Fold>}
-      {/* 读不到时，读数行的位置只写批准时怎么算；能不能批由确认按钮和它的原因说。 */}
-      {read.state === "failed" && <p className="f4-payout-note">批准时按当时的总榜重新计算。</p>}
       {/* 分两段不断开：窄框里只在逗号后换行，不留两三个字的孤行。 */}
-      {read.state === "ok" && <p className="f4-payout-note"><span className="rd-keep">{`${businessStamp(read.at)}（${businessZone().label}）${payable ? "读到的估算，" : "读到，"}`}</span><span className="rd-keep">{payable ? "批准时重新算，金额可能不同。" : "批准时以当时的总榜为准。"}</span></p>}
+      {read.state === "ok" && <p className="f4-payout-note"><span className="rd-keep">{`${businessClock(read.at)}（${businessZone().label}）${payable ? "读到的估算，" : "读到，"}`}</span><span className="rd-keep">{payable ? "批准时重新算，金额可能不同。" : "批准时以当时的总榜为准。"}</span></p>}
       {rules && preview && <F4PayoutRules top1MaxPct={percentText(preview.top1MaxPct)} top5MaxPct={percentText(preview.top5MaxPct)} />}
     </div>
   );
@@ -146,17 +145,17 @@ export function F4PoolReadTime({ at, estimated }: { at: number; estimated: boole
 
 /**
  * 「操作记录与审批」里批准本周结算时的现状：和 F4 结算确认框同一份读数（本周池、有资格分的人），打开时读一次。
- * 等概览读完再判断是否已结算；读失败按未结算走覆盖率规则。
+ * 概览读取成功后再按结算状态和覆盖率判断能否批准。
  * 读完前确认按钮的原因写着在加载，这里只写「—」；读失败时错误卡顶替整块读数（ST-30、ST-34）。读取时间紧跟读数，已结算提示在后，和 F4 发起框同一个顺序。
  */
-export function F4SettleFacts({ onSettlementChange }: { onSettlementChange?: (settled: boolean | undefined) => void }) {
+export function F4SettleFacts({ onReadStateChange }: { onReadStateChange?: (read: F4PayoutReadState) => void }) {
   const read = useRead(fetchF4LeadershipPoolOverview);
   const projection = useRead(fetchF4VoteProjection);
   const data = read.state === "ok" ? read.data : undefined;
   const settled = f4CurrentWeekSettled(projection.state === "ok" ? projection.data : undefined);
   useEffect(() => {
-    onSettlementChange?.(read.state === "loading" ? undefined : data?.currentWeekSettled ?? false);
-  }, [read.state, data, onSettlementChange]);
+    onReadStateChange?.(read.state === "ok" ? { state: "ok", settled: read.data.currentWeekSettled ?? false } : { state: read.state });
+  }, [read, onReadStateChange]);
   const { amount: pool, actual, estimated } = data ? f4CurrentWeekPool(data) : { amount: null, actual: false, estimated: false };
   return (
     <div className="f4-payout">
