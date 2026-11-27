@@ -151,7 +151,7 @@ export function F4SettleFacts({ onReadStateChange }: { onReadStateChange?: (read
   const projection = useRead(fetchF4VoteProjection);
   const data = read.state === "ok" ? read.data : undefined;
   const settled = data && (data.currentWeekSettled ?? f4CurrentWeekSettled(projection.state === "ok" ? projection.data : undefined));
-  const configOnHold = data?.settlementConfigStatus === "HOLD" && data.currentWeekSettled !== true;
+  const configOnHold = data?.settlementConfigStatus === "HOLD" && settled !== true;
   const waitingForLegacyProjection = !!data && data.currentWeekSettled === undefined && projection.state === "loading";
   useEffect(() => {
     onReadStateChange?.(read.state !== "ok" ? { state: read.state }
