@@ -777,7 +777,7 @@ export default function RiskRadarPage() {
     const rejected = original?.kind === "threshold" && !!original.replayRejection;
     return { onRelease: original && recovery.replayRejection ? () => setReleasingWrite(original) : undefined,
       commandKey: record.commandKey, title: `${name} · ${rejected ? "重试被拒绝" : "结果未知"}`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
-      recoveryLine: rejected ? `${displayAdminError(original.replayRejection)} ${RETRY_REJECTED_NEXT}` : undefined,
+      recoveryLine: rejected ? `${displayAdminError(original.replayRejection)}${RETRY_REJECTED_NEXT}` : undefined,
       expired: isRetryExpired(record), onRetry: recovery.replayBlock ? undefined : () => recoverWrite(record), onQuery: () => void queryWrite(record) };
   });
 
@@ -964,7 +964,7 @@ export default function RiskRadarPage() {
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-              : approvalReleasable ? `${displayAdminError(approvalRecoveryState?.replayRejection)} ${RETRY_REJECTED_NEXT}`
+              : approvalReleasable ? `${displayAdminError(approvalRecoveryState?.replayRejection)}${RETRY_REJECTED_NEXT}`
                 : pendingApproval.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT
                   : approvalQueryOnly ? APPROVAL_QUERY_ONLY : "先查原审批单；查不到时 24 小时内可以按原操作重试，不会建第二张单。"}</p>
           </Notice>

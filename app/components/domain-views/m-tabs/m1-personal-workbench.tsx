@@ -400,7 +400,7 @@ export function M1PersonalWorkbench({ permission, ctx, view, onViewChange, prima
       if (actor !== actorStamp()) return;
       closeDetail();
       if (!readingCustomer || !invalidateCustomerOnDenied(record.payload.customerId, error)) {
-        setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "查询没有成功，原客户和理由已保留；名单还是上次读到的，稍后再查。" }));
+        setMaintenanceChecks(current => ({ ...current, [record.commandKey]: "查询没有成功，原客户和理由已保留，稍后再查。" }));
       }
     }
     finally { setSaving(false); }
