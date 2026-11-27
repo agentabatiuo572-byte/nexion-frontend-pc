@@ -22,7 +22,7 @@ import {
   type H3QuestEventBinding,
 } from "@/lib/admin/h-client";
 import { H3_PRODUCT_DETAIL_ROUTE_PREFIX, H3_PRODUCT_TARGETS_READ_FAILURE, compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model, type H3ReadQuestEventBinding } from "@/lib/admin/h3-contract";
-import { h3ActionRouteLabels, h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
+import { h3ActionRouteLabels, h3ActionRoutes, h3RouteNeedsProductTargets } from "@/lib/admin/config-help/h3-task";
 import { h3MissionReceiptText } from "@/lib/admin/a2-approval-text";
 import { fetchOperatingLanguages } from "@/lib/admin/platform-experience-client";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
@@ -45,7 +45,7 @@ import {
   H3_BINDING_EVENT_LABELS, H3_BINDING_EVENT_OPTIONS, H3_BINDING_USER_FIELDS, H3_BINDING_USER_FIELD_LABELS,
   TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS,
   activeUnbound, amountText, bindingEventLabel, bindingEventProducer, bindingEventText, bindingUserFieldText, boolValue, casExpected, cleanPhaseKey, contractForTask, decimalOf, eventTypeText, legacyAssetText, mulDecimal,
-  acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskCompletionEvents, taskCompletionEventText, taskCompletionWarning, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
+  acknowledgedTag, expiredTag, numericValue, parseTriReward, pendingTag, producerText, sumDecimal, taskCompletionEvents, taskCompletionEventText, taskStatusOf, taskTitleText, taskUnbound, text, unknownTag,
   H3CreationList, H3PendingLine, backendPendingTag, lockedTag, pendingChangeText,
   type FormulaRow, type H3Model, type H3RecoveryRow, type PreviewTask, type QuestTask,
 } from "./h3-quest-parts";
@@ -543,7 +543,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       statedBrief: { impact: "只在目录里加一条已停用的任务；不自动绑定、不启用、不发钱。", check: "核对编号（建好后不能改）、名称和奖励；理由写清依据。" },
       confirmLabel: approval ? "提交审批" : "确认新建",
       blockedReason,
-      requiresProductActionTargets: true,
+      requiresProductActionTargets: h3RouteNeedsProductTargets(code, bv.actionRoute.trim()),
       coverageLead: "新建带奖励的任务是放大方向，要另一位超级管理员批准",
       amplifies: true,
       run: async (reason) => {
@@ -680,12 +680,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           kind: "multi-field",
           requireAnyChange: true,
           // 清空或选了不在候选里的都写在这一项下面；必填检查不再另报字段名（design-kit 去重），同一件事只说一次。
-          feedback: (value) => {
+          feedback: ({ actionRoute }) => {
             // 商品候选没读到：框里上方已就地说了并给「重试」，这里只说这一项怎么改（同一件事不说两遍）。
-            if (targets === null && value.actionRoute !== currentActionRoute) {
-              return { invalid: true, message: "改回原页面，或读到候选后再换", field: "actionRoute" };
+            if (targets === null && actionRoute !== currentActionRoute
+              && h3RouteNeedsProductTargets(taskCode, actionRoute ?? "")) {
+              return { invalid: true, message: "改回原页面，或读到候选后再选商品", field: "actionRoute" };
             }
-            return options.includes(value.actionRoute)
+            return options.includes(actionRoute)
               ? { invalid: false, message: "" }
               : { invalid: true, message: "请选择去完成页面", field: "actionRoute" };
           },
@@ -1200,6 +1201,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     () => mc?.missionPresentationForm?.(productActionTargets, routeLabels) ?? mc?.businessForm,
     [mc, productActionTargets, routeLabels],
   );
+  const confirmTargetsBlocked = productActionTargets === null
+    && mc?.requiresProductActionTargets && mc.getPendingReason?.() === undefined;
   const confirmModal = mc && (<Fragment key="h3-confirm">
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
@@ -1210,7 +1213,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           businessForm={confirmBusinessForm}
           businessFormRevision={mc.missionPresentationForm ? readAt : undefined}
           content={mc.missionPresentationForm && productActionTargets === null ? <Notice tone="warn"
-            action={<Button size="sm" loading={loading} loadingText="重试中…" onClick={() => void reload()}>重试</Button>}>商品候选没读到，读到之前不能换跳转页面。</Notice> : undefined}
+            action={<Button size="sm" loading={loading} loadingText="重试中…" onClick={() => void reload()}>重试</Button>}>商品候选没读到，读到后可选商品页面。</Notice> : undefined}
           facts={mc.facts}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}
@@ -1220,7 +1223,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           coverageLead={mc.coverageLead}
           coverageCheck={mc.coverageCheck}
           reasonPlaceholder={mc.reasonPlaceholder}
-          blockedReason={mc.requiresProductActionTargets && productActionTargets === null ? H3_PRODUCT_TARGETS_READ_FAILURE : mc.blockedReason}
+          blockedReason={confirmTargetsBlocked ? H3_PRODUCT_TARGETS_READ_FAILURE : mc.blockedReason}
           reasonPolicyOptional={mc.reasonPolicyOptional}
           inlineApproval={mc.inlineApproval}
           reasonMin={mc.reasonMin}
@@ -1285,12 +1288,26 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const nameOf = (task: QuestTask) => localizedValue(codeOf(task), "zh") || taskTitleText(text(task.task ?? task.cond));
   const bindingsOf = (task: QuestTask) => bindings.filter((binding) => binding.questCode === codeOf(task));
   const completionOf = (task: QuestTask, list: ListKey, taskBindings: H3ReadQuestEventBinding[]) => {
-    if (list === "dayOne") return taskCompletionEventText(task);
-    if (taskUnbound(task)) return "";
-    return taskBindings.filter((binding) => Number(binding.status) === 1).map(bindingEventText).join("、");
+    const enabledBindings = taskBindings.filter(binding => binding.status === 1);
+    const unbound = taskUnbound(task);
+    const events = list === "dayOne" ? taskCompletionEventText(task)
+      : unbound ? "" : enabledBindings.map(bindingEventText).join("、");
+    if (events) return { text: events, hasEvent: true };
+
+    const warn = activeUnbound(task);
+    let issue: string;
+    if (enabledBindings.length > 0) {
+      // B143: only effective events are read back for the fixed day-one tasks.
+      issue = list === "dayOne" && unbound
+        ? `没有有效的完成条件（${enabledBindings.length} 条绑定不符合约定）`
+        : "没有有效的完成条件";
+    } else if (taskBindings.length > 0) {
+      issue = `没有启用的条件（${taskBindings.length} 条已停用）`;
+    } else {
+      issue = warn ? "没绑定完成事件" : "还没有完成条件";
+    }
+    return { text: warn ? `${issue}，用户做不完` : issue, hasEvent: false };
   };
-  const invalidBindingCount = (task: QuestTask, list: ListKey, taskBindings: H3ReadQuestEventBinding[]) =>
-    list === "dayOne" && taskUnbound(task) ? taskBindings.filter((binding) => binding.status === 1).length : 0;
   const localeGaps = (task: QuestTask) => (["en", "zh", "vi"] as const).filter((locale) => !localizedValue(codeOf(task), locale)).map((locale) => LOCALE_LABEL[locale]);
   const active = all.filter((task) => taskStatusOf(task) === "active");
   const stuck = all.filter(activeUnbound);
@@ -1471,23 +1488,28 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const rewardKey = `mission.${codeOf(task)}.reward`;
         const lock = backendLock(rewardKey);
         const proposed = list !== "dayOne" && lock?.proposedValue != null ? `申请改成 ${pendingFormat(rewardKey)(lock.proposedValue)}` : undefined;
-        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} routeLabel={routeLabels[text(task.href, "")]} completion={completionOf(task, list, taskBindings)} bindingCount={taskBindings.length} invalidBindingCount={invalidBindingCount(task, list, taskBindings)}
+        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} routeLabel={routeLabels[text(task.href, "")]} completion={completionOf(task, list, taskBindings)}
           reward={reward.reward} rewardNote={proposed ? <>{reward.note && `${reward.note} · `}<span className="h3-card-proposed">{proposed}</span></> : reward.note} localeGaps={localeGaps(task)} pending={lockTag(rewardKey)}
           selected={detail?.code === codeOf(task)} onOpen={() => setDetail({ list, code: codeOf(task) })}
           primary={canModuleWrite ? taskPrimary(task) : undefined} menu={canModuleWrite ? taskMenu(task, list) : undefined} />;
       })}
     </div>;
 
-  const openableProductRoutes = productActionTargets && new Set(productActionTargets.filter(target => target.openable).map(target => target.actionRoute));
+  const productRouteAvailability = new Map(productActionTargets?.map(target => [target.actionRoute, target.openable]));
+  const completeProductTargets = productActionTargets != null && model.productActionTargetsComplete === true;
   const previewTask = (task: QuestTask, withReward: boolean): PreviewTask => {
     const route = text(task.href, "");
+    const openable = productRouteAvailability.get(route);
+    const targetUnavailable = route.startsWith(H3_PRODUCT_DETAIL_ROUTE_PREFIX)
+      ? openable === undefined ? completeProductTargets || undefined : !openable
+      : false;
     return {
       key: codeOf(task),
       names: { en: localizedValue(codeOf(task), "en"), zh: localizedValue(codeOf(task), "zh"), vi: localizedValue(codeOf(task), "vi") },
       source: text(task.task ?? task.cond),
       category: text(task.category, "").toLowerCase(),
       routeLabel: routeLabels[route] ?? route,
-      targetUnavailable: !!openableProductRoutes && route.startsWith(H3_PRODUCT_DETAIL_ROUTE_PREFIX) && !openableProductRoutes.has(route),
+      targetUnavailable,
       reward: withReward ? mulDecimal(decimalOf(task.reward), h1Value, weeklyValue) : undefined,
     };
   };
@@ -1836,12 +1858,11 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const detailName = detailTask ? text(detailTask.task ?? detailTask.cond) : "";
   const detailArchived = detailTask ? taskStatusOf(detailTask) === "archived" : false;
   const detailBindings = detailTask ? bindingsOf(detailTask) : [];
-  const detailCompletion = detailTask && detail ? completionOf(detailTask, detail.list, detailBindings) : "";
-  const detailInvalidBindingCount = detailTask && detail ? invalidBindingCount(detailTask, detail.list, detailBindings) : 0;
+  const detailCompletion = detailTask && detail ? completionOf(detailTask, detail.list, detailBindings) : null;
   const detailUnknownEvents = detailTask ? [...new Set([
     ...taskCompletionEvents(detailTask), ...detailBindings.map(binding => binding.eventType),
   ].filter(event => !bindingEventLabel(event)))] : [];
-  const detailNeedsBinding = detail?.list === "dayOne" ? !detailCompletion : detailBindings.length === 0;
+  const detailNeedsBinding = detail?.list === "dayOne" ? !detailCompletion?.hasEvent : detailBindings.length === 0;
   const detailDisabledBindings = detail?.list === "dayOne" ? [] : detailBindings.filter((binding) => Number(binding.status) !== 1);
   const detailReward = detailTask && detail ? rewardOf(detailTask, detail.list) : null;
 
@@ -1879,7 +1900,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           <JudgmentPoints rows={[
             { label: "状态", value: <TaskStatusTag task={detailTask} />, reason: taskRetired(detailTask) ? "质押类每周任务已下线，不能再启用；改名称、奖励和归档照常" : undefined },
             { label: "做了什么算完成", state: activeUnbound(detailTask) ? "warn" : undefined,
-              value: detailCompletion || (activeUnbound(detailTask) ? taskCompletionWarning(detailBindings.length, detailInvalidBindingCount) : "还没有启用的完成条件"),
+              value: detailCompletion?.text,
               reason: detailNeedsBinding ? detailBindings.length ? "到「完成条件」页签核查绑定" : "到「完成条件」页签绑定"
                 : detailDisabledBindings.length ? `已停用：${detailDisabledBindings.map(bindingEventText).join("、")}` : undefined },
             { label: "点「去完成」跳到", value: routeLabels[text(detailTask.href, "")] ?? text(detailTask.href, "—") },

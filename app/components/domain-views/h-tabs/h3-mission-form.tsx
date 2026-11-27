@@ -9,7 +9,7 @@ import { useState } from "react";
 import { ListChecks } from "lucide-react";
 import { Button, Decision, Drawer, Field, InlineRetry, Input, Modal, Notice, NumberInput, SearchSelect, Select, StatusTag } from "@/app/components/rd";
 import { PreviewTarget, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS, amountText } from "./h3-quest-parts";
-import { h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
+import { h3ActionRoutes, h3RouteNeedsProductTargets } from "@/lib/admin/config-help/h3-task";
 import { h3MissionCreationRefusal, type H3ProductActionTarget } from "@/lib/admin/h3-contract";
 import { displayAdminError } from "@/lib/admin/error-messages";
 
@@ -69,14 +69,16 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
   /** 离开过的字段：刚打开不报，离开这一项后报它，点过「下一步」后全部亮出（OP-15、VS-107）。 */
   const [left, setLeft] = useState<Record<string, boolean>>({});
   const leave = (key: string) => () => setLeft((state) => state[key] ? state : { ...state, [key]: true });
-  const actionRoutes = h3ActionRoutes(value.missionCode ?? "", productActionTargets);
+  const missionCode = value.missionCode ?? "";
+  const actionRoutes = h3ActionRoutes(missionCode, productActionTargets);
   const actionRoute = actionRoutes.includes(value.actionRoute) ? value.actionRoute : "";
-  const routeBlocked = productActionTargets === null ? "商品候选没读到，读到后才能新建" : actionRoutes.length ? undefined : productActionTargets === undefined
+  const targetsBlockRoute = productActionTargets === null && h3RouteNeedsProductTargets(missionCode, value.actionRoute ?? "");
+  const routeBlocked = targetsBlockRoute ? "商品候选没读到，读到后才能选商品" : actionRoutes.length ? undefined : productActionTargets === undefined
     ? "商品候选没读到，重新读取后再选"
     : "现在没有能作回本目标的 S1 商品（已开放、能显示预计收益），上架后再选";
   const { value: reward, error: rewardError } = readMissionReward(value.rewardPoints);
   const errors = missionFormErrors(value, missionType, rewardError, routeBlocked ?? (actionRoute ? undefined : "请选择去完成页面"));
-  const creationRefusal = h3MissionCreationRefusal(missionType, value.missionCode?.trim() ?? "");
+  const creationRefusal = h3MissionCreationRefusal(missionType, missionCode.trim());
   const shown: Record<string, string> = attempted ? errors : Object.fromEntries(Object.entries(errors).filter(([key]) => left[key]));
   const routeText = (route: string) => routeLabels[route] ?? route;
   const routeQuery = routeTyping?.trim().toLowerCase() ?? "";
@@ -120,8 +122,8 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
                   options={TASK_CATEGORY_OPTIONS.map((option) => ({ value: option, label: TASK_CATEGORY_LABELS[option] }))} /></div>}
               </Field>
               <Field label="点「去完成」跳到" required
-                help={productActionTargets === null ? <>{routeBlocked}{targetsRetry && <> · <InlineRetry onRetry={targetsRetry.onRetry} retrying={targetsRetry.retrying} /></>}</> : shown.actionRoute ? undefined : routeBlocked}
-                error={productActionTargets === null ? undefined : shown.actionRoute}>
+                help={productActionTargets === null ? <>商品候选没读到{targetsRetry && <> · <InlineRetry onRetry={targetsRetry.onRetry} retrying={targetsRetry.retrying} /></>}</> : shown.actionRoute ? undefined : routeBlocked}
+                error={targetsBlockRoute ? undefined : shown.actionRoute}>
                 {/* 框里显示的是已选项名称时，点进去先全选，打字就替换它，不会接在名称后面去搜（Ant Design Select showSearch）。 */}
                 {(control) => <div onBlur={leave("actionRoute")}
                   onFocus={(event) => { if (routeTyping === null && event.target instanceof HTMLInputElement) event.target.select(); }}

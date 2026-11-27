@@ -129,6 +129,8 @@ export type H3Model = {
   pendingMissionCreations?: H3PendingMissionCreation[];
   /** Missing on older services, null when the supplied candidates could not be read. */
   productActionTargets?: H3ProductActionTarget[] | null;
+  /** True only when every candidate in the response was usable for directory comparisons. */
+  productActionTargetsComplete?: boolean;
   dayOneTasks: H3Task[];
   dayOneStates: Array<{ st: string; label: string; tone: string }>;
   weeklyTier1: H3Task[];

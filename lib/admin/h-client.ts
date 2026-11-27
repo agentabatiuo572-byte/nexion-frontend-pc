@@ -1,4 +1,4 @@
-import { H3_PRODUCT_DETAIL_ROUTE_PREFIX, h3QuestConfigWriteRefusal, type H3ProductActionTarget } from "./h3-contract";
+import { H3_PRODUCT_DETAIL_ROUTE_PREFIX, h3QuestConfigWriteRefusal, type H3Model } from "./h3-contract";
 import { SKU_SERIES_CODES } from "./device-monthly-target";
 import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
@@ -424,7 +424,7 @@ export function validateH4OverviewEvents(events: unknown) {
     }
 }
 
-function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] | null {
+function readH3ProductActionTargets(value: unknown): Pick<H3Model, "productActionTargets" | "productActionTargetsComplete"> {
   if (!Array.isArray(value)) throw new Error("H3_RESPONSE_INVALID");
   const targets = value.flatMap((item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return [];
@@ -436,14 +436,18 @@ function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] | n
       || (seriesCode !== null && (typeof seriesCode !== "string" || !SKU_SERIES_CODES.some(code => code === seriesCode)))) return [];
     return [{ productNo, name, actionRoute, openable, seriesCode, roiEligible }];
   });
-  return value.length > 0 && targets.length === 0 ? null : targets;
+  const complete = targets.length === value.length;
+  return {
+    productActionTargets: !complete && targets.length === 0 ? null : targets,
+    productActionTargetsComplete: complete,
+  };
 }
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
   if (section === "tasks") {
     const result = await growthRequest<Record<string, any>>("/quest-events/tasks");
     if (result?.productActionTargets === undefined) return result;
-    return { ...result, productActionTargets: readH3ProductActionTargets(result.productActionTargets) };
+    return { ...result, ...readH3ProductActionTargets(result.productActionTargets) };
   }
   const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
   validateH4OverviewEvents(result.events);

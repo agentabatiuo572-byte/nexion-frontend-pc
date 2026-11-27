@@ -9,7 +9,7 @@ import Link from "next/link";
 import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, CornerDownRight, Hourglass, Lock, Smartphone } from "lucide-react";
 import { Button, Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
+import { TASK_CATEGORY_LABELS, isH3RoiMission, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
 import { h3Decimal, h3HasConfigValue, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
@@ -308,10 +308,7 @@ export type TaskCardProps = {
   task: QuestTask;
   name: string;
   routeLabel?: string;
-  completion: string;
-  bindingCount: number;
-  /** 首日约定任务：有绑定但都不符合约定时的条数（B143）。 */
-  invalidBindingCount?: number;
+  completion: { text: string; hasEvent: boolean };
   reward: ReactNode;
   rewardNote?: ReactNode;
   localeGaps: string[];
@@ -338,17 +335,7 @@ export function taskCompletionEventText(task: QuestTask) {
   return taskCompletionEvents(task).map(eventTypeText).join("、");
 }
 
-function invalidBindingText(count: number) {
-  return `没有有效的完成条件（${count} 条绑定不符合约定）`;
-}
-
-export function taskCompletionWarning(bindingCount: number, invalidBindingCount: number) {
-  const issue = invalidBindingCount > 0 ? invalidBindingText(invalidBindingCount)
-    : bindingCount > 0 ? "没有有效的完成条件" : "没绑定完成事件";
-  return `${issue}，用户做不完`;
-}
-
-export function TaskCard({ task, name, routeLabel, completion, bindingCount, invalidBindingCount = 0, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
+export function TaskCard({ task, name, routeLabel, completion, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
   const status = taskStatusOf(task);
   const warn = activeUnbound(task);
   const route = text(task.href, "");
@@ -368,11 +355,11 @@ export function TaskCard({ task, name, routeLabel, completion, bindingCount, inv
       <dl className="h3-card-facts">
         <div data-warn={warn ? "" : undefined}>
           <dt>做了什么算完成</dt>
-          <dd>{completion
-            ? completion
+          <dd>{completion.hasEvent
+            ? completion.text
             : warn
-              ? <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />{taskCompletionWarning(bindingCount, invalidBindingCount)}</span>
-              : <span className="h3-card-muted">{invalidBindingCount > 0 ? invalidBindingText(invalidBindingCount) : bindingCount > 0 ? `没有启用的条件（${bindingCount} 条已停用）` : "还没有完成条件"}</span>}</dd>
+              ? <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />{completion.text}</span>
+              : <span className="h3-card-muted">{completion.text}</span>}</dd>
         </div>
         <div>
           <dt>点「去完成」跳到</dt>
@@ -514,7 +501,16 @@ export function PhaseStrip({ items, currentPhase, action, mark }: {
 }
 
 // ===== App 上的样子 =====
-export type PreviewTask = { key: string; names: Record<"en" | "zh" | "vi", string>; source: string; category: string; routeLabel: string; targetUnavailable: boolean; reward?: string | null };
+export type PreviewTask = {
+  key: string;
+  names: Record<"en" | "zh" | "vi", string>;
+  source: string;
+  category: string;
+  routeLabel: string;
+  /** Undefined when a product target's availability could not be confirmed. */
+  targetUnavailable?: boolean;
+  reward?: string | null;
+};
 export type PreviewLocale = "zh" | "en" | "vi";
 
 function previewName(task: PreviewTask, locale: PreviewLocale) {
@@ -523,9 +519,10 @@ function previewName(task: PreviewTask, locale: PreviewLocale) {
 }
 
 /** 预览里给运营核对的跳转目标：App 上只有「去完成 ›」，这一行只在后台显示。没有值写「—」（ST-45）。
- * 目标确定打不开（已读到的商品目录里没有它或没开放）时，原路由照写，后面橙黄写一句打不开（VS-107）。 */
-export function PreviewTarget({ label, unavailable = false }: { label: string; unavailable?: boolean }) {
-  return <span className="h3-phone-target"><CornerDownRight size={12} aria-hidden /><span>{`跳到 ${label || "—"}`}{unavailable && <span className="h3-phone-target-off"> · 这个商品现在打不开，用户做不了</span>}</span></span>;
+ * 完整目录确认缺失或商品明确未开放时，保留目标并说明打不开（VS-107）。 */
+export function PreviewTarget({ label, unavailable = false, missionCode = "" }: { label: string; unavailable?: boolean; missionCode?: string }) {
+  const unavailableText = isH3RoiMission(missionCode) ? "这个跳转目前打不开" : "这个商品现在打不开，用户做不了";
+  return <span className="h3-phone-target"><CornerDownRight size={12} aria-hidden /><span>{`跳到 ${label || "—"}`}{unavailable && <span className="h3-phone-target-off"> · {unavailableText}</span>}</span></span>;
 }
 
 export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
@@ -569,7 +566,7 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                 {hero.targetUnavailable
                   ? <span className="h3-phone-go" data-off="">该任务对应业务已暂停，暂不可完成</span>
                   : <span className="h3-phone-go">去完成 ›</span>}
-                <PreviewTarget label={hero.routeLabel} unavailable={hero.targetUnavailable} />
+                <PreviewTarget label={hero.routeLabel} unavailable={hero.targetUnavailable} missionCode={hero.key} />
               </div>
             )}
             {tasks.length === 0 && kind === "dayOne" && <p className="h3-phone-empty">{empty}</p>}
@@ -583,7 +580,7 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                     {!task.targetUnavailable && task.reward !== undefined && <span className="h3-phone-reward">{task.reward == null ? "—" : `+${task.reward}`}</span>}
                     {!task.targetUnavailable && <span className="h3-phone-go" aria-hidden="true">›</span>}
                     {task.targetUnavailable && <span className="h3-phone-off">该任务当前未开放</span>}
-                    <PreviewTarget label={task.routeLabel} unavailable={task.targetUnavailable} />
+                    <PreviewTarget label={task.routeLabel} unavailable={task.targetUnavailable} missionCode={task.key} />
                   </li>
                 ))}
               </ul>

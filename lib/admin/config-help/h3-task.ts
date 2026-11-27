@@ -1,6 +1,6 @@
 /** H3 用户任务管理表单里任务类别、去完成页面的选项叫法和旧币种名的写法。H3 页和 A2 审批单共用，两页同一个说法。 */
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import type { H3ProductActionTarget } from "../h3-contract";
+import { H3_PRODUCT_DETAIL_ROUTE_PREFIX, type H3ProductActionTarget } from "../h3-contract";
 
 export const TASK_CATEGORY_LABELS: Record<string, string> = {
   wallet: "钱包",
@@ -43,8 +43,16 @@ const TASK_ACTION_ROUTES = [
   "/pages/genesis/marketplace",
 ];
 
+export function isH3RoiMission(missionCode: string) {
+  return missionCode.trim().toLowerCase() === "view_product_roi";
+}
+
+export function h3RouteNeedsProductTargets(missionCode: string, actionRoute: string) {
+  return isH3RoiMission(missionCode) || actionRoute.startsWith(H3_PRODUCT_DETAIL_ROUTE_PREFIX);
+}
+
 export function h3ActionRoutes(missionCode: string, targets?: readonly H3ProductActionTarget[] | null): string[] {
-  const requiresRoi = missionCode.trim().toLowerCase() === "view_product_roi";
+  const requiresRoi = isH3RoiMission(missionCode);
   const productRoutes = (targets ?? [])
     .filter(target => target.openable && (!requiresRoi || target.roiEligible))
     .map(target => target.actionRoute);
