@@ -223,6 +223,8 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           const rejectedLine = canClose ? "重试被拒绝。先核实原操作，再点「核查结案」。" : "重试被明确拒绝；核对原操作后可以解除。";
           // 被拒后又查了原操作：查询失败或查到回执时按查到的写，标签和这句不再盖住它（OP-82、ST-34）。
           const showRefused = refused && (!item.record || !outcome || ("receipt" in outcome && outcome.receipt === null));
+          // 查到原操作还在执行时不给解除（OP-93 第 6 条），等它有结论。
+          const stillRunning = !!outcome && "receipt" in outcome && outcome.receipt?.originalStatus === "PROCESSING";
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
             tag: <StatusTag tone={showRefused ? "danger" : status?.tone ?? "warn"}>{showRefused ? "重试被拒绝" : status?.label ?? (item.expired ? "已过期" : "结果未知")}</StatusTag>,
@@ -235,7 +237,7 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
                 onCheck={() => void check(item)} onClose={() => setClosing(item)} />}
               {item.verify && <Button size="sm" disabled={disabled || !!running} onClick={() => void verify(item)}>读取现在的值</Button>}
               {item.retry && <Button size="sm" loading={running === item.key} disabled={disabled || (!!running && running !== item.key)} disabledReason={item.blocked} onClick={() => void retry(item)}>按原操作重试</Button>}
-              {refused && !canClose && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>核实后解除</Button>}
+              {refused && !canClose && !stillRunning && <Button size="sm" disabled={disabled || !!running} onClick={() => setReleasing(item)}>核实后解除</Button>}
             </>,
             detail: <p><KeepText text="可能已经生效。" />{typeof hint === "string" ? <KeepText text={/[。；]$/.test(hint) ? hint : `${hint}。`} /> : hint}</p>,
             tech: <TechInfo commandKey={item.key} />,
