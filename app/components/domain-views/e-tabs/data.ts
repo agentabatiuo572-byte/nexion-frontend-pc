@@ -6,7 +6,7 @@
 import { warrantyMonths } from "@/lib/admin/warranty-months";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
-import { isE1DisplaySoldBase } from "@/lib/admin/e1-overview-contract";
+import { isE1DisplaySoldBase, isE1StoreSortOrder } from "@/lib/admin/e1-overview-contract";
 import type { StateTone } from "@/app/components/rd";
 import { SKU_SERIES_CODES, supportsDeviceMonthlyTarget, type SkuSeriesCode } from "@/lib/admin/device-monthly-target";
 import { skuBaseRateText } from "@/lib/admin/operator-copy";
@@ -112,7 +112,7 @@ export const EMPTY_SKU_FORM = {
   inventoryMode: "FINITE", stock: "", displaySoldBase: "0", liveActivityVisible: "true", trialEligible: "false",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
-  lifecycle: "", unlock: "", tag: "",
+  lifecycle: "", storeSortOrder: "0", unlock: "", tag: "",
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
@@ -128,6 +128,11 @@ function parseSkuDisplaySoldBase(input: string): number | undefined {
 
 export function validateSkuDisplaySoldBase(input: string): string | undefined {
   return parseSkuDisplaySoldBase(input) === undefined ? "展示基础销量须为 0–9,999,999 的整数" : undefined;
+}
+
+export function parseSkuStoreSortOrder(input: string): number | undefined {
+  const value = Number(input);
+  return /^-?\d+$/.test(input.trim()) && isE1StoreSortOrder(value) ? value : undefined;
 }
 
 type SkuSeriesError = "SKU_SERIES_REQUIRED" | "SKU_SERIES_INVALID" | "SKU_SERIES_TYPE_MISMATCH" | "SKU_SERIES_LOCKED";
@@ -215,6 +220,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     shareYieldMin: s.monthlyTargetUsdt == null ? str(s.shareYieldMin) : "", shareYieldMax: s.monthlyTargetUsdt == null ? str(s.shareYieldMax) : "",
     monthlyTargetUsdt: str(s.monthlyTargetUsdt), monthlyTargetBandPct: str(s.monthlyTargetBandPct),
     inventoryMode: s.inventoryMode === "UNLIMITED" ? "UNLIMITED" : "FINITE", stock: s.inventoryMode === "UNLIMITED" ? "" : str(s.stock),
+    storeSortOrder: str(s.storeSortOrder),
     displaySoldBase: str(s.displaySoldBase),
     liveActivityVisible: s.liveActivityVisible === undefined ? "" : String(s.liveActivityVisible),
     trialEligible: s.trialEligible ? "true" : "false",
@@ -472,6 +478,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku, displayControlsSupporte
       displaySoldBase: parseSkuDisplaySoldBase(f.displaySoldBase),
       liveActivityVisible: f.liveActivityVisible === "true" ? true : f.liveActivityVisible === "false" ? false : undefined,
     } : {}),
+    storeSortOrder: parseSkuStoreSortOrder(f.storeSortOrder),
     trialEligible: f.trialEligible === "true",
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,
     features: features.length ? features : undefined,

@@ -10,6 +10,7 @@ import {
   e1SkuQuotaInvalidFields,
   inspectE1SkuPage,
   isE1DisplaySoldBase,
+  isE1StoreSortOrder,
   parseE1GenerationGateData,
   parseE1SkuPage,
   type E1InvalidSku,
@@ -66,6 +67,7 @@ interface BackendSku {
   sold?: number | null;
   displaySoldBase?: unknown;
   liveActivityVisible?: unknown;
+  storeSortOrder?: unknown;
   rating?: number | string | null;
   reviews?: number | null;
   generation?: number | null;
@@ -137,6 +139,7 @@ export interface E1GenerationGateData {
   skuReviewContractVersion?: number;
   taskClassPolicySupported?: boolean;
   storeDisplayControlsSupported?: boolean;
+  storeSortOrderSupported?: boolean;
   phaseOrder: string[];
   phases: E1Phase[];
   platformMonth: number;
@@ -286,6 +289,7 @@ function fromSku(sku: BackendSku): OpsSku {
     sold: sku.sold ?? undefined,
     displaySoldBase: isE1DisplaySoldBase(sku.displaySoldBase) ? sku.displaySoldBase : undefined,
     liveActivityVisible: typeof sku.liveActivityVisible === "boolean" ? sku.liveActivityVisible : undefined,
+    storeSortOrder: isE1StoreSortOrder(sku.storeSortOrder) ? sku.storeSortOrder : undefined,
     rating: toOptionalNumber(sku.rating),
     reviews: sku.reviews ?? undefined,
     generation: sku.generation ?? undefined,
@@ -363,6 +367,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string, displayCont
     inventoryMode,
     stock: inventoryMode === "UNLIMITED" ? null : String(sku.stock ?? "0"),
     ...(displayControlsSupported ? { displaySoldBase: sku.displaySoldBase, liveActivityVisible: sku.liveActivityVisible } : {}),
+    storeSortOrder: sku.storeSortOrder,
     trialEligible: sku.trialEligible === true,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? null,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? null,
@@ -440,10 +445,12 @@ export function inspectE1StoreDisplayControls(
   products: Pick<E1CatalogSnapshot, "skus" | "invalidSkus">,
   gates: E1GenerationGateData | null,
 ): Pick<E1CatalogSnapshot, "skus" | "invalidSkus"> {
-  if (gates?.storeDisplayControlsSupported !== true) return products;
+  const displayRequired = gates?.storeDisplayControlsSupported === true;
+  const sortRequired = gates?.storeSortOrderSupported === true;
+  if (!displayRequired && !sortRequired) return products;
   const invalidSkus = [...products.invalidSkus];
   const skus = products.skus.filter(sku => {
-    const invalidFields = e1SkuDisplayControlInvalidFields(sku, true);
+    const invalidFields = e1SkuDisplayControlInvalidFields(sku, displayRequired, sortRequired);
     if (!invalidFields.length) return true;
     invalidSkus.push({ skuId: sku.id, name: sku.name, invalidFields });
     return false;

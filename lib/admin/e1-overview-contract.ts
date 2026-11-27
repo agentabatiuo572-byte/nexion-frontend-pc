@@ -32,16 +32,27 @@ export function isE1DisplaySoldBase(value: unknown): value is number {
   return isNonNegativeInteger(value) && value <= E1_DISPLAY_SOLD_BASE_MAX;
 }
 
+export const E1_STORE_SORT_MIN = -2_147_483_648;
+export const E1_STORE_SORT_MAX = 2_147_483_647;
+
+export function isE1StoreSortOrder(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= E1_STORE_SORT_MIN && value <= E1_STORE_SORT_MAX;
+}
+
 export function e1SkuDisplayControlInvalidFields(value: {
   displaySoldBase?: unknown;
   liveActivityVisible?: unknown;
-}, required: boolean): string[] {
+  storeSortOrder?: unknown;
+}, required: boolean, sortRequired = false): string[] {
   const invalid: string[] = [];
   if ((required || value.displaySoldBase !== undefined) && !isE1DisplaySoldBase(value.displaySoldBase)) {
     invalid.push("displaySoldBase");
   }
   if ((required || value.liveActivityVisible !== undefined) && typeof value.liveActivityVisible !== "boolean") {
     invalid.push("liveActivityVisible");
+  }
+  if ((sortRequired || value.storeSortOrder !== undefined) && !isE1StoreSortOrder(value.storeSortOrder)) {
+    invalid.push("storeSortOrder");
   }
   return invalid;
 }

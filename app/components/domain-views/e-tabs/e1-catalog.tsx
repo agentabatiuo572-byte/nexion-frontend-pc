@@ -102,7 +102,7 @@ const E1_FIELD_LABELS: Record<string, string> = {
   unlockPhase: "开放阶段", imageAssetId: "产品图", imageObjectKey: "产品图", imagePreviewUrl: "产品图", tag: "标签",
   dailyEarn: "每日收益（USDT）", dailyEarnNex: "每日收益（UVT）", phoneDailyEarn: "手机每日收益（USDT）", phoneDailyEarnNex: "手机每日收益（UVT）",
   shareYieldMin: "份额收益率下限", shareYieldMax: "份额收益率上限", sold: "已售数量",
-  displaySoldBase: "展示基础销量", liveActivityVisible: "显示购买动态",
+  displaySoldBase: "展示基础销量", liveActivityVisible: "显示购买动态", storeSortOrder: "商城排序",
   aiImageGenPerMin: "图片生成速度", aiLlmTokensPerSec: "文本生成速度", aiVideoMinPerHour: "视频生成速度", aiFineTuneMins: "微调时长",
   monthlyTargetUsdt: "月收益目标", monthlyTargetBandPct: "月收益允许波动", derivedDailyEarnUsdt: "推算日收益",
   derivedShareYieldMinPct: "推算份额收益率下限", derivedShareYieldMaxPct: "推算份额收益率上限", allowedPoolCodes: "任务等级",

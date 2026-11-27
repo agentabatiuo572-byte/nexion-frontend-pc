@@ -6,7 +6,7 @@ import { BlockState, Button, Check, CheckGroup, Decision, DiffList, Drawer, Expl
 import { keepDraftForLeaveLink, useNavigationLeaveGuard } from "../i-tabs/i5-writes";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
-import { E1_DISPLAY_SOLD_BASE_MAX } from "@/lib/admin/e1-overview-contract";
+import { E1_DISPLAY_SOLD_BASE_MAX, E1_STORE_SORT_MIN, E1_STORE_SORT_MAX } from "@/lib/admin/e1-overview-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { fetchSkuDatacenterLabels, fetchTaskPools, type TaskPool } from "@/lib/admin/task-pool-client";
@@ -19,7 +19,7 @@ import { isDeterministicRejection, isIdempotencyOutcomeOpen } from "@/lib/admin/
 import { createA2CommandKey } from "@/lib/admin/a2-client";
 import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { SKU_SERIES_NAMES, skuSeriesText } from "@/lib/admin/device-monthly-target";
-import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateSkuDisplaySoldBase, validateGateForm, type SkuForm } from "./data";
+import { EMPTY_SKU_FORM, skuToForm, formToSku, skuSeriesChoices, validateSkuSeries, validateSkuSpecs, validateSkuDisplaySoldBase, parseSkuStoreSortOrder, validateGateForm, type SkuForm } from "./data";
 import { currentRecoveryActor, rebaseRecoveryFields } from "@/lib/admin/abe-recovery-access";
 import { e1MediaCommands, e1MediaHasOwner, e1PendingMediaFor, E1_PENDING_MEDIA, E1_LEVELS, E1_SKU_FIELDS, e1Number, e1Precision, e1ShownDiff, e1SkuDiff, type E1MediaPending } from "./e1-state";
 import { E1Amount, E1TargetRange } from "./e1-catalog";
@@ -36,7 +36,8 @@ export type E1SkuReview = {
 };
 type Media = { kind: "image" | "video"; src: string; name: string; size?: number; w?: number; h?: number; duration?: number; assetId?: string; objectKey?: string } | null;
 const SECTIONS = [{ id: "e1-basic", label: "基本信息" }, { id: "e1-earnings", label: "收益与任务" }, { id: "e1-stock", label: "库存与购买条件" }, { id: "e1-specs", label: "规格与资料" }];
-const BASIC_FIELDS = ["name", "id", "tier", "seriesCode", "lifecycle", "badge", "tagline", "taglineZh", "taglineVi", "media"];
+const BASIC_FIELDS = ["name", "id", "tier", "seriesCode", "lifecycle", "storeSortOrder", "badge", "tagline", "taglineZh", "taglineVi", "media"];
+const STORE_SORT_ERROR = "请填写 -2,147,483,648 到 2,147,483,647 之间的整数";
 const STOCK_FIELDS = ["inventoryMode", "stock", "displaySoldBase", "unlock", "gateRankMin", "gateActiveDirectMin", "gateTeamComputePointsMin", "gateQuotaCap", "gateQuotaPeriod"];
 const SKU_NAME_MAX_LENGTH = 128;
 const CUSTOM_BADGE_REQUIRED = "请填写自定义角标";
@@ -109,7 +110,7 @@ function ownsMedia(record: E1MediaPending, request?: E1EditRequest | null) {
     && (record.skuId ? record.skuId === request.sku?.id : record.draftId === request.draftId && !request.sku);
 }
 
-function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media, displayControlsSupported: boolean): OpsSku {
+function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media, displayControlsSupported: boolean, sortSupported: boolean): OpsSku {
   const draft: OpsSku = { ...original, ...formToSku(form, original, displayControlsSupported), imageAssetId: media?.assetId, imageObjectKey: media?.objectKey, imagePreviewUrl: undefined };
   if (original) {
     const opened = skuToForm(original);
@@ -133,6 +134,7 @@ function skuDraft(form: SkuForm, original: OpsSku | undefined, media: Media, dis
     delete draft.displaySoldBase;
     delete draft.liveActivityVisible;
   }
+  if (!sortSupported) delete draft.storeSortOrder;
   return draft;
 }
 
@@ -182,7 +184,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const seriesChoices = skuSeriesChoices(form.tier, original);
   const nav = useSectionNav(SECTIONS, { ready: !!request });
   const displayControlsSupported = gates?.storeDisplayControlsSupported === true;
-  const draft = skuDraft(form, original, media, displayControlsSupported);
+  const sortSupported = gates?.storeSortOrderSupported === true;
+  const draft = skuDraft(form, original, media, displayControlsSupported, sortSupported);
   const dirty = !!request && (JSON.stringify({ ...form, badgeKindChanged: false }) !== initialForm || form.badgeKindChanged && draft.badge !== original?.badge || imageIdentity(media) !== initialMedia);
   const latestChanged = !!original && !!currentSku?.updatedAt && original.updatedAt !== currentSku.updatedAt;
   // Untouched drafts count no change, even when a Chinese legacy preset would be saved in English (d191bf189).
@@ -206,6 +209,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     const restored = request.recovered;
     const restoredForm = restored && {
       ...next, ...restored.form,
+      storeSortOrder: restored.mediaSku.storeSortOrder === undefined ? next.storeSortOrder : restored.form.storeSortOrder ?? String(restored.mediaSku.storeSortOrder),
       displaySoldBase: restored.mediaSku.displaySoldBase === undefined ? next.displaySoldBase : restored.form.displaySoldBase ?? String(restored.mediaSku.displaySoldBase),
       liveActivityVisible: restored.mediaSku.liveActivityVisible === undefined ? next.liveActivityVisible : restored.form.liveActivityVisible ?? String(restored.mediaSku.liveActivityVisible),
     };
@@ -374,6 +378,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
       const displaySoldBaseError = validateSkuDisplaySoldBase(form.displaySoldBase);
       if (displaySoldBaseError) e.displaySoldBase = displaySoldBaseError;
     }
+    if (sortSupported && parseSkuStoreSortOrder(form.storeSortOrder) === undefined) e.storeSortOrder = STORE_SORT_ERROR;
     const specError = validateSkuSpecs(form, original);
     if (specError) {
       const key = /GPU/.test(specError) ? "gpuCount" : /算力点/.test(specError) ? "computePoints" : /资料|HTTPS/.test(specError) ? "specDocumentUrl" : /波动/.test(specError) ? "monthlyTargetBandPct" : /托管/.test(specError) ? "datacenter" : /年奖励率/.test(specError) ? "shareYieldMin" : /每日收益/.test(specError) ? "dailyEarn" : "monthlyTargetUsdt";
@@ -395,7 +400,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
         e[key] = error;
       }
     }
-    const sku = skuDraft(form, original, media, displayControlsSupported);
+    const sku = skuDraft(form, original, media, displayControlsSupported, sortSupported);
     Object.assign(e, productCopyErrors(form, sku));
     setErrors(e);
     if (Object.keys(e).length) {
@@ -425,6 +430,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const displaySoldBaseError = displayControlsSupported ? validateSkuDisplaySoldBase(form.displaySoldBase) : undefined;
   const inlineErrors: Record<string, string> = { ...copyErrors, warranty: warrantyError(form.warranty, original?.warranty ?? undefined) };
   if (displaySoldBaseError) inlineErrors.displaySoldBase = displaySoldBaseError;
+  if (sortSupported && parseSkuStoreSortOrder(form.storeSortOrder) === undefined) inlineErrors.storeSortOrder = STORE_SORT_ERROR;
   for (const [key, label] of E1_APP_VISIBLE_FIELDS) {
     const error = appVisibleTextError(form[key], label);
     if (error && !(key === "power" && form.tier === "Share")) inlineErrors[key] ??= error;
@@ -435,7 +441,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
   const field = (key: keyof SkuForm, label: string, options: { number?: boolean; unit?: string; min?: number; max?: number; step?: number; hint?: string; help?: string; explain?: ReactNode; disabled?: boolean; required?: boolean; placeholder?: string } = {}) => <Field label={label} required={options.required} hint={options.hint} help={options.help} error={shownError(key)} explain={options.explain ?? `${label}是商品目录资料；批准后供之后的目录读取，不回写原订单。`}>
     {options.number ? <NumberInput className={key === "price" ? "e1-price-input" : undefined} aria-label={label} value={key === "warranty" && form.warranty === original?.warranty && warrantyMonths(form.warranty) === undefined ? "" : String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} unit={options.unit} min={options.min} max={options.max} step={options.step} disabled={options.disabled || busy} placeholder={options.placeholder} /> : <Input aria-label={label} value={String(form[key])} onChange={e => update(key, e.target.value)} onBlur={() => touch(key)} disabled={options.disabled || busy} placeholder={options.placeholder} />}
   </Field>;
-  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaBlocked || mediaPending ? E1_PENDING_MEDIA : Object.values(copyErrors)[0] ?? displaySoldBaseError ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
+  const blocked = !writable ? writeBlockedReason || "当前账号不能提交" : gates?.skuReviewContractVersion !== 1 ? "商品审核契约未读取，请刷新" : mediaBusy ? "媒体正在上传" : mediaBlocked || mediaPending ? E1_PENDING_MEDIA : Object.values(copyErrors)[0] ?? displaySoldBaseError ?? inlineErrors.storeSortOrder ?? (!dirty || original && !changes.length ? "没有修改" : undefined);
   const stockFilled = (form.inventoryMode === "UNLIMITED" || form.stock !== "") && (!displayControlsSupported || form.displaySoldBase !== "");
   const sectionItems = SECTIONS.map((s, index) => {
     const keys = index === 0 ? BASIC_FIELDS : index === 1 ? ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "datacenter", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax"] : index === 2 ? STOCK_FIELDS : ["gpu", "gpuCount", "power", "uptime", "warranty", "specDocumentTitle", "specDocumentUrl", "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins"];
@@ -463,6 +469,8 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
               : <Field label="所属系列" required error={errors.seriesCode} explain="决定设备的产能、可跑的任务和 App 里的设备分类。有订单或发出设备后就不能再改。"><Select aria-label="所属系列" required value={form.seriesCode} disabled={busy || !original && !form.tier} onChange={v => update("seriesCode", v)} placeholder={!original && !form.tier ? "请先选择档位" : "请选择所属系列"} options={[...seriesChoices.map(code => ({ value: code, label: SKU_SERIES_NAMES[code] })), ...form.seriesCode && !seriesChoices.some(code => code === form.seriesCode) ? [{ value: form.seriesCode, label: `${skuSeriesText(form.seriesCode)}（和商品类型不符）`, disabled: true }] : []]} /></Field>}
             <Field label="生命周期" required error={errors.lifecycle} explain="现行或已停产，与商城上下架状态独立。"><Select aria-label="生命周期" required value={form.lifecycle} onChange={v => update("lifecycle", v)} placeholder="请选择生命周期" options={[{ value: "active", label: "现行" }, { value: "legacy", label: "已停产" }]} /></Field>
             <div className="e1-badge-fields">
+              {sortSupported && field("storeSortOrder", "商城排序", { number: true, min: E1_STORE_SORT_MIN, max: E1_STORE_SORT_MAX, step: 1, required: true,
+                hint: "填写整数，默认 0", explain: "批准后影响 App / H5 Lite「在售」的展示顺序。同为精选或同为普通商品时，数字越小越靠前。" })}
               <Field label="营销角标" error={form.badgeKind !== "custom" ? shownError("badge") : undefined} explain="商品媒体旁的活动文字，批准后显示在商品卡。"><Select aria-label="营销角标" value={form.badgeKind} onChange={value => {
                 setForm(draft => ({ ...draft, badgeKind: value as SkuForm["badgeKind"], badgeKindChanged: true }));
                 setErrors(current => ({ ...current, badge: "" }));

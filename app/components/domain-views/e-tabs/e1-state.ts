@@ -127,7 +127,7 @@ export function e1LegacyObject(record: E1Legacy): string {
 /** Read-only field list also drives full, untruncated before/after review. */
 export const E1_SKU_FIELDS: readonly { key: keyof OpsSku; label: string; unit?: string }[] = [
   { key: "name", label: "型号名称" }, { key: "id", label: "商品编号" }, { key: "tier", label: "档位" }, { key: "seriesCode", label: "所属系列" },
-  { key: "status", label: "商城状态" }, { key: "lifecycle", label: "生命周期" },
+  { key: "status", label: "商城状态" }, { key: "lifecycle", label: "生命周期" }, { key: "storeSortOrder", label: "商城排序" },
   { key: "price", label: "售价", unit: "USD" }, { key: "computePoints", label: "每件算力点" },
   { key: "allowedPoolCodes", label: "任务等级" }, { key: "monthlyTargetUsdt", label: "月收益目标", unit: "USDT/月" },
   { key: "monthlyTargetBandPct", label: "允许波动", unit: "%" }, { key: "datacenter", label: "托管机房" },
@@ -165,7 +165,7 @@ export function e1SkuDiff(before: OpsSku | undefined, after: OpsSku, raw?: SkuFo
   // Editor drafts contain only the translation update. Catalogue reads contain the stored map.
   const nextTranslations = after.taglineTranslations ?? (raw ? before?.taglineTranslations : undefined);
   const translationRows = skuTaglineReviewRows(before?.taglineTranslations, nextTranslations, !before);
-  const fields = E1_SKU_FIELDS.filter(({ key }) => (key !== "displaySoldBase" && key !== "liveActivityVisible") || after[key] !== undefined);
+  const fields = E1_SKU_FIELDS.filter(({ key }) => after[key] !== undefined || !["displaySoldBase", "liveActivityVisible", "storeSortOrder"].includes(key));
   return [...fields, ...translationRows].map(field => {
     if ("before" in field) return field;
     const { key, label, unit } = field;

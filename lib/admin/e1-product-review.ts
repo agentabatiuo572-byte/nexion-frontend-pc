@@ -15,7 +15,7 @@ export function e1Number(value: number | string | null | undefined): string {
 }
 
 const E1_NUMERIC_REVIEW_FIELDS = new Set([
-  "price", "computePoints", "displaySoldBase", "monthlyTargetUsdt", "monthlyTargetBandPct", "stock",
+  "price", "computePoints", "storeSortOrder", "displaySoldBase", "monthlyTargetUsdt", "monthlyTargetBandPct", "stock",
   "dailyEarn", "dailyEarnNEX", "dailyEarnNex", "phoneDailyEarn", "phoneDailyEarnNEX", "phoneDailyEarnNex", "shareYieldMin", "shareYieldMax",
   "aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins",
   "rating", "reviews", "generation", "tradeinDiscount", "derivedDaily",

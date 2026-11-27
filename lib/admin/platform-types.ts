@@ -83,6 +83,7 @@ export interface OpsSku {
   sold?: number;
   displaySoldBase?: number;
   liveActivityVisible?: boolean;
+  storeSortOrder?: number;
   /** 服务端已有商品属性；编辑表单不开放修改，但全量保存须保留。 */
   rating?: number;
   reviews?: number;

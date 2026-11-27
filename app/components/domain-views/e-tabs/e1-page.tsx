@@ -359,6 +359,9 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
     if (gates?.storeDisplayControlsSupported !== true && params && ("displaySoldBase" in params || "liveActivityVisible" in params)) {
       return "当前服务未声明支持展示基础销量和购买动态，暂不能按原操作重试，可查询原操作。";
     }
+    if (gates?.storeSortOrderSupported !== true && params && "storeSortOrder" in params) {
+      return "当前服务未声明支持商城排序，暂不能按原操作重试，可查询原操作。";
+    }
   };
   const send = async (record: E1Pending, retry: boolean) => {
     if (!canWrite || !actor || record.actorId !== actor || sending.current) throw new Error("账号、权限或提交状态不允许重试，请先核对原操作");
@@ -486,12 +489,16 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       if (gates?.skuReviewContractVersion !== 1) throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
       const sku = mc.sku, old = mc.beforeSku, changes = e1SkuDiff(old, sku, mc.form, "proposal").filter(r => r.before !== r.after);
       const displayControlsSupported = gates.storeDisplayControlsSupported === true;
+      const sortSupported = gates.storeSortOrderSupported === true;
       if (displayControlsSupported !== (mc.gates?.storeDisplayControlsSupported === true)
-        || displayControlsSupported && (sku.displaySoldBase === undefined || sku.liveActivityVisible === undefined)) {
+        || displayControlsSupported && (sku.displaySoldBase === undefined || sku.liveActivityVisible === undefined)
+        || sortSupported !== (mc.gates?.storeSortOrderSupported === true)
+        || sortSupported && sku.storeSortOrder === undefined) {
         throw new Error("商品审核暂时不可用，请刷新后重试；已填写的内容会保留");
       }
       op = old ? "e1_sku_update" : "e1_sku_create"; obj = sku.id;
       context = { ...sku, skuId: sku.id, computePoints: mc.form?.computePoints.trim() || sku.computePoints };
+      if (old && sku.storeSortOrder === old.storeSortOrder) delete context.storeSortOrder;
       for (const key of ["price", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", ...sku.monthlyTargetUsdt == null ? ["dailyEarn", "shareYieldMin", "shareYieldMax"] as const : []] as const) {
         if (mc.form?.[key].trim()) context[key] = mc.form[key].trim();
       }
@@ -596,7 +603,7 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
   }, displayRows.length === skuChanges.length) : "";
   // 只改系列时上面常显的几项不再在「其余设置」里写第二遍（DP-61）。
   // 改动多时收起完整明细，但钱、收益、能不能卖的前后值常显（OP-47–49、OP-151、DP-03）；折叠里只放其余的，不再写第二遍（ST-74）。
-  const E1_DECISION_KEYS = ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax", "status", "inventoryMode", "stock", "displaySoldBase", "liveActivityVisible", "unlock", "purchaseGate"];
+  const E1_DECISION_KEYS = ["price", "computePoints", "allowedPoolCodes", "monthlyTargetUsdt", "monthlyTargetBandPct", "dailyEarn", "dailyEarnNEX", "phoneDailyEarn", "phoneDailyEarnNEX", "shareYieldMin", "shareYieldMax", "status", "inventoryMode", "stock", "storeSortOrder", "displaySoldBase", "liveActivityVisible", "unlock", "purchaseGate"];
   const decisionChanges = skuChanges.filter(row => E1_DECISION_KEYS.includes(row.key));
   // 编辑时本次改了的项只在前后值里写一次，关键信息不再写它的新值（ST-74）；售价改了就不设大字（VS-102）。
   const changedKey = (...keys: string[]) => skuChanges.some(row => keys.includes(row.key));
