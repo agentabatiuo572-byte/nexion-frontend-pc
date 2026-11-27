@@ -1424,7 +1424,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         const rewardKey = `mission.${codeOf(task)}.reward`;
         const lock = backendLock(rewardKey);
         const proposed = list !== "dayOne" && lock?.proposedValue != null ? `申请改成 ${pendingFormat(rewardKey)(lock.proposedValue)}` : undefined;
-        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} completion={completionOf(task, list, taskBindings)} bindingCount={taskBindings.length}
+        return <TaskCard key={codeOf(task) || String(task.id)} task={task} name={nameOf(task)} completion={completionOf(task, list, taskBindings)} bindingCount={taskBindings.length} invalidBindingCount={list === "dayOne" && !completionOf(task, list, taskBindings) ? bindingsOf(task).length : 0}
           reward={reward.reward} rewardNote={proposed ? <>{reward.note && `${reward.note} · `}<span className="h3-card-proposed">{proposed}</span></> : reward.note} localeGaps={localeGaps(task)} pending={lockTag(rewardKey)}
           selected={detail?.code === codeOf(task)} onOpen={() => setDetail({ list, code: codeOf(task) })}
           primary={canModuleWrite ? taskPrimary(task) : undefined} menu={canModuleWrite ? taskMenu(task, list) : undefined} />;

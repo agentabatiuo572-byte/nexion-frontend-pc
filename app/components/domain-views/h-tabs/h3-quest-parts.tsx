@@ -313,6 +313,8 @@ export type TaskCardProps = {
   name: string;
   completion: string;
   bindingCount: number;
+  /** 首日约定任务：有绑定但都不符合约定时的条数（B143）。 */
+  invalidBindingCount?: number;
   reward: ReactNode;
   rewardNote?: ReactNode;
   localeGaps: string[];
@@ -336,7 +338,7 @@ export function taskCompletionEventText(task: QuestTask) {
   return text(task.completionEvent, "").split(", ").map(eventTypeText).join("、");
 }
 
-export function TaskCard({ task, name, completion, bindingCount, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
+export function TaskCard({ task, name, completion, bindingCount, invalidBindingCount = 0, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
   const status = taskStatusOf(task);
   const warn = activeUnbound(task);
   const route = text(task.href, "");
@@ -360,7 +362,7 @@ export function TaskCard({ task, name, completion, bindingCount, reward, rewardN
             ? completion
             : warn
               ? <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />没绑定完成事件，用户做不完</span>
-              : <span className="h3-card-muted">{bindingCount > 0 ? `没有启用的条件（${bindingCount} 条已停用）` : "还没有完成条件"}</span>}</dd>
+              : <span className="h3-card-muted">{invalidBindingCount > 0 ? `没有有效的完成条件（${invalidBindingCount} 条绑定不符合约定）` : bindingCount > 0 ? `没有启用的条件（${bindingCount} 条已停用）` : "还没有完成条件"}</span>}</dd>
         </div>
         <div>
           <dt>点了跳到</dt>
