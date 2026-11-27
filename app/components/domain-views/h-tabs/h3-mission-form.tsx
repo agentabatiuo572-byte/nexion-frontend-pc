@@ -132,7 +132,7 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
                 <b>{value.missionName?.trim() || "任务名称"}</b>
                 {missionType !== "DAY_ONE" && <span className="h3-phone-reward">{reward == null ? "—" : `+${amountText(reward)} UVT`}</span>}
                 <span className="h3-phone-go">去完成 ›</span>
-                <PreviewTarget label={actionRoute ? routeLabels[actionRoute] ?? actionRoute : ""} empty="还没选跳到哪页" />
+                <PreviewTarget label={actionRoute ? routeLabels[actionRoute] ?? actionRoute : ""} />
               </div>
             </div>
             <dl className="h3-form-facts">

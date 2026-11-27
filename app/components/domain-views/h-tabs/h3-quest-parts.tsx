@@ -503,9 +503,9 @@ function previewName(task: PreviewTask, locale: PreviewLocale) {
   return task.names[locale] || task.names.en || task.source;
 }
 
-/** 预览里给运营核对的跳转目标：App 上只有「去完成 ›」，这一行只在后台显示。label 为空时写占位。 */
-export function PreviewTarget({ label, empty = "—" }: { label: string; empty?: string }) {
-  return <span className="h3-phone-target"><CornerDownRight size={12} aria-hidden /><span>{label ? `跳到 ${label}` : empty}</span></span>;
+/** 预览里给运营核对的跳转目标：App 上只有「去完成 ›」，这一行只在后台显示。没有值写「—」（ST-45）。 */
+export function PreviewTarget({ label }: { label: string }) {
+  return <span className="h3-phone-target"><CornerDownRight size={12} aria-hidden /><span>{`跳到 ${label || "—"}`}</span></span>;
 }
 
 export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
