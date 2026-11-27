@@ -744,11 +744,12 @@ export default function RiskRadarPage() {
     if (!isB5Original(record)) { setToast("原审批内容不完整，请到操作记录核对。"); return; }
     try {
       const current = await inspectB5Command(record);
+      const rejected = b5Recovery.state(record).replayRejection;
       if (current.kind === "radar") { radar.setData(current.data); setNeedsFreshRadar(false); }
       else if (current.kind === "ack") { setInbox(current.data); setInboxError(""); setInboxLoading(false); setInboxNeedsRead(false); setInboxReadAt(new Date().toISOString()); }
       else if (current.kind === "signal") {
         if (openSignal === current.data.signalNo) detail.setData(current.data);
-        setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。`, "warn");
+        setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。${rejected ? RETRY_REJECTED_NEXT : ""}`, "warn");
         return;
       }
       else {
@@ -757,7 +758,7 @@ export default function RiskRadarPage() {
         setSubscriberDisplayName(current.data.subscriberDisplayName ?? null);
         setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false); setSubscriptionReadAt(new Date().toISOString());
       }
-      if (record.kind === "threshold" && record.replayRejection) {
+      if (rejected) {
         setToast(`已查到现在的值，但说明不了原操作成没成。${RETRY_REJECTED_NEXT}`, "warn");
       } else {
         setToast(isRetryExpired(record) ? "已查到现在的值，但说明不了原操作成没成，原记录继续保留。" : "已查到现在的值，但说明不了原操作成没成。可以按原操作重试，不会重复执行。", isRetryExpired(record) ? "warn" : undefined);
@@ -774,10 +775,10 @@ export default function RiskRadarPage() {
     const name = original?.kind === "threshold" ? "调整黄线和红线" : original?.kind === "signal" ? `标记${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}` : original?.kind === "ack" ? "确认站内告警已读" : original?.kind === "subscription" ? "保存告警订阅" : "原操作";
     const recovery = b5Recovery.state(record);
     // 重试被明确拒绝：标题和别的页的标签同名，第二段写被拒的原因和下一步（OP-93 第 8 条、OP-152）。
-    const rejected = original?.kind === "threshold" && !!original.replayRejection;
+    const rejected = recovery.replayRejection;
     return { onRelease: original && recovery.replayRejection ? () => setReleasingWrite(original) : undefined,
       commandKey: record.commandKey, title: `${name} · ${rejected ? "重试被拒绝" : "结果未知"}`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
-      recoveryLine: rejected ? `${displayAdminError(original.replayRejection)}${RETRY_REJECTED_NEXT}` : undefined,
+      recoveryLine: rejected ? `${displayAdminError(rejected)}${RETRY_REJECTED_NEXT}` : undefined,
       expired: isRetryExpired(record), onRetry: recovery.replayBlock ? undefined : () => recoverWrite(record), onQuery: () => void queryWrite(record) };
   });
 
