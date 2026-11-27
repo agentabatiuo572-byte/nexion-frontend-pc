@@ -581,7 +581,7 @@ export function A3Page({ ctx }: { ctx: ACtx }) {
         }}>{retryTransfer || releaseReadError && !expired ? "重试" : knownExecuted ? "重新读取" : contentCommand && !hasReceiptLookup ? "读取当前内容" : isCalendar ? "读取当前日历" : "查询原操作"}</Button>
       {closable && <Button size="sm" variant="danger-outline" disabled={applying && !handoffError || !!querying} onClick={() => setOriginalClosing(record)}>核查结案</Button>}
       {releaseReplayRejection && !releaseReadError && <VerifiedReleaseButton disabled={applying || !!querying || !!mutating} onClick={() => verifiedRelease.ask({
-        operation: record.name, target: record.change, createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record),
+        operation: record.name, target: record.change, targetLabel: "改动", createdAt: record.createdAt, getSnapshot: commands.releaseSnapshot(record),
         release: () => {
           if (contentCommand) {
             if (isRetryExpired(record)) return false;
