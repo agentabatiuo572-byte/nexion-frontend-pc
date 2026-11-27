@@ -1454,7 +1454,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         notePending(record.commandKey, sessionRevocationStatus[ticket.status]);
       } else if (ticket === null) notePending(record.commandKey, "没有查到原审批单，原操作记录保留。");
     } catch (cause) {
-      notePending(record.commandKey, retry ? `重试没有确认结果：${errorMessage(cause)}` : `原审批单加载失败。${displayAdminReadError(cause)}`);
+      // 重试被明确拒绝：拒绝原因已写在这一行，展开后不再写一遍（DT-12）。
+      if (!(retry && sessionRevocationRecovery.state(record).replayRejection)) notePending(record.commandKey, retry ? `重试没有确认结果：${errorMessage(cause)}` : `原审批单加载失败。${displayAdminReadError(cause)}`);
     } finally {
       setSubmitting("");
       syncPending();

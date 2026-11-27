@@ -12,6 +12,7 @@ import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investig
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
 import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
+import { useReach } from "@/lib/nav/use-reach";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
@@ -125,6 +126,7 @@ function rebaseFaqDraft(before: SupportFaq, proposed: SupportFaq, latest: Suppor
 export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onDeleteBlock: (reason?: string) => void; ctx: MCtx; title: string; summary: string; loadError: string | null }) {
   const { pget, toast, openActionConfirm } = ctx;
   const actorId = useAdminAuth((state) => state.session?.adminId);
+  const auditReachable = useReach()("/platform/audit", "platform_a2_read");
   const [knowledgeRead, setKnowledgeRead] = useState<{ kind: "idle" | "reading" } | { kind: "failed"; reason: string }>({ kind: "idle" });
   const needsRead = knowledgeRead.kind !== "idle";
   const [pendingCommands, setPendingCommands] = useState<MCommandRecord[]>([]);
@@ -657,7 +659,8 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     const last = !outcome ? "" : "error" in outcome ? mQueryFailedText(outcome.error) : receipt ? `这次查到「${found.label}」。`
       : state.conclusion !== "not-found" ? M_RECOVERY.unsettled : state.replayRejection || state.expired ? M_RECOVERY.notFoundShort : "";
     const view: MRecoveryView & { more?: string } = submittingKey === record.commandKey ? M_SUBMITTING_VIEW : !record.faq
-      ? mRecoveryView(state, { expiredLine: "已超过 24 小时，也查不到原结果，请到操作记录与审批核对。", canRelease })
+      // 旧槽位：链接「到操作记录与审批核对」跟在句后，句尾不再写一遍；看不到链接时仍写去哪核对（DT-12）。
+      ? mRecoveryView(state, { expiredLine: auditReachable ? "已超过 24 小时，也查不到原结果。" : "已超过 24 小时，也查不到原结果，请到操作记录与审批核对。", canRelease })
       : !state.busy && !state.replayRejection && (receipt || shared.label === "没有查询权限" || !outcome && !state.expired && state.conclusion === "unknown")
         ? state.expired && !found.line.includes("24 小时") ? { ...found, line: `${RETRY_EXPIRED_TEXT}${found.line}` } : found : mRecoveryView(state, { last, canRelease });
     return { view, more: view.more, currentFact, gone, audit: gone || Boolean(state.replayRejection) || state.expired || !record.faq || view.line.includes("操作记录与审批"),
@@ -771,7 +774,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
       {releasing?.faq && <MReleaseModal key={releasing.commandKey}
         returnFocus={() => returnToFaq(releaseOpener.current ?? dialogOpener.current, releasing.faq?.row.id)}
         target={{ action: `${KIND_NAME[releasing.faq.kind]}常见问答`, object: releasing.faq.row.question, createdAt: releasing.createdAt, rejection: m4FaqRecovery.state(releasing).replayRejection }}
-        where="被拒说明不了原操作有没有生效，先核实。" onCancel={cancelRelease} onConfirm={() => {
+        where="被拒说明不了原操作有没有生效。" onCancel={cancelRelease} onConfirm={() => {
           const released = faqRecoveryBindings(releasing).releaseRejectedReplay();
           if (released) {
             releaseFromDelete.current = null;

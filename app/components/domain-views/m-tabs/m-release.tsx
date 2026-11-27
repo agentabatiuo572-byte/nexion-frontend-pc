@@ -7,7 +7,7 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
-import { Button, Check, Fact, Facts, Modal } from "@/app/components/rd";
+import { Button, Check, Fact, Facts, KeepText, Modal } from "@/app/components/rd";
 import { useReach } from "@/lib/nav/use-reach";
 import { replayRejectedFact } from "@/lib/admin/retry-rejected";
 import { businessStamp, businessZone } from "@/lib/admin/business-time";
@@ -49,18 +49,18 @@ export function MReleaseModal({ target, where, onCancel, onConfirm, returnFocus 
       <Button onClick={onCancel}>取消</Button>
       <Button variant="primary" disabledReason={checked ? undefined : "请先勾选「我已核实原操作的结果」"} onClick={onConfirm}>确认解除</Button>
     </>}>
-      <Facts>
-        <Fact k="原操作">{target.action}</Fact>
-        <Fact k="对象"><span className="m-release-object">{target.object}</span></Fact>
-        <Fact k="发出时间">{businessStamp(target.createdAt)}（{businessZone().label}）</Fact>
-        {reason && <Fact k="拒绝原因">{reason}</Fact>}
-      </Facts>
-      <div className="m-release-text">
-        <p>解除后可以重新提交，原操作不再重试，也不会撤销。</p>
-        <p>只清这个标签页里的记录，不进操作记录。</p>
+      {/* 和共用解除框（rd ReleaseBody）同一个间距、同一句正文（DT-12、DT-25）。 */}
+      <div className="rd-stack">
+        <Facts>
+          <Fact k="原操作">{target.action}</Fact>
+          <Fact k="对象"><span className="m-release-object">{target.object}</span></Fact>
+          <Fact k="发出时间">{businessStamp(target.createdAt)}（{businessZone().label}）</Fact>
+          {reason && <Fact k="拒绝原因">{reason}</Fact>}
+        </Facts>
+        <p><KeepText text="先核对原操作的结果再解除。解除只删掉本标签页里的这条记录：不撤销原操作，不进操作记录，也不算核查结案；重新提交时照常检查。" /></p>
+        <p>{where} <MAuditLink /></p>
+        <Check label="我已核实原操作的结果" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
       </div>
-      <p className="m-release-text">{where} <MAuditLink /></p>
-      <Check label="我已核实原操作的结果" checked={checked} onChange={(event) => setChecked(event.target.checked)} />
     </Modal>
   );
 }

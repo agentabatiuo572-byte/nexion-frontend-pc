@@ -9,8 +9,8 @@
 /* 确认框标题下的动作名：和标题同一档，一行放不下省略，悬停看全文；生效标签换到下一行。 */
 .dkpage .rd-modal-sub > .a2-confirm-subject { flex-basis: 100%; min-width: 0; overflow: hidden; font-size: var(--rd-text-section); line-height: var(--rd-lh-section); font-weight: 600; color: var(--rd-text); white-space: nowrap; text-overflow: ellipsis; }
 /* 读不到覆盖率时，多付钱这一行橙黄带图标，不是一句白字（必须改 12）。 */
-.dkpage .a2-coverage-unknown { color: var(--rd-warn); font-weight: 500; }  /* 行内排：分句整句换行，标题后的问号跟着末句（D10-orphan） */
-.dkpage .a2-coverage-unknown > svg { flex: none; margin-top: 2px; }
+/* A2 批准框：低于红线、读不到覆盖率时提示条标题橙黄（必须改 12）。A 域只有 A2 的确认框带覆盖率提示条。 */
+.adom .rd-confirm-funding .rd-notice[data-tone="warn"] .rd-notice-title { color: var(--rd-warn); }
 /* 编号整段不拆，放不下整段换行（必须改 14）。 */
 .dkpage .a2-code { overflow-wrap: normal; word-break: keep-all; white-space: nowrap; }
 .dkpage .a2-amount { font-weight: 600; font-variant-numeric: tabular-nums; }

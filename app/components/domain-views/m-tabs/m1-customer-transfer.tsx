@@ -82,7 +82,7 @@ function TransferRelease({ record, onCancel, onReleased, returnFocus }: { record
   const [, toast] = useToast();
   return <MReleaseModal returnFocus={returnFocus} target={{ action: <>正式转绑，<Change from={record.fromName ?? "原专属客服"} to={record.targetName ?? `专属客服 ${record.payload.targetAgentAdminId}`} /></>,
     object: record.customerName ?? m1CustomerCode(record.payload.customers[0].id), createdAt: record.createdAt, rejection: transferRecovery.state(record).replayRejection }}
-    where="被拒说明不了原转绑有没有生效，先核实，也看客户现在归哪位专属客服。" onCancel={onCancel} onConfirm={() => {
+    where="被拒说明不了原转绑有没有生效，核对时也看客户现在归哪位专属客服。" onCancel={onCancel} onConfirm={() => {
       const released = releaseRejectedTransfer(record);
       toast(released ? M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");
       if (released) onReleased(); else onCancel();

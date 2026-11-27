@@ -317,7 +317,7 @@ export function M5ServiceRules({ permission, onSummary }: { permission: MSupport
         </>,
       }]} />}
       {retry && releasing && canRelease && <MReleaseModal returnFocus={returnFocus} target={{ action: "保存服务规则", object: changeText || "服务规则", createdAt: retry.createdAt, rejection: command.recoveryState?.replayRejection }}
-        where="被拒说明不了原操作有没有生效，先核实。" onCancel={() => setReleasing(false)} onConfirm={() => {
+        where="被拒说明不了原操作有没有生效。" onCancel={() => setReleasing(false)} onConfirm={() => {
           const released = command.releaseRejectedReplay();
           setReleasing(false);
           toast(released ? M_RELEASED_TEXT : "这条记录刚有变化，没有解除，请看最新状态。", released ? "success" : "warn");

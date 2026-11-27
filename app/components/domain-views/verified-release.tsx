@@ -56,8 +56,8 @@ export function useVerifiedRelease(toast: (message: string, kind?: "success" | "
       {current.target && <Fact k={current.targetLabel ?? "对象"}>{current.target}</Fact>}
       <Fact k="发出时间">{`${businessStamp(current.createdAt)}（${businessZone().label}）`}</Fact>
     </Facts>
-    <p><KeepText text="重试被拒绝不等于原操作没生效，请先到操作记录与审批核对。" /></p>
-    <p><KeepText text="解除后这一项可以重新操作（以当时的数据和权限为准），原操作不再重试，也不会撤销。只清这个标签页里的记录，不进操作记录。" /></p>
+    <p><KeepText text="重试被拒绝不等于原操作没生效，可以到操作记录与审批核对。" /></p>
+    <p><KeepText text="先核对原操作的结果再解除。解除只删掉本标签页里的这条记录：不撤销原操作，不进操作记录，也不算核查结案；重新提交时照常检查。" /></p>
     <Check label="我已核实原操作的结果" checked={verified} onChange={(event) => setVerified(event.target.checked)} />
   </div>;
   return {

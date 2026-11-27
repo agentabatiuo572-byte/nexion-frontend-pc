@@ -1173,7 +1173,7 @@ export default function H1Phase({ ctx,
         </Fold>
       </>}
     </Drawer>
-    {release && <ReleaseModal onCancel={() => setRelease(null)} label={<div className="h1-release-facts"><b>{release.label}</b><Change from={pendingValue(release, release.before)} to={pendingValue(release, release.after)} /><span className="h1-release-reason">拒绝原因：{release.rejectionReason ?? "没有记下拒绝原因，请先查询原操作。"}</span></div>} explain="只清掉本页这条记录，不撤销后台的操作，也不记操作记录；已保存的步骤不会退回。" onConfirm={() => {
+    {release && <ReleaseModal onCancel={() => setRelease(null)} label={<div className="h1-release-facts"><b>{release.label}</b><Change from={pendingValue(release, release.before)} to={pendingValue(release, release.after)} /><span className="h1-release-reason">拒绝原因：{release.rejectionReason ?? "没有记下拒绝原因，请先查询原操作。"}</span></div>} explain="已保存的步骤不会退回。" onConfirm={() => {
       if (release?.retryRejected && release.state === "rejected" && checked === release.commandKey) {
         h1Pending.forget(release.fingerprint,
           release.commandKey); syncPending(); setRelease(null); setConfirm(null); setFeedback(undefined); setChecked(undefined);
