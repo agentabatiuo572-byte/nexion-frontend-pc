@@ -5,7 +5,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { ADMIN_ERROR_MESSAGES, displayAdminReadError, displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ClipboardList, Coins, Copy, FileText, Flag, Gauge, History, Inbox, Landmark, Link2, Lock, Receipt, RefreshCw, Route, Shield, ShieldAlert, User, Wallet, type LucideIcon } from "lucide-react";
@@ -938,7 +938,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [ruleFilter, setRuleFilter] = useState(() => searchParams?.get("rule")?.trim() ?? "");
   const [riskDropped, setRiskDropped] = useState("");
   const [amountRangeInvalid, setAmountRangeInvalid] = useState(false);
-  const [dateRangeInvalid, setDateRangeInvalid] = useState(false);
+  const [dateError, setDateError] = useState<"invalid" | "incomplete" | null>(null);
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
   const [d5, setD5] = useState<D5Params | null>(null);
   const [statusCounts, setStatusCounts] = useState<Record<string, number> | null>(null);
@@ -1061,7 +1061,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (seq !== requestSeq.current) return;
       if (cause instanceof DRequestError && cause.status === 400 && cause.reasonCode === DATE_RANGE_INVALID) {
         dateRejected = true;
-        setDateRangeInvalid(true);
+        setDateError("invalid");
         setWritesEnabled(writesRef.current);
         return;
       }
@@ -1411,20 +1411,26 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     setDetailError("");
   };
 
+  const handleInvalidDate = (event: FormEvent<HTMLInputElement>) => {
+    if (!event.currentTarget.validity.badInput) return;
+    event.preventDefault();
+    setDateError("incomplete");
+  };
+
   const submitQuery = () => {
     if (!riskScoreIsValid(draft.minRiskScore)) return;
     const invalidRange = draft.minAmount !== "" && draft.maxAmount !== "" && Number(draft.minAmount) > Number(draft.maxAmount);
     const invalidDates = [draft.createdFrom, draft.createdTo].some((value) => value !== "" && !isWithdrawalDate(value))
       || isReversedDateRange(draft.createdFrom, draft.createdTo);
     setAmountRangeInvalid(invalidRange);
-    setDateRangeInvalid(invalidDates);
+    setDateError(invalidDates ? "invalid" : null);
     if (!invalidRange && !invalidDates) void load({ ...query, ...draft, page: 1 }, true);
   };
 
   const applyFilters = (patch: Partial<D2Filters>) => {
     setDraft((current) => ({ ...current, ...patch }));
     setAmountRangeInvalid(false);
-    setDateRangeInvalid(false);
+    setDateError(null);
     setQuery((current) => ({ ...current, ...patch, page: 1 }));
   };
 
@@ -1437,8 +1443,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     setRuleFilter("");
     setDraft(DEFAULT_FILTERS);
     setAmountRangeInvalid(false);
-    setDateRangeInvalid(false);
-    setQuery((current) => ({ ...current, ...DEFAULT_FILTERS, status: "", page: 1 }));
+    setDateError(null);
+    setQuery((current) => ({ ...DEFAULT_QUERY, pageSize: current.pageSize }));
   };
 
   const setPage = (page: number) => setQuery((current) => ({ ...current, page }));
@@ -1686,9 +1692,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const riskNotice = !riskScoreIsValid(draft.minRiskScore)
     ? `最低风险分须为 0–100 的整数。这次没有查询${error ? "。" : `，列表${query.minRiskScore ? `仍按最低风险分 ${query.minRiskScore}` : "仍是不限风险分的结果"}。`}`
     : riskDropped && `「${riskDropped}」不是 0–100 的整数，没有生效。已改回${draft.minRiskScore ? `最低风险分 ${draft.minRiskScore}` : "不限风险分"}。`;
-  const dateProblem = isReversedDateRange(draft.createdFrom, draft.createdTo)
-    ? "提交日期有误：开始日期不能晚于结束日期。" : ADMIN_ERROR_MESSAGES[DATE_RANGE_INVALID];
-  const rangeProblems = `${amountRangeInvalid ? "最低金额不能大于最高金额。" : ""}${dateRangeInvalid ? dateProblem : ""}`;
+  const dateProblem = dateError === "incomplete" ? "提交日期没填完整。"
+    : isReversedDateRange(draft.createdFrom, draft.createdTo)
+      ? "提交日期有误：开始日期不能晚于结束日期。" : ADMIN_ERROR_MESSAGES[DATE_RANGE_INVALID];
+  const rangeProblems = `${amountRangeInvalid ? "最低金额不能大于最高金额。" : ""}${dateError ? dateProblem : ""}`;
   const filterNotice = rangeProblems ? `${rangeProblems}这次没有查询。` : riskNotice || (query.status === "FROZEN" ? "ERC20 丢失链上确认的单也按冻结处理，要在「打款异常，需人工核对」里查看。" : undefined);
 
   const shown = drawerRow.current;
@@ -1816,16 +1823,18 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       onSubmit={submitQuery}
       querying={loading}
       onClear={clearAllFilters}
-      canClear={hasConditions}
+      canClear={hasConditions || query.group !== DEFAULT_QUERY.group}
       moreCount={moreCount}
       onClearMore={resetAdvancedFilters}
       more={<>
         <FilterField wide label={<span>提交日期（越南时间，含起止当天）<Explain label="提交日期的说明"
           content={`按越南时间（UTC+7）0 点分日。只填一个日期，就只限这一头。${businessZone().zoneId === "Asia/Ho_Chi_Minh" ? "" : `列表里的时间是${businessZone().label}，0 点前后提交的单，日期可能差一天。`}`} /></span>}>
           <span className="rd-filter-range">
-            <Input aria-label="提交日期起" aria-invalid={dateRangeInvalid || undefined} type="date" value={draft.createdFrom} onChange={(event) => { setDraft({ ...draft, createdFrom: event.target.value }); setDateRangeInvalid(false); }} />
+            <Input aria-label="提交日期起" aria-invalid={!!dateError || undefined} type="date" value={draft.createdFrom} onInvalid={handleInvalidDate}
+              onChange={(event) => { setDraft({ ...draft, createdFrom: event.target.value }); setDateError(null); }} />
             <span aria-hidden>–</span>
-            <Input aria-label="提交日期止" aria-invalid={dateRangeInvalid || undefined} type="date" value={draft.createdTo} onChange={(event) => { setDraft({ ...draft, createdTo: event.target.value }); setDateRangeInvalid(false); }} />
+            <Input aria-label="提交日期止" aria-invalid={!!dateError || undefined} type="date" value={draft.createdTo} onInvalid={handleInvalidDate}
+              onChange={(event) => { setDraft({ ...draft, createdTo: event.target.value }); setDateError(null); }} />
           </span>
         </FilterField>
         <FilterField label="金额（USDT）">
