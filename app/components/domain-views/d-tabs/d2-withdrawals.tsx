@@ -939,6 +939,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [riskDropped, setRiskDropped] = useState("");
   const [amountRangeInvalid, setAmountRangeInvalid] = useState(false);
   const [dateError, setDateError] = useState<"invalid" | "incomplete" | null>(null);
+  const [dateInputRevision, setDateInputRevision] = useState(0);
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
   const [d5, setD5] = useState<D5Params | null>(null);
   const [statusCounts, setStatusCounts] = useState<Record<string, number> | null>(null);
@@ -1427,10 +1428,17 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (!invalidRange && !invalidDates) void load({ ...query, ...draft, page: 1 }, true);
   };
 
+  const resetDateInputs = () => {
+    setDateError(null);
+    // 半填日期的 value 已是空字符串，通过重建输入框清掉原生编辑状态。
+    setDateInputRevision((current) => current + 1);
+  };
+
   const applyFilters = (patch: Partial<D2Filters>) => {
     setDraft((current) => ({ ...current, ...patch }));
     setAmountRangeInvalid(false);
-    setDateError(null);
+    if (patch.createdFrom === "" && patch.createdTo === "") resetDateInputs();
+    else setDateError(null);
     setQuery((current) => ({ ...current, ...patch, page: 1 }));
   };
 
@@ -1443,7 +1451,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     setRuleFilter("");
     setDraft(DEFAULT_FILTERS);
     setAmountRangeInvalid(false);
-    setDateError(null);
+    resetDateInputs();
     setQuery((current) => ({ ...DEFAULT_QUERY, pageSize: current.pageSize }));
   };
 
@@ -1829,7 +1837,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       more={<>
         <FilterField wide label={<span>提交日期（越南时间，含起止当天）<Explain label="提交日期的说明"
           content={`按越南时间（UTC+7）0 点分日。只填一个日期，就只限这一头。${businessZone().zoneId === "Asia/Ho_Chi_Minh" ? "" : `列表里的时间是${businessZone().label}，0 点前后提交的单，日期可能差一天。`}`} /></span>}>
-          <span className="rd-filter-range">
+          <span key={dateInputRevision} className="rd-filter-range">
             <Input aria-label="提交日期起" aria-invalid={!!dateError || undefined} type="date" value={draft.createdFrom} onInvalid={handleInvalidDate}
               onChange={(event) => { setDraft({ ...draft, createdFrom: event.target.value }); setDateError(null); }} />
             <span aria-hidden>–</span>
