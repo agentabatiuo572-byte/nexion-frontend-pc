@@ -38,11 +38,15 @@ export const F4_SETTLE_COVERAGE = "批准时那一周还没结算才查兑付覆
 export const F4_PAYOUT_COVERAGE = "总榜还没派过，批准时才查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。";
 export const F4_COVERAGE_NEXT = "可等恢复后再批，或驳回；等于红线算够。";
 
-export function f4CurrentWeekPool(overview: Pick<F4LeadershipPoolOverview, "currentWeekPoolAmount" | "currentWeekPoolUsd" | "weeklyInjectedUsd">) {
+export function f4CurrentWeekPool(
+  overview: Pick<F4LeadershipPoolOverview, "currentWeekPoolAmount" | "currentWeekPoolUsd" | "weeklyInjectedUsd">,
+  settled: boolean | undefined,
+) {
   const amount = overview.currentWeekPoolAmount ?? overview.currentWeekPoolUsd;
   // Both values come from the same server summary. The whole-USDT paid total proves settlement
-  // when positive, but a zero total can also mean a payment below 1 USDT.
-  return { amount, actual: amount !== null && overview.weeklyInjectedUsd > 0 };
+  // when positive. The separate vote projection can only rule out the estimate label.
+  const actual = amount !== null && overview.weeklyInjectedUsd > 0;
+  return { amount, actual, estimated: amount !== null && !actual && settled !== true };
 }
 
 export function f4MonthlyCap(raw: string): string | null {

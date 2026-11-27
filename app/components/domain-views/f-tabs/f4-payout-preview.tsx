@@ -148,18 +148,18 @@ export function F4SettleFacts({ onSettlementChange }: { onSettlementChange?: (se
   useEffect(() => {
     if (settled !== undefined) onSettlementChange?.(settled);
   }, [settled, onSettlementChange]);
-  const { amount: pool, actual } = data ? f4CurrentWeekPool(data) : { amount: null, actual: false };
+  const { amount: pool, actual, estimated } = data ? f4CurrentWeekPool(data, settled) : { amount: null, actual: false, estimated: false };
   return (
     <div className="f4-payout">
       <Facts>
         {/* 估算批准时才算出来，已发的数这次不动：都不做关键数字（VS-102）。 */}
-        <Fact k={actual ? "本周已结算（实发）" : pool !== null ? "本周池（估算）" : "本周池"} tone={pending === "读不到" ? "warn" : undefined} unit={pool !== null ? "USDT" : undefined}>{pending ?? usdt(pool)}</Fact>
+        <Fact k={actual ? "本周已结算（实发）" : estimated ? "本周池（估算）" : "本周池"} tone={pending === "读不到" ? "warn" : undefined} unit={pool !== null ? "USDT" : undefined}>{pending ?? usdt(pool)}</Fact>
         <Fact k="有资格分的人">{pending ?? `${count(data!.participantCount)} 人`}</Fact>
       </Facts>
       {settled && <F4SettledWeekNotice />}
       {read.state === "failed" && <p className="f4-payout-note">本周奖池读不到，不影响批准。</p>}
       {read.state === "ok" && <p className="f4-payout-note">{projection.state === "failed" ? "本周是否已结算读不到，以批准时为准。"
-        : !actual && pool !== null ? <><span className="rd-keep">{`${businessStamp(read.at)}（${businessZone().label}）读到的估算，`}</span><span className="rd-keep">批准时重新算，金额可能不同。</span></> : `${businessStamp(read.at)}（${businessZone().label}）读到。`}</p>}
+        : estimated ? <><span className="rd-keep">{`${businessStamp(read.at)}（${businessZone().label}）读到的估算，`}</span><span className="rd-keep">批准时重新算，金额可能不同。</span></> : `${businessStamp(read.at)}（${businessZone().label}）读到。`}</p>}
     </div>
   );
 }

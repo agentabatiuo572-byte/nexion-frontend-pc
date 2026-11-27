@@ -95,7 +95,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
   const cadence = settlement.ready && !invalid.has("settleCron") ? settleCadenceNote(settleCron) : null;
   const unlockVRankEff = invalid.has("unlockVRank") ? invalidLabel : unlockVRank || "未配置";
   const settled = f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
-  const { amount: pool, actual: poolActual } = f4CurrentWeekPool(data);
+  const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data, settled);
   const board = leaderboardState(data);
   const current = data.leaderboardComputePointPeriods?.[period];
   const lbMinPoints = data.configValues["F.leaderboard.minComputePoints"];
@@ -135,7 +135,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     // 估算批准时才算出来，已发的数这次不动：都不做关键数字（VS-102）；已结算的提示和批准框同一句（OP-69）。
     facts: <div className="rd-stack">
       <Facts>
-        <Fact k={poolActual ? "本周已结算（实发）" : pool !== null ? "本周池（估算）" : "本周池"} unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
+        <Fact k={poolActual ? "本周已结算（实发）" : poolEstimated ? "本周池（估算）" : "本周池"} unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
         <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
         <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
       </Facts>

@@ -23,6 +23,7 @@ export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types"
 export type A4ActionConfirmReq = Parameters<DCtx["openActionConfirm"]>[0] & {
   recoverySlot?: string;
   requiresH5ApprovalCoverage?: boolean;
+  approvalWriteBlock?: string;
 };
 export type ACtx = Omit<DCtx, "openActionConfirm"> & {
   openActionConfirm: Dispatch<SetStateAction<A4ActionConfirmReq | null>>;

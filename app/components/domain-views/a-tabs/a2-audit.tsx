@@ -353,13 +353,8 @@ function f4ApprovalResultText(result: F4ApprovalBusinessResult) {
   return `入账 ${count(result.creditedCount)} 笔，合计 ${amounts.join("、")}`;
 }
 
-const F4_BLOCKED_NEXT: Record<F4ApprovalAttemptResult["reasonCode"], string> = {
-  F4_LEADERBOARD_PAUSED: "排行榜恢复后再批，或驳回",
-  COVERAGE_BELOW_REDLINE: "覆盖率恢复后再批，或驳回",
-};
-
-function f4BlockedText(result: F4ApprovalAttemptResult) {
-  return `这次批准没有执行：${f4ResultReason(result)}。审批单仍待审批，${F4_BLOCKED_NEXT[result.reasonCode]}。`;
+function f4BlockedText(reasonCode: F4ApprovalAttemptResult["reasonCode"]) {
+  return `${f4ResultReason({ reasonCode })}。审批单仍待审批。这次没有执行。关掉后重新打开，按最新读数再批准，或驳回。`;
 }
 /**
  * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
@@ -1162,6 +1157,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 }) {
   const { toast, openActionConfirm } = ctx;
   const oldPayoutTickets = useRef(new Set<string>());
+  const refusedPayoutReasons = useRef(new Map<string, string>());
   const [, redrawPayoutBlocks] = useState(0);
   useEffect(() => {
     try {
@@ -2070,6 +2066,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 
   const approveRequest = (w: A2OperationRow): A4ActionConfirmReq => {
     const name = approvalActionName(w);
+    const f4Payout = w.operationCode === "f4_pool_settle" || w.operationCode === "f4_leaderboard_period_payout";
+    const draftKey = `${session?.adminId}:${w.id}`;
     const v8Promotion = isV8PromotionTicket(w);
     const coverageMode = approvalCoverageMode(w);
     const amplifies = coverageMode === "amplifies";
@@ -2140,11 +2138,14 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const belowRedline = !!coverage && (coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct);
     const coverageBlock = !requiresH5ApprovalCoverage && amplifies && belowRedline
       ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined;
+    const blockAfterWrite = (approvalWriteBlock: string) => {
+      openActionConfirm(current => current?.run === request.run ? { ...current, approvalWriteBlock } : current);
+    };
     const fund = fundSpec(w, (settled, paused) => {
       // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
       const blockedReason = paused ? F4_PAYOUT_APPROVAL_PAUSED
         : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : settled ? undefined : coverageBlock;
-      openActionConfirm(current => current?.run === request.run && current.blockedReason !== blockedReason
+      openActionConfirm(current => current?.run === request.run && !current.approvalWriteBlock && current.blockedReason !== blockedReason
         ? { ...current, blockedReason } : current);
     }) ?? k1Spec ?? bootSpec;
     const request: A4ActionConfirmReq = {
@@ -2185,12 +2186,14 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
       blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : coverageBlock,
+      initialReason: f4Payout ? refusedPayoutReasons.current.get(draftKey) : undefined,
       reasonMin,
       reasonMax: 200,
       confirmLabel: "确认批准",
       // 直接动钱的确认用红（决定 50）。
       confirmTone: w.amplifies || isRefund ? "danger" : "primary",
       run: async (reason) => {
+        if (f4Payout) refusedPayoutReasons.current.delete(draftKey);
         if (oldPayoutTickets.current.has(w.id)) throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
         const block = w.operationCode === D5_APPROVAL_OP ? d5Trc20ApprovalBlock(w.before, w.after) : undefined;
         if (block) throw new Error(d5Trc20Reason(block, false));
@@ -2202,13 +2205,22 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             setTicketId(null);
           }
         } catch (cause) {
-          if (cause instanceof F4ApprovalBlockedError) throw new Error(f4BlockedText(cause.result));
+          const code = cause instanceof F4ApprovalBlockedError ? cause.result.reasonCode : backendCode(cause);
+          if (f4Payout && (code === "F4_LEADERBOARD_PAUSED" || code === "COVERAGE_BELOW_REDLINE")) {
+            refusedPayoutReasons.current.set(draftKey, reason);
+            blockAfterWrite(f4BlockedText(code));
+            if (code === "COVERAGE_BELOW_REDLINE") await refreshCoverage();
+            return false;
+          }
           if (w.operationCode === "f4_leaderboard_period_payout" && backendCode(cause) === "F4_LEADERBOARD_PAYOUT_REVIEW_REQUIRED") {
             openActionConfirm(approveRequest(w));
             throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
           }
           const stale = staleReason(w, "approve", cause);
-          if (stale) openActionConfirm({ ...approveRequest(w), blockedReason: stale });
+          if (stale) {
+            blockAfterWrite(stale);
+            return false;
+          }
           // 共用的说法对直接编辑、演练都成立；审批这里还要写下一步（M8）。
           if (backendCode(cause) === "J4_PLAYBOOK_NOT_FOUND") throw new Error("应急预案不存在，可能已被删除，这张单不能批准。请驳回后按最新的预案重新发起。");
           const refused = approvalRefusedText(w.operationCode, backendCode(cause));
