@@ -66,6 +66,12 @@ function E1ReceiptProductButton({ ticketId, size }: { ticketId: string; size?: "
 }
 
 const OWN_CREATE_TONE: Record<string, StateTone> = { pending: "warn", approved: "done" };
+const OWN_CREATE_QUERY_COPY = {
+  numberUnread: "查到了这张申请，但商品编号暂时核对不了，稍后再查。",
+  mismatch: "查到的申请和这个审批单号对不上，请到「操作记录与审批」核对。",
+  progressUnread: "刚查过：还是没查到审批进度，稍后再查。",
+  incompleteResponse: "收到的数据不完整，已停止显示。",
+};
 
 /**
  * 页头「查询我的新增申请」：没有本页记录（换了浏览器、关过标签页）也能按操作编号查自己提交的新增商品（F03，OP-65）。
@@ -81,10 +87,11 @@ function E1OwnCreateQuery() {
   if (!queryOwnCreate) return null;
   const close = () => { setOpen(false); setKey(""); setTicket(""); setResult(null); };
   const run = async () => {
-    if (!key.trim() || busy) return;
+    const commandKey = key.trim();
+    if (!commandKey || busy) return;
     setBusy(true);
     try {
-      const found = await queryOwnCreate(key, ticket);
+      const found = await queryOwnCreate(commandKey, ticket);
       setResult(found);
       if (found.state === "unread" && found.ticketId) setTicket(found.ticketId);
     } finally { setBusy(false); }
@@ -153,7 +160,11 @@ const TICKET_UNREAD = "刚查过：还是没查到审批进度，稍后再查。
 const RETRY_REQUIRES_LOOKUP = "先查询原操作，查不到才能重试";
 const CATALOG_READ_BLOCK = "商品目录读取成功前不能提交修改";
 const CREATE_RECEIPT_UNREAD = `${E1_CREATE_NUMBER_UNREAD}，请按原操作查询。`;
-const CREATE_RECEIPT_MISMATCH = "查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。";
+class E1CreateReceiptMismatchError extends Error {
+  constructor() {
+    super("查到的审批单和原请求对不上，记录保留；请到操作记录与审批核对。");
+  }
+}
 const endToast = (obj: string, id: string, status: string) => PROPOSAL_END[status] ? `${obj} · 审批单 ${id} ${PROPOSAL_END[status].tag}：${PROPOSAL_END[status].text}` : `${obj} · 审批单 ${id} 状态待核实`;
 
 function knownCreateTicketId(original?: E1Pending) {
@@ -165,7 +176,7 @@ function checkCreateOwner(row: A2OperationRow, original?: E1Pending, ticketId = 
     || !row.operationCode && original?.spec.action === row.action;
   if (!row.mine || !rightOperation || ticketId && row.id !== ticketId
     || row.createRequestId && original && row.createRequestId !== e1CreateRequestId(original.spec)) {
-    throw new Error(CREATE_RECEIPT_MISMATCH);
+    throw new E1CreateReceiptMismatchError();
   }
 }
 
@@ -177,7 +188,7 @@ function createReceipt(row: A2OperationRow, original?: E1Pending): NonNullable<E
     throw new A2ProposalReceiptIncompleteError(row.id, row.createRequestId);
   }
   if (original?.ticket?.status === "approved" && (row.status !== "approved" || original.ticket.resultSkuId !== resultSkuId)) {
-    throw new Error(CREATE_RECEIPT_MISMATCH);
+    throw new E1CreateReceiptMismatchError();
   }
   return { id: row.id, status: row.status, createRequestId: row.createRequestId, resultSkuId };
 }
@@ -842,27 +853,29 @@ export function E1Page({ onOpenHosting }: { onOpenHosting?: () => void } = {}) {
       void reloadCatalog(["products"], { readback: { commandKey, object: `device_sku|${skuId}` } });
     },
   });
-  const queryOwnCreate = async (input: string, expectedTicketId?: string): Promise<E1OwnCreateLookup> => {
-    const commandKey = input.trim();
+  const queryOwnCreate = async (commandKey: string, expectedTicketId?: string): Promise<E1OwnCreateLookup> => {
     if (!canRead || !canQuery || !currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
-    if (!commandKey) return { state: "unread", message: "请填写原操作编号。" };
     const original = e1Pending(actor).find(row => row.commandKey === commandKey);
     const known = knownCreateTicketId(original);
     const expected = expectedTicketId?.trim() || undefined;
     const ticketId = known ?? expected;
-    if (known && expected && known !== expected) return { state: "unread", ticketId, message: CREATE_RECEIPT_MISMATCH };
+    if (known && expected && known !== expected) return { state: "unread", ticketId, message: OWN_CREATE_QUERY_COPY.mismatch };
+    let matched = false;
     try {
       const row = await fetchA2ProposalByKey(commandKey, true, "e1");
       if (!currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
-      if (!row) return ticketId ? { state: "unread", ticketId, message: TICKET_UNREAD } : { state: "not-found" };
+      if (!row) return ticketId ? { state: "unread", ticketId, message: OWN_CREATE_QUERY_COPY.progressUnread } : { state: "not-found" };
       checkCreateOwner(row, original, ticketId);
+      matched = true;
       const { id, status, resultSkuId } = createReceipt(row, original);
       return { state: "found", ticket: { id, status, action: row.action }, product: resultSkuId ? createProductAction(resultSkuId, commandKey) : undefined };
     } catch (failure) {
       if (!currentRecoveryActor(actor)) return { state: "unread", message: "当前账号不能查询本人申请。" };
-      return failure instanceof A2ProposalReceiptIncompleteError
-        ? { state: "unread", ticketId: ticketId ?? failure.ticketId, message: CREATE_RECEIPT_UNREAD }
-        : { state: "unread", ticketId, message: eReadError(failure) };
+      if (failure instanceof A2ProposalReceiptIncompleteError) {
+        return { state: "unread", ticketId: ticketId ?? failure.ticketId, message: matched ? OWN_CREATE_QUERY_COPY.numberUnread : OWN_CREATE_QUERY_COPY.incompleteResponse };
+      }
+      if (failure instanceof E1CreateReceiptMismatchError) return { state: "unread", ticketId, message: OWN_CREATE_QUERY_COPY.mismatch };
+      return { state: "unread", ticketId, message: eReadError(failure) };
     }
   };
   const copy = (text: string, done: string) => { void navigator.clipboard.writeText(text).then(() => toast(done), () => toast("复制失败，请手动选择操作编号")); };

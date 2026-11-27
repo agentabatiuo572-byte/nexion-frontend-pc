@@ -457,12 +457,17 @@ const F3_PAYOUT_COVERAGE = "批准时先查兑付覆盖率：读不到或低于�
 const f2RateLevel = (fund: FundTicket | undefined) => fund?.kind === "fConfig" ? /^F\.unilevel\.(L[1-7])$/.exec(fund.key)?.[1] : undefined;
 /** 开启自动发放：没有「调高、调低」的方向，不按「多付钱」写。 */
 const enablesAutoPayout = (fund: FundTicket | undefined) => fund?.kind === "fConfig" && fund.spec?.payoutControlAmplification === "enable";
+function e1CreateApprovalState(w: A2OperationRow) {
+  const status = w.operationCode === "e1_sku_create" ? e1CreateSnapshot(w.after)?.status : undefined;
+  return { status, unlisted: status === "pending" || status === "off" };
+}
 /**
  * 放大类单的后果一句：审批单详情和批准框用同一句（DT-14），没有专门说法的写「会让平台多付钱」。
  * 不能撤销不写在这里：批准框有「不能撤销」标签（VS-106），详情在句尾补（DT-10）。
  * F4 派奖、结算批准时按那一刻重算，奖池为 0、没人上榜、已结算或暂停时不发（LeadershipPoolService、OpsTeamService 回放）：不写成一定发钱。
  */
 function fundLead(w: A2OperationRow): string {
+  if (w.amplifies && e1CreateApprovalState(w).unlisted) return "上架后会按新的月目标付收益，可能让平台多付钱";
   const fund = fundTicket(w);
   if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return F4_SETTLEMENT_CONSEQUENCE;
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return "真实放钱";
@@ -1161,8 +1166,8 @@ export function A2ChangeReview({ before, after, omit = [], operationCode, amount
     const plain = [...keys.filter((key) => !isRowList(next[key])), ...removed];
     // 有没有改由 DiffList 按两边文字比；a2Pair 只改金额字段，且不会把原来不同的两边变成一样。
     const rows: DiffRow[] = plain.map((key) => {
-      const [before, after] = a2Pair(amountKey ?? key, g3Control && was && !(key in was) ? undefined : valueText(key, was?.[key], labels),
-        g3Control && !(key in next) ? undefined : valueText(key, next[key], labels), [was?.[key], next[key]]);
+      const [before, after] = a2Pair(amountKey ?? key, g3Control && was && !(key in was) ? undefined : valueText(key, was?.[key], labels, operationCode),
+        g3Control && !(key in next) ? undefined : valueText(key, next[key], labels, operationCode), [was?.[key], next[key]]);
       return { key, ...derivedBaseRateShown(key, labels[key] ?? key, was?.[key], next[key], !was, before, after) };
     });
     body = <>
@@ -2206,8 +2211,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const requiresH5ApprovalCoverage = w.operationCode === "h5_power_up_config" && !!coverageMode;
     const isRefund = w.fundEffect === "ORDER_REFUND";
     // 新增商品按冻结的商城状态：草稿和已下架批准后不上架卖，不用红色最终确认；草稿不改线上，生效标签灰底（BUG-803，VS-25、VS-101、VS-106）。
-    const e1CreateStatus = w.operationCode === "e1_sku_create" ? e1CreateSnapshot(w.after)?.status : undefined;
-    const e1CreateUnlisted = e1CreateStatus === "pending" || e1CreateStatus === "off";
+    const { status: e1CreateStatus, unlisted: e1CreateUnlisted } = e1CreateApprovalState(w);
+    const coverageConsequence = fundLead(w);
     const isFunds = w.type === "fund" || isRefund || w.fundEffect === "REWARD_SUSPENSION" || w.fundEffect === "REWARD_RESUMPTION";
     const briefKind = isFunds ? "funds" : w.type === "acct" ? "security" : w.type === "sos" ? "emergency" : "config";
     const timing = approvalTiming(w);
@@ -2323,8 +2328,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverage: amplifies && !belowRedline ? coverage : undefined,
       // 低于红线时覆盖率照旧写在这一行，资金后果仍是同一句，不被覆盖率顶掉（DT-10、DT-14）。
       // 传字符串：共用框按分句换行，问号放进最后一句，不单独掉一行（D10-orphan、VS-85）；标题橙黄写在 ui-consistency.css。
-      coverageLead: amplifies && belowRedline ? `${fundLead(w)}。兑付覆盖率 ${fmtPct(coverage.coverageRatio)}，低于红线 ${fmtConfigPct(coverage.redlinePct)}`
-        : amplifies && !coverage ? `${fundLead(w)}，兑付覆盖率暂时读不到` : fundLead(w),
+      coverageLead: amplifies && belowRedline ? `${coverageConsequence}。兑付覆盖率 ${fmtPct(coverage.coverageRatio)}，低于红线 ${fmtConfigPct(coverage.redlinePct)}`
+        : amplifies && !coverage ? `${coverageConsequence}${e1CreateUnlisted ? "。" : "，"}兑付覆盖率暂时读不到` : coverageConsequence,
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
       blockedReason: oldPayoutBlock ?? (fund?.waitsForLatestRead ? undefined : coverageBlock),

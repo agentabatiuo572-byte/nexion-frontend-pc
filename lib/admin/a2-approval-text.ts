@@ -399,7 +399,10 @@ function grouped(text: string) {
   return /^-?\d{4,}(\.\d+)?$/.test(text) ? text.replace(/^-?\d+/, (whole) => whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")) : text;
 }
 
-export function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABELS): string {
+export function valueText(key: string | undefined, value: unknown, labels = CHANGE_LABELS, operationCode?: string): string {
+  if (isSkuReview(operationCode) && (value == null || typeof value === "string" && !value.trim())) {
+    return key === "datacenter" && value !== undefined ? "按托管机房清单分配" : "—";
+  }
   if (value === null || value === undefined) {
     if (key === "clearMonthlyTarget" || key === "trialEligible") return "否";
     return "未设置";
@@ -514,7 +517,10 @@ export function reviewPair(before: string, after: string, operationCode?: string
       for (const language of languages) value[`taglineTranslations.${language}`] = translations?.[language] ?? null;
       if ("seriesCode" in value) value.seriesCode = skuSeriesText(value.seriesCode);
       if (creating && typeof value.liveActivityVisible === "boolean") value.liveActivityVisible = e1Value(value.liveActivityVisible);
-      for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) if (typeof value[key] === "string") value[key] = e1Value(value[key]);
+      for (const key of ["tier", "status", "lifecycle", "inventoryMode"]) {
+        const item = value[key];
+        if (typeof item === "string" && item.trim()) value[key] = e1Value(item);
+      }
       if (typeof value.price === "number" || typeof value.price === "string" && value.price.trim()) value.price = `${String(value.price).trim()} USD`;
       const derivedDaily = "baseRate" in value ? e1MonthlyBaseRate(value.baseRate, value.monthlyTargetUsdt) : undefined;
       if (derivedDaily !== undefined) value.baseRate = { derivedDaily };
@@ -523,10 +529,10 @@ export function reviewPair(before: string, after: string, operationCode?: string
       if ((typeof value.unlockPhase === "string" || typeof value.unlockPhase === "number") && /^\d+$/.test(String(value.unlockPhase).trim())) value.unlockPhase = `第 ${String(value.unlockPhase).trim()} 阶段`;
       return { kind: "object", value };
     };
-    // 新建只列填了的项，没填的不逐行写「未设置」（和商品页确认框一致）。
-    const filled = (review: Review | null): Review | null => skuBefore || review?.kind !== "object" ? review
-      : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => item !== null && item !== "" && !(Array.isArray(item) && !item.length))) };
-    return { b: named(skuBefore, previous), a: filled(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: SKU_MEDIA_EVIDENCE };
+    // 新建的空集合仍不单列。冻结的空字段交给 valueText 显示。
+    const omitEmptyLists = (review: Review | null): Review | null => skuBefore || review?.kind !== "object" ? review
+      : { kind: "object", value: Object.fromEntries(Object.entries(review.value).filter(([, item]) => !Array.isArray(item) || item.length > 0)) };
+    return { b: named(skuBefore, previous), a: omitEmptyLists(named(a, next)), labels: { ...labels, ...translationLabels, tagline: "英文标语", badge: "营销角标", seriesCode: "所属系列", specDocumentTitle: "资料名称", specDocumentUrl: "资料链接" }, evidenceKeys: SKU_MEDIA_EVIDENCE };
   }
   // 旧活动：前值是锁定时整行活动快照（OpsGrowthService.lockH4LegacyEventState），后值是提案 values，只比奖励。
   if (operationCode === "h4_legacy_event_reward_update" && b?.kind === "object" && a?.kind === "object" && "eventCode" in b.value) {
@@ -705,7 +711,7 @@ export function changeSummary(before: string, after: string, omit: readonly stri
   if (!first) return { main: "—" };
   const now = a.value[first];
   const was = b?.kind === "object" ? b.value[first] : undefined;
-  const pair = a2Pair(amountKey ?? first, valueText(first, was, labels), valueText(first, now, labels), [was, now]);
+  const pair = a2Pair(amountKey ?? first, valueText(first, was, labels, operationCode), valueText(first, now, labels, operationCode), [was, now]);
   const { label, before: wasShown, after: nowShown } = derivedBaseRateShown(first, labels[first] ?? first, was, now, !b, pair[0], pair[1]);
   const main = `${label} ${isRowList(now) ? `${now.length} ${ROW_UNIT[first] ?? "行"}` : nowShown}${changed.length > 1 ? ` 等 ${changed.length} 项` : ""}`;
   const sub = !b ? "新建" : b.kind === "object" && (first in b.value || typeof now === "boolean") && !isRowList(was) ? `原 ${wasShown}` : "原 见详情";
