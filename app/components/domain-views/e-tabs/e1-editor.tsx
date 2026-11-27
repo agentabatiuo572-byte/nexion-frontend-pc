@@ -350,7 +350,6 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
     if (!form.tier) e.tier = "请选择档位";
     if (!form.lifecycle) e.lifecycle = "请选择生命周期";
     if (!/^\d+(?:\.\d+)?$/.test(form.price.trim()) || Number(form.price) <= 0) e.price = "售价须为大于 0 的 USD 金额";
-    if (form.id.trim().toLowerCase() === "phone") e.id = "phone 是手机策略的专用编号";
     const seriesError = validateSkuSeries(form, original);
     if (seriesError) e.seriesCode = ADMIN_ERROR_MESSAGES[seriesError].replace(/。$/, "");
     if (form.datacenter.trim().length > 128) e.datacenter = "托管机房最多 128 字";
@@ -457,7 +456,7 @@ export function E1Editor({ request, gates, currentPhaseId, writable, currentSku,
       {(latestChanged || othersChanges.length > 0) && <Notice tone="warn" title="商品已被别人改过，你填的内容还在" action={latestChanged && currentSku ? <Button size="sm" onClick={() => adoptRevision(currentSku, form, original, media)}>已核对，保留我的修改</Button> : undefined}><Facts><Fact k="别人保存于">{formatBusinessTimeCompact(comparisonAfter?.updatedAt, "—")}（{businessZone().label}）</Fact></Facts>{comparisonAfter && <Fold inset title="别人改了什么" summary="核对完整前后值"><DiffList rows={othersChanges} /></Fold>}</Notice>}
       <div className="e1-editor-shell"><div className="e1-editor-layout"><SectionNav label="商品编辑分区" items={sectionItems} nav={nav} /><div className="e1-editor-content">
         <EditorSection id="e1-basic" title="基本信息">
-          <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}{field("id", "商品编号", { disabled: !!editId, help: editId ? "创建后不能修改" : "只做唯一标识，留空按型号名称生成" })}
+          <div className="rd-form-grid">{field("name", "型号名称", { required: true, placeholder: "UVELBox Pro v3", explain: APP_VISIBLE_TEXT_HINT })}<Field label="商品编号" explain="系统按档位和系列生成，创建后不能修改。"><Input aria-label="商品编号" value={editId ?? "批准后由系统生成"} readOnly /></Field>
             <Field label="档位" required error={errors.tier} explain="商品分类。共享份额可用不限库存，部分硬件参数收起后原值仍保留。"><Select aria-label="档位" required value={form.tier} onChange={v => setForm(f => ({ ...f, tier: v, inventoryMode: v === "Share" ? f.inventoryMode : "FINITE" }))} placeholder="请选择档位" options={[{ value: "Entry", label: "入门档" }, { value: "Pro", label: "专业档" }, { value: "Flagship", label: "旗舰档" }, { value: "Share", label: "共享份额" }]} /></Field>
             {seriesLocked
               ? <Field label="所属系列" error={errors.seriesCode} explain={original?.seriesCode ? "这件商品已有订单或已发出设备，系列已锁定，不能再改。其他资料可以照常修改。" : "这件商品已有订单或已发出设备，系列已锁定，这里补不了；请联系技术支持核对。"}><Input aria-label="所属系列" value={skuSeriesText(original?.seriesCode)} readOnly /></Field>
