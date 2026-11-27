@@ -1942,6 +1942,7 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   RISK_DISCLOSURE_PUBLISHED_VERSION_NOT_FOUND: "当前账户对应的已发布风险告知正文缺失，本次操作未执行；请到「风险披露」风险告知核对并补齐对应版本，刷新页面不能修复此配置问题。",
   RISK_DISCLOSURE_ACK_REQUIRED: "用户尚未确认当前版本的风险告知，本次操作未执行；请用户在 APP 阅读并确认后重试。",
   WITHDRAWAL_NOT_FOUND: "这笔提现不存在或已不可读取。请核对提现单号，返回列表查看当前记录。",
+  WITHDRAWAL_DATE_RANGE_INVALID: "提交日期有误：请选择有效日期，开始日期不能晚于结束日期。",
   WITHDRAWAL_RELOAD_FAILED: "没读到处理后的提现状态。请到详情和操作记录核对结果，不要重新提交。",
   WITHDRAWAL_NO_REQUIRED: "缺少提现单号，本次未执行。请从列表重新打开目标提现单。",
   WITHDRAWAL_BATCH_ACTION_INVALID: "批量只支持放行、拒绝、延迟或冻结。请重新选择批量操作。",

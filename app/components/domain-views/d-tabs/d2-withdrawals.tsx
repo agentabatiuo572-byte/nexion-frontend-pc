@@ -680,6 +680,17 @@ const PAGE_SIZES = [10, 20, 50] as const;
 const SORT_FIELDS = ["createdAt", "amount", "riskScore", "status"];
 const AMOUNT_PATTERN = /^\d+(\.\d+)?$/;
 const riskScoreIsValid = (value: string) => value === "" || /^\d{1,3}$/.test(value) && Number(value) <= 100;
+const DATE_RANGE_INVALID = "WITHDRAWAL_DATE_RANGE_INVALID";
+
+function isWithdrawalDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function isReversedDateRange(from: string, to: string) {
+  return from !== "" && to !== "" && from > to;
+}
 
 function filtersOf(query: D2Query): D2Filters {
   const { keyword, minAmount, maxAmount, minRiskScore, ipSegment, sortBy, sortDirection, createdFrom, createdTo } = query;
@@ -694,6 +705,13 @@ function queryFromUrl(params: { get: (name: string) => string | null } | null): 
   const page = Number(read("page"));
   const pageSize = Number(read("pageSize"));
   const amount = (name: string) => AMOUNT_PATTERN.test(read(name)) ? read(name) : "";
+  const date = (name: string) => {
+    const value = params?.get(name) ?? "";
+    return isWithdrawalDate(value) ? value : "";
+  };
+  const createdFrom = date("createdFrom");
+  const createdTo = date("createdTo");
+  const reversedDates = isReversedDateRange(createdFrom, createdTo);
   return {
     group,
     status: groupStatuses(group).includes(read("status")) ? read("status") : "",
@@ -704,9 +722,8 @@ function queryFromUrl(params: { get: (name: string) => string | null } | null): 
     ipSegment: read("ipSegment"),
     sortBy: SORT_FIELDS.includes(read("sort")) ? read("sort") : DEFAULT_QUERY.sortBy,
     sortDirection: read("dir") === "asc" ? "asc" : DEFAULT_QUERY.sortDirection,
-    // TODO(hd-impl-d2-date-pc): 从网址读 createdFrom、createdTo（YYYY-MM-DD，不合法回空，ST-26）。
-    createdFrom: "",
-    createdTo: "",
+    createdFrom: reversedDates ? "" : createdFrom,
+    createdTo: reversedDates ? "" : createdTo,
     page: Number.isSafeInteger(page) && page > 0 ? page : DEFAULT_QUERY.page,
     pageSize: PAGE_SIZES.some((size) => size === pageSize) ? pageSize : DEFAULT_QUERY.pageSize,
   };
@@ -720,7 +737,7 @@ function writeQueryToUrl(query: D2Query, rule: string) {
     ["minAmount", query.minAmount, ""], ["maxAmount", query.maxAmount, ""], ["minRiskScore", query.minRiskScore, ""],
     ["ipSegment", query.ipSegment, ""], ["rule", rule, ""], ["sort", query.sortBy, DEFAULT_QUERY.sortBy],
     ["dir", query.sortDirection, DEFAULT_QUERY.sortDirection], ["page", query.page, 1], ["pageSize", query.pageSize, DEFAULT_QUERY.pageSize],
-    // TODO(hd-impl-d2-date-pc): 提交日期写进网址 createdFrom、createdTo（ST-23）。
+    ["createdFrom", query.createdFrom, ""], ["createdTo", query.createdTo, ""],
   ];
   for (const [name, value, fallback] of entries) {
     if (value === fallback) params.delete(name);
@@ -749,8 +766,7 @@ function compareRows(left: D2Withdrawal, right: D2Withdrawal, sortBy: string, so
 
 /** 接口的 status 只收一个值。看整组时按状态分别取到当前页为止，合并排序后切出这一页，总数相加。 */
 async function fetchQueue(query: D2Query): Promise<PageResult<D2Withdrawal>> {
-  // TODO(hd-impl-d2-date-pc): 提交日期还没传给后端（createdFrom、createdTo，见 d2-date-contract.md）。接入时不再剔除这两项。
-  const { createdFrom: _createdFrom, createdTo: _createdTo, ...filters } = filtersOf(query);
+  const filters = filtersOf(query);
   const statuses = query.status ? [query.status] : query.group === "all" ? [] : groupStatuses(query.group);
   if (statuses.length <= 1) {
     return fetchD2Withdrawals({ ...filters, status: statuses[0] ?? "", pageNum: query.page, pageSize: query.pageSize });
@@ -916,7 +932,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const searchParams = useSearchParams();
-  // query 是已应用的条件，列表、翻页、统计都只用它；draft 是输入框里的草稿，点「查询」才生效（ST-18）。
+  // query 是已应用的条件；draft 是输入框里的草稿，点「查询」才生效（ST-18）。
   const [query, setQuery] = useState<D2Query>(() => queryFromUrl(searchParams));
   const [draft, setDraft] = useState<D2Filters>(() => filtersOf(query));
   const [ruleFilter, setRuleFilter] = useState(() => searchParams?.get("rule")?.trim() ?? "");
@@ -957,6 +973,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [detailError, setDetailError] = useState("");
   /** 单调递增请求号:并发 load 时只有最后一发的响应可以落地,旧响应不许覆盖新筛选结果。 */
   const requestSeq = useRef(0);
+  const loadedSubmission = useRef<D2Query | null>(null);
   const countSeq = useRef(0);
   /** 详情抽屉同样只接受最后一次请求；关闭抽屉会主动让在途响应失效。 */
   const detailRequestSeq = useRef(0);
@@ -1013,15 +1030,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const syncPending = () => setPendingCommands(pendingKeys.list().filter((record) => record.kind));
 
-  const load = async (next = queryRef.current) => {
+  const load = async (next = queryRef.current, submit = false) => {
     const seq = ++requestSeq.current;
+    let dateRejected = false;
     // 翻页、切状态或操作后的刷新按上次生效的值查，输入框改回这个值，不再留着被拒绝的数。
     const rejected = draftRef.current.minRiskScore;
     const dropped = riskScoreIsValid(rejected) ? "" : rejected;
     if (dropped) setDraft((current) => ({ ...current, minRiskScore: next.minRiskScore }));
     setRiskDropped(dropped);
     setLoading(true);
-    setError("");
     setWritesEnabled(false);
     try {
       const [nextRows, nextD5] = await Promise.all([
@@ -1029,6 +1046,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         canReadD5 ? fetchD5WithdrawalParams() : null,
       ]);
       if (seq !== requestSeq.current) return;
+      setError("");
       setRows(nextRows);
       setD5(nextD5);
       d5Ref.current = nextD5;
@@ -1041,6 +1059,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (next.page > lastPage) setQuery((current) => ({ ...current, page: lastPage }));
     } catch (cause) {
       if (seq !== requestSeq.current) return;
+      if (cause instanceof DRequestError && cause.status === 400 && cause.reasonCode === DATE_RANGE_INVALID) {
+        dateRejected = true;
+        setDateRangeInvalid(true);
+        setWritesEnabled(writesRef.current);
+        return;
+      }
       setRows({ total: 0, pageNum: 1, pageSize: next.pageSize, records: [] });
       setD5(null);
       d5Ref.current = null;
@@ -1048,7 +1072,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       setError(cause instanceof Error ? displayAdminReadError(cause) : "加载失败，请重试");
     } finally {
       // 过期响应连 loading 都不许收:新请求仍在飞,收了会假装「加载完成」。
-      if (seq === requestSeq.current) setLoading(false);
+      if (seq === requestSeq.current) {
+        // 只有日期校验通过才更新已应用条件，保留被拒绝的草稿和上次结果（ST-19）。
+        if (submit && !dateRejected) {
+          loadedSubmission.current = next;
+          setQuery(next);
+        }
+        setLoading(false);
+      }
     }
   };
 
@@ -1080,7 +1111,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const refresh = () => Promise.all([load(), loadCounts(), loadGate()]);
 
-  useEffect(() => { void load(query); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [query]);
+  useEffect(() => {
+    if (query !== loadedSubmission.current) void load(query);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [query]);
   useEffect(() => { void loadCounts(); void loadGate(); syncPending(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => { writeQueryToUrl(query, ruleFilter); }, [query, ruleFilter]);
   // 后端只在私有 dev 注册此能力；公网及生产构建不应探测不存在的接口。
@@ -1380,11 +1414,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const submitQuery = () => {
     if (!riskScoreIsValid(draft.minRiskScore)) return;
     const invalidRange = draft.minAmount !== "" && draft.maxAmount !== "" && Number(draft.minAmount) > Number(draft.maxAmount);
-    // TODO(hd-impl-d2-date-pc): 占位校验，只比两个日期框自己的值；接入时按接口约定校验（格式错、起日晚于止日都不查）。
-    const invalidDates = draft.createdFrom !== "" && draft.createdTo !== "" && draft.createdFrom > draft.createdTo;
+    const invalidDates = [draft.createdFrom, draft.createdTo].some((value) => value !== "" && !isWithdrawalDate(value))
+      || isReversedDateRange(draft.createdFrom, draft.createdTo);
     setAmountRangeInvalid(invalidRange);
     setDateRangeInvalid(invalidDates);
-    if (!invalidRange && !invalidDates) setQuery((current) => ({ ...current, ...draft, page: 1 }));
+    if (!invalidRange && !invalidDates) void load({ ...query, ...draft, page: 1 }, true);
   };
 
   const applyFilters = (patch: Partial<D2Filters>) => {
@@ -1652,7 +1686,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const riskNotice = !riskScoreIsValid(draft.minRiskScore)
     ? `最低风险分须为 0–100 的整数。这次没有查询${error ? "。" : `，列表${query.minRiskScore ? `仍按最低风险分 ${query.minRiskScore}` : "仍是不限风险分的结果"}。`}`
     : riskDropped && `「${riskDropped}」不是 0–100 的整数，没有生效。已改回${draft.minRiskScore ? `最低风险分 ${draft.minRiskScore}` : "不限风险分"}。`;
-  const rangeProblems = `${amountRangeInvalid ? "最低金额不能大于最高金额。" : ""}${dateRangeInvalid ? "提交日期有误：开始日期不能晚于结束日期。" : ""}`;
+  const dateProblem = isReversedDateRange(draft.createdFrom, draft.createdTo)
+    ? "提交日期有误：开始日期不能晚于结束日期。" : ADMIN_ERROR_MESSAGES[DATE_RANGE_INVALID];
+  const rangeProblems = `${amountRangeInvalid ? "最低金额不能大于最高金额。" : ""}${dateRangeInvalid ? dateProblem : ""}`;
   const filterNotice = rangeProblems ? `${rangeProblems}这次没有查询。` : riskNotice || (query.status === "FROZEN" ? "ERC20 丢失链上确认的单也按冻结处理，要在「打款异常，需人工核对」里查看。" : undefined);
 
   const shown = drawerRow.current;
