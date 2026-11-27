@@ -575,7 +575,8 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                 {tasks.map((task) => (
                   // 和 App 列表一样：目标打不开时名称变弱、去掉待赚金额和箭头，说明位写「该任务当前未开放」（weekly-quest-list.vue、day-one-quest-card.vue）。
                   <li key={task.key} data-off={task.targetUnavailable ? "" : undefined}>
-                    <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[task.category] ?? "其他"}</span>
+                    {/* App 列表在目标打不开时只写原因，不显示类别；留空位保持网格对齐。 */}
+                    {task.targetUnavailable ? <span aria-hidden="true" /> : <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[task.category] ?? "其他"}</span>}
                     <span className="h3-phone-name">{previewName(task, locale)}</span>
                     {!task.targetUnavailable && task.reward !== undefined && <span className="h3-phone-reward">{task.reward == null ? "—" : `+${task.reward}`}</span>}
                     {!task.targetUnavailable && <span className="h3-phone-go" aria-hidden="true">›</span>}
