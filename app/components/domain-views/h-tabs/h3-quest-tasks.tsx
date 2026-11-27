@@ -21,8 +21,9 @@ import {
   type H3MissionKind,
   type H3QuestEventBinding,
 } from "@/lib/admin/h-client";
-import { compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model } from "@/lib/admin/h3-contract";
+import { compareH3Decimal, h3Decimal, h3HasConfigValue, h3MissionCreationRefusal, h3MissionEnableRefusal, parseH3Model, type H3ReadQuestEventBinding } from "@/lib/admin/h3-contract";
 import { h3ActionRouteLabels, h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
+import { h3MissionReceiptText } from "@/lib/admin/a2-approval-text";
 import { fetchOperatingLanguages } from "@/lib/admin/platform-experience-client";
 import { useH3Mutations, type H3PendingCommand, type H3Write } from "@/lib/admin/use-h3-mutations";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -336,7 +337,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       if (task) return decimalOf(task.reward) !== null ? "found" : "unreadable";
       return (monthly ? complete(monthlyMissionCount, list.length) : weeklyComplete) ? "task-missing" : "unreadable";
     };
-  }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model, reload);
+  }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model, routeLabels, reload);
   const refresh = async () => {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
@@ -814,12 +815,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     return task ? text(model?.contentLocales?.mission?.[code]?.zh?.name, "") || taskTitleText(text(task.task ?? task.cond)) : null;
   };
   /** 本页任务里找不到时，按后端给的目录事实分开说；没给事实的旧数据照旧说不在本页。 */
-  const bindingTargetGap = (binding: H3QuestEventBinding) => binding.targetInTaskCatalog === false ? "任务目录里没有这个任务"
+  const bindingTargetGap = (binding: H3ReadQuestEventBinding) => binding.targetInTaskCatalog === false ? "任务目录里没有这个任务"
     : binding.targetInTaskCatalog !== true ? "不在本页任务里"
       : binding.targetActiveInTaskCatalog === false ? "任务目录里有，但已停用"
         : binding.targetActiveInTaskCatalog === true ? "有效任务，本页没列出" : "不在本页任务里";
 
-  const openBindingStatus = (binding: H3QuestEventBinding) => {
+  const openBindingStatus = (binding: H3ReadQuestEventBinding) => {
+    if (!binding.recognized) return;
     const enabled = Number(binding.status) === 1;
     const nextEnabled = conflictDraft.intent === undefined ? !enabled : conflictDraft.intent === "true";
     if (nextEnabled === enabled) { if (conflictDraft.intent !== undefined) setStale(null); toast(conflictDraft.intent !== undefined ? "别人已经改成这个状态，不用再提交" : "和现在一样，没有改动"); return; }
@@ -963,7 +965,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     } as H3ActionConfirmReq);
   };
 
-  const openBindingEdit = (binding: H3QuestEventBinding) => {
+  const openBindingEdit = (binding: H3ReadQuestEventBinding) => {
+    if (!binding.recognized) return;
     openActionConfirm({ target: binding.bindingCode, briefKind: "config",
       action: `修改完成条件 · ${binding.bindingCode}`,
       title: "修改完成条件",
@@ -1002,7 +1005,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     } as H3ActionConfirmReq);
   };
 
-  const openBindingDelete = (binding: H3QuestEventBinding) => {
+  const openBindingDelete = (binding: H3ReadQuestEventBinding) => {
+    if (!binding.recognized) return;
     const enabled = Number(binding.status) === 1;
     openConfirm({ briefKind: "record",
       target: binding.bindingCode,
@@ -1112,8 +1116,9 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     return unit ? `${monthlyAmount(value)} ${unit}` : monthlyAmount(value);
   };
   // 旧记录没存币种、任务列表里又找不到这项时，数字照写，币种在后面说一次，不跟在每个数后面。
-  const changeOf = (c: H3PendingCommand["change"]) => <>
-    <Change from={changeValue(c.target, c.before, c.rewardCurrency)} to={changeValue(c.target, c.after, c.rewardCurrency)} />
+  const changeOf = (c: H3PendingCommand["change"], ticket?: H3PendingCommand["ticket"]) => <>
+    <Change from={changeValue(c.target, c.before, c.rewardCurrency)}
+      to={(ticket && h3MissionReceiptText(ticket, routeLabels)) ?? changeValue(c.target, c.after, c.rewardCurrency)} />
     {/^monthly\.[^.]+\.reward$/.test(c.target) && !monthlyUnit(c.target, c.rewardCurrency) && <span className="rd-weak"> · 币种没读到</span>}
   </>;
   const releasable = (original: H3PendingCommand) => !!mutations.recovery.state(original).replayRejection;
@@ -1124,7 +1129,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     const pending = original.ticketStatus === "pending" || original.ticket?.status === "pending";
     const rejected = !!state.replayRejection && !original.ticket && !original.acknowledged;
     return {
-      key: original.commandKey, name: original.change.action, change: changeOf(original.change),
+      key: original.commandKey, name: original.change.action, change: changeOf(original.change, original.ticket),
       note: mutations.queryErrors[original.commandKey] ?? recoveryStatusText(original, state.expired, state.replayRejection),
       submittedAt: original.createdAt,
       tag: approved ? <StatusTag tone="ok">已批准</StatusTag> : pending ? pendingTag(original.store === "region" ? REGION_APPROVER : undefined) : original.acknowledged ? acknowledgedTag()
@@ -1143,7 +1148,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (status !== "rejected" && status !== "withdrawn" && status !== "expired") continue;
     recoveryRows.push({
       key: command.commandKey, name: command.change.action,
-      change: <><span data-mono="">{form.missionCode}</span>{changeOf(command.change)}</>,
+      change: <><span data-mono="">{form.missionCode}</span>{changeOf(command.change, command.ticket)}</>,
       submittedAt: command.createdAt,
       tag: <StatusTag tone="done">{{ rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" }[status]}</StatusTag>,
       actions: <>{canModuleWrite && <Button size="sm" disabledReason={missionEditorOpen ?? (!fresh.current ? "请先成功刷新用户任务数据" : undefined)}
@@ -1259,7 +1264,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const all = [...dayOne, ...t1, ...t2];
   const nameOf = (task: QuestTask) => localizedValue(codeOf(task), "zh") || taskTitleText(text(task.task ?? task.cond));
   const bindingsOf = (task: QuestTask) => bindings.filter((binding) => binding.questCode === codeOf(task));
-  const completionOf = (task: QuestTask, list: ListKey, taskBindings: H3QuestEventBinding[]) => {
+  const completionOf = (task: QuestTask, list: ListKey, taskBindings: H3ReadQuestEventBinding[]) => {
     if (list === "dayOne") return taskCompletionEventText(task);
     if (taskUnbound(task)) return "";
     return taskBindings.filter((binding) => Number(binding.status) === 1).map(bindingEventText).join("、");

@@ -426,7 +426,7 @@ export function validateH4OverviewEvents(events: unknown) {
 
 function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] {
   if (!Array.isArray(value)) throw new Error("H3_RESPONSE_INVALID");
-  return value.flatMap((item: unknown) => {
+  const targets = value.flatMap((item: unknown) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return [];
     const { productNo, name, actionRoute, openable, seriesCode, roiEligible } = item as Record<string, unknown>;
     if (typeof productNo !== "string" || !/^[A-Za-z0-9._~-]{1,96}$/.test(productNo)
@@ -436,6 +436,8 @@ function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] {
       || (seriesCode !== null && (typeof seriesCode !== "string" || !SKU_SERIES_CODES.some(code => code === seriesCode)))) return [];
     return [{ productNo, name, actionRoute, openable, seriesCode, roiEligible }];
   });
+  if (value.length > 0 && targets.length === 0) throw new Error("H3_RESPONSE_INVALID");
+  return targets;
 }
 
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {

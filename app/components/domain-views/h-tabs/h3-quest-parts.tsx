@@ -320,7 +320,7 @@ function eventTypeText(eventType: string) {
   return H3_BINDING_EVENT_LABELS[eventType] ?? eventType;
 }
 
-export function bindingEventText(binding: H3QuestEventBinding) {
+export function bindingEventText(binding: Pick<H3QuestEventBinding, "eventType">) {
   return eventTypeText(binding.eventType);
 }
 

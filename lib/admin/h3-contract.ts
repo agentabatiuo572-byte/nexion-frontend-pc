@@ -36,6 +36,15 @@ export type H3ProductActionTarget = {
   roiEligible: boolean;
 };
 
+/** The read model preserves historical values outside the current write vocabulary. */
+export type H3ReadQuestEventBinding =
+  | (H3QuestEventBinding & { recognized: true })
+  | (Omit<H3QuestEventBinding, "producer" | "userIdField"> & {
+      producer: string;
+      userIdField: string;
+      recognized: false;
+    });
+
 type H3MissionNames = Partial<Record<OperatingLanguageCode, string>>;
 
 export type H3Task = Record<string, any> & {
@@ -129,7 +138,7 @@ export type H3Model = {
   taskContracts: H3TaskContract[];
   contentLocales: Record<string, Record<string, Record<string, Record<string, string>>>>;
   phaseMultiplierReadonly: Record<string, any>;
-  eventBindings: H3QuestEventBinding[];
+  eventBindings: H3ReadQuestEventBinding[];
 };
 
 /** d9e2038f: match the writer's normalized key without changing historical values. */
@@ -244,10 +253,9 @@ export function parseH3Model(value: unknown): H3Model {
   }
   for (const item of row.dayOneStates) strings(item, ["st", "label", "tone"]);
   for (const item of row.taskMonitor) strings(item, ["label", "note"]);
-  for (const item of row.eventBindings) {
+  row.eventBindings = row.eventBindings.map((item: Record<string, any>) => {
     strings(item, ["bindingCode", "producer", "eventType", "questCode", "userIdField"]);
-    if (!Number.isSafeInteger(item.status) || !["ORDER", "REFERRAL", "LEARNING", "DEVICE", "COMMISSION", "SYSTEM"].includes(item.producer)
-      || !["user_id", "inviter_user_id"].includes(item.userIdField)) throw new Error("H3_RESPONSE_INVALID");
+    if (!Number.isSafeInteger(item.status)) throw new Error("H3_RESPONSE_INVALID");
     for (const key of ["targetInTaskCatalog", "targetActiveInTaskCatalog"]) {
       const fact = item[key];
       if (fact === 0 || fact === 1) item[key] = fact === 1;
@@ -256,7 +264,10 @@ export function parseH3Model(value: unknown): H3Model {
     if (item.liveTargetState != null && !["TARGET_MISSING", "TARGET_INACTIVE", "BINDING_DISABLED", "TARGET_READY"].includes(item.liveTargetState)) {
       throw new Error("H3_RESPONSE_INVALID");
     }
-  }
+    const recognized = ["ORDER", "REFERRAL", "LEARNING", "DEVICE", "COMMISSION", "SYSTEM"].includes(item.producer)
+      && ["user_id", "inviter_user_id"].includes(item.userIdField);
+    return { ...item, recognized };
+  });
   return row as H3Model;
 }
 

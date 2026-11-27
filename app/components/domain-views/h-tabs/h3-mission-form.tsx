@@ -18,6 +18,9 @@ export type H3MissionForm = Record<string, string>;
 /** 和原 mission-create 表单 initBusinessForm 同样的初值。 */
 export const MISSION_FORM_INITIAL: H3MissionForm = { category: "explore", actionRoute: "/pages/missions/missions" };
 
+// GrowthMissionRequest.rewardPoints is a Java Integer (also enforced at approval).
+const MAX_MISSION_REWARD_POINTS = 2_147_483_647;
+
 function missionFormErrors(state: H3MissionForm, missionType: string, routeError?: string): Record<string, string> {
   const e: Record<string, string> = {};
   if (!state.missionCode?.trim()) e.missionCode = "请填写任务编号";
@@ -27,7 +30,11 @@ function missionFormErrors(state: H3MissionForm, missionType: string, routeError
   if (!state.rewardPoints?.trim()) e.rewardPoints = "请填写奖励 UVT 数";
   if (!state.category?.trim()) e.category = "请选择任务类别";
   if (routeError) e.actionRoute = routeError;
-  if (!e.rewardPoints && (!Number.isSafeInteger(Number(state.rewardPoints)) || Number(state.rewardPoints) < 0)) e.rewardPoints = "奖励 UVT 数须为非负整数";
+  if (!e.rewardPoints) {
+    const reward = Number(state.rewardPoints);
+    if (reward > MAX_MISSION_REWARD_POINTS) e.rewardPoints = `奖励不能超过 ${amountText(String(MAX_MISSION_REWARD_POINTS))} UVT`;
+    else if (!Number.isSafeInteger(reward) || reward < 0) e.rewardPoints = "奖励 UVT 数须为非负整数";
+  }
   return e;
 }
 
