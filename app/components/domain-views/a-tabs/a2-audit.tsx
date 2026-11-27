@@ -1971,7 +1971,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverageCheck: `${fund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
-      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts rules quietLoading onReadStateChange={onReadStateChange} /> : undefined,
+      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts rules onReadStateChange={onReadStateChange} /> : undefined,
       waitsForLatestRead: fund.period === "总榜",
     };
     if (fund.kind === "f4Settle") return {

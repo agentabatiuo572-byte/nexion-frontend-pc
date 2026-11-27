@@ -51,9 +51,8 @@ const percentText = (value: string) => value.includes(".") ? value.replace(/0+$/
  * 能发时写估算和读取时间；不会发时只写不会发和原因，按名次测算的名单收进折叠、标明这次不发。
  * 金额批准时才算出来，奖池是配置不是这次动的钱：框里不放关键数字（VS-102）。
  */
-export function F4PayoutPreviewFacts({ pool, rules = false, quietLoading = false, onReadStateChange }: {
-  /** 批准框：读完前确认按钮的原因已经写着在加载，读数区只写「—」，不再说第二遍（ST-31、DT-12）。 */
-  pool?: string; rules?: boolean; quietLoading?: boolean; onReadStateChange?: (read: F4PayoutReadState) => void;
+export function F4PayoutPreviewFacts({ pool, rules = false, onReadStateChange }: {
+  pool?: string; rules?: boolean; onReadStateChange?: (read: F4PayoutReadState) => void;
 }) {
   const read = useRead<F4LeaderboardPayoutPreview>(() => fetchF4LeaderboardPayoutPreview("allTime"));
   const preview = read.state === "ok" ? read.data : undefined;
@@ -64,8 +63,7 @@ export function F4PayoutPreviewFacts({ pool, rules = false, quietLoading = false
   const calculation = payable ? preview.payout : preview?.ranking;
   const unconfigured = preview?.reason === "F4_LEADERBOARD_POOL_NOT_CONFIGURED";
   // 批准框里奖池也取自预览：读不到时不写这一行，读取失败只在下面说一次。
-  const loadingText = quietLoading ? "—" : "正在加载…";
-  const poolShown = pool ?? (unconfigured ? "没有可发放的奖池" : preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? loadingText : undefined);
+  const poolShown = pool ?? (unconfigured ? "没有可发放的奖池" : preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : undefined);
   const notPaying = !preview || payable ? undefined
     : unconfigured ? pool === "0" ? "总榜奖池为 0" : "没有可发放的奖池" : NOT_PAYING[preview.reason];
   const warnings = !!preview?.concentrationWarnings.length && <Notice tone="warn">{preview.concentrationWarnings.map(key => `${WARNING_LABEL[key]}超过 ${percentText(preview[key])}%`).join("；")}。奖金按名次权重计算。</Notice>;
@@ -91,7 +89,7 @@ export function F4PayoutPreviewFacts({ pool, rules = false, quietLoading = false
       {(poolShown !== undefined || payable || read.state === "loading") && <Facts>
         {poolShown !== undefined && <Fact k="总榜奖池" unit={/\d/.test(poolShown) ? "USDT" : undefined}>{poolShown}</Fact>}
         {(payable || read.state === "loading") && <Fact k="这次发放（估算）">{calculation
-          ? <><span className="f4-payout-num">{moneyText(calculation.totalAmount)}</span> USDT</> : loadingText}</Fact>}
+          ? <><span className="f4-payout-num">{moneyText(calculation.totalAmount)}</span> USDT</> : "正在加载…"}</Fact>}
         {payable && calculation && <Fact k="人数">{`发放 ${count(calculation.positiveAmountCount)} 人，上榜 ${count(calculation.rankedCount)} 人`}</Fact>}
       </Facts>}
       {preview && !payable && <Notice tone="warn">{notPaying ? `不会发钱：${notPaying}。` : "不会发钱。"}</Notice>}
@@ -146,7 +144,7 @@ export function F4PoolReadTime({ at, estimated }: { at: number; estimated: boole
 /**
  * 「操作记录与审批」里批准本周结算时的现状：和 F4 结算确认框同一份读数（本周池、有资格分的人），打开时读一次。
  * 概览读取成功后再按结算状态和覆盖率判断能否批准。
- * 读完前确认按钮的原因写着在加载，这里只写「—」；读失败时错误卡顶替整块读数（ST-30、ST-34）。读取时间紧跟读数，已结算提示在后，和 F4 发起框同一个顺序。
+ * 读完前这里写「正在加载…」，确认按钮的原因只在按钮上（ST-30、ST-31）；读失败时错误卡顶替整块读数（ST-34）。读取时间紧跟读数，已结算提示在后，和 F4 发起框同一个顺序。
  */
 export function F4SettleFacts({ onReadStateChange }: { onReadStateChange?: (read: F4PayoutReadState) => void }) {
   const read = useRead(fetchF4LeadershipPoolOverview);
@@ -163,8 +161,8 @@ export function F4SettleFacts({ onReadStateChange }: { onReadStateChange?: (read
     <div className="f4-payout">
       {read.state === "failed" ? <BlockState state="error" title="本周奖池加载失败" detail={read.error} onRetry={read.retry} /> : <Facts>
         {/* 估算批准时才算出来，已发的数这次不动：都不做关键数字（VS-102）。 */}
-        <Fact k={actual ? "本周已结算（实发）" : estimated ? "本周池（估算）" : "本周池"} unit={pool !== null ? "USDT" : undefined}>{data ? usdt(pool) : "—"}</Fact>
-        <Fact k="有资格分的人">{data ? `${count(data.participantCount)} 人` : "—"}</Fact>
+        <Fact k={actual ? "本周已结算（实发）" : estimated ? "本周池（估算）" : "本周池"} unit={pool !== null ? "USDT" : undefined}>{data ? usdt(pool) : "正在加载…"}</Fact>
+        <Fact k="有资格分的人">{data ? `${count(data.participantCount)} 人` : "正在加载…"}</Fact>
       </Facts>}
       {read.state === "ok" && <F4PoolReadTime at={read.at} estimated={estimated} />}
       {settled && <F4SettledWeekNotice />}
