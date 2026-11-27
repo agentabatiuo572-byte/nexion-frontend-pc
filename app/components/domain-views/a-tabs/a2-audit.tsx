@@ -213,6 +213,8 @@ function ticketPermissionText(w: A2OperationRow) {
 
 const F4_OLD_PAYOUT_TICKETS = "nexion-admin-a2-old-f4-payout-tickets";
 const F4_PAYOUT_REVIEW_REQUIRED = "这张单按旧规则提交。请先撤回或驳回，再查看新预览并重新提交。";
+const F4_PAYOUT_APPROVAL_PAUSED = "排行榜已暂停，恢复后再批准，或驳回。";
+const F4_RESULT_UNREADABLE = "这次结果读不到，以操作记录为准";
 
 function approvalExecutorLabel(w: A2OperationRow) {
   if (isH7VoucherApproval(w.operationCode)) return `${H7_VOUCHER_APPROVER}（需要${H7_VOUCHER_APPROVAL_PERMISSIONS}）`;
@@ -1467,8 +1469,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   }, [logPageRows, recordsLoading, session, tab, view]);
   const e1Proposals = e1ProposalRead?.rows === logPageRows && e1ProposalRead.session === session ? e1ProposalRead.proposals : undefined;
   const historyRows = records?.operationHistory ?? [];
-  const f4BusinessResults = useMemo(() => new Map((records?.operationQueue ?? []).flatMap(ticket =>
-    ticket.status === "approved" && ticket.businessResult ? [[ticket.id, ticket.businessResult] as const] : [])), [records]);
+  const f4ResultTexts = useMemo(() => new Map((records?.operationQueue ?? []).flatMap(ticket => {
+    if (ticket.status !== "approved") return [];
+    const text = ticket.f4ResultUnreadable ? F4_RESULT_UNREADABLE : ticket.businessResult && f4ApprovalResultText(ticket.businessResult);
+    return text ? [[ticket.id, text] as const] : [];
+  })), [records]);
   const histPages = Math.max(1, Math.ceil(historyRows.length / histPageSize));
   const histSafePage = Math.min(histPage, histPages);
   const histPageRows = historyRows.slice((histSafePage - 1) * histPageSize, histSafePage * histPageSize);
@@ -1569,6 +1574,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       const next = await loadMain();
       void loadFiltered(appliedRef.current);
       const decided = next.operationQueue.find((item) => item.id === w.id && item.status === DECISION_STATUS[kind]);
+      if (kind === "approve" && decided?.f4ResultUnreadable) return false;
       businessResult = decided?.businessResult;
       return !!decided || next.operationHistory.some((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
     },
@@ -1942,7 +1948,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
    */
   type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string;
     coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; review?: boolean; extra?: ReactNode };
-  const fundSpec = (w: A2OperationRow, onSettlementChange?: (settled: boolean) => void): FundSpec | undefined => {
+  const fundSpec = (w: A2OperationRow, onPayoutStateChange?: (settled: boolean, paused?: boolean) => void): FundSpec | undefined => {
     const fund = fundTicket(w);
     if (!fund) return undefined;
     // 影响句、后果句和覆盖率说明与 F4 发起框同一套（OP-69）；覆盖率说明只在问号里写一次（DT-12）。
@@ -1954,7 +1960,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverageCheck: `${fund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
-      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts approving rules onSettlementChange={onSettlementChange} /> : undefined,
+      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts approving rules onPayoutStateChange={onPayoutStateChange} /> : undefined,
     };
     if (fund.kind === "f4Settle") return {
       irreversible: true,
@@ -1963,7 +1969,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       detail: "没有合格票时不发钱。",
       coverageCheck: `${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}`,
       facts: undefined,
-      lead: <F4SettleFacts onSettlementChange={onSettlementChange} />,
+      lead: <F4SettleFacts onSettlementChange={onPayoutStateChange} />,
     };
     if (fund.kind === "fConfig") {
       const item = fund.spec;
@@ -2134,12 +2140,13 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const belowRedline = !!coverage && (coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct);
     const coverageBlock = !requiresH5ApprovalCoverage && amplifies && belowRedline
       ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined;
-    const fund = fundSpec(w, coverageBlock ? (settled) => {
+    const fund = fundSpec(w, (settled, paused) => {
       // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
-      const blockedReason = oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : settled ? undefined : coverageBlock;
+      const blockedReason = paused ? F4_PAYOUT_APPROVAL_PAUSED
+        : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : settled ? undefined : coverageBlock;
       openActionConfirm(current => current?.run === request.run && current.blockedReason !== blockedReason
         ? { ...current, blockedReason } : current);
-    } : undefined) ?? k1Spec ?? bootSpec;
+    }) ?? k1Spec ?? bootSpec;
     const request: A4ActionConfirmReq = {
       briefKind,
       title: "批准审批单",
@@ -2614,8 +2621,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
                       {/* 上次被挡下的原因常显；时间在悬停提示里，完整时间在详情（ST-04、TX-25）。 */}
                       <Td fit={!showActions}><Cell main={markers(w)} sub={w.lastApprovalAttemptResult ? `上次批准没有执行：${f4ResultReason(w.lastApprovalAttemptResult)}`
-                        : w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined}
-                        title={w.lastApprovalAttemptResult ? `上次批准没有执行：${f4ResultReason(w.lastApprovalAttemptResult)}\n${bizTime(w.lastApprovalAttemptResult.attemptedAt, "—")}（${zone}）` : undefined} /></Td>
+                        : w.f4ResultUnreadable ? F4_RESULT_UNREADABLE : w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined}
+                        title={w.lastApprovalAttemptResult ? `上次批准没有执行：${f4ResultReason(w.lastApprovalAttemptResult)}\n${bizTime(w.lastApprovalAttemptResult.attemptedAt, "—")}（${zone}）`
+                          : w.f4ResultUnreadable ? F4_RESULT_UNREADABLE : undefined} /></Td>
                       {showActions && <Td sticky="end" fit><span className="rd-row-actions">{rowActions(w)}</span></Td>}
                     </Tr>
                   );
@@ -2731,12 +2739,12 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                 : histPageRows.length === 0 ? (
                   <TableMessage columns={5} role="status">{hasApplied ? "当前筛选下暂无处理历史" : "暂无处理历史"}</TableMessage>
                 ) : histPageRows.map((h) => {
-                  const businessResult = f4BusinessResults.get(h.id);
+                  const resultText = f4ResultTexts.get(h.id);
                   const status = <StatusTag tone={HIST_TONE[h.st] ?? "done"}>{HIST_LABEL[h.st] ?? h.st}</StatusTag>;
                   return <Tr key={h.id} selected={h.id === historyId} onOpen={() => setHistoryId(h.id)}>
                     <Td sticky="start"><Cell mono full main={h.id} /></Td>
                     <Td grow><Cell main={actionName(h)} title={actionName(h)} /></Td>
-                    <Td>{businessResult ? <Cell main={status} sub={f4ApprovalResultText(businessResult)} title={f4ApprovalResultText(businessResult)} /> : status}</Td>
+                    <Td>{resultText ? <Cell main={status} sub={resultText} title={resultText} /> : status}</Td>
                     <Td><Cell main={historyActorText(h.chain)} /></Td>
                     <Td><Cell num main={thisYear(bizTime(h.t, h.t))} title={bizTime(h.t, h.t)} /></Td>
                   </Tr>;
@@ -2856,7 +2864,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     // 发起人和理由合一行（OP-149 A2-A02）：理由是要读的句子，用正文；谁在什么时候发起写在第二行。
     { label: "发起理由", value: keepCodes(shown.reason), reason: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""} · ${bizTime(shown.rawTs, shown.ts)} 发起` },
     ...(shown.lastApprovalAttemptResult ? [{ label: "最近一次批准", value: `没有执行：${f4ResultReason(shown.lastApprovalAttemptResult)}`,
-      reason: bizTimeFull(shown.lastApprovalAttemptResult.attemptedAt, "—") }] : []),
+      reason: bizTimeFull(shown.lastApprovalAttemptResult.attemptedAt, "—") }]
+      : shown.f4ResultUnreadable ? [{ label: "最近一次批准", value: F4_RESULT_UNREADABLE }] : []),
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
   // 谁能批准、要什么权限：不是做决定要看的，收进判断要点下面的折叠，标题写结论（DP-04）。不能批准的原因写在底部决定区（OP-126、VS-108）。
@@ -2949,7 +2958,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
 
   /* 审批结果抽屉 */
   const shownHistory = historyShown.current;
-  const historyBusinessResult = shownHistory ? f4BusinessResults.get(shownHistory.id) : undefined;
+  const historyResultText = shownHistory ? f4ResultTexts.get(shownHistory.id) : undefined;
   const historyIndex = shownHistory ? histPageRows.findIndex((h) => h.id === shownHistory.id) : -1;
   const shownActors = shownHistory ? historyActors(shownHistory.chain) : null;
   const historyNote = shownHistory?.note.startsWith("原因:") ? { label: "原因", text: shownHistory.note.slice(3).trim() || "—" } : { label: "说明", text: shownHistory?.note || "—" };
@@ -3083,7 +3092,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             { label: "发起人", icon: Users, tone: "users", value: shownActors?.proposer ?? "—" },
             { label: "处理人", value: shownActors ? `${shownActors.role} ${shownActors.actor}` : historyActorText(shownHistory.chain) },
             { label: "处理时间", value: bizTime(shownHistory.t, shownHistory.t) },
-            ...(historyBusinessResult ? [{ label: "实际结果", value: f4ApprovalResultText(historyBusinessResult) }] : []),
+            ...(historyResultText ? [{ label: "实际结果", value: historyResultText }] : []),
             { label: historyV8Ticket ? "处理理由" : historyNote.label, value: historyNote.text },
           ]} />
           {historyV8Ticket && <A2ChangeReview before={changeBefore(historyV8Ticket)} after={changeAfter(historyV8Ticket)}

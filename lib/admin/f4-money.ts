@@ -1,4 +1,5 @@
 import { compareDecimal } from "./f1-rank-benefit";
+import type { F4LeadershipPoolOverview } from "./f1-client";
 
 /** Preserve decimal lexemes across JSON and display; never round money via Number. */
 export function f4Decimal(value: string | number): string | null {
@@ -28,6 +29,7 @@ export function f4PoolRatioIncreases(stored: string | undefined, value: string):
 
 export const F4_POOL_RATIO_INVALID = "请填 0–30 的普通百分数，例如 0.05 或 5%。";
 export const F4_PAYOUT_POOL_UNCONFIGURED = "总榜奖池未配置，请先配置各榜奖池。";
+export const F4_PAYOUT_PROPOSAL_PAUSED = "排行榜已暂停，恢复后再发起。";
 export const F4_SETTLEMENT_CONSEQUENCE = "批准时算出有应发的金额才发钱";
 /** F4 发起框和「操作记录与审批」批准框共用的影响句和覆盖率说明（OP-69）。 */
 export const F4_SETTLE_IMPACT = "按批准时所在的周重新计算池金额，作为已解锁的 USDT 奖励入账；那一周已结算就不再发，也不补差额。";
@@ -35,6 +37,13 @@ export const F4_PAYOUT_IMPACT = "按批准时的总榜重新计算名单和金�
 export const F4_SETTLE_COVERAGE = "批准时那一周还没结算才查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。";
 export const F4_PAYOUT_COVERAGE = "总榜还没派过，批准时才查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。";
 export const F4_COVERAGE_NEXT = "可等恢复后再批，或驳回；等于红线算够。";
+
+export function f4CurrentWeekPool(overview: Pick<F4LeadershipPoolOverview, "currentWeekPoolAmount" | "currentWeekPoolUsd" | "weeklyInjectedUsd">) {
+  const amount = overview.currentWeekPoolAmount ?? overview.currentWeekPoolUsd;
+  // Both values come from the same server summary. The whole-USDT paid total proves settlement
+  // when positive, but a zero total can also mean a payment below 1 USDT.
+  return { amount, actual: amount !== null && overview.weeklyInjectedUsd > 0 };
+}
 
 export function f4MonthlyCap(raw: string): string | null {
   const text = raw.trim().toUpperCase().replace(/[$,]/g, "");

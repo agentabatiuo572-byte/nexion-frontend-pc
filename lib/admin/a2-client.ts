@@ -261,6 +261,7 @@ export class F4ApprovalBlockedError extends Error {
 export interface A2OperationRow {
   businessResult?: F4ApprovalBusinessResult;
   lastApprovalAttemptResult?: F4ApprovalAttemptResult;
+  f4ResultUnreadable?: true;
   /** Persisted backend review only; null is unavailable, four empty arrays are a known empty diff. */
   roleGrantsDiff: A2RoleGrantsDiff | null;
   roleGrantsReview: A2RoleGrantsReview | null;
@@ -685,6 +686,10 @@ async function withRoleGrantsNames(rows: A2OperationRow[]): Promise<A2OperationR
 
 const INVALID_F4_BUSINESS_RESULT = "A2_F4_BUSINESS_RESULT_INVALID";
 
+function isF4SettlementOperation(operationCode: BackendTicket["operationCode"]) {
+  return operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout";
+}
+
 /** B134 omits results for older tickets. A present result must match the approval or attempt contract. */
 function readF4SettlementResult(value: unknown): F4ApprovalBusinessResult | F4ApprovalAttemptResult | undefined {
   if (value === undefined) return undefined;
@@ -715,7 +720,7 @@ function readF4ApprovalAttempt(value: unknown) {
   return result;
 }
 
-function fromTicket(ticket: BackendTicket): A2OperationRow {
+function fromTicket(ticket: BackendTicket, tolerateUnreadableResult = false): A2OperationRow {
   if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
   if (ticket.objDisplayName != null && typeof ticket.objDisplayName !== "string") throw new Error("A2_TICKET_OBJECT_DISPLAY_NAME_INVALID");
   const ambassadorTicket = !!ticket.ambassadorMaterialProposal || /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
@@ -749,11 +754,19 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
   const roleGrantsDiff = readRoleGrantsDiff(ticket.roleGrantsDiff);
   const withdrawalSource = ticket.operationCode === "d5_withdrawal_limits" || !ticket.operationCode && ticket.action === "放宽提现参数" ? "D5"
     : ticket.operationCode === "d7_payout_vnd_config" || !ticket.operationCode && ticket.action === "放宽越南盾提现参数" ? "D7" : undefined;
-  const businessResult = readF4SettlementResult(ticket.businessResult);
-  if (businessResult && "attemptedAt" in businessResult) throw new Error(INVALID_F4_BUSINESS_RESULT);
+  let payoutResults: Pick<A2OperationRow, "businessResult" | "lastApprovalAttemptResult" | "f4ResultUnreadable"> = {};
+  if (isF4SettlementOperation(ticket.operationCode)) {
+    try {
+      const businessResult = readF4SettlementResult(ticket.businessResult);
+      if (businessResult && "attemptedAt" in businessResult) throw new Error(INVALID_F4_BUSINESS_RESULT);
+      payoutResults = { businessResult, lastApprovalAttemptResult: readF4ApprovalAttempt(ticket.lastApprovalAttemptResult) };
+    } catch (error) {
+      if (!tolerateUnreadableResult || !(error instanceof Error) || error.message !== INVALID_F4_BUSINESS_RESULT) throw error;
+      payoutResults = { f4ResultUnreadable: true };
+    }
+  }
   return {
-    businessResult,
-    lastApprovalAttemptResult: readF4ApprovalAttempt(ticket.lastApprovalAttemptResult),
+    ...payoutResults,
     roleGrantsDiff,
     roleGrantsReview: roleGrantsDiff ? roleGrantsReview(roleGrantsDiff) : null,
     disclosureReview: readI5DisclosureReview(ticket.disclosureReview, ticket.operationCode),
@@ -871,7 +884,7 @@ async function normalizeOverview(data: BackendOverview | null | undefined): Prom
       weeklyExpired: toNumber(stats.weeklyExpired),
       weeklyWithdrawn: toNumber(stats.weeklyWithdrawn),
     },
-    operationQueue: await withRoleGrantsNames((data?.operationQueue ?? []).map(fromTicket)),
+    operationQueue: await withRoleGrantsNames((data?.operationQueue ?? []).map(ticket => fromTicket(ticket, true))),
     operationHistory: (data?.operationHistory ?? []).map((row) => ({ ...row })),
     mechanismParams: (data?.mechanismParams ?? []).map((row) => ({ ...row, locked: !!row.locked })),
     confirmCategories: (data?.confirmCategories ?? []).map((row) => ({ ...row })),
@@ -1026,7 +1039,7 @@ export async function fetchA2Overview(filter: A2AuditFilter = {}, requireQueue =
       operationQueueInvalidCount += 1;
       continue;
     }
-    try { operationQueue.push(fromTicket(row)); }
+    try { operationQueue.push(fromTicket(row, true)); }
     catch { operationQueueInvalidCount += 1; }
   }
   return { ...await normalizeOverview({ ...data, operationQueue: [] }), operationQueue: await withRoleGrantsNames(operationQueue), operationQueueInvalidCount };
@@ -1042,15 +1055,15 @@ export async function fetchA2ProposalLog(operationId: string, signal?: AbortSign
 }
 
 export async function approveA2Operation(operationId: string, reason: string, commandKey?: string, operationCode?: string) {
-  const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
-    method: "POST",
-    body: JSON.stringify({ reason }),
-    f5Status: operationCode === "f_commission_status",
-    f4Payout: operationCode === "f4_pool_settle" || operationCode === "f4_leaderboard_period_payout",
-    ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
-  });
   let ticket: A2OperationRow;
   try {
+    const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+      f5Status: operationCode === "f_commission_status",
+      f4Payout: isF4SettlementOperation(operationCode),
+      ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
+    });
     ticket = fromTicket(row);
   } catch (error) {
     if (commandKey && error instanceof Error && error.message === INVALID_F4_BUSINESS_RESULT) {

@@ -8,7 +8,7 @@ import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
-import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_SETTLEMENT_CONSEQUENCE, F4_SETTLE_IMPACT, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_PAYOUT_COVERAGE, F4_COVERAGE_NEXT, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_SETTLEMENT_CONSEQUENCE, F4_SETTLE_IMPACT, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_PAYOUT_COVERAGE, F4_COVERAGE_NEXT, f4CurrentWeekPool, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
@@ -95,7 +95,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
   const cadence = settlement.ready && !invalid.has("settleCron") ? settleCadenceNote(settleCron) : null;
   const unlockVRankEff = invalid.has("unlockVRank") ? invalidLabel : unlockVRank || "未配置";
   const settled = f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
-  const pool = data.currentWeekPoolAmount ?? data.currentWeekPoolUsd;
+  const { amount: pool, actual: poolActual } = f4CurrentWeekPool(data);
   const board = leaderboardState(data);
   const current = data.leaderboardComputePointPeriods?.[period];
   const lbMinPoints = data.configValues["F.leaderboard.minComputePoints"];
@@ -135,7 +135,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     // 估算批准时才算出来，已发的数这次不动：都不做关键数字（VS-102）；已结算的提示和批准框同一句（OP-69）。
     facts: <div className="rd-stack">
       <Facts>
-        <Fact k={settled ? "本周已结算（实发）" : settled === false ? "本周池（估算）" : "本周池"} unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
+        <Fact k={poolActual ? "本周已结算（实发）" : pool !== null ? "本周池（估算）" : "本周池"} unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
         <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
         <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
       </Facts>
@@ -285,6 +285,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
       break;
     }
     case action === "payout": {
+      const run = (reason: string) => ctx.proposeF4LeaderboardPayout("allTime", reason);
       spec = { briefKind: "funds",
     name: "发放总榜奖励",
     amplify: true,
@@ -297,12 +298,13 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     coverageLead: F4_SETTLEMENT_CONSEQUENCE,
     coverageCheck: `提交时按这里的数查一次。${F4_PAYOUT_COVERAGE}${F4_COVERAGE_NEXT}`,
     facts: <div className="rd-stack">
-      <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)} />
+      <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)}
+        onPayoutStateChange={(_, paused) => { if (paused) ctx.blockPausedF4Payout(run); }} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
     detail: `总榜不会自动清零。名次按算力点排，发的是 USDT：当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
-    run: (reason) => ctx.proposeF4LeaderboardPayout("allTime", reason),
+    run,
   };
       break;
     }
