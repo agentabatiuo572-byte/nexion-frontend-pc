@@ -2346,7 +2346,7 @@ export async function writeoffD1Reconciliation(channelCode: string, method: "CON
   }));
 }
 
-export async function fetchD2Withdrawals(params: { status?: string; keyword?: string; minAmount?: string; maxAmount?: string; minRiskScore?: string; ipSegment?: string; sortBy?: string; sortDirection?: string; pageNum?: number; pageSize?: number }) {
+export async function fetchD2Withdrawals(params: { status?: string; keyword?: string; minAmount?: string; maxAmount?: string; minRiskScore?: string; ipSegment?: string; sortBy?: string; sortDirection?: string; createdFrom?: string; createdTo?: string; pageNum?: number; pageSize?: number }) {
   return normalizeD2Page(await apiRequest<unknown>("finance", `/withdrawals${buildQuery(params)}`));
 }
 
