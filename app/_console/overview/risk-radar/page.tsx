@@ -126,6 +126,18 @@ interface B5PendingCommand {
   recoveryLine?: string;
 }
 
+/**
+ * 原样重试被拒时第二段的原因：只写变了什么，下一步统一接 RETRY_REJECTED_NEXT（OP-93 第 8 条、OP-152）。
+ * 字典里这几句是给直接提交写的，带着「重新读取后再调整」这类下一步，和「核实后解除」打架；别的码照旧用字典。
+ */
+const REPLAY_REJECTED_REASON: Record<string, string> = {
+  B5_THRESHOLD_VERSION_CONFLICT: "黄线或红线已被改过。",
+  B5_SIGNAL_VERSION_CONFLICT: "这条信号的处理进度已经变了。",
+  B5_SUBSCRIPTION_VERSION_CONFLICT: "告警订阅已被改过。",
+  B5_INBOX_DELIVERY_NOT_FOUND: "这条站内告警现在查不到了。",
+};
+const replayRejectedLine = (code: string | undefined) => `${code && REPLAY_REJECTED_REASON[code] || displayAdminError(code)}${RETRY_REJECTED_NEXT}`;
+
 function PendingCommands({ items, auditReachable }: { items: readonly B5PendingCommand[]; auditReachable: boolean }) {
   if (!items.length) return null;
   return (
@@ -744,12 +756,14 @@ export default function RiskRadarPage() {
     if (!isB5Original(record)) { setToast("原审批内容不完整，请到操作记录核对。"); return; }
     try {
       const current = await inspectB5Command(record);
-      const rejected = b5Recovery.state(record).replayRejection;
+      const { replayRejection: rejected, replayBlock } = b5Recovery.state(record);
+      // 读到现在的值之后的下一步，和恢复条上的按钮同一个条件：被拒写核实后解除，不能重试的写记录保留，其余可以原样重试。
+      const next = rejected ? RETRY_REJECTED_NEXT : replayBlock || isRetryExpired(record) ? "原记录继续保留。" : "可以按原操作重试，不会重复执行。";
       if (current.kind === "radar") { radar.setData(current.data); setNeedsFreshRadar(false); }
       else if (current.kind === "ack") { setInbox(current.data); setInboxError(""); setInboxLoading(false); setInboxNeedsRead(false); setInboxReadAt(new Date().toISOString()); }
       else if (current.kind === "signal") {
         if (openSignal === current.data.signalNo) detail.setData(current.data);
-        setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。${rejected ? RETRY_REJECTED_NEXT : ""}`, "warn");
+        setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。${next}`, "warn");
         return;
       }
       else {
@@ -758,11 +772,7 @@ export default function RiskRadarPage() {
         setSubscriberDisplayName(current.data.subscriberDisplayName ?? null);
         setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false); setSubscriptionReadAt(new Date().toISOString());
       }
-      if (rejected) {
-        setToast(`已查到现在的值，但说明不了原操作成没成。${RETRY_REJECTED_NEXT}`, "warn");
-      } else {
-        setToast(isRetryExpired(record) ? "已查到现在的值，但说明不了原操作成没成，原记录继续保留。" : "已查到现在的值，但说明不了原操作成没成。可以按原操作重试，不会重复执行。", isRetryExpired(record) ? "warn" : undefined);
-      }
+      setToast(`已查到现在的值，但说明不了原操作成没成。${next}`, rejected || replayBlock || isRetryExpired(record) ? "warn" : undefined);
     }
     catch (cause) { setToast(displayAdminError(cause)); }
   };
@@ -778,7 +788,7 @@ export default function RiskRadarPage() {
     const rejected = recovery.replayRejection;
     return { onRelease: original && recovery.replayRejection ? () => setReleasingWrite(original) : undefined,
       commandKey: record.commandKey, title: `${name} · ${rejected ? "重试被拒绝" : "结果未知"}`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
-      recoveryLine: rejected ? `${displayAdminError(rejected)}${RETRY_REJECTED_NEXT}` : undefined,
+      recoveryLine: rejected ? replayRejectedLine(rejected) : undefined,
       expired: isRetryExpired(record), onRetry: recovery.replayBlock ? undefined : () => recoverWrite(record), onQuery: () => void queryWrite(record) };
   });
 
@@ -965,7 +975,7 @@ export default function RiskRadarPage() {
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-              : approvalReleasable ? `${displayAdminError(approvalRecoveryState?.replayRejection)}${RETRY_REJECTED_NEXT}`
+              : approvalReleasable ? replayRejectedLine(approvalRecoveryState?.replayRejection)
                 : pendingApproval.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT
                   : approvalQueryOnly ? APPROVAL_QUERY_ONLY : "先查原审批单；查不到时 24 小时内可以按原操作重试，不会建第二张单。"}</p>
           </Notice>

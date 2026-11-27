@@ -59,7 +59,7 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
       <Facts>
         {/* 批准框里奖池也取自预览：读不到时只留「这次实发」一行，不连写三个「读不到」。 */}
         {poolShown !== "读不到" && <Fact k="总榜奖池" lead tone="role-1" unit={/\d/.test(poolShown) ? "USDT" : undefined}>{poolShown}</Fact>}
-        <Fact k="这次实发" tone={pending === "读不到" ? "warn" : undefined}>{pending ?? (preview?.payableAmount !== undefined
+        <Fact k={approving ? "这次实发（估算）" : "这次实发"} tone={pending === "读不到" ? "warn" : undefined}>{pending ?? (preview?.payableAmount !== undefined
           ? <><span className="f4-payout-num">{moneyText(preview.payableAmount)}</span> USDT</>
           : "—")}</Fact>
         {poolShown !== "读不到" && <Fact k="人数">{pending ?? (preview?.paidCount !== undefined && preview.rankedCount !== undefined
@@ -68,7 +68,7 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
       {!!preview?.concentrationWarnings.length && <Notice tone="warn">{preview.concentrationWarnings.map(key => `${WARNING_LABEL[key]}超过 ${percentText(preview[key])}%`).join("；")}。奖金按名次权重计算。</Notice>}
       {notPaying && <Notice tone="warn">{notPaying}</Notice>}
       {read.state === "failed" && <BlockState state="error" title="派奖预览加载失败"
-        detail={<>{read.error}{approving ? " 批准时按那一刻的总榜重新计算。" : " 批准时按当时的总榜重新计算。"}</>}
+        detail={<>{read.error}{approving ? " 不影响批准。" : " 批准时按当时的总榜重新计算。"}</>}
         onRetry={read.retry} />}
       {preview && preview.rows.length > 0 && (
         <div className="f4-payout-list" data-long={preview.rows.length > 6 ? "" : undefined}>
@@ -87,7 +87,9 @@ export function F4PayoutPreviewFacts({ pool, approving = false, rules = false }:
           </Table>
         </div>
       )}
-      {read.state === "ok" && <p className="f4-payout-note">{businessStamp(read.at)}（{businessZone().label}）读到的预览，不锁定：批准时重新算，金额可能不同，覆盖率也会再查。</p>}
+      {/* 批准框里重算和覆盖率已写在后果一句和生效说明里，这里只标估算和读取时间。 */}
+      {read.state === "ok" && <p className="f4-payout-note">{approving ? `${businessStamp(read.at)}（${businessZone().label}）读到的估算，批准时的金额可能不同。`
+        : `${businessStamp(read.at)}（${businessZone().label}）读到的预览，不锁定：批准时重新算，金额可能不同，覆盖率也会再查。`}</p>}
       {rules && preview && <F4PayoutRules top1MaxPct={percentText(preview.top1MaxPct)} top5MaxPct={percentText(preview.top5MaxPct)} />}
     </div>
   );
@@ -133,8 +135,10 @@ export function F4SettleFacts() {
         <Fact k={settled ? "本周已结算（实发）" : "本周池（估算）"} lead tone={pending === "读不到" ? "warn" : "role-1"} unit={data && pool !== null ? "USDT" : undefined}>{pending ?? usdt(pool)}</Fact>
         <Fact k="有资格分的人">{pending ?? `${count(data!.participantCount)} 人`}</Fact>
       </Facts>
-      {read.state === "failed" && <p className="f4-payout-note">本周奖池读不到，不影响批准；批准时按那一刻重新计算。</p>}
-      {read.state === "ok" && <p className="f4-payout-note">{businessStamp(read.at)}（{businessZone().label}）读到的估算：批准时按那一刻所在的周重新计算；本周已经结算过的会跳过，不补发差额。</p>}
+      {/* 本周已结算：批准时跳过，和派奖「总榜已经派过」同一种提示（OP-70）。读到的是实发，不叫估算。 */}
+      {settled && <Notice tone="warn">本周已经结算过，这次批准不会再发，也不补发差额。</Notice>}
+      {read.state === "failed" && <p className="f4-payout-note">本周奖池读不到，不影响批准。</p>}
+      {read.state === "ok" && <p className="f4-payout-note">{settled ? `${businessStamp(read.at)}（${businessZone().label}）读到。` : `${businessStamp(read.at)}（${businessZone().label}）读到的估算，批准时的金额可能不同。`}</p>}
     </div>
   );
 }

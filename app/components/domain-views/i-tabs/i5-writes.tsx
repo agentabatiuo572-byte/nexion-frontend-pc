@@ -106,11 +106,15 @@ function dispatch(write: I5Write, key: string, actions: IContentActions, propose
   }
 }
 
-/** 这条操作能怎么恢复，只写接口真有的（OP-95）。 */
-function recoveryText(op: I5Op, canQuery: boolean, canRetry: boolean): string {
+/**
+ * 展开后的说明：这条操作能怎么恢复，只写接口真有的（OP-95），只补行上那句没说的。
+ * gated：有重试权但还没明确查不到（没查、查询失败），写清什么时候才能重试（OP-93 第 7 条）。
+ */
+function recoveryText(op: I5Op, canQuery: boolean, canRetry: boolean, gated: boolean): string | undefined {
   if (op.kind === "a2") return canQuery ? "审批单可能已经建好，批准前不会执行。可以先查询原操作。" : "审批单可能已经建好，批准前不会执行。这个账号查不了原审批单，请能看操作记录的同事核查。";
-  if (op.kind === "content") return canRetry ? "系统认得出是同一次提交，不会重复执行。" : "查询只读取原操作记录。";
-  return "可能已经生效。按原操作重试不会写两次：已生效的话，重试会被拒。";
+  if (op.kind === "content") return canRetry ? "重试发的是原内容，系统认得出是同一次提交，不会重复执行。"
+    : gated ? "查询只读取，不会重发；明确查不到原操作，才能按原操作重试。" : undefined;
+  return "按原操作重试不会写两次：已生效的话，重试会被拒。";
 }
 
 /** 合并结果里要给人看的两类位置（路径）：别人改了的、两边都改了留下自己的。 */
@@ -761,7 +765,8 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
       note(record, KEPT_NOTE);
     } catch (cause) {
       setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
-      note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
+      // 行上已写「记录保留，稍后再查」，这里只补原因（DT-12）。
+      note(record, `查询没有成功：${displayAdminError(cause)}`);
     } finally { setRecovering(""); }
   };
 
@@ -788,7 +793,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     } catch (cause) {
       const error = displayAdminError(cause);
       setOutcomes(all => ({ ...all, [record.commandKey]: { error } }));
-      note(record, `查询没有成功：${error} 记录继续保留。`);
+      note(record, `查询没有成功：${error}`);
     } finally {
       setRecovering("");
     }
@@ -821,6 +826,11 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     if (isExplicitRejection(record.rejection)) return { tone: "danger" as const, label: "重试被拒绝", line: "重试被明确拒绝；核对原因后可以解除。" };
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
       line: expired ? "超过 24 小时不能再重试，先查询原操作。" : canQuery ? "可能已经提交，先查询原操作。" : "可能已经提交，这个账号查不了原结果，到操作记录与审批核对。" };
+    // 法律条款、隐私政策查不了原回执，行上的按钮是「读取当前条款／政策」，下一步按这个按钮写（OP-95 丙档、OP-152）。
+    if (record.op.kind !== "a2" && record.op.kind !== "content") {
+      const read = record.op.kind === "privacy" ? "读取当前政策" : "读取当前条款";
+      return { tone: "warn" as const, label: expired ? "已过期" : "结果未知", line: expired ? `超过 24 小时不能再重试，先「${read}」核对。` : `可能已经生效，先「${read}」核对。` };
+    }
     const canClose = canInvestigateECommand("content_i5_read");
     const shown = fundRecoveryStatus({ outcome, expired, canRetry, canQuery: true, canClose });
     if (outcome && "error" in outcome) return { ...shown, more: outcome.error };
@@ -845,6 +855,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     const block = retryBlock(record, outcome);
     const canRetry = offer && !block;
     const shown = statusOf(record, outcome, expired, canRetry);
+    const help = !expired && !record.readback ? recoveryText(record.op, canQuery, canRetry, offer && (!outcome || "error" in outcome)) : undefined;
     if (OPEN_RESULT_LABELS.includes(shown.label)) open += 1;
     const code = businessCodeOf(outcome);
     return { key: record.commandKey, createdAt: record.createdAt, object: record.label,
@@ -858,14 +869,14 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
         {offer && <Button size="sm" disabled={!!recovering} disabledReason={block} onClick={() => void retry(record)}>按原操作重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
-      detail: !expired && !record.readback ? <p>{recoveryText(record.op, canQuery, canRetry)}</p> : undefined,
+      detail: help && <p>{help}</p>,
       // 技术信息和商品管理、设备管理、算力配置同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。
       tech: <Fold inset title="技术信息" summary={code === undefined ? "操作编号" : "操作编号和业务码"}><Facts>
         <Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact>
         {code !== undefined && <Fact k="业务码">{String(code)}</Fact>}
       </Facts></Fold> };
   });
-  const notices: ReactNode = <RecoveryPanel items={items} title={recoveryTitle(pending.length - open, 0, 0, open)} explainLabel="结果未知怎么处理" explain="提交时没收到确定结果，可能已经生效。请按每条记录上的提示核对原操作。有结果前，相关对象不能再操作。"
+  const notices: ReactNode = <RecoveryPanel items={items} title={recoveryTitle(pending.length - open, 0, 0, open)} explainLabel="结果未知怎么处理" explain="提交时没收到确定结果：直接修改的可能已经生效，提交审批的可能已经建了审批单。请按每条记录上的提示核对；有结果前，相关内容不能再修改。"
     foot={reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />;
 
   const releaseModal = <>

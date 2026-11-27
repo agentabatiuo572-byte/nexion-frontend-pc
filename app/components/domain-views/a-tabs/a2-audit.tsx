@@ -394,11 +394,11 @@ const enablesAutoPayout = (fund: FundTicket | undefined) => fund?.kind === "fCon
 /**
  * 放大类单的后果一句：审批单详情和批准框用同一句（DT-14），没有专门说法的写「会让平台多付钱」。
  * 不能撤销不写在这里：批准框有「不能撤销」标签（VS-106），详情在句尾补（DT-10）。
+ * F4 派奖、结算批准时按那一刻重算，奖池为 0、没人上榜、已结算或暂停时不发（LeadershipPoolService、OpsTeamService 回放）：不写成一定发钱。
  */
 function fundLead(w: A2OperationRow): string {
   const fund = fundTicket(w);
-  if (fund?.kind === "f4Payout") return "这次派奖按算出的金额真实发钱";
-  if (fund?.kind === "f4Settle") return "这次结算按算出的金额真实发钱";
+  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return "批准时算出有应发的金额才发钱";
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return "真实放钱";
   const k1 = k1TicketView(w);
   if (k1) return k1.kind === "release" ? "批准后这笔钱不再锁住" : "放宽后可能多放收益";
@@ -1899,7 +1899,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     if (!fund) return undefined;
     if (fund.kind === "f4Payout") return {
       irreversible: true,
-      impact: fund.period === "总榜" ? "批准后按那一刻的总榜重新计算，真实入账给上榜的人。" : "批准后按那一刻的排行榜重新计算，真实入账给上榜的人。",
+      impact: `名单和金额以批准那一刻的${fund.period === "总榜" ? "总榜" : "排行榜"}为准。`,
       completion: F4_COVERAGE_COPY,
       check: "核对这次实发、名单和发起理由，理由写清依据或工单号。",
       detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。按旧规则提交的单须先撤回或驳回，再看新预览后重新提交。",
@@ -1910,7 +1910,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     };
     if (fund.kind === "f4Settle") return {
       irreversible: true,
-      impact: "批准后按那一刻所在的周重新计算，真实入账给有资格的人。",
+      impact: "池金额以批准那一刻所在的周为准。",
       completion: F4_COVERAGE_COPY,
       check: "核对本周奖池和发起理由，理由写清依据或工单号。",
       detail: "本周已经结算过的会跳过，不补发差额；没有合格票时不发钱。",
@@ -2118,7 +2118,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
       // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
       coverage: amplifies && !belowRedline ? coverage : undefined,
-      coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
+      // 低于红线时覆盖率照旧写在这一行，资金后果仍是同一句，不被覆盖率顶掉（DT-10、DT-14）。
+      coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">{`${fundLead(w)}。`}兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
         : amplifies && !coverage ? <span className="a2-coverage-unknown">{`${fundLead(w)}，兑付覆盖率暂时读不到`}</span> : fundLead(w),
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
@@ -2831,7 +2832,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   // 后果和批准框同一句（fundLead，DT-14）；批准框不能撤销的另有标签，详情没有标签，句尾写「不能撤销」（VS-106、DT-10）。
   const shownIrreversible = !!shown && (!!fundSpec(shown)?.irreversible || k1TicketView(shown)?.kind === "release");
   const shownFundCopy = {
-    lead: shown ? `${fundLead(shown)}${shownIrreversible ? "，不能撤销" : ""}` : "",
+    lead: shown ? `${fundLead(shown)}${!shownIrreversible ? "" : shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "，发了不能撤销" : "，不能撤销"}` : "",
     check: shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
       : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
         : shownFund?.kind === "f5Reissue" ? shownCover?.check ?? ""
