@@ -1677,7 +1677,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     } else {
       const check = receipt.state === "PROCESSING" ? "processing" : receipt.state === "NOT_FOUND" ? "notFound" : "unconfirmed";
       if (!afterRefusedRetry) decisionRetryRefusals.current.delete(record.commandKey);
-      notePending(record, DECISION_CHECK[check].text!(DECISION_VERB[kind], decisionRetryRefusals.current.has(record.commandKey)), check);
+      // 过了 24 小时，查无也不能重试：这句换成过期那句（OP-153）。
+      notePending(record, check === "notFound" && isRetryExpired(record) ? RETRY_EXPIRED
+        : DECISION_CHECK[check].text!(DECISION_VERB[kind], decisionRetryRefusals.current.has(record.commandKey)), check);
     }
     await refreshAfterWrite();
     return receipt;
