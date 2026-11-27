@@ -731,10 +731,24 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h2-others-note { display: flex; flex-direction: column; gap: 4px; }
 .h2-buy-target { margin-left: 8px; }
 .h2-diff-line { display: block; }
-/* 确认框差异行：名称不折行，值过长时值换行 */
-.h2-confirm-diff .rd-diff-rows { grid-template-columns: minmax(min-content, 1fr) minmax(0, max-content) 14px minmax(0, max-content); }
-.h2-confirm-diff .rd-diff-name { white-space: nowrap; }
-.h2-confirm-diff :is(.rd-diff-before, .rd-diff-after) { word-break: keep-all; }  /* 值只在空格和标点处换行，不拆「最高」 */
+/* 确认框差异行：前后值各写一行，三列对齐。名称格横跨整行，名称后面是看不见的前后值占位（.h2-diff-room，和值同一套列）：
+   放得下时名称和值同一行；放不下时占位换到下一行，值贴底跟着它，名称独占一行。 */
+.h2-confirm-diff .rd-diff-rows { grid-template-columns: minmax(0, 1fr) minmax(0, max-content) 14px minmax(0, max-content); }
+.h2-confirm-diff .rd-diff-row > .rd-diff-name { grid-area: 1 / 1 / 2 / -1; display: flex; flex-wrap: wrap; align-self: start; padding-right: 0; }
+.h2-confirm-diff .rd-diff-row > :is(.rd-diff-before, .rd-diff-arrow, .rd-diff-after) { grid-row: 1; align-self: end; }
+.h2-confirm-diff .rd-diff-row > .rd-diff-before { grid-column: 2; }
+.h2-confirm-diff .rd-diff-row > .rd-diff-arrow { grid-column: 3; height: var(--rd-lh-body); align-items: center; }
+.h2-confirm-diff .rd-diff-row > .rd-diff-after { grid-column: 4; }
+.h2-confirm-diff :is(.rd-diff-before, .rd-diff-after), .h2-diff-room > span { word-break: keep-all; }  /* 值只在空格和标点处换行，不拆「最高」 */
+.h2-diff-room { flex: 1 0 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, max-content) 14px minmax(0, max-content); column-gap: 8px; visibility: hidden; }
+.h2-diff-room > span { font-variant-numeric: tabular-nums; }  /* 和 rd 的前后值同字形，占位才和真值一样宽 */
+.h2-diff-room > [data-side="before"] { grid-area: 1 / 2; }
+.h2-diff-room > [data-side="after"] { grid-area: 1 / 4; font-weight: 500; }
+/* 设备名和组名：一行放不下时组名换行，中间的「·」落在行首被裁掉 */
+.h2-diff-label { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.h2-diff-label > span { display: flex; flex-wrap: wrap; margin-left: calc(-1 * var(--h2-sep)); --h2-sep: 1.166em; }
+.h2-diff-label > span > span { position: relative; min-width: 0; padding-left: var(--h2-sep); }
+.h2-diff-label > span > span::before { content: "·"; position: absolute; left: 0; width: var(--h2-sep); text-align: center; color: var(--rd-text); }
 /* 读取最新后没有剩下的改动：「没有改动」只留在框顶的原因里（读屏能读到），差异区不再重复写 */
 [data-h2-nochange] .rd-diff-empty { display: none; }
 /* 被拒提示：文字长时「返回调整」换到下一行，和正文左对齐，不压正文 */

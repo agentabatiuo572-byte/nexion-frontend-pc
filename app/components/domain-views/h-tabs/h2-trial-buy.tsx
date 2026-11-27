@@ -401,7 +401,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         const target = item.productNo === trialTargetNo && index === groups.length - 1 ? `领 ${productName(item)} 试用的用户买它仍按默认` : undefined;
         const subs = [after.sub, target].filter(Boolean);
         return {
-          key: `${item.productNo}:${group}`, label: `${label(item)} · ${GROUP_NAME[group]}`,
+          key: `${item.productNo}:${group}`, label: <span className="h2-diff-label"><span><span>{label(item)}</span><span>{GROUP_NAME[group]}</span></span></span>,
           before: groupBefore(now(item), group, pricing), after: after.value,
           // 数字和单位不拆到两行：只改这一句的显示，存下的文字不变。
           note: others ? `别人刚把它从 ${groupBefore(was, group, pricing)} 改成 ${groupBefore(now(item), group, pricing)}；确认后改为${/^\d/.test(after.value) ? " " : ""}${after.value}`.replace(/ USDT/g, "\u00A0USDT") : undefined,
@@ -420,6 +420,10 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
         return { key: item.productNo, label: label(item), before: state, after: state, display: pricing ? <PricingGroups pricing={now(item)} defaults={pricing} /> : undefined };
       }),
     ];
+    // 差异行里名称后面跟一个看不见的前后值占位（各行的值叠在同一格，取最宽的）：名称和值放得下就同一行，放不下时值换到名称下一行（h-domain.css「确认框差异行」）。
+    const shown = rows.filter((row) => row.before !== row.after);
+    const room = <span className="h2-diff-room" aria-hidden="true">{shown.map((row) => <span key={`b:${row.key}`} data-side="before">{row.before}</span>)}{shown.map((row) => <span key={`a:${row.key}`} data-side="after">{row.after}</span>)}</span>;
+    const diffRows = pricing ? rows.map((row) => row.before === row.after ? row : { ...row, label: <>{row.label}{room}</> }) : rows;
     const after = listValue(next);
     const submittedPricing = base.pricing ? next.map((item) => ({ productNo: item.productNo, ...wanted(item) })) : undefined;
     const intended = submittedPricing && Object.fromEntries(submittedPricing.map(({ productNo, ...value }) => [productNo, value]));
@@ -524,7 +528,7 @@ export function BuySection({ ctx, list, readError, trialTargetNo, blocked, readi
       facts: (
         <div className={pricing ? "rd-stack h2-confirm-diff" : "rd-stack"} data-h2-nochange={hasChanges ? undefined : ""}>
           {othersNote}
-          <DiffList rows={rows} restTitle="其余设备" named />
+          <DiffList rows={diffRows} restTitle="其余设备" named />
           <Facts>
             <Fact k="改后共">{after.value === "未添加" ? "0 款" : after.value}{after.sub && <> · {after.sub}</>}</Fact>
             {pricing && <Fact k="默认的试用期折扣">{defaultDiscount(pricing)}</Fact>}
