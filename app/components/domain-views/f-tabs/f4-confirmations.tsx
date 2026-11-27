@@ -313,7 +313,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
-    detail: `总榜不会自动清零。名次按算力点排，发的是 USDT：当前奖池 ${prizeShown(ppAllTime)} USDT，需要审批，不会重复发放。`,
+    detail: "总榜不会自动清零。名次按算力点排，发的是 USDT，需要审批，不会重复发放。",
     run,
   };
       break;

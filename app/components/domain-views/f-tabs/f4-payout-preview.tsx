@@ -14,7 +14,7 @@ import { f4CurrentWeekPool } from "@/lib/admin/f4-money";
 import { count, decimalText, usdt, moneyText } from "./f4-shared";
 
 type Read<T> = { state: "loading" } | { state: "failed"; error: string } | { state: "ok"; data: T; at: number };
-export type F4PayoutReadState = { state: "loading" | "failed" } | { state: "ok"; settled: boolean; paused?: boolean };
+export type F4PayoutReadState = { state: "loading" | "failed" } | { state: "ok"; settled: boolean; paused?: boolean; configOnHold?: boolean };
 
 function useRead<T>(read: () => Promise<T | null>) {
   const [result, setResult] = useState<Read<T>>({ state: "loading" });
@@ -47,7 +47,7 @@ const percentText = (value: string) => value.includes(".") ? value.replace(/0+$/
 
 /**
  * 总榜派奖确认框：配置的奖池之后，放这一次的人数、合计和名单。
- * 「操作记录与审批」的批准框不传 pool（奖池取预览读到的数），rules 在名单后面接「怎么分」。
+ * 发起框用页面奖池作占位，读到预览后两个框的奖池都取这次读数。rules 在名单后面接「怎么分」。
  * 能发时写估算和读取时间；不会发时只写不会发和原因，按名次测算的名单收进折叠、标明这次不发。
  * 金额批准时才算出来，奖池是配置不是这次动的钱：框里不放关键数字（VS-102）。
  */
@@ -62,10 +62,10 @@ export function F4PayoutPreviewFacts({ pool, rules = false, onReadStateChange }:
   const payable = preview?.available === true;
   const calculation = payable ? preview.payout : preview?.ranking;
   const unconfigured = preview?.reason === "F4_LEADERBOARD_POOL_NOT_CONFIGURED";
-  // 批准框里奖池也取自预览：读不到时不写这一行，读取失败只在下面说一次。
-  const poolShown = pool ?? (unconfigured ? "没有可发放的奖池" : preview ? moneyText(preview.prizePoolUsdt) : read.state === "loading" ? "正在加载…" : undefined);
+  const poolShown = preview ? unconfigured ? "没有可发放的奖池" : moneyText(preview.prizePoolUsdt)
+    : pool ?? (read.state === "loading" ? "正在加载…" : undefined);
   const notPaying = !preview || payable ? undefined
-    : unconfigured ? pool === "0" ? "总榜奖池为 0" : "没有可发放的奖池" : NOT_PAYING[preview.reason];
+    : unconfigured ? "没有可发放的奖池" : NOT_PAYING[preview.reason];
   const warnings = !!preview?.concentrationWarnings.length && <Notice tone="warn">{preview.concentrationWarnings.map(key => `${WARNING_LABEL[key]}超过 ${percentText(preview[key])}%`).join("；")}。奖金按名次权重计算。</Notice>;
   const list = calculation && calculation.rows.length > 0 && (
     <div className="f4-payout-list" data-long={calculation.rows.length > 6 ? "" : undefined}>
@@ -151,11 +151,12 @@ export function F4SettleFacts({ onReadStateChange }: { onReadStateChange?: (read
   const projection = useRead(fetchF4VoteProjection);
   const data = read.state === "ok" ? read.data : undefined;
   const settled = data && (data.currentWeekSettled ?? f4CurrentWeekSettled(projection.state === "ok" ? projection.data : undefined));
+  const configOnHold = data?.settlementConfigStatus === "HOLD" && settled !== true;
   const waitingForLegacyProjection = !!data && data.currentWeekSettled === undefined && projection.state === "loading";
   useEffect(() => {
     onReadStateChange?.(read.state !== "ok" ? { state: read.state }
-      : waitingForLegacyProjection ? { state: "loading" } : { state: "ok", settled: settled === true });
-  }, [read.state, settled, waitingForLegacyProjection, onReadStateChange]);
+      : waitingForLegacyProjection ? { state: "loading" } : { state: "ok", settled: settled === true, configOnHold });
+  }, [read.state, settled, configOnHold, waitingForLegacyProjection, onReadStateChange]);
   const { amount: pool, actual, estimated } = data ? f4CurrentWeekPool(data) : { amount: null, actual: false, estimated: false };
   return (
     <div className="f4-payout">
