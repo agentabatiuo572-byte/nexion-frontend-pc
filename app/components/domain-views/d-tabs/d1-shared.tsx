@@ -221,11 +221,13 @@ export function PendingNotices({ items, disabled }: { items: readonly D1PendingI
           const canClose = refused && item.record && fundInvestigationAccess(item.record).canSubmit
             && eCommandClosureOffer(outcome, expired).conclusions.length > 0;
           const rejectedLine = canClose ? "重试被拒绝。先核实原操作，再点「核查结案」。" : "重试被明确拒绝；核对原操作后可以解除。";
+          // 被拒后又查了原操作：查询失败或查到回执时按查到的写，标签和这句不再盖住它（OP-82、ST-34）。
+          const showRefused = refused && (!item.record || !outcome || ("receipt" in outcome && outcome.receipt === null));
           return {
             key: item.key, object: item.label, createdAt: item.createdAt,
-            tag: <StatusTag tone={refused ? "danger" : status?.tone ?? "warn"}>{refused ? "重试被拒绝" : status?.label ?? (item.expired ? "已过期" : "结果未知")}</StatusTag>,
+            tag: <StatusTag tone={showRefused ? "danger" : status?.tone ?? "warn"}>{showRefused ? "重试被拒绝" : status?.label ?? (item.expired ? "已过期" : "结果未知")}</StatusTag>,
             // 没有「按原操作重试」的记录（这类操作不能重发，或被业务规则挡住）：查到已处理时不叫人去重试。
-            line: refused ? rejectedLine : item.onlyCheck ? onlyCheckLine(item, item.onlyCheck, status)
+            line: showRefused ? rejectedLine : item.onlyCheck ? onlyCheckLine(item, item.onlyCheck, status)
               : (status?.label === "已处理" && !item.retry && !expired ? `后台已处理，看不出成没成；这条不能按原操作重试，${item.verify ? "读取现在的值后" : ""}到操作记录与审批核对。` : status?.line) ?? (item.retry ? item.expired ? "超过 24 小时不能再重试，到操作记录与审批核对。" : item.blocked ? `${item.blocked}。` : "查不了原结果，先读取现在的值参考。" : "查不了原结果，也不能重试；现在的值只能参考。"),
             note: notes[item.key],
             actions: <>
