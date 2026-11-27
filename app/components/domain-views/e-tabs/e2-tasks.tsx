@@ -604,7 +604,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       {!(isRetryExpired(record) && outcomes[record.commandKey]) && <p>{isRetryExpired(record) ? "超过 24 小时不能再重试，先查询原操作。" : "原对象、内容和理由已保留。这个等级暂停新操作。"}</p>}
       {pendingNote && !outcomes[record.commandKey] && <p>{pendingNote}</p>}
       <CommandOutcomeLine outcome={outcomes[record.commandKey]} expired={isRetryExpired(record)} canClose={canInvestigate} retryOnMissingOnly />
-      {outcomes[record.commandKey] && <p><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p>}
+      {outcomes[record.commandKey] && <TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} />}
     </Notice>)}
     <SettledCommandNotices items={settled} onDismiss={key => setSettled(rows => rows.filter(row => row.key !== key))} />
     {closing && <CommandClosureModal label={`${closing.pool.code} ${closing.pool.name} · ${e2CommandLabel(closing)}`} commandKey={closing.commandKey} createdAt={closing.createdAt}

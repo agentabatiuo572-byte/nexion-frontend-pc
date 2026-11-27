@@ -10,7 +10,7 @@ import { queryM4FaqCommand, readM4FaqRecovery } from "@/lib/admin/m4-faq-command
 import { canInvestigateECommand, eCommandClosureOffer } from "@/lib/admin/e-command-investigation";
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { TechInfo, pendingReplayReason, receiptFact, receiptOf } from "../recovery-panel";
+import { TechInfo, receiptFact, receiptOf } from "../recovery-panel";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 import { createPendingRecovery, isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
@@ -20,7 +20,7 @@ import { isDeterministicRejection, isOutcomeUnknownError, OutcomeUnknownError } 
 import { MContentReadError } from "@/lib/admin/m-support-read-contract";
 import { businessZone } from "@/lib/admin/business-time";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
-import { M_RECOVERY, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mRejectedReason, mUnknownReason, type MRecoveryView } from "@/lib/admin/m-recovery-copy";
+import { M_RECOVERY, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mQueryFailedText, mRecoveryView, mReplayReason, mRejectedReason, mUnknownReason, type MRecoveryView } from "@/lib/admin/m-recovery-copy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   Button, Cell, Conclusion, Explain, Fact, Facts, Field, FilterBar, FilterField, Input, IrreversibleTag, Modal, MoreMenu, Notice, NumberInput,
@@ -622,7 +622,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
     const state = m4FaqRecovery.state(record);
     return {
       state, expiresAt: state.expiresAt,
-      blockedReason: state.expired ? RETRY_EXPIRED_TEXT : needsRead ? "问答没读到，先点「重试」。" : pendingReplayReason(state, "当前账号没有知识库编辑权限，不能重试。"),
+      blockedReason: state.expired ? RETRY_EXPIRED_TEXT : needsRead ? "问答没读到，先点「重试」。" : mReplayReason(state, "当前账号没有知识库编辑权限，不能重试。"),
       subscribe: m4FaqRecovery.subscribe, getRevision: m4FaqRecovery.getRevision,
       query: canQueryM4 ? () => queryOriginal(record) : undefined,
       releaseRejectedReplay: () => {
@@ -656,8 +656,7 @@ export function M4KbSla({ ctx, title, summary, loadError, onDeleteBlock }: { onD
       : shared.label === "已处理" && !state.expired ? { ...shared, line: "后台已处理，看不出成没成，请到操作记录与审批核对。" } : shared;
     const last = !outcome ? "" : "error" in outcome ? mQueryFailedText(outcome.error) : receipt ? `这次查到「${found.label}」。`
       : state.conclusion !== "not-found" ? M_RECOVERY.unsettled : state.replayRejection || state.expired ? M_RECOVERY.notFoundShort : "";
-    const view: MRecoveryView & { more?: string } = submittingKey === record.commandKey ? M_SUBMITTING_VIEW : !record.faq
-      ? { tone: "neutral", label: "不能查询", line: "升级前的记录查不了原结果，到操作记录与审批核对。" }
+    const view: MRecoveryView & { more?: string } = submittingKey === record.commandKey ? M_SUBMITTING_VIEW : !record.faq ? mRecoveryView(state)
       : !state.busy && !state.replayRejection && (receipt || shared.label === "没有查询权限" || !outcome && !state.expired && state.conclusion === "unknown")
         ? state.expired && !found.line.includes("24 小时") ? { ...found, line: `${RETRY_EXPIRED_TEXT}${found.line}` } : found : mRecoveryView(state, { last });
     return { view, more: view.more, currentFact, gone, audit: gone || Boolean(state.replayRejection) || state.expired || !record.faq || view.line.includes("操作记录与审批"),

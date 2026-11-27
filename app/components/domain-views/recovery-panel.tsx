@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, X } from "lucide-react";
-import { Button, Explain, IconButton, KeepText, Notice, type StateTone } from "@/app/components/rd";
+import { Button, Explain, Fact, Facts, Fold, IconButton, KeepText, Notice, type StateTone } from "@/app/components/rd";
 import { eCommandCanConcludeRejected, eCommandResult, type ECommandEvidence, type ECommandInvestigation } from "@/lib/admin/e-command-investigation";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import { RETRY_EXPIRED_TEXT, type PendingRecoveryState } from "@/lib/admin/pending-mutation-store";
@@ -140,13 +140,28 @@ export function receiptOf(outcome: { receipt: ECommandInvestigation | null } | {
   return outcome && "receipt" in outcome ? outcome.receipt : null;
 }
 
+/** 技术信息折叠关着时写的那句：只写里面有哪几项（DP-04），不露编号；超过三项写前两项和总数。 */
+function techSummary(names: readonly string[]) {
+  if (names.length > 3) return `${names.slice(0, 2).join("、")}等 ${names.length} 项`;
+  return names.length > 1 ? `${names.slice(0, -1).join("、")}和${names[names.length - 1]}` : names[0] ?? "";
+}
+
 /**
- * 行上的「技术信息」：操作编号（和查到的业务码），收在一个文字触发的气泡里。
- * 「结不了案」「没有就把操作编号交给技术同事」这两句指向它，行上没有展开详情的页面放在那句话后面。
+ * 「技术信息」：放在这一条最后的折叠（OP-154、TX-16、DT-22），关着只写有哪几项，打开一项一行。
+ * commandKey 是操作编号；rows 是排查时一起核对的原文（操作者、理由、原请求、版本）；查到业务码时排在最后。
+ * 「结不了案」「没有就把操作编号交给技术同事」这两句指向它。
  */
-export function TechInfo({ commandKey, receipt }: { commandKey: string; receipt?: ECommandInvestigation | null }) {
-  const code = receiptCodeTech(receipt);
-  return <Explain label="技术信息" content={<>操作编号 <span data-mono className="rd-keep">{commandKey}</span>{code && ` ｜ ${code}`}</>}>技术信息</Explain>;
+export function TechInfo({ commandKey, receipt, rows = [] }: { commandKey?: string; receipt?: ECommandInvestigation | null; rows?: readonly { k: string; v: ReactNode }[] }) {
+  const code = businessCodeOf(receipt);
+  const items: { k: string; v: ReactNode }[] = [
+    ...(commandKey ? [{ k: "操作编号", v: <span data-mono>{commandKey}</span> }] : []),
+    ...rows,
+    ...(code === undefined ? [] : [{ k: "业务码", v: String(code) }]),
+  ];
+  if (!items.length) return null;
+  return <Fold inset title="技术信息" summary={techSummary(items.map(item => item.k))}>
+    <Facts>{items.map((item, index) => <Fact key={`${item.k}-${index}`} k={item.k}>{item.v}</Fact>)}</Facts>
+  </Fold>;
 }
 
 /** 结案框里「系统记录」一行：按查到的原结果写，held 是记录现在的样子（例如「原修改还锁着」）。 */

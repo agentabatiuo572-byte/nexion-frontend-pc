@@ -244,6 +244,6 @@
 /* 资料抽屉开头的待办要点（OP-149）。 */
 .m1-todo-points { display: grid; gap: 4px; margin-bottom: 20px; }
 .m1-todo-points h4 { margin: 0 0 4px; font-size: var(--rd-text-body); line-height: var(--rd-lh-body); font-weight: 600; color: var(--rd-text); }
-.m1-todo-points-asof { margin: 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
+.m1-todo-points-asof { margin: 4px 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-aux); }
 .m1-todo-drawer-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .m1-todo-drawer-actions:not(:first-child) { margin-top: 8px; }

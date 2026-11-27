@@ -33,6 +33,8 @@ import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investig
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
 import { OPEN_RESULT_LABELS, RecoveryPanel, businessCodeOf, closureLine, foundReceiptNext, receiptFact, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { RETRY_REJECTED_STATUS } from "@/lib/admin/retry-rejected";
+import { recoveryNext } from "@/lib/admin/recovery-next";
 import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
@@ -86,6 +88,7 @@ const pendingWrites = createPendingMutationStore<I5Pending>({
 export const WRITE_LOCKED = "这一项有一次操作结果未知，先到页面上方处理";
 export const CONFLICT_TEXT = "这项刚被别人改过。";
 /** 查询成功、记录还没了结时展开处的一句：记录还在，这一项先不能改；下一步写在行上。 */
+const REPLAY_REJECTED_NEXT = "重试被明确拒绝；核对原因后可以解除。";
 const KEPT_NOTE = "已查询，记录继续保留；这一项暂时不能修改。";
 
 const PROPOSAL_STATUS: Record<string, string> = { pending: "待审批", approved: "已批准", rejected: "已驳回", withdrawn: "已撤回", expired: "已过期" };
@@ -108,13 +111,13 @@ function dispatch(write: I5Write, key: string, actions: IContentActions, propose
 
 /**
  * 展开后的说明：这条操作能怎么恢复，只写接口真有的（OP-95），只补行上那句没说的。
- * gated：有重试权但还没明确查不到（没查、查询失败），写清什么时候才能重试（OP-93 第 7 条）。
  */
-function recoveryText(op: I5Op, canQuery: boolean, canRetry: boolean, gated: boolean): string | undefined {
+function recoveryText(op: I5Op, canQuery: boolean, next: Pick<ReturnType<typeof recoveryNext>, "kind" | "canRetry">): string | undefined {
+  if (next.kind === "rejected" || next.kind === "expired") return undefined;
   if (op.kind === "a2") return canQuery ? "审批单可能已经建好，批准前不会执行。可以先查询原操作。" : "审批单可能已经建好，批准前不会执行。这个账号查不了原审批单，请能看操作记录的同事核查。";
-  if (op.kind === "content") return canRetry ? "重试发的是原内容，系统认得出是同一次提交，不会重复执行。"
-    : gated ? "查询只读取，不会重发；明确查不到原操作，才能按原操作重试。" : undefined;
-  return "按原操作重试不会写两次：已生效的话，重试会被拒。";
+  if (op.kind === "content") return next.canRetry ? "重试发的是原内容，系统认得出是同一次提交，不会重复执行。"
+    : next.kind === "query" ? "查询只读取，不会重发；明确查不到原操作，才能按原操作重试。" : undefined;
+  return next.canRetry ? "按原操作重试不会写两次：已生效的话，重试会被拒。" : undefined;
 }
 
 /** 合并结果里要给人看的两类位置（路径）：别人改了的、两边都改了留下自己的。 */
@@ -645,14 +648,24 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     if (op.kind === "content") return has("content_i5_read") && has("content_i5_write");
     return has("content_legal_terms_read") && has(op.kind === "legal-transition" ? "content_legal_terms_publish" : "content_legal_terms_write");
   };
-  const offersRetry = (record: I5Pending, expired: boolean) => !expired && !record.readback && canWrite(record);
-  const retryBlock = (record: I5Pending, outcome = outcomes[record.commandKey]) => {
-    if (isExplicitRejection(record.rejection)) return "重试被明确拒绝；核对原因后可以解除。";
-    if (record.op.kind === "a2" && !canQuery) return "这个账号查不了原审批单，请能看操作记录的同事核查";
-    if (record.op.kind !== "a2" && record.op.kind !== "content") return undefined;
-    if (!outcome) return "先查询原操作，明确查不到才能重试";
-    if ("error" in outcome) return "查询没有成功，请重新查询原操作";
-    return outcome.receipt === null ? undefined : "已查到原回执，不能按原操作重试";
+  const nextOf = (record: I5Pending, outcome = outcomes[record.commandKey]) => {
+    const receiptBased = record.op.kind === "a2" || record.op.kind === "content";
+    const notFound = outcome && "receipt" in outcome && outcome.receipt === null;
+    const canQueryOriginal = record.op.kind !== "a2" || canQuery;
+    const expired = record.expiresAt <= Date.now();
+    const writable = !record.readback && canWrite(record);
+    const next = recoveryNext({
+      expired,
+      conclusion: notFound ? "not-found" : "unknown",
+      replayBlock: isExplicitRejection(record.rejection) ? "replay-rejected"
+        : !writable || !canQueryOriginal ? "unavailable"
+          : receiptBased && !notFound ? "needs-not-found" : undefined,
+    });
+    const block = next.kind === "rejected" ? REPLAY_REJECTED_NEXT
+      : !canQueryOriginal ? "这个账号查不了原审批单，请能看操作记录的同事核查"
+        : next.kind !== "query" ? next.block : !outcome ? next.block
+          : "error" in outcome ? "查询没有成功，请重新查询原操作" : "已查到原回执，不能按原操作重试";
+    return { ...next, block, offer: !expired && writable };
   };
 
   const note = (record: I5Pending, text: string) => setNotes((current) => ({ ...current, [record.commandKey]: text }));
@@ -695,7 +708,7 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
 
   /** 只发存下的原操作：同命令号、同内容（OP-94）。过期不发，记录留着。 */
   const retry = async (record: I5Pending) => {
-    if (recovering || !offersRetry(record, record.expiresAt <= Date.now()) || retryBlock(record)) return;
+    if (recovering || !nextOf(record).canRetry) return;
     if (!pendingWrites.isDurablyStored(record.fingerprint, record.commandKey)) {
       note(record, "这次操作的记录没存住，不能再重试，请到操作记录与审批核对。");
       return;
@@ -725,8 +738,12 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
       setOutcomes(({ [record.commandKey]: _outcome, ...remaining }) => remaining);
       if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容", "success");
     } catch (cause) {
-      note(record, `重试没有成功：${displayAdminError(cause)} 原操作结果仍未知，记录继续保留。`);
       const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
+      // 恢复记录锁住原请求，拒绝原因不沿用新建时的改代码或编辑指引。
+      const reason = refusal?.reasonCode === "DISCLOSURE_JURISDICTION_CODE_EXISTS" ? "这个代码已有适用范围在用。"
+        : refusal?.reasonCode === "DISCLOSURE_VERSION_SEQUENCE_INVALID" ? "原操作的版本号和系统现在分配的顺序对不上。"
+          : displayAdminError(cause);
+      note(record, refusal ? `拒绝原因：${reason}` : `重试没有成功：${reason} 原操作结果仍未知，记录继续保留。`);
       pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op,
         rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });
       sync();
@@ -820,10 +837,10 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
 
   const auditHref = "/platform/audit?domain=I";
   /** 这一行的标签和结论：查过原结果的用共用面板的叫法；走审批的没查过说「可能已经提交」；重试被明确拒绝的说可以解除。 */
-  const statusOf = (record: I5Pending, outcome: FundInvestigationOutcome | undefined, expired: boolean, canRetry: boolean): { tone: StateTone; label: string; line: string; more?: string } => {
+  const statusOf = (record: I5Pending, outcome: FundInvestigationOutcome | undefined, next: ReturnType<typeof nextOf>): { tone: StateTone; label: string; line: string; more?: string } => {
     if (record.readback) return { tone: "warn", label: "deleted" in record.readback ? "已删除" : "已保存", line: readbackLine(record.readback) };
-    // 和设备页恢复行（RECOVERY_LINE.refused）同一句；不引设备页的文件。
-    if (isExplicitRejection(record.rejection)) return { tone: "danger" as const, label: "重试被拒绝", line: "重试被明确拒绝；核对原因后可以解除。" };
+    if (next.kind === "rejected") return { tone: "danger", label: RETRY_REJECTED_STATUS.label, line: REPLAY_REJECTED_NEXT };
+    const expired = next.kind === "expired";
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
       line: expired ? "超过 24 小时不能再重试，先查询原操作。" : canQuery ? "可能已经提交，先查询原操作。" : "可能已经提交，这个账号查不了原结果，到操作记录与审批核对。" };
     // 法律条款、隐私政策查不了原回执，行上的按钮是「读取当前条款／政策」，下一步按这个按钮写（OP-95 丙档、OP-152）。
@@ -832,18 +849,18 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
       return { tone: "warn" as const, label: expired ? "已过期" : "结果未知", line: expired ? `超过 24 小时不能再重试，先「${read}」核对。` : `可能已经生效，先「${read}」核对。` };
     }
     const canClose = canInvestigateECommand("content_i5_read");
-    const shown = fundRecoveryStatus({ outcome, expired, canRetry, canQuery: true, canClose });
+    const shown = fundRecoveryStatus({ outcome, expired, canRetry: next.canRetry, canQuery: true, canClose });
     if (outcome && "error" in outcome) return { ...shown, more: outcome.error };
     if (!expired && outcome) {
       const receipt = outcome.receipt;
-      if (receipt === null && canRetry) return { ...shown, line: "查不到不等于没执行，可以按原操作重试。" };
+      if (next.kind === "not-found") return { ...shown, line: "查不到不等于没执行，可以按原操作重试。" };
       if (receipt?.originalStatus === "PROCESSING") return { ...shown, line: "稍后再查，执行完才有结论。" };
       const offer = eCommandClosureOffer(outcome, expired);
       if (receipt?.originalStatus === "UNKNOWN" && canClose) {
         return { ...shown, line: closureLine(offer, receipt, canClose) ?? "系统也没有结果，请按证据核查结案。" };
       }
-      const next = foundReceiptNext(receipt, canClose && offer.conclusions.length > 0);
-      if (next) return { ...shown, line: next };
+      const receiptNext = foundReceiptNext(receipt, canClose && offer.conclusions.length > 0);
+      if (receiptNext) return { ...shown, line: receiptNext };
     }
     return shown;
   };
@@ -851,12 +868,10 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
   const items: RecoveryItem[] = pending.map((record) => {
     const outcome = outcomes[record.commandKey];
     const expired = record.expiresAt <= Date.now();
-    const offer = offersRetry(record, expired);
-    const block = retryBlock(record, outcome);
-    const canRetry = offer && !block;
-    const shown = statusOf(record, outcome, expired, canRetry);
-    const help = !expired && !record.readback ? recoveryText(record.op, canQuery, canRetry, offer && !isExplicitRejection(record.rejection) && (!outcome || "error" in outcome)) : undefined;
-    if (OPEN_RESULT_LABELS.includes(shown.label)) open += 1;
+    const next = nextOf(record, outcome);
+    const shown = statusOf(record, outcome, next);
+    const help = !record.readback && (!outcome || "error" in outcome || next.canRetry) ? recoveryText(record.op, canQuery, next) : undefined;
+    if (next.kind === "rejected" || OPEN_RESULT_LABELS.includes(shown.label)) open += 1;
     const code = businessCodeOf(outcome);
     return { key: record.commandKey, createdAt: record.createdAt, object: record.label,
       tag: <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag>, line: shown.line,
@@ -866,8 +881,8 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
         {record.op.kind === "content" && <Button size="sm" disabled={!!recovering} onClick={() => void queryContent(record)}>查询原操作</Button>}
         {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcome, expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>{record.op.kind === "privacy" ? "读取当前政策" : "读取当前条款"}</Button>}
-        {offer && <Button size="sm" disabled={!!recovering} disabledReason={block} onClick={() => void retry(record)}>按原操作重试</Button>}
-        {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
+        {next.offer && <Button size="sm" disabled={!!recovering} disabledReason={next.block} onClick={() => void retry(record)}>按原操作重试</Button>}
+        {next.kind === "rejected" && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
       detail: help && <p>{help}</p>,
       // 技术信息和商品管理、设备管理、算力配置同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。

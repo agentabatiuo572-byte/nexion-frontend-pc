@@ -377,7 +377,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const coverageKnown = e4Detail?.coverageCurrent != null && e4Detail.coverageProjected != null && e4Detail.coverageRedline != null;
   // The full-refund projection cannot veto a smaller amount. Execution checks that amount.
   const refundAvailable = o.amt !== null && coverageKnown && e4Detail!.coverageCurrent! >= e4Detail!.coverageRedline!;
-  const refundReady = canRefundE4 && refundableState && refundAvailable && !pendingApproval;
+
   // 覆盖率一位小数，红线是配置值，按原值写（TX-23）。
   const coverageText = coverageKnown
     ? `当前 ${fmtPct(e4Detail.coverageCurrent!)} → 执行后 ${fmtPct(e4Detail.coverageProjected!)} · 红线 ${fmtConfigPct(e4Detail.coverageRedline!)}`
@@ -390,6 +390,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   const pendingFact = e4DetailError ? { value: "读取失败", state: "danger" as const } : { value: "正在加载…" };
   // 读完详情才能做决定（OP-150）：下一步、退款条件都靠详情里的事实。
   const orderPending = ctx.e4Pending.some((record) => record.orderNo === o.id) || ctx.e4ReceiptAttempts.some((record) => record.orderNo === o.id);
+  const refundReady = canRefundE4 && refundableState && refundAvailable && !pendingApproval && !orderPending;
   const waitReason = pendingApproval ? "这单已有待审批操作，审批结束后才能再次处理" : orderPending ? "这单有结果未知的操作，先到页面上方处理" : e4DetailError ? "订单详情读取失败，重试成功后才能操作" : e4DetailLoading || !e4Detail ? "正在加载订单事实" : ctx.e4ReadBlock;
   const approvalTag = <StatusTag tone="progress" filled explain={APPROVAL_NOTE}>批准后生效</StatusTag>;
   // 批准后收不回来的操作：不能撤销，红按钮（VS-25、VS-106）。
@@ -429,6 +430,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
     : !refundableState ? { label: "退款", value: "不能退款", reason: "用户还没付款。只有已支付、开通中、已激活、已入库或已付款的开通失败订单能退款。" }
       : !e4Detail ? { label: "退款", ...pendingFact }
         : pendingApproval ? { label: "退款", value: "等待审批结束" }
+          : orderPending ? { label: "退款", value: "暂不能退款", state: "warn" }
           : refundAvailable ? { label: "退款", value: canRefundE4 ? "可申请退款审批" : "符合退款条件，需有退款权的财务主管或超级管理员发起", reason: coverageReason }
           : { label: "退款", value: refundBlockText, reason: coverageKnown ? coverageReason : "要先读到兑付覆盖率才能退款。过一会儿重新打开这单。", state: coverageKnown ? "danger" : "warn" };
   const rows: JudgmentRow[] = [
@@ -450,7 +452,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
   // 常显的只有现在能不能做；按下去会怎样收进按钮旁的提示图标（DP-06）。
   const note = !canWriteE4 && !canRefundE4 ? "你只能查看这单。"
     : !hasAction ? "这单现在没有人工操作。"
-    : waitReason ? `${waitReason}。` : undefined;
+    : waitReason && (!orderPending || pendingApproval) ? `${waitReason}。` : undefined;
   const consequence = (!canWriteE4 && !canRefundE4) || !hasAction ? undefined
     : refundBlocked ? `${coverageKnown ? "退款后平台资金会低于安全线，补足后才能退款。" : "要先读到兑付覆盖率才能退款。"}${terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
     : canRefundE4 && refundableState ? `退款不可撤销。批准后钱退回用户钱包；符合条件的购买设备停用${giftClause}。${terminalOptions.includes("chargeback") ? "标记拒付不会退款，标记后也不能再退。" : terminalOptions.length > 0 ? "「标记失败结果」不会退款。" : ""}`
@@ -466,7 +468,7 @@ function E4OrderDrawer({ ctx }: { ctx: EViewCtx }) {
       nav={{ hasPrev: Boolean(prev), hasNext: Boolean(next), onPrev: () => { if (prev) ctx.openOrder(prev); }, onNext: () => { if (next) ctx.openOrder(next); } }}
       footer={<Decision note={note} explain={consequence}
         danger={canRefundE4 && refundableState && <Button variant="danger-outline" disabledReason={waitReason ?? (refundReady ? undefined : refundBlockText)} onClick={() => {
-          if (!e4Detail || !refundReady || orderPending) return;
+          if (!e4Detail || !refundReady) return;
           const channels = e4Detail.refundChannels.length ? e4Detail.refundChannels : ["WALLET"];
           // 只有一个去向时没得选，写成事实，不给下拉（OP-126）。
           const channel = channels.length === 1 ? channels[0] : undefined;

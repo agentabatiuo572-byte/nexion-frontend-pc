@@ -8,8 +8,7 @@ import { businessStamp, businessZone, formatBusinessTime } from "../../../../lib
 import { MessageCircleHeart, Save } from "lucide-react";
 import { BlockState, Button, Explain, Fact, Facts, Field, LocaleTabs, Modal, Notice, Panel, StatusTag, Textarea } from "@/app/components/rd";
 import { M5PendingWrites, type M5WelcomeSummary } from "./m5-views";
-import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView } from "@/lib/admin/m-recovery-copy";
-import { pendingReplayReason } from "../recovery-panel";
+import { M_RECOVERY_INTRO, M_RELEASED_TEXT, M_SUBMITTING_VIEW, mNoticeTone, mRecoveryView, mReplayReason } from "@/lib/admin/m-recovery-copy";
 import { MAuditLink, mFocusTarget, MReleaseModal } from "./m-release";
 import { useToast } from "../design-kit";
 import { useMOperationReason } from "./m-operation-reason";
@@ -282,7 +281,7 @@ export function M5WelcomeMessage({ permission, onSummary }: { permission: MSuppo
   const comparisonBefore = conflict ? current : releasedFrom;
   const comparisonAfter = conflict ? latest : current;
   const externalChanges = comparisonBefore && comparisonAfter ? changedLanguages(comparisonBefore.texts, comparisonAfter.texts) : [];
-  const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改欢迎语" : retryExpired ? EXPIRED_LINE : pendingReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
+  const replayReason = saving || !command.recoveryState ? undefined : !canWrite ? "只有超级管理员能改欢迎语" : retryExpired ? EXPIRED_LINE : mReplayReason(command.recoveryState, "当前账号不能重试这次保存。");
   const changeText = retry ? `改了${(retry.before ? changedLanguages(retry.before.texts, retry.payload.texts) : LANGUAGES.map(item => item.key)).map((key) => LANGUAGES.find((item) => item.key === key)?.label).join("、") || "内容"}` : "";
 
   return (

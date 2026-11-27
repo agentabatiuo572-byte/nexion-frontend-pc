@@ -507,7 +507,7 @@ export function ReleaseBody({ label, explain, children }: { label: ReactNode; ex
   return (
     <div className="rd-stack rd-release-body">
       <Facts><Fact k="原操作">{label}</Fact></Facts>
-      <p><KeepText text="先核对原操作的结果再解除。解除只删掉本标签页里的这条记录，不撤销原操作，也不算核查结案；重新提交时照常检查。" />{explain && <Explain label="解除的说明" content={explain} />}</p>
+      <p><KeepText text="先核对原操作的结果再解除。解除只删掉本标签页里的这条记录：不撤销原操作，不进操作记录，也不算核查结案；重新提交时照常检查。" />{explain && <Explain label="解除的说明" content={explain} />}</p>
       {children}
     </div>
   );

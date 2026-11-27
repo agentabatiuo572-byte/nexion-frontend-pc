@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Clock3 } from "lucide-react";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
+import { TechInfo } from "@/app/components/domain-views/recovery-panel";
 import { BlockState, Button, Change, Decision, Drawer, Explain, Fact, Facts, JudgmentPoints, KeepText, Notice, ReleaseModal, StatusTag, Timeline } from "@/app/components/rd";
 import { correctNotificationTime, fetchNotificationTimeEvidence, UsersOutcomeUnknownError, UsersRequestError, type NotificationTimeEvidence } from "@/lib/admin/user360-client";
 import { displayAdminError, displayAdminReadError } from "@/lib/admin/error-messages";
@@ -160,8 +161,8 @@ export function NotificationTimeEvidenceDrawer({ userKey, notificationId, actorK
         {isExplicitRejection(pending.rejection) && <Button size="sm" disabled={submitting} onClick={() => setReleasing(true)}>核实后解除</Button>}
       </>}>
       {expired ? `${EXPIRED_TEXT}。` : "按原操作重试会用原证据和理由。"}原理由：{pending.reason}
-      <Explain label="技术信息" content={`操作编号 ${pending.commandKey}`} />
       {!expired && writeBlockedReason && <p className="rd-toolbar-note">{writeBlockedReason}</p>}
+      <TechInfo commandKey={pending.commandKey} />
     </Notice>}
     {!data && !error && <BlockState state="loading" title="正在加载关联证据…" />}
     {error && <BlockState state="error" title="关联证据加载失败" detail={error} onRetry={() => setAttempt(value => value + 1)} />}

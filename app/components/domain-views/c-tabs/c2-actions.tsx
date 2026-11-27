@@ -33,6 +33,7 @@ import { announcePermissionDenied } from "@/lib/admin/operation-confirm-error";
 import { isIdempotencyOutcomeOpen, outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { createPendingMutationStore, isRetryExpired, RETRY_EXPIRED_TEXT, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { canProposeSessionRevocation, listSessionRevocationApprovals, pendingSessionRevocationApproval, proposeSessionRevocation, sessionRevocationRecovery, sessionRevocationStatus } from "@/lib/admin/session-revocation-approval";
+import { RETRY_REJECTED_LABEL } from "@/lib/admin/retry-rejected";
 import {
   fetchImpersonationReadonlyView,
   fetchUserAccountActionAccount,
@@ -1530,13 +1531,13 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     ...revocations.map((record) => {
       const state = sessionRevocationRecovery.state(record);
       const reason = record.ticketId ? "审批单已提交，继续查询审批进度。"
-        : state.replayRejection ? `重试被拒：${displayAdminError(new Error(state.replayRejection))}`
+        : state.replayRejection ? `${RETRY_REJECTED_LABEL}：${displayAdminError(new Error(state.replayRejection))}`
         : state.expired ? "已超过 24 小时，不能再重试。"
         : !canRevoke ? RETRY_NO_PERMISSION
         : state.replayBlock ? "先查询原操作，明确查无后才能重试。" : undefined;
       return {
         key: record.fingerprint, object: `退出全部设备 · ${record.label}`, createdAt: record.createdAt,
-        tag: <StatusTag tone="warn">{record.ticketId ? "待审批" : state.replayRejection ? "重试被拒" : "结果未知"}</StatusTag>,
+        tag: <StatusTag tone="warn">{record.ticketId ? "待审批" : state.replayRejection ? RETRY_REJECTED_LABEL : "结果未知"}</StatusTag>,
         line: record.ticketId ? `审批单 ${record.ticketId} · ${reason}` : reason ?? "没有查到原审批单，可以按原操作重试。",
         note: pendingNotes[record.commandKey],
         actions: <>

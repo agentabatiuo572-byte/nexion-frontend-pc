@@ -692,7 +692,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
       <F3Placements />
 
-      <Fold title="技术信息（已存的原值）" icon={CalendarClock} tone="role-other" summary={`F.binary 下 ${Object.keys(ctx.f3ConfigValues).filter((key) => key.startsWith("F.binary.")).length} 项原值`}>
+      <Fold title="技术信息（已存的原值）" icon={CalendarClock} tone="role-other" summary={`${Object.keys(ctx.f3ConfigValues).filter((key) => key.startsWith("F.binary.")).length} 项结算设置的原值`}>
         <KeyValues rows={[
           ...Object.entries(ctx.f3ConfigValues).filter(([key]) => key.startsWith("F.binary.")).map(([key, value]) => ({ key, label: key, value: value || "—", mono: true })),
           { key: "window", label: "运营阶段窗口", value: text(dailyCap?.windowLabel) },
