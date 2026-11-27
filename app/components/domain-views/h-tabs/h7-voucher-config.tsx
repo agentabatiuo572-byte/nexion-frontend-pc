@@ -900,7 +900,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                 <Fact k="可与其它优惠叠加">{v.stackWithOthers ? "是" : "否"}</Fact>
               </Facts>
             </Fold>
-            <Fold title="技术信息" tone="role-other" inset summary={`版本 ${v.version}`}>
+            <Fold title="技术信息" tone="role-other" inset summary="编号和版本">
               <Facts>
                 <Fact k="编号"><span data-mono="">{v.id}</span></Fact>
                 <Fact k="版本">{String(v.version)}</Fact>

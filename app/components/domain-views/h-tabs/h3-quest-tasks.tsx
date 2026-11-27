@@ -1849,7 +1849,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
               <Fact k="以后的用户">{detail.list === "dayOne" ? "之后注册的用户" : "之后发布的每周任务"}按新设置</Fact>
             </Facts>
           </section>
-          <Fold title="技术信息" tone="role-other" inset summary={codeOf(detailTask) || "—"}>
+          <Fold title="技术信息" tone="role-other" inset summary="任务编号、类型和内部编号">
             <Facts>
               <Fact k="任务编号"><span data-mono="">{codeOf(detailTask) || "—"}</span></Fact>
               <Fact k="类型"><span data-mono="">{text(detailTask.taskKind, "—")}</span></Fact>

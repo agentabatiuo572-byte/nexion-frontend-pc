@@ -1446,7 +1446,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         detail: <p>
           {/* 收起那一行已经写了「可能已经生效」时不再写（DT-12）。 */}
           {refused || record.kind === "large" || expired ? "可能已经生效。" : ""}
-          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? `${RETRY_EXPIRED_TEXT}` : "按原操作重试不会多建单，也不会重复入账。"}
+          {/* 过期：行上已经写了「超过 24 小时不能再重试」，这里只补被拒时没说的那半句，去哪核对由后面的链接说（DT-12）。 */}
+          {record.kind === "large" ? LARGE_REQUEST_RETIRED : expired ? refused ? "已超过 24 小时，不能再重试。" : "" : "按原操作重试不会多建单，也不会重复入账。"}
           {canReadAudit ? <> <Link className="rd-link" href="/platform/audit" prefetch={false}>到操作记录与审批按单号核对</Link></> : <KeepText text={`${AUDIT_ELSEWHERE}。`} />}
         </p>,
         // 技术信息和商品管理、设备管理等页同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。

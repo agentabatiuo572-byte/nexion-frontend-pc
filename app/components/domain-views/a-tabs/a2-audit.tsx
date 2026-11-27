@@ -391,6 +391,20 @@ const F3_PAYOUT_COVERAGE = "批准时先查兑付覆盖率：读不到或低于�
 const f2RateLevel = (fund: FundTicket | undefined) => fund?.kind === "fConfig" ? /^F\.unilevel\.(L[1-7])$/.exec(fund.key)?.[1] : undefined;
 /** 开启自动发放：没有「调高、调低」的方向，不按「多付钱」写。 */
 const enablesAutoPayout = (fund: FundTicket | undefined) => fund?.kind === "fConfig" && fund.spec?.payoutControlAmplification === "enable";
+/**
+ * 放大类单的后果一句：审批单详情和批准框用同一句（DT-14），没有专门说法的写「会让平台多付钱」。
+ * 不能撤销不写在这里：批准框有「不能撤销」标签（VS-106），详情在句尾补（DT-10）。
+ * F4 派奖、结算批准时按那一刻重算，奖池为 0、没人上榜、已结算或暂停时不发（LeadershipPoolService、OpsTeamService 回放）：不写成一定发钱。
+ */
+function fundLead(w: A2OperationRow): string {
+  const fund = fundTicket(w);
+  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return "批准时算出有应发的金额才发钱";
+  if (fund?.kind === "f5Status" && fund.state === "unlocked") return "真实放钱";
+  const k1 = k1TicketView(w);
+  if (k1) return k1.kind === "release" ? "批准后这笔钱不再锁住" : "放宽后可能多放收益";
+  if (w.operationCode === "f_unilevel_bootstrap") return "启用结算后，平台按这些比例付团队奖励";
+  return coverageFacts(w)?.lead ?? "会让平台多付钱";
+}
 function coverageFacts(w: { operationCode?: string | null; obj?: string; after?: string; action?: string }) {
   const fund = fundTicket(w);
   if (fund?.kind === "fConfig" && fund.spec?.loosen) return { lead: `这次${fund.spec.loosen}，会让平台多付钱`, check: fund.spec.payoutControlAmplification ? F3_PAYOUT_COVERAGE : "批准时先查兑付覆盖率：低于红线就不改，审批单留着待审批。" };
@@ -1878,19 +1892,17 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
    * F4 派奖、F4 本周结算、F5 奖励状态变更的批准框：先写这一次批的是什么、批准后会怎样，再放这一次的结果，规则收进折叠。
    * 句子和发起人那边（f4-confirmations、f5-audit）同一套说法；没有的事实不写；F5 单子里没有用户和金额，按记录号读现在的样子（a2-f5-current）。
    */
-  type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string; coverageLead?: string; coverageUnknown?: string;
+  type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string;
     coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; review?: boolean; extra?: ReactNode };
   const fundSpec = (w: A2OperationRow): FundSpec | undefined => {
     const fund = fundTicket(w);
     if (!fund) return undefined;
     if (fund.kind === "f4Payout") return {
       irreversible: true,
-      impact: fund.period === "总榜" ? "批准后按那一刻的总榜重新计算，真实入账给上榜的人。" : "批准后按那一刻的排行榜重新计算，真实入账给上榜的人。",
+      impact: `名单和金额以批准那一刻的${fund.period === "总榜" ? "总榜" : "排行榜"}为准。`,
       completion: F4_COVERAGE_COPY,
       check: "核对这次实发、名单和发起理由，理由写清依据或工单号。",
       detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。按旧规则提交的单须先撤回或驳回，再看新预览后重新提交。",
-      coverageLead: "这次派奖按算出的金额真实发钱",
-      coverageUnknown: "这次派奖按算出的金额真实发钱，兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
@@ -1898,12 +1910,10 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     };
     if (fund.kind === "f4Settle") return {
       irreversible: true,
-      impact: "批准后按那一刻所在的周重新计算，真实入账给有资格的人。",
+      impact: "池金额以批准那一刻所在的周为准。",
       completion: F4_COVERAGE_COPY,
       check: "核对本周奖池和发起理由，理由写清依据或工单号。",
       detail: "本周已经结算过的会跳过，不补发差额；没有合格票时不发钱。",
-      coverageLead: "这次结算按算出的金额真实发钱",
-      coverageUnknown: "这次结算按算出的金额真实发钱，兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
       facts: undefined,
       lead: <F4SettleFacts />,
@@ -1919,8 +1929,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         completion: cover?.check,
         check: "核对修改前后的值和发起理由，理由写清依据或工单号。",
         detail: item?.detail ? `${item.detail}` : item ? "" : "这一项在团队相关页面上找不到，原配置键在审批单详情底部的「技术信息」里。",
-        coverageLead: cover?.lead,
-        coverageUnknown: cover?.lead ? `${cover.lead}，兑付覆盖率暂时读不到` : undefined,
         coverageCheck: cover?.check,
         // 一组值（各榜奖池、头衔、门槛）逐项比，放「完整变更内容」；单个值一行写在事实区。
         facts: item?.json ? undefined : change,
@@ -1938,7 +1946,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         completion: undefined,
         check: fund.suspended ? "核对用户和要暂停的类型，理由写清依据。" : "核对用户和奖励类型，理由写清为什么可以恢复。",
         detail: fund.suspended ? "能撤回：在「奖励记录核对」的暂停名单恢复，也要审批。好友两类以后算出金额的先冻结；其他类型以后不一定停发。" : friendOnly ? "" : "已冻结的要在「奖励记录核对」逐笔解冻。",
-        coverageLead: undefined, coverageUnknown: undefined, coverageCheck: undefined,
+        coverageCheck: undefined,
         facts: <><Fact k="状态"><Change from={changeBefore(w)} to={changeAfter(w)} /></Fact>{fund.suspended && <Fact k="能不能撤回">能，恢复也要审批</Fact>}</>,
         lead: undefined,
       };
@@ -1951,8 +1959,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         completion: cover?.check,
         check: "核对每一笔为什么能补发，理由写清依据。",
         detail: "有一笔不合格整批都不补，不会只补一部分；好友奖励不能补发。",
-        coverageLead: cover?.lead,
-        coverageUnknown: cover?.lead ? `${cover.lead}，兑付覆盖率暂时读不到` : undefined,
         coverageCheck: cover?.check,
         facts: <>
           {fund.ids.length === 1 && <F5CurrentFact id={fund.ids[0]} />}
@@ -1969,7 +1975,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       completion: undefined,
       check: "核对这笔奖励和发起理由，理由写清收回的原因。",
       detail: "余额不足时，结算组奖励和等级月薪扣不够的部分记为待追回。其余没有结算组的旧奖励整次冲正失败。",
-      coverageLead: undefined, coverageUnknown: undefined, coverageCheck: undefined,
+      coverageCheck: undefined,
       facts: <>{fund.eventId && <F5CurrentFact id={fund.eventId} />}<Fact k="状态"><Change from={changeBefore(w)} to="按收回结果显示" /></Fact><Fact k="凭证单号">申请单里没有，批准时系统再核对</Fact></>,
       lead: undefined,
     };
@@ -1982,8 +1988,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       completion: "批准时先核对，不满足就不放钱，审批单留着待审批。",
       check: "核对这笔奖励和发起理由，理由写清为什么要提前。",
       detail: "要收回只能冲正，不能改回冷却中。",
-      coverageLead: undefined,
-      coverageUnknown: undefined,
       coverageCheck: "批准时先查兑付覆盖率：读不到或低于红线就不放钱，审批单留着待审批；等于红线算够。",
       facts: <>{state}<Fact k="批准时核对">有没有暂停、兑付覆盖率够不够<Explain label="结算组的奖励" content="属于结算组的奖励还要核冷却有没有真正到期；没到期会被拒，钱不会提前流出。" /></Fact></>,
       lead: undefined,
@@ -1994,8 +1998,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       completion: undefined,
       check: "核对冻结的原因是否已经解除，理由写清依据。",
       detail: "",
-      coverageLead: undefined,
-      coverageUnknown: undefined,
       coverageCheck: undefined,
       facts: <>{state}<Fact k="到期时间">接着冻结时剩下的时间冷却<Explain label="什么时候会被拒" content="以前暂停用户奖励时冻结的旧记录，到期时间已被清空，批准时会被拒，这笔继续冻结。属于结算组的奖励，用户还在暂停或风险冻结中时也会被拒。" /></Fact></>,
       lead: undefined,
@@ -2006,8 +2008,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       completion: undefined,
       check: "核对这笔奖励和发起理由，理由写清为什么要先按住。",
       detail: "冻结可以再解冻，回到冷却中。",
-      coverageLead: undefined,
-      coverageUnknown: undefined,
       coverageCheck: undefined,
       facts: state,
       lead: undefined,
@@ -2062,8 +2062,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       impact: "批准后这笔收益放行，钱不再锁住。",
       check: "核对用户、净额、来源和发起理由，理由写清依据或工单号。",
       detail: "只放行这一笔，不另发奖、不生成提现单。",
-      coverageLead: "批准后这笔钱不再锁住",
-      coverageUnknown: "批准后这笔钱不再锁住，兑付覆盖率暂时读不到",
       coverageCheck: K1_APPROVAL_CHECK.release,
       facts: <K1TicketFacts v={k1} />,
     } : {
@@ -2071,8 +2069,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       impact: k1.key === "duplicateAccountFreezeFrom" ? "批准后新值生效，已有余额可能恢复提现。" : "批准后新值生效，可能增加可提现收益。",
       check: "核对修改前后的值和发起理由，理由写清依据或工单号。",
       detail: "",
-      coverageLead: "放宽后可能多放收益",
-      coverageUnknown: "放宽后可能多放收益，兑付覆盖率暂时读不到",
       coverageCheck: K1_APPROVAL_CHECK.param,
       facts: <K1TicketFacts v={k1} />,
     });
@@ -2084,8 +2080,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       impact: "批准后七层规则一次建好；整体结算不会自动启用。",
       check: "逐层核对下表和发起理由，理由写清依据或工单号。",
       detail: "七层都没有规则时才能执行，以前配置过的会被拒。",
-      coverageLead: "启用结算后，平台按这些比例付团队奖励",
-      coverageUnknown: "启用结算后，平台按这些比例付团队奖励；兑付覆盖率暂时读不到",
       coverageCheck: "批准时先查兑付覆盖率：低于红线就不建规则，审批单留着待审批。",
       facts: <><Fact k="要建立">L1–L7 七层规则</Fact>{rankedBootstrap && <Fact k="七层合计占订单">第 1、2 层按受益人等级</Fact>}<Fact k="整体结算">不会自动启用，要另外申请</Fact></>,
       extra: <F2BootstrapReview rows={boot} label="要建立的七层规则" ranked={rankedBootstrap ? null : undefined} limitCopy={F2_LIMIT_APPROVE_COPY} />,
@@ -2124,8 +2118,9 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       // 有覆盖率时事实区写「兑付覆盖率 X，红线 Y」，多付钱和检查时点进问号；读不到时橙黄写出来，不是一句白字（必须改 12）。
       // 低于红线时共用框写的是发起人的话（「暂时不能提交」）：这里不把读数交给共用框，自己写读数和批准人的话，按钮照样禁用。
       coverage: amplifies && !belowRedline ? coverage : undefined,
-      coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
-        : amplifies && !coverage ? <span className="a2-coverage-unknown">{fund?.coverageUnknown ?? "会让平台多付钱，兑付覆盖率暂时读不到"}</span> : fund?.coverageLead,
+      // 低于红线时覆盖率照旧写在这一行，资金后果仍是同一句，不被覆盖率顶掉（DT-10、DT-14）。
+      coverageLead: amplifies && belowRedline ? <span className="a2-coverage-unknown">{`${fundLead(w)}。`}兑付覆盖率 {fmtPct(coverage.coverageRatio)}，低于红线 {fmtConfigPct(coverage.redlinePct)}</span>
+        : amplifies && !coverage ? <span className="a2-coverage-unknown">{`${fundLead(w)}，兑付覆盖率暂时读不到`}</span> : fundLead(w),
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
       blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : !requiresH5ApprovalCoverage && amplifies && belowRedline ? "兑付覆盖率低于红线，现在不能批准；恢复后再批，或驳回。" : undefined,
@@ -2834,12 +2829,17 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const shownFund = shown ? fundTicket(shown) : undefined;
   const shownCover = shown ? coverageFacts(shown) : undefined;
   // 放大类单的后果（lead）常显；批准时怎么查覆盖率（check）在覆盖率够红线时收进问号（DT-10、DP-06）。
-  const shownFundCopy = shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? { lead: "真实发钱，不能撤销", check: "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。" }
-    : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? { lead: "真实放钱，不能撤销", check: "批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。" }
-      : shownFund?.kind === "f5Reissue" ? { lead: "真实补发，不能撤销", check: shownCover?.check ?? "" }
-        : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? { lead: "会让平台多付钱", check: K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"] }
-        : enablesAutoPayout(shownFund) && shownCover ? { lead: shownCover.lead ?? "", check: shownCover.check }
-        : { lead: "会让平台多付钱", check: shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。` };
+  // 后果和批准框同一句（fundLead，DT-14）；批准框不能撤销的另有标签，详情没有标签，句尾写「不能撤销」（VS-106、DT-10）。
+  const shownIrreversible = !!shown && (!!fundSpec(shown)?.irreversible || k1TicketView(shown)?.kind === "release");
+  const shownFundCopy = {
+    lead: shown ? `${fundLead(shown)}${!shownIrreversible ? "" : shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "，发了不能撤销" : "，不能撤销"}` : "",
+    check: shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
+      : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
+        : shownFund?.kind === "f5Reissue" ? shownCover?.check ?? ""
+          : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"]
+            : enablesAutoPayout(shownFund) && shownCover ? shownCover.check
+              : shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`,
+  };
   const shownFundCheck = `${shownFundCopy.lead}。${shownFundCopy.check}`;
   // 和批准框同一条件、同一写法：读到覆盖率且没低于红线时是安静的一行，数字强其余弱，不带警告图标（VS-107、DP-05）。
   const shownCoverageCalm = coverage && !(coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct) ? coverage : undefined;

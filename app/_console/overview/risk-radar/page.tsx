@@ -40,6 +40,7 @@ import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { SIGNAL_CATEGORIES, SIGNAL_LIST_ANCHOR, isSignalCategory } from "@/lib/admin/risk-feed";
 import { formatB5RiskLight } from "@/lib/admin/b5-display-labels";
 import { isRetryExpired, RETRY_EXPIRED_TEXT } from "@/lib/admin/pending-mutation-store";
+import { RETRY_REJECTED_NEXT } from "@/lib/admin/retry-rejected";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { isBCommandRejection } from "@/lib/admin/b-command-rejection";
 import { b5Commands, b5Recovery, executeB5Command, inspectB5Command, isB5Original, pendingB5Commands, rememberB5Command, type B5PendingWrite, type B5ThresholdFacts } from "@/lib/admin/b5-commands";
@@ -57,6 +58,8 @@ import { readSignalQuery, replaceSignalQuery, signalRequestQuery, signalReturnTo
 
 const THRESHOLD_SLOT = "bankrun-threshold";
 const SUBSCRIPTION_SLOT = "alert-subscription";
+/** 旧记录没存原请求：和设备页旧记录同一个说法（缺原请求、不能重试），这里能做的只有查原审批单。 */
+const APPROVAL_QUERY_ONLY = "旧记录缺原请求，不能重试，只能查询原审批单。";
 
 const TRIAGE = {
   bankrun: "/finance/withdrawals",
@@ -120,7 +123,20 @@ interface B5PendingCommand {
   onRestore?: () => void;
   onDiscard?: () => void;
   verified?: true;
+  recoveryLine?: string;
 }
+
+/**
+ * 原样重试被拒时第二段的原因：只写变了什么，下一步统一接 RETRY_REJECTED_NEXT（OP-93 第 8 条、OP-152）。
+ * 字典里这几句是给直接提交写的，带着「重新读取后再调整」这类下一步，和「核实后解除」打架；别的码照旧用字典。
+ */
+const REPLAY_REJECTED_REASON: Record<string, string> = {
+  B5_THRESHOLD_VERSION_CONFLICT: "黄线或红线已被改过。",
+  B5_SIGNAL_VERSION_CONFLICT: "这条信号的处理进度已经变了。",
+  B5_SUBSCRIPTION_VERSION_CONFLICT: "告警订阅已被改过。",
+  B5_INBOX_DELIVERY_NOT_FOUND: "这条站内告警现在查不到了。",
+};
+const replayRejectedLine = (code: string | undefined) => `${code && REPLAY_REJECTED_REASON[code] || displayAdminError(code)}${RETRY_REJECTED_NEXT}`;
 
 function PendingCommands({ items, auditReachable }: { items: readonly B5PendingCommand[]; auditReachable: boolean }) {
   if (!items.length) return null;
@@ -137,7 +153,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
             {auditReachable && <Link className="rd-link" href="/platform/audit" prefetch={false}>到「操作记录与审批」核对</Link>}
           </span>}>
           <p>{item.body}</p>
-          {!item.verified && <p>{item.expired ? RETRY_EXPIRED_TEXT : "24 小时内只能按原操作重试，不能改值。"}</p>}
+          {!item.verified && <p>{item.recoveryLine ?? (item.expired ? RETRY_EXPIRED_TEXT : "24 小时内只能按原操作重试，不能改值。")}</p>}
         </Notice>
       ))}
     </>
@@ -350,6 +366,7 @@ export default function RiskRadarPage() {
     : reasonLength < thresholdRule.min ? `操作理由还差 ${thresholdRule.min - reasonLength} 字`
       : reasonLength > thresholdRule.max ? `操作理由多了 ${reasonLength - thresholdRule.max} 字` : undefined;
   const pendingApproval = session && pendingThresholdConfigApproval("B5", session.adminId);
+  const approvalQueryOnly = !!pendingApproval && (!pendingApproval.b5Facts || !pendingApproval.b5Request);
   usePendingReplayDeadline(nextRecoveryDeadline(pendingApproval ? [...pendingWrites, pendingApproval] : pendingWrites));
   const approvalRecoveryState = pendingApproval ? bThresholdRecovery.state(pendingApproval) : undefined;
   const requiresApproval = !thresholdOriginal && (!!pendingApproval || !!threshold && redPct > threshold.redPct);
@@ -373,7 +390,7 @@ export default function RiskRadarPage() {
     : "";
   const currentPreview = preview?.key === previewKey ? preview : null;
   const previewReady = !!currentPreview && !previewError;
-  const lookupOnly = approvalRecovery === "lookup" || !!(pendingApproval && pendingApproval.expiresAt <= Date.now()) || !!(thresholdOriginal && isRetryExpired(thresholdOriginal));
+  const lookupOnly = approvalRecovery === "lookup" || approvalQueryOnly || !!(pendingApproval && pendingApproval.expiresAt <= Date.now()) || !!(thresholdOriginal && isRetryExpired(thresholdOriginal));
   const thresholdLocked = savingThreshold || !!thresholdOriginal || !!approvalRecovery || lookupOnly;
   const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdOriginal
     ? !b5Recovery.state(thresholdOriginal).replayBlock
@@ -473,7 +490,7 @@ export default function RiskRadarPage() {
     const { alert, target } = statusDialog;
     const reason = statusReason.trim();
     if (!statusOriginal && (statusRead.state !== "ready" || signalActionBlock(openSignal === alert.signalNo)
-      || pendingSignalNos.has(alert.signalNo) || !statusRule.ok(reason) || reason.length > 200)) return;
+      || pendingSignalNos.has(alert.signalNo) || !statusRule.ok(reason))) return;
     let original = statusOriginal;
     setUpdatingSignal(alert.signalNo);
     setStatusError("");
@@ -604,12 +621,12 @@ export default function RiskRadarPage() {
     try {
       const result = await submitB5ThresholdApproval(session, pendingApproval.values, pendingApproval.reason, fetchB5Radar, "query");
       setApprovalVerifiedKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
-      setToast(result?.acknowledgement ?? "暂未查到原审批单，可稍后再查，或按原配置和理由重试。");
+      setToast(result?.acknowledgement ?? (approvalQueryOnly ? "暂未查到原审批单。旧记录缺原请求，不能重试；到「操作记录与审批」核对。" : "暂未查到原审批单，可稍后再查，或按原配置和理由重试。"));
       if (result) {
         if (approvalRecovery) { setThreshold(null); setApprovalRecovery(null); }
         setNeedsFreshRadar(true); await radar.reload();
       }
-      else setApprovalRecovery("retry");
+      else if (!approvalQueryOnly) setApprovalRecovery("retry");
     } catch (cause) { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
     finally { syncPending(value => value + 1); }
   };
@@ -672,7 +689,7 @@ export default function RiskRadarPage() {
         // 框还开着：失败和结果未知都只写在框里，不同时弹提示（VS-107、DT-12）。
         // 按原操作重试被明确拒绝时 refreshAfterWrite 已经关框，框里的话看不到，才弹一次。
         setThresholdError(displayAdminError(cause));
-        if (rejected && (thresholdOriginal || pendingApproval)) setToast(displayAdminError(cause));
+        if (rejected && (thresholdOriginal || pendingApproval)) setToast(displayAdminError(cause), "warn");
       }
     } finally { setSavingThreshold(false); syncPending(value => value + 1); }
   };
@@ -739,11 +756,14 @@ export default function RiskRadarPage() {
     if (!isB5Original(record)) { setToast("原审批内容不完整，请到操作记录核对。"); return; }
     try {
       const current = await inspectB5Command(record);
+      const { replayRejection: rejected, replayBlock } = b5Recovery.state(record);
+      // 读到现在的值之后的下一步，和恢复条上的按钮同一个条件：被拒写核实后解除，不能重试的写记录保留，其余可以原样重试。
+      const next = rejected ? RETRY_REJECTED_NEXT : replayBlock || isRetryExpired(record) ? "原记录继续保留。" : "可以按原操作重试，不会重复执行。";
       if (current.kind === "radar") { radar.setData(current.data); setNeedsFreshRadar(false); }
       else if (current.kind === "ack") { setInbox(current.data); setInboxError(""); setInboxLoading(false); setInboxNeedsRead(false); setInboxReadAt(new Date().toISOString()); }
       else if (current.kind === "signal") {
         if (openSignal === current.data.signalNo) detail.setData(current.data);
-        setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。`, "warn");
+        setToast(`当前进度：${HANDLING[current.data.handlingStatus].text}。已查到现在的值，但说明不了原操作成没成。${next}`, "warn");
         return;
       }
       else {
@@ -752,7 +772,7 @@ export default function RiskRadarPage() {
         setSubscriberDisplayName(current.data.subscriberDisplayName ?? null);
         setSubscriptionError(""); setSubscriptionLoading(false); setSubscriptionNeedsRead(false); setSubscriptionReadAt(new Date().toISOString());
       }
-      setToast(isRetryExpired(record) ? "已查到现在的值，但说明不了原操作成没成，原记录继续保留。" : "已查到现在的值，但说明不了原操作成没成。可以按原操作重试，不会重复执行。", isRetryExpired(record) ? "warn" : undefined);
+      setToast(`已查到现在的值，但说明不了原操作成没成。${next}`, rejected || replayBlock || isRetryExpired(record) ? "warn" : undefined);
     }
     catch (cause) { setToast(displayAdminError(cause)); }
   };
@@ -764,8 +784,11 @@ export default function RiskRadarPage() {
         : original?.kind === "ack" ? `信号 ${original.facts.signalNo}` : original?.kind === "subscription" ? subscriptionChannels(JSON.parse(original.body)) : "原记录不完整，到「操作记录与审批」核对";
     const name = original?.kind === "threshold" ? "调整黄线和红线" : original?.kind === "signal" ? `标记${STATUS_TEXT[input.targetStatus as "handled" | "resolved"]}` : original?.kind === "ack" ? "确认站内告警已读" : original?.kind === "subscription" ? "保存告警订阅" : "原操作";
     const recovery = b5Recovery.state(record);
+    // 重试被明确拒绝：标题和别的页的标签同名，第二段写被拒的原因和下一步（OP-93 第 8 条、OP-152）。
+    const rejected = recovery.replayRejection;
     return { onRelease: original && recovery.replayRejection ? () => setReleasingWrite(original) : undefined,
-      commandKey: record.commandKey, title: `${name} · 结果未知`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
+      commandKey: record.commandKey, title: `${name} · ${rejected ? "重试被拒绝" : "结果未知"}`, body: `${body} · ${timeText(new Date(record.createdAt).toISOString())}提交`,
+      recoveryLine: rejected ? replayRejectedLine(rejected) : undefined,
       expired: isRetryExpired(record), onRetry: recovery.replayBlock ? undefined : () => recoverWrite(record), onQuery: () => void queryWrite(record) };
   });
 
@@ -945,16 +968,16 @@ export default function RiskRadarPage() {
         {discardRecovery.dialog}
         <PendingCommands items={pendingItems} auditReachable={canAudit} />
         {pendingApproval && (
-          <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : "结果未知"}`} actionBelow
+          <Notice tone="warn" title={`提高红线的审批 · ${approvalPending ? "待审批" : approvalReleasable ? "重试被拒绝" : "结果未知"}`} actionBelow
             action={<span className="b5-row-actions">
               <Button size="sm" onClick={() => openThreshold()}>查询原操作</Button>
               {approvalReleasable && <Button size="sm" onClick={() => setReleasingApproval(true)}>核实后解除</Button>}
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-              : approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。"
+              : approvalReleasable ? replayRejectedLine(approvalRecoveryState?.replayRejection)
                 : pendingApproval.expiresAt <= Date.now() ? RETRY_EXPIRED_TEXT
-                  : "先查原审批单；查不到时 24 小时内可以按原操作重试，不会建第二张单。"}</p>
+                  : approvalQueryOnly ? APPROVAL_QUERY_ONLY : "先查原审批单；查不到时 24 小时内可以按原操作重试，不会建第二张单。"}</p>
           </Notice>
         )}
         {!data ? <>
@@ -1062,10 +1085,10 @@ export default function RiskRadarPage() {
             </>}>
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
-              {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
-                ? approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "可能已经建了审批单。先点「查询原操作」；查不到时 24 小时内可以按原操作重试，不会建第二张单。"
+              {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? approvalReleasable ? "重试被拒绝" : "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
+                ? approvalReleasable ? RETRY_REJECTED_NEXT : approvalQueryOnly ? APPROVAL_QUERY_ONLY : "可能已经建了审批单。先点「查询原操作」；查不到时 24 小时内可以按原操作重试，不会建第二张单。"
                 : thresholdUnknown ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。" : thresholdError}</Notice>}
-              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title="审批单结果未知">{approvalReleasable ? "按原操作重试被拒绝，核对结果后可以解除原操作记录。" : "先点「查询原操作」查原审批单；查到了就不用再提交。"}</Notice>}
+              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title={approvalReleasable ? "重试被拒绝" : "审批单结果未知"}>{approvalReleasable ? RETRY_REJECTED_NEXT : "先点「查询原操作」查原审批单；查到了就不用再提交。"}</Notice>}
               {otherThresholdChanges.length > 0 && <Notice tone="neutral" title="别人改了什么">{otherThresholdChanges.join(" · ")}</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>
@@ -1243,7 +1266,7 @@ export default function RiskRadarPage() {
               {!statusChanged && !statusOriginal && statusRule.error && <div className="rd-confirm-alert" role="alert" data-policy-state="fail-closed"><Notice tone="warn">{statusRule.error}</Notice></div>}
               {!statusChanged && <Field label="操作理由" required hint={statusOriginal ? undefined : statusRule.ready ? `至少 ${statusRule.min} 字` : statusRule.error ? undefined : "正在加载，稍候即可提交。"}
                 error={!statusOriginal && statusRule.ready && statusReason ? hint : undefined}>
-                <Textarea value={statusReason} disabled={busy || statusUnknown} maxLength={statusRule.policy?.max}
+                <Textarea value={statusReason} disabled={busy || statusUnknown}
                   rows={3} placeholder={isTamper(alert) ? "例如：已核对拦截记录，账户安全设置未改变" : "例如：已核对这条记录和账户近期操作"} count={statusRule.ready ? `${length}/${statusRule.max}` : undefined} onChange={(event) => setStatusReason(event.target.value)} />
               </Field>}
               {!statusOriginal && statusRead.state === "error" && <BlockState state="error" title="这条的当前进度没读到" detail={statusRead.error} onRetry={() => void loadStatus(statusDialog)} />}

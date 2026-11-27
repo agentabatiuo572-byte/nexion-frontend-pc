@@ -312,7 +312,8 @@ export function LegalTab({ ctx, writes, canWrite, canPublish, nonce, focus, onHe
           <p>{shown.summary}</p>
           {shown.sections.map((section, index) => <section key={section.key}><h3>第 {index + 1} 节 · {section.title}</h3><p>{section.body}</p></section>)}
         </div>
-        <Fold inset title="技术信息" summary={`修订号 ${shown.revision}`}>
+        <Fold inset title="技术信息" summary="修订号和各节标识">
+          <Facts><Fact k="修订号">{String(shown.revision)}</Fact></Facts>
           <RecordList label="法律条款章节标识" records={shown.sections.map((section, index) => ({ id: section.key, value: `第 ${index + 1} 节 · ${section.title}`, reference: section.key }))} />
         </Fold>
       </>}

@@ -418,7 +418,6 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const canStayHome = !justLoggedIn && b0HasAnyBlock(b0Blocks(authorities));
   const shouldRedirectHome = pathname === "/" && landingPath !== null && landingPath !== "/" && !canStayHome;
   const denied = !canAccessResolvedPath(domains, pathname)
-    || pathname === B5_PATH && !authorities.includes("overview_b5_read")
     || readDenied?.authEpoch === authEpoch && readDenied.pathname === pathname;
   const redirecting = isAuthenticated && landingPath !== null && shouldRedirectHome;
 

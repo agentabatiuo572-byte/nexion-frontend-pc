@@ -550,7 +550,8 @@ export function E6PendingNotice({ section, onRead, toast }: { section: E6Section
     ...m.legacy.filter(r => section === "tasks" ? r.fingerprint.startsWith("e2_task_") : section === "tiers" ? r.fingerprint.startsWith("e2_phone_tier") : section === "phones" ? r.fingerprint.startsWith("e5") : r.fingerprint.startsWith("e6_")).map(r => ({
       key: r.commandKey, object: "升级前的原提案", createdAt: r.createdAt, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试或解除；到操作记录与审批核对。",
-      detail: <p>操作编号：<code>{r.commandKey}</code></p> })),
+      // 命令号放第三层的「技术信息」折叠，和完整记录同一种样子（OP-154、DT-22）。
+      tech: <Fold inset title="技术信息" summary="操作编号"><div className="e6-fold-content"><p>操作编号：<code>{r.commandKey}</code></p></div></Fold> })),
   ];
   const release = m.release?.section === section ? m.release : null;
   return <>

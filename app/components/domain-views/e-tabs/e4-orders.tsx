@@ -233,7 +233,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
                 {refundWait > 0 && <Button size="sm" onClick={() => ctx.updateE4Query({ group: "failed", state: "provisioning_failed" })}>看开通失败的订单</Button>}
               </>}>{waitTitle}</Conclusion>
           : error ? <Conclusion state="unknown" action={<Button size="sm" onClick={() => void ctx.refreshE4()}>重试</Button>}>订单列表没读到，还不能确认有没有要处理的订单</Conclusion>
-          : ctx.e4Pending.length + ctx.e4ReceiptAttempts.length > 0 ? <Conclusion state="warn" hint="有结果前这些单不能再操作。">上方有 {new Set([...ctx.e4Pending, ...ctx.e4ReceiptAttempts].map((record) => record.orderNo)).size} 单的操作结果未知或在等审批，先到上方核对</Conclusion>
+          // 结果未知和待审批只在上方的恢复面板说（OP-93 第 1 项），结论句照常说订单（DT-12）。
           : <Conclusion state="ok" hint={counts?.placed ? `${counts.placed} 单在等用户付款，不用操作。` : undefined} explain={searchNote || undefined}>没有要处理的订单</Conclusion>}
 
     <StatBand label="订单汇总">

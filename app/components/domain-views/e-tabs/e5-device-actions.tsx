@@ -197,7 +197,8 @@ export function E5CommandScope({ children, ctx, refresh, readBack, toast, writeB
     ...old.map(row => ({ key: row.commandKey, object: "升级前的设备操作", createdAt: row.createdAt, tag: <StatusTag tone="warn">缺完整原请求</StatusTag>,
       line: "旧记录缺原请求，不能重试；到操作记录与审批核对。",
       actions: <Button size="sm" disabled={!!busy} onClick={() => void refresh()}>刷新设备列表</Button>,
-      detail: <Facts><Fact label="操作编号" value={row.commandKey} mono copy /></Facts> })),
+      // 命令号放第三层的「技术信息」折叠，和完整记录同一种样子（OP-154、DT-22）。
+      tech: <Fold inset title="技术信息" summary="操作编号"><Facts><Fact label="操作编号" value={row.commandKey} mono copy /></Facts></Fold> })),
     ...drafts.map(record => ({
       key: record.commandKey, object: `${record.label} · ${record.device.serial}`, createdAt: record.createdAt,
       tag: <StatusTag tone="neutral">未执行</StatusTag>, line: "可以重新确认原操作。",

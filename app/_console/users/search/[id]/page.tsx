@@ -1595,7 +1595,10 @@ export default function UserDetailPage() {
         // 收起那一行已经写了「可能已经生效，先查询原操作」的（没查过、没过期、不是旧记录、没被拒），展开不再写这两句（DT-12）。
         detail: (() => {
           const lead = found === "FAILED" || !shown && !refused && !expired && !command.legacy ? "" : "可能已经生效，不要重复操作。";
-          const step = !shown && nextStep === `${CHECK_RESULT_FIRST}。` ? "" : nextStep;
+          // 行上（或查到的结论）已经说了过了 24 小时的，展开只补去哪核对，不再说一遍（DT-12）。
+          const rowSaysExpired = expired && !refused && (!shown || shown.line.includes("24 小时"));
+          const step = rowSaysExpired ? canClose || shown?.line.includes("操作记录与审批") ? "" : "请到操作记录与审批核对。"
+            : !shown && nextStep === `${CHECK_RESULT_FIRST}。` ? "" : nextStep;
           return lead || step || more ? <>{(lead || step) && <p>{lead}{step}</p>}{more && <p>{more}</p>}</> : undefined;
         })(),
         // 技术信息和商品管理、设备管理等页同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。
@@ -1613,7 +1616,8 @@ export default function UserDetailPage() {
         tag: <StatusTag tone="warn">{expired ? "已过期" : "结果未知"}</StatusTag>,
         line: expired ? "超过 24 小时不能再重试，打开时间证据核对。" : "可能已经生效，在时间证据里按原操作重试。",
         actions: canReadNotificationEvidence && <Button size="sm" onClick={() => setNotificationEvidence({ userKey, authEpoch, id })}>打开时间证据</Button>,
-        detail: expired ? <p>可能已经生效，不要重复操作。{`${EXPIRED_TEXT}。`}</p> : undefined,
+        // 行上已经写了「超过 24 小时不能再重试」，展开只补去哪核对（DT-12）。
+        detail: expired ? <p>可能已经生效，不要重复操作；也可以到操作记录与审批核对。</p> : undefined,
         tech: <Fold inset title="技术信息" summary="操作编号和理由"><Facts><Fact k="操作编号"><span data-mono>{command.commandKey}</span></Fact><Fact k="理由">{command.reason}</Fact></Facts></Fold>,
       };
     }),

@@ -5,15 +5,14 @@
  * 结果未知保号，关框，转成页面上方的待确认，这个对象确认前不能再操作（OP-93）；重试只发存下来的原操作（OP-94）。
  *
  * 恢复能力按接口实际情况写（OP-95）：
- * - 审批类能按命令号查原提案；
- * - 披露草稿和地区只有幂等，重试用同一命令号，后端不重复执行；
+ * - 审批类能按命令号查原提案；披露草稿和地区能查原回执，查无后用同一命令号重试；
  * - 法律条款和隐私政策接口不收命令号，只比对修订号：原操作已生效时，重试会被当成改动冲突拒绝，不会写两次。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
-import { Button, Fact, Modal, Notice, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
+import { Button, Fact, Facts, Fold, Modal, Notice, ReleaseModal, StatusTag, type StateTone } from "@/app/components/rd";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
@@ -33,8 +32,8 @@ import { canInvestigateECommand, eCommandClosureOffer, eCommandSettled, type ECo
 import type { FundInvestigationOutcome } from "@/lib/admin/fund-command-investigation";
 import { queryOriginalCommand, type OriginalCommandRoute } from "@/lib/admin/original-command-query";
 import { FundClosureModal, fundRecoveryStatus, settledText } from "../fund-command-check";
-import { OPEN_RESULT_LABELS, RecoveryPanel, TechInfo, receiptFact, receiptOf, recoveryTitle, type RecoveryItem } from "../recovery-panel";
-import { DIRECT_RECOVERY_INTRO, CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
+import { OPEN_RESULT_LABELS, RecoveryPanel, businessCodeOf, closureLine, foundReceiptNext, receiptFact, recoveryTitle, type RecoveryItem } from "../recovery-panel";
+import { CLOSURE_KEPT_TEXT } from "../direct-recovery-copy";
 
 type LegalDraftBody = Parameters<typeof saveLegalTermsDraft>[0];
 type ContentCall =
@@ -107,11 +106,15 @@ function dispatch(write: I5Write, key: string, actions: IContentActions, propose
   }
 }
 
-/** 这条操作能怎么恢复，只写接口真有的（OP-95）。放进提示图标。 */
-function recoveryText(op: I5Op, canQuery: boolean): string {
+/**
+ * 展开后的说明：这条操作能怎么恢复，只写接口真有的（OP-95），只补行上那句没说的。
+ * gated：有重试权但还没明确查不到（没查、查询失败），写清什么时候才能重试（OP-93 第 7 条）。
+ */
+function recoveryText(op: I5Op, canQuery: boolean, canRetry: boolean, gated: boolean): string | undefined {
   if (op.kind === "a2") return canQuery ? "审批单可能已经建好，批准前不会执行。可以先查询原操作。" : "审批单可能已经建好，批准前不会执行。这个账号查不了原审批单，请能看操作记录的同事核查。";
-  if (op.kind === "content") return "可能已经保存。按原操作重试，系统认得出是同一次提交，不会重复执行。";
-  return "可能已经生效。按原操作重试不会写两次：已生效的话，重试会被拒。";
+  if (op.kind === "content") return canRetry ? "重试发的是原内容，系统认得出是同一次提交，不会重复执行。"
+    : gated ? "查询只读取，不会重发；明确查不到原操作，才能按原操作重试。" : undefined;
+  return "按原操作重试不会写两次：已生效的话，重试会被拒。";
 }
 
 /** 合并结果里要给人看的两类位置（路径）：别人改了的、两边都改了留下自己的。 */
@@ -615,10 +618,10 @@ export function LeaveDialog({ guard, saveLabel, saveName = `${saveLabel}后继�
   );
 }
 
-export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }: {
+export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
   actions: IContentActions;
   toast: (message: string, kind?: ToastKind) => void;
-  canQuery: boolean;
+  has: (authority: string) => boolean;
   /** 一次写入有了结果（成功或转成待确认）后，读回对应的数据。 */
   onSettled: (write: I5Write) => Promise<unknown> | void;
   /** 读回原操作的对象，返回写在待确认条上的一句话。 */
@@ -635,6 +638,23 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   const sync = useCallback(() => setPending(pendingWrites.list()), []);
   useEffect(() => sync(), [sync]);
 
+  const canQuery = has("platform_a2_read");
+  const canWrite = ({ target, op }: I5Write) => {
+    if (op.kind === "a2") return has("content_i5_read") && (has("platform_a2_write") || has("platform_a2_proposal_create"))
+      && has(target === "gate" ? "content_i5_gate_adjust" : "content_i5_disclosure_publish");
+    if (op.kind === "content") return has("content_i5_read") && has("content_i5_write");
+    return has("content_legal_terms_read") && has(op.kind === "legal-transition" ? "content_legal_terms_publish" : "content_legal_terms_write");
+  };
+  const offersRetry = (record: I5Pending, expired: boolean) => !expired && !record.readback && canWrite(record);
+  const retryBlock = (record: I5Pending, outcome = outcomes[record.commandKey]) => {
+    if (isExplicitRejection(record.rejection)) return "重试被明确拒绝；核对原因后可以解除。";
+    if (record.op.kind === "a2" && !canQuery) return "这个账号查不了原审批单，请能看操作记录的同事核查";
+    if (record.op.kind !== "a2" && record.op.kind !== "content") return undefined;
+    if (!outcome) return "先查询原操作，明确查不到才能重试";
+    if ("error" in outcome) return "查询没有成功，请重新查询原操作";
+    return outcome.receipt === null ? undefined : "已查到原回执，不能按原操作重试";
+  };
+
   const note = (record: I5Pending, text: string) => setNotes((current) => ({ ...current, [record.commandKey]: text }));
   /** 发一条已存好的操作。"done" 已成功；"unknown" 已转成待确认；确定失败抛出。 */
   const execute = async (write: I5Write, scope: string, key: string, retained: boolean): Promise<"done" | "unknown"> => {
@@ -650,7 +670,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       if (cause instanceof DisclosureReadbackPending) pendingWrites.remember(scope, key, { ...write, readback: cause.readback });
       sync();
       if (!unknown) throw cause;
-      toast(cause instanceof DisclosureReadbackPending ? readbackLine(cause.readback) : "结果未知，不要重复操作。到页面上方核对原操作，或按原操作重试。", "warn");
+      toast(cause instanceof DisclosureReadbackPending ? readbackLine(cause.readback) : "结果未知，不要重复操作。到页面上方核对原操作。", "warn");
       await onSettled(write);
       return "unknown";
     }
@@ -675,7 +695,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
 
   /** 只发存下的原操作：同命令号、同内容（OP-94）。过期不发，记录留着。 */
   const retry = async (record: I5Pending) => {
-    if (record.readback || record.expiresAt <= Date.now()) return;
+    if (recovering || !offersRetry(record, record.expiresAt <= Date.now()) || retryBlock(record)) return;
     if (!pendingWrites.isDurablyStored(record.fingerprint, record.commandKey)) {
       note(record, "这次操作的记录没存住，不能再重试，请到操作记录与审批核对。");
       return;
@@ -686,14 +706,12 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
     setRecovering(record.commandKey);
     try {
       if (record.op.kind === "a2") {
-        if (!canQuery) {
-          note(record, "这个账号查不了原审批单，请能看操作记录的同事核查。记录继续保留。");
-          return;
-        }
         let original;
-        try { original = await fetchA2ProposalByKey(record.commandKey); }
+        try { original = await fetchA2ProposalByKey(record.commandKey, true); }
         catch (cause) {
-          note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留，这次没有重试。`);
+          const error = displayAdminError(cause);
+          setOutcomes(all => ({ ...all, [record.commandKey]: { error } }));
+          note(record, `查询没有成功：${error} 记录继续保留，这次没有重试。`);
           return;
         }
         if (original) {
@@ -704,6 +722,7 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
           return;
         }
       }
+      setOutcomes(({ [record.commandKey]: _outcome, ...remaining }) => remaining);
       if (await execute({ target: record.target, label: record.label, op: record.op }, record.fingerprint, record.commandKey, true) === "done") toast("原操作已完成，请核对最新内容", "success");
     } catch (cause) {
       note(record, `重试没有成功：${displayAdminError(cause)} 原操作结果仍未知，记录继续保留。`);
@@ -744,12 +763,10 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       }
       // 查到了但还没了结（仍未知、没有查到、记为失败等）：行上的标签和句子已按查到的换掉；这里换掉上一次「查询没有成功」的话。
       note(record, KEPT_NOTE);
-      const expired = record.expiresAt <= Date.now();
-      const shown = fundRecoveryStatus({ outcome: { receipt }, expired, canRetry: !expired && !record.readback, canQuery: true, canClose: canInvestigateECommand("content_i5_read") });
-      toast(`${shown.label}：${shown.line}`, "warn");
     } catch (cause) {
       setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
-      note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
+      // 行上已写「记录保留，稍后再查」，这里只补原因（DT-12）。
+      note(record, `查询没有成功：${displayAdminError(cause)}`);
     } finally { setRecovering(""); }
   };
 
@@ -757,18 +774,14 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
   const check = async (record: I5Pending) => {
     setRecovering(record.commandKey);
     try {
-      const original = await fetchA2ProposalByKey(record.commandKey);
+      const original = await fetchA2ProposalByKey(record.commandKey, true);
       if (!original) {
-        try {
-          const receipt = await queryInvestigation(record);
-          if (eCommandSettled(receipt)) {
-            toast(settledText({ status: receipt!.originalStatus }), "success");
-            pendingWrites.forget(record.fingerprint, record.commandKey); sync();
-            await onSettled(record);
-            return;
-          }
-        } catch (cause) {
-          setOutcomes(all => ({ ...all, [record.commandKey]: { error: displayAdminError(cause) } }));
+        const receipt = await queryInvestigation(record);
+        if (eCommandSettled(receipt)) {
+          toast(settledText({ status: receipt!.originalStatus }), "success");
+          pendingWrites.forget(record.fingerprint, record.commandKey); sync();
+          await onSettled(record);
+          return;
         }
         note(record, "没查到原审批单，记录继续保留。");
         return;
@@ -778,7 +791,9 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
       toast(`查到原审批单，${PROPOSAL_STATUS[original.status]}。进度到「操作记录与审批」看。`, "info");
       await onSettled(record);
     } catch (cause) {
-      note(record, `查询没有成功：${displayAdminError(cause)} 记录继续保留。`);
+      const error = displayAdminError(cause);
+      setOutcomes(all => ({ ...all, [record.commandKey]: { error } }));
+      note(record, `查询没有成功：${error}`);
     } finally {
       setRecovering("");
     }
@@ -805,35 +820,63 @@ export function useI5Writes({ actions, toast, canQuery, onSettled, onReadBack }:
 
   const auditHref = "/platform/audit?domain=I";
   /** 这一行的标签和结论：查过原结果的用共用面板的叫法；走审批的没查过说「可能已经提交」；重试被明确拒绝的说可以解除。 */
-  const statusOf = (record: I5Pending, expired: boolean): { tone: StateTone; label: string; line: string; more?: string } => {
-    const outcome = outcomes[record.commandKey];
+  const statusOf = (record: I5Pending, outcome: FundInvestigationOutcome | undefined, expired: boolean, canRetry: boolean): { tone: StateTone; label: string; line: string; more?: string } => {
     if (record.readback) return { tone: "warn", label: "deleted" in record.readback ? "已删除" : "已保存", line: readbackLine(record.readback) };
     // 和设备页恢复行（RECOVERY_LINE.refused）同一句；不引设备页的文件。
-    if (isExplicitRejection(record.rejection)) return { tone: "warn" as const, label: "重试被拒", line: "重试被明确拒绝；核对原因后可以解除。" };
+    if (isExplicitRejection(record.rejection)) return { tone: "danger" as const, label: "重试被拒绝", line: "重试被明确拒绝；核对原因后可以解除。" };
     if (record.op.kind === "a2" && !outcome) return { tone: "warn" as const, label: expired ? "已过期" : "结果未知",
       line: expired ? "超过 24 小时不能再重试，先查询原操作。" : canQuery ? "可能已经提交，先查询原操作。" : "可能已经提交，这个账号查不了原结果，到操作记录与审批核对。" };
-    const shown = fundRecoveryStatus({ outcome, expired, canRetry: !expired, canQuery: true, canClose: canInvestigateECommand("content_i5_read") });
-    return { ...shown, more: shown.more ?? (outcome && "error" in outcome ? outcome.error : undefined) };
+    // 法律条款、隐私政策查不了原回执，行上的按钮是「读取当前条款／政策」，下一步按这个按钮写（OP-95 丙档、OP-152）。
+    if (record.op.kind !== "a2" && record.op.kind !== "content") {
+      const read = record.op.kind === "privacy" ? "读取当前政策" : "读取当前条款";
+      return { tone: "warn" as const, label: expired ? "已过期" : "结果未知", line: expired ? `超过 24 小时不能再重试，先「${read}」核对。` : `可能已经生效，先「${read}」核对。` };
+    }
+    const canClose = canInvestigateECommand("content_i5_read");
+    const shown = fundRecoveryStatus({ outcome, expired, canRetry, canQuery: true, canClose });
+    if (outcome && "error" in outcome) return { ...shown, more: outcome.error };
+    if (!expired && outcome) {
+      const receipt = outcome.receipt;
+      if (receipt === null && canRetry) return { ...shown, line: "查不到不等于没执行，可以按原操作重试。" };
+      if (receipt?.originalStatus === "PROCESSING") return { ...shown, line: "稍后再查，执行完才有结论。" };
+      const offer = eCommandClosureOffer(outcome, expired);
+      if (receipt?.originalStatus === "UNKNOWN" && canClose) {
+        return { ...shown, line: closureLine(offer, receipt, canClose) ?? "系统也没有结果，请按证据核查结案。" };
+      }
+      const next = foundReceiptNext(receipt, canClose && offer.conclusions.length > 0);
+      if (next) return { ...shown, line: next };
+    }
+    return shown;
   };
+  let open = 0;
   const items: RecoveryItem[] = pending.map((record) => {
+    const outcome = outcomes[record.commandKey];
     const expired = record.expiresAt <= Date.now();
-    const shown = statusOf(record, expired);
+    const offer = offersRetry(record, expired);
+    const block = retryBlock(record, outcome);
+    const canRetry = offer && !block;
+    const shown = statusOf(record, outcome, expired, canRetry);
+    const help = !expired && !record.readback ? recoveryText(record.op, canQuery, canRetry, offer && !isExplicitRejection(record.rejection) && (!outcome || "error" in outcome)) : undefined;
+    if (OPEN_RESULT_LABELS.includes(shown.label)) open += 1;
+    const code = businessCodeOf(outcome);
     return { key: record.commandKey, createdAt: record.createdAt, object: record.label,
       tag: <StatusTag tone={shown.tone} explain={shown.more}>{shown.label}</StatusTag>, line: shown.line,
       note: notes[record.commandKey] || undefined,
       actions: <>
         {record.op.kind === "a2" && canQuery && <Button size="sm" disabled={!!recovering} onClick={() => void check(record)}>查询原操作</Button>}
         {record.op.kind === "content" && <Button size="sm" disabled={!!recovering} onClick={() => void queryContent(record)}>查询原操作</Button>}
-        {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcomes[record.commandKey], expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
+        {canInvestigateECommand("content_i5_read") && eCommandClosureOffer(outcome, expired).conclusions.length > 0 && <Button size="sm" variant="danger-outline" disabled={!!recovering} onClick={() => setClosing(record)}>核查结案</Button>}
         {(record.op.kind === "legal-save" || record.op.kind === "legal-transition" || record.op.kind === "privacy") && <Button size="sm" disabled={!!recovering} onClick={() => void readBack(record)}>{record.op.kind === "privacy" ? "读取当前政策" : "读取当前条款"}</Button>}
-        {!expired && !record.readback && <Button size="sm" disabled={!!recovering} disabledReason={record.op.kind === "a2" && !canQuery ? "这个账号查不了原审批单，请能看操作记录的同事核查" : undefined} onClick={() => void retry(record)}>按原操作重试</Button>}
+        {offer && <Button size="sm" disabled={!!recovering} disabledReason={block} onClick={() => void retry(record)}>按原操作重试</Button>}
         {isExplicitRejection(record.rejection) && <Button size="sm" disabled={!!recovering} onClick={() => setReleasing(record)}>核实后解除</Button>}
       </>,
-      detail: !expired && !record.readback ? <p>{recoveryText(record.op, canQuery)}</p> : undefined,
-      tech: <p className="fund-row-tech"><TechInfo commandKey={record.commandKey} receipt={receiptOf(outcomes[record.commandKey])} /></p> };
+      detail: help && <p>{help}</p>,
+      // 技术信息和商品管理、设备管理、算力配置同一种样子：底部折叠，摘要不露编号（OP-154、DT-22）。
+      tech: <Fold inset title="技术信息" summary={code === undefined ? "操作编号" : "操作编号和业务码"}><Facts>
+        <Fact k="操作编号"><span data-mono>{record.commandKey}</span></Fact>
+        {code !== undefined && <Fact k="业务码">{String(code)}</Fact>}
+      </Facts></Fold> };
   });
-  const open = pending.filter((record) => OPEN_RESULT_LABELS.includes(statusOf(record, record.expiresAt <= Date.now()).label)).length;
-  const notices: ReactNode = <RecoveryPanel items={items} title={recoveryTitle(pending.length - open, 0, 0, open)} explainLabel="结果未知怎么处理" explain={DIRECT_RECOVERY_INTRO}
+  const notices: ReactNode = <RecoveryPanel items={items} title={recoveryTitle(pending.length - open, 0, 0, open)} explainLabel="结果未知怎么处理" explain="提交时没收到确定结果：直接修改的可能已经生效，提交审批的可能已经建了审批单。请按每条记录上的提示核对；有结果前，相关内容不能再修改。"
     foot={reach(auditHref, "platform_a2_read") ? <Link className="rd-link" href={auditHref} prefetch={false}>到操作记录与审批核对</Link> : undefined} />;
 
   const releaseModal = <>

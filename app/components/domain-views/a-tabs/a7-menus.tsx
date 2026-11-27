@@ -84,8 +84,8 @@ function navPreview(tree: readonly A7MenuTreeNode[]) {
       nodes.push({ menuCode: child.menuCode, menuName: child.menuNameZh || child.menuName, routePath: child.routePath, parentCode: root.menuCode, sortOrder: child.sortOrder });
     }
   }
-  // 客服排行榜按客服读权限插在客服中心里，拥有全部菜单的账号也有这项权限。
-  const domains = resolveVisibleDomains({ role: "super", menuCodes: codes, menuNodes: nodes, authorities: ["service_m1_read"] });
+  // 客服排行榜按客服读权限插在客服中心里；风险提醒还要它自己的读权才进侧栏。拥有全部菜单的账号这两项权限都有。
+  const domains = resolveVisibleDomains({ role: "super", menuCodes: codes, menuNodes: nodes, authorities: ["service_m1_read", "overview_b5_read"] });
   const shownPages = new Set<string>();
   const shownDomains = new Set<string>();
   for (const domain of domains) {
