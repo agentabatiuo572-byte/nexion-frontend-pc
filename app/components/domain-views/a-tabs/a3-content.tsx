@@ -221,9 +221,9 @@ function SaveModal({ mode, title, busy, error, facts, extra, reason, onReason, r
     {error && <Notice tone={locked ? "warn" : "danger"} title={locked ? undefined : "没有保存"}>{error}</Notice>}
     {facts}
     {extra}
-    <Field label="变更理由" required hint={draftReason?.ready ? `至少 ${draftReason.min} 字` : undefined}
+    <Field label="操作理由" required hint={draftReason?.ready ? `至少 ${draftReason.min} 字` : undefined}
       help={draftReason ? !draftReason.ready && !reasonError ? draftReason.blocked : undefined : `${reasonMin}–500 字`} error={reasonError}>
-      {(control) => <Textarea {...control} aria-label="变更理由" value={reason} disabled={locked || busy} maxLength={draftReason ? undefined : 500} rows={2}
+      {(control) => <Textarea {...control} aria-label="操作理由" value={reason} disabled={locked || busy} maxLength={draftReason ? undefined : 500} rows={2}
         count={draftReason ? draftReason.ready ? draftReason.count : undefined : `${reason.trim().length}/500`}
         placeholder="例如：更新提现说明，工单号" onBlur={draftReason ? () => setReasonLeft(true) : undefined} onChange={(event) => onReason(event.target.value)} />}
     </Field>
