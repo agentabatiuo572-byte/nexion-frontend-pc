@@ -6,7 +6,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { recoveryTitle } from "../recovery-panel";
 import Link from "next/link";
 import {
-  ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleSlash, Gift, History, Link2, ListChecks, Pause, Pencil, Play, Plus, RefreshCw,
+  ArrowLeftRight, Archive, CalendarClock, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Gift, History, Link2, ListChecks, Pause, Pencil, Play, Plus, RefreshCw,
   Route, Sparkles, Trash2,
 } from "lucide-react";
 import {
@@ -531,7 +531,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
         <Fact k="任务名称">{String(bv.missionName ?? "").trim()}</Fact>
         <Fact k="任务编号"><span data-mono="">{String(bv.missionCode ?? "").trim()}</span></Fact>
         <Fact k="奖励">{reward == null ? "—" : `${amountText(reward)} UVT${missionType === "DAY_ONE" ? "（不单发，统一领新手任务奖励）" : ""}`}</Fact>
-        <Fact k="类别和跳转">{`${TASK_CATEGORY_LABELS[bv.category] ?? bv.category} · ${routeLabels[bv.actionRoute] ?? bv.actionRoute}`}</Fact>
+        <Fact k="任务类别">{TASK_CATEGORY_LABELS[bv.category] ?? bv.category}</Fact>
+        <Fact k="点「去完成」跳到">{routeLabels[bv.actionRoute] ?? bv.actionRoute}</Fact>
         <Fact k="建好后">已停用；绑定完成条件、启用以后用户才看得到</Fact>
         {approval ? <Fact k="什么时候生效" tone="warn">奖励大于 0：提交审批，批准后才建好</Fact> : <Fact k="什么时候生效">奖励是 0：确认后直接建好</Fact>}
         {approverFacts(approval)}
@@ -690,11 +691,13 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
             },
             {
               key: "actionRoute",
-              label: "点「去完成」跳转到",
+              label: "点「去完成」跳到",
               current: currentActionRoute,
               inputKind: "select",
               options,
               optionLabels: labels,
+              placeholder: "选择或输入名称搜索",
+              searchSelect: { empty: "没有匹配的页面或商品" },
               required: true,
               showDiff: true,
             },
@@ -1276,6 +1279,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   const missingBindingTarget = (binding: (typeof bindings)[number], inPage: boolean) => binding.liveTargetState != null
     ? binding.liveTargetState === "TARGET_MISSING"
     : !inPage && binding.targetInTaskCatalog !== true;
+  const unrecognizedBindings = bindings.filter((binding) => !binding.recognized);
   const orphans = bindings.filter((binding) => binding.status === 1 && missingBindingTarget(binding, codes.has(binding.questCode)));
   const h1 = model.phaseMultiplierReadonly ?? {};
   const currentPhase = cleanPhaseKey(text(h1.currentPhase, ""));
@@ -1649,24 +1653,30 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
                 const event = typeof eventLabel === "string" ? eventLabel : "未识别的完成事件";
                 const producer = producerText(binding.producer);
                 const source = /[\u3400-\u9fff]/.test(producer) ? producer : "来源待核对";
+                const stateTag = enabled ? <StatusTag tone="ok" icon={CircleCheck}>已启用</StatusTag> : <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>;
+                // 来源或「算谁完成」不认得的旧绑定：只能看，启停、修改、删除禁用（BUG-798，OP-126）；原因在表下常显一次。
+                const unrecognized = binding.recognized ? undefined : "这条无法识别，只能查看";
                 return <Tr key={binding.bindingCode} mark={enabled && missingBindingTarget(binding, !!task) ? "danger" : undefined}>
                   <Td grow><Cell main={event} title={`${event} · ${source}`} sub={source} /></Td>
                   <Td>{task
                     ? <Cell main={task} sub={<span aria-hidden="true">&nbsp;</span>} />
                     : <Cell main={binding.targetActiveInTaskCatalog === true && binding.targetInTaskCatalog === true ? bindingTargetGap(binding) : <span className="h3-card-alert"><CircleAlert size={14} aria-hidden />{bindingTargetGap(binding)}</span>} sub={<span aria-hidden="true">&nbsp;</span>} />}</Td>
                   <Td><Cell main={H3_BINDING_USER_FIELD_LABELS[binding.userIdField] ?? "归属待核对"} sub={<span aria-hidden="true">&nbsp;</span>} /></Td>
-                  <Td>{enabled ? <StatusTag tone="ok" icon={CircleCheck}>已启用</StatusTag> : <StatusTag tone="neutral" icon={CircleSlash}>已停用</StatusTag>}</Td>
+                  <Td>{unrecognized ? <Cell main={stateTag} sub={<StatusTag tone="warn" icon={CircleHelp}>无法识别</StatusTag>} /> : stateTag}</Td>
                   {canModuleWrite && <Td sticky="end" data-fit=""><span className="rd-row-actions">
-                    <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改 ${binding.bindingCode}`} onClick={conflictDraft.register(JSON.stringify(["openBindingEdit:1", binding.bindingCode]), () => openBindingEdit(binding))}>修改</Button>
+                    <Button size="sm" icon={<Pencil size={14} aria-hidden />} aria-label={`修改 ${binding.bindingCode}`} disabledReason={unrecognized} onClick={conflictDraft.register(JSON.stringify(["openBindingEdit:1", binding.bindingCode]), () => openBindingEdit(binding))}>修改</Button>
                     <MoreMenu label={`${binding.bindingCode} 的更多操作`} items={[
-                      { key: "toggle", label: enabled ? "停用" : "启用", onSelect: conflictDraft.register(JSON.stringify(["openBindingStatus:1", binding.bindingCode]), () => openBindingStatus(binding)) },
-                      { key: "delete", label: "删除", danger: true, onSelect: conflictDraft.register(JSON.stringify(["openBindingDelete:1", binding.bindingCode]), () => openBindingDelete(binding)) },
+                      { key: "toggle", label: enabled ? "停用" : "启用", disabledReason: unrecognized, onSelect: conflictDraft.register(JSON.stringify(["openBindingStatus:1", binding.bindingCode]), () => openBindingStatus(binding)) },
+                      { key: "delete", label: "删除", danger: true, disabledReason: unrecognized, onSelect: conflictDraft.register(JSON.stringify(["openBindingDelete:1", binding.bindingCode]), () => openBindingDelete(binding)) },
                     ]} />
                   </span></Td>}
                 </Tr>;
               })}
             </tbody>
           </Table>}
+        {unrecognizedBindings.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${unrecognizedBindings.length} 条完成条件无法识别`}>
+          <p>来源或「算谁完成」是后台不认得的旧值，这里只能查看，不能启停、修改或删除；要改需技术按条件编号核查数据：{unrecognizedBindings.map((binding, index) => <Fragment key={binding.bindingCode}>{index ? "、" : ""}<span data-mono="">{binding.bindingCode}</span></Fragment>)}。</p>
+        </Notice></div>}
         {orphans.length > 0 && <div className="h3-block-gap"><Notice tone="warn" title={`${orphans.length} 条启用的完成条件找不到对应的任务`}>
           <p>{orphans.every((binding) => binding.targetInTaskCatalog === false) ? "任务目录里没有它指向的任务。" : "这页只列新手任务和每周任务。"}先到后台核查这个任务编号的真实目标，再决定修改或删除；不按它补任务。</p>
         </Notice></div>}

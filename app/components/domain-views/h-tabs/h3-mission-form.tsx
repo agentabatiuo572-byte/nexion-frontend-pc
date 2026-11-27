@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { ListChecks } from "lucide-react";
 import { Button, Decision, Drawer, Field, Input, Modal, Notice, NumberInput, SearchSelect, Select, StatusTag } from "@/app/components/rd";
-import { TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS, amountText } from "./h3-quest-parts";
+import { PreviewTarget, TASK_CATEGORY_LABELS, TASK_CATEGORY_OPTIONS, amountText } from "./h3-quest-parts";
 import { h3ActionRoutes } from "@/lib/admin/config-help/h3-task";
 import { h3MissionCreationRefusal, type H3ProductActionTarget } from "@/lib/admin/h3-contract";
 import { displayAdminError } from "@/lib/admin/error-messages";
@@ -59,7 +59,9 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
   const [leaving, setLeaving] = useState(false);
   /** 「去完成」框里正在打的字；没在打字时为 null，框里显示已选项的名称。 */
   const [routeTyping, setRouteTyping] = useState<string | null>(null);
-  const [routeLeft, setRouteLeft] = useState(false);
+  /** 离开过的字段：刚打开不报，离开这一项后报它，点过「下一步」后全部亮出（OP-15、VS-107）。 */
+  const [left, setLeft] = useState<Record<string, boolean>>({});
+  const leave = (key: string) => () => setLeft((state) => state[key] ? state : { ...state, [key]: true });
   const actionRoutes = h3ActionRoutes(value.missionCode ?? "", productActionTargets);
   const actionRoute = actionRoutes.includes(value.actionRoute) ? value.actionRoute : "";
   const routeBlocked = actionRoutes.length ? undefined : productActionTargets === undefined
@@ -67,8 +69,7 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
     : "现在没有能作回本目标的 S1 商品（已开放、能显示预计收益），上架后再选";
   const errors = missionFormErrors(value, missionType, actionRoute ? undefined : routeBlocked ?? "请选择去完成页面");
   const creationRefusal = h3MissionCreationRefusal(missionType, value.missionCode?.trim() ?? "");
-  // 刚打开不报；离开「去完成」后报这一项，点过「下一步」后全部亮出（OP-15、VS-107）。
-  const shown = attempted ? errors : routeLeft && errors.actionRoute ? { actionRoute: errors.actionRoute } : {};
+  const shown: Record<string, string> = attempted ? errors : Object.fromEntries(Object.entries(errors).filter(([key]) => left[key]));
   const routeText = (route: string) => routeLabels[route] ?? route;
   const routeQuery = routeTyping?.trim().toLowerCase() ?? "";
   const routeOptions = actionRoutes.filter((route) => !routeQuery || routeText(route).toLowerCase().includes(routeQuery))
@@ -95,23 +96,23 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
               填的内容还在，读到以后才能继续。
             </Notice>}
             <Field label="任务编号" required hint="英文和数字" error={shown.missionCode ?? (creationRefusal ? displayAdminError(new Error(creationRefusal)) : undefined)}>
-              {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onChange={(event) => set("missionCode", event.target.value)} />}
+              {(control) => <Input {...control} value={value.missionCode ?? ""} placeholder="如 dayOne-visit-earn" onBlur={leave("missionCode")} onChange={(event) => set("missionCode", event.target.value)} />}
             </Field>
             <Field label="任务名称" required help="各语言名称建好后在任务详情里填，启用前英文和运营区域语言要填齐" error={shown.missionName}>
-              {(control) => <Input {...control} value={value.missionName ?? ""} placeholder="如 Visit earnings page" onChange={(event) => set("missionName", event.target.value)} />}
+              {(control) => <Input {...control} value={value.missionName ?? ""} placeholder="如 Visit earnings page" onBlur={leave("missionName")} onChange={(event) => set("missionName", event.target.value)} />}
             </Field>
             <Field label="奖励" required hint="非负整数" error={shown.rewardPoints}
 >
-              {(control) => <NumberInput {...control} unit="UVT" min={0} step={1} value={value.rewardPoints ?? ""} onChange={(event) => set("rewardPoints", event.target.value)} />}
+              {(control) => <NumberInput {...control} unit="UVT" min={0} step={1} value={value.rewardPoints ?? ""} onBlur={leave("rewardPoints")} onChange={(event) => set("rewardPoints", event.target.value)} />}
             </Field>
             <div className="rd-form-grid" data-cols="2" data-dense="">
               <Field label="任务类别" required error={shown.category}>
-                {(control) => <Select {...control} aria-label="任务类别" value={value.category ?? ""} onChange={(next) => set("category", next)}
-                  options={TASK_CATEGORY_OPTIONS.map((option) => ({ value: option, label: TASK_CATEGORY_LABELS[option] }))} />}
+                {(control) => <div onBlur={leave("category")}><Select {...control} aria-label="任务类别" value={value.category ?? ""} onChange={(next) => set("category", next)}
+                  options={TASK_CATEGORY_OPTIONS.map((option) => ({ value: option, label: TASK_CATEGORY_LABELS[option] }))} /></div>}
               </Field>
               <Field label="点「去完成」跳到" required help={shown.actionRoute ? undefined : routeBlocked} error={shown.actionRoute}>
                 {/* 框里显示的是已选项名称时，点进去先全选，打字就替换它，不会接在名称后面去搜（Ant Design Select showSearch）。 */}
-                {(control) => <div onBlur={() => setRouteLeft(true)}
+                {(control) => <div onBlur={leave("actionRoute")}
                   onFocus={(event) => { if (routeTyping === null && event.target instanceof HTMLInputElement) event.target.select(); }}
                   onClick={(event) => { if (routeTyping === null && event.target instanceof HTMLInputElement) event.target.select(); }}>
                   <SearchSelect {...control} aria-label="点「去完成」跳到" placeholder="选择或输入名称搜索" disabled={!actionRoutes.length}
@@ -130,7 +131,8 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
                 <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[value.category] ?? "其他"}</span>
                 <b>{value.missionName?.trim() || "任务名称"}</b>
                 {missionType !== "DAY_ONE" && <span className="h3-phone-reward">{reward == null ? "—" : `+${amountText(reward)} UVT`}</span>}
-                <span className="h3-phone-go">{`去完成 › ${routeLabels[actionRoute] ?? actionRoute}`}</span>
+                <span className="h3-phone-go">去完成 ›</span>
+                <PreviewTarget label={actionRoute ? routeLabels[actionRoute] ?? actionRoute : ""} empty="还没选跳到哪页" />
               </div>
             </div>
             <dl className="h3-form-facts">

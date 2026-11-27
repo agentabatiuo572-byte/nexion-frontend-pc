@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Lock, Smartphone } from "lucide-react";
+import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, CornerDownRight, Hourglass, Lock, Smartphone } from "lucide-react";
 import { Button, Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
 import { TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
@@ -503,6 +503,11 @@ function previewName(task: PreviewTask, locale: PreviewLocale) {
   return task.names[locale] || task.names.en || task.source;
 }
 
+/** 预览里给运营核对的跳转目标：App 上只有「去完成 ›」，这一行只在后台显示。label 为空时写占位。 */
+export function PreviewTarget({ label, empty = "—" }: { label: string; empty?: string }) {
+  return <span className="h3-phone-target"><CornerDownRight size={12} aria-hidden /><span>{label ? `跳到 ${label}` : empty}</span></span>;
+}
+
 export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
   kind: "dayOne" | "weekly";
   tasks: PreviewTask[];
@@ -520,6 +525,7 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
           <Explain label="这个预览怎么来的" content={<>
             <p>按现在已启用的任务和现在的设置画，示意{kind === "dayOne" ? "之后注册的用户" : "下一次发布的每周任务"}会看到什么；已经发给用户的那一份不变。</p>
             <p>没填某种语言的名称时，App 先用英文，再用原名，不自动翻译。</p>
+            <p>每个任务下的「跳到…」只在后台显示，App 上没有。</p>
             {kind === "weekly" && <p>App 首页只显示排在最前面的一个一档任务；金额在 App 里会取整显示，实际到账按冻结倍率算，最多保留 6 位小数。</p>}
           </>} />
         </span>
@@ -540,6 +546,7 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                 <b>{previewName(hero, locale)}</b>
                 <span className="h3-phone-reward">{hero.reward == null ? "—" : `+${hero.reward} UVT`}</span>
                 <span className="h3-phone-go">去完成 ›</span>
+                <PreviewTarget label={hero.routeLabel} />
               </div>
             )}
             {tasks.length === 0 && kind === "dayOne" && <p className="h3-phone-empty">{empty}</p>}
@@ -548,9 +555,12 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                 {tasks.map((task) => (
                   <li key={task.key}>
                     <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[task.category] ?? "其他"}</span>
-                    <span className="h3-phone-name">{previewName(task, locale)}</span>
+                    <span className="h3-phone-main">
+                      <span className="h3-phone-name">{previewName(task, locale)}</span>
+                      <PreviewTarget label={task.routeLabel} />
+                    </span>
                     {task.reward !== undefined && <span className="h3-phone-reward">{task.reward == null ? "—" : `+${task.reward}`}</span>}
-                    <span className="h3-phone-go" aria-label={`点了跳到${task.routeLabel}`}>›</span>
+                    <span className="h3-phone-go" aria-hidden="true">›</span>
                   </li>
                 ))}
               </ul>
