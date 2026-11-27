@@ -103,7 +103,10 @@ export function H3MissionFormDrawer({ missionType, initial, productActionTargets
                   options={TASK_CATEGORY_OPTIONS.map((option) => ({ value: option, label: TASK_CATEGORY_LABELS[option] }))} />}
               </Field>
               <Field label="点「去完成」跳到" required help={shown.actionRoute ? undefined : routeBlocked} error={shown.actionRoute}>
-                {(control) => <div onBlur={() => setRouteLeft(true)}>
+                {/* 框里显示的是已选项名称时，点进去先全选，打字就替换它，不会接在名称后面去搜（Ant Design Select showSearch）。 */}
+                {(control) => <div onBlur={() => setRouteLeft(true)}
+                  onFocus={(event) => { if (routeTyping === null && event.target instanceof HTMLInputElement) event.target.select(); }}
+                  onClick={(event) => { if (routeTyping === null && event.target instanceof HTMLInputElement) event.target.select(); }}>
                   <SearchSelect {...control} aria-label="点「去完成」跳到" placeholder="选择或输入名称搜索" disabled={!actionRoutes.length}
                     value={routeTyping ?? (actionRoute ? routeText(actionRoute) : "")}
                     onChange={(next) => { setRouteTyping(next); if (value.actionRoute) set("actionRoute", ""); }}
