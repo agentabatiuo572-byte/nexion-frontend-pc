@@ -19,6 +19,8 @@ const REPLAY_REJECTED_FACTS = new Map([
   ["SUPPORT_BINDING_VERSION_CONFLICT", "客户归属在原操作之后变了。"],
   ["SUPPORT_GROUP_SCOPE_CHANGED", "分组成员在原操作之后变了。"],
   ["SUPPORT_RULES_VERSION_CONFLICT", "服务规则在原操作之后被别人改过。"],
+  ["SUPPORT_WELCOME_VERSION_CONFLICT", "欢迎语在原操作之后被别人改过。"],
+  ["SUPPORT_FAQ_CONCURRENT_MODIFICATION", "这条问答在原操作之后被改过或换了发布状态。"],
 ]);
 
 /** 已冻结的原操作只写拒绝事实，后续动作由各页的恢复状态决定。 */
