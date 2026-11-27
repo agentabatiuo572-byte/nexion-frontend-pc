@@ -18,6 +18,7 @@ import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
 import { AdminAuthEpochChangedError, adminAuthLifecycleEpoch, installAdminAuthFetchLifecycle } from "@/lib/admin/auth-lifecycle";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { PERMISSION_DENIED_EVENT, PERMISSION_DENIED_TEXT } from "@/lib/admin/operation-confirm-error";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { ADMIN_SESSION_EXPIRED_EVENT, resetAdminSession } from "@/lib/admin/auth-session";
 import { b0Blocks, b0HasAnyBlock } from "@/lib/admin/b0-access";
@@ -110,9 +111,11 @@ function PermissionDeniedToast() {
   useEffect(() => {
     const onDenied = (event: Event) => {
       useUI.getState().dismissTimedToasts();
+      const detail = event instanceof CustomEvent && typeof event.detail === "string" ? event.detail : undefined;
       // 读取时被拒、这一页整页换成无权限页的（事件带的就是当前页）：页面已经写了没有权限，不再弹同一句（DT-12）。
-      if (event instanceof CustomEvent && event.detail === window.location.pathname) return;
-      toast.warn(PERMISSION_DENIED_TEXT);
+      if (detail === window.location.pathname) return;
+      // 写操作被拒时事件带原因码（如账号不符），按原因说明；带的是别的页面路径时用通用的无权限句。
+      toast.warn(detail && !detail.startsWith("/") ? displayAdminError(detail) : PERMISSION_DENIED_TEXT);
     };
     window.addEventListener(PERMISSION_DENIED_EVENT, onDenied);
     return () => window.removeEventListener(PERMISSION_DENIED_EVENT, onDenied);

@@ -41,6 +41,10 @@ export interface DiffRow {
   note?: ReactNode;
   /** note 的语气：要注意传 warn（默认），真危险才传 danger。 */
   tone?: "warn" | "danger";
+  /** 这一行的补充事实，弱文字、不带图标，跟在 note 下面（比如「改后按默认：…」）。 */
+  sub?: ReactNode;
+  /** 折叠「其余」里显示的值，可以是分段内容；不传用 after。前后是否相同仍按 before、after 判断。 */
+  display?: ReactNode;
 }
 
 export function DiffList({ rows, emptyNote, restTitle = "其余设置", named = false }: {
@@ -75,6 +79,7 @@ export function DiffList({ rows, emptyNote, restTitle = "其余设置", named = 
                 <span className="rd-diff-arrow">{row.before !== undefined && row.after !== undefined && <><ArrowRight size={14} aria-hidden /><span className="rd-sr-only">改为</span></>}</span>
                 <span className="rd-diff-after">{row.after}</span>
                 {row.note && <span className="rd-diff-note" data-tone={row.tone ?? "warn"}><NoteIcon size={14} strokeWidth={1.9} aria-hidden /><span>{row.note}</span></span>}
+                {row.sub && <span className="rd-diff-sub">{row.sub}</span>}
               </li>
             );
           })}
@@ -82,8 +87,8 @@ export function DiffList({ rows, emptyNote, restTitle = "其余设置", named = 
       )}
       {same.length > 0 && (
         <Fold inset title={restTitle} summary={`${same.length} 项不变`}>
-          <dl className="rd-diff-rest">
-            {same.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.after}</dd></div>)}
+          <dl className="rd-diff-rest" data-rich={same.some((row) => row.display !== undefined) ? "" : undefined}>
+            {same.map((row) => <div key={row.key}><dt>{row.label}</dt><dd>{row.display ?? row.after}</dd></div>)}
           </dl>
         </Fold>
       )}

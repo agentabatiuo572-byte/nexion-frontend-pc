@@ -699,3 +699,45 @@ body:has(.h1-confirm-facts) .rd-tip { text-wrap: balance; }
 .h2-alert-aux { margin: 4px 0 0; color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: 18px; }
 .h2-target-note { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0 0; font-size: var(--rd-text-aux); line-height: 18px; color: var(--rd-warn); }
 .h2-target-note svg { flex: none; margin-top: 2px; }
+
+/* 按设备优惠（h2-trial-pricing.tsx）：表格优惠格、抽屉摘要和编辑区 */
+.h2-price-cell { display: flex; flex-direction: column; color: var(--rd-text); font-variant-numeric: tabular-nums; word-break: keep-all; }  /* 窄时只在空格和逗号处换行，不拆「最高」这类词 */
+.h2-price-cell [data-follow], .h2-price-group[data-follow] { color: var(--rd-text-3); font-weight: 400; }
+.h2-price-cell [data-follow] { font-size: var(--rd-text-aux); line-height: 18px; }
+.h2-price-groups { display: block; min-width: 0; overflow: hidden; }  /* 行首的「·」落在左边界外被裁掉 */
+.h2-price-groups > span { display: flex; flex-wrap: wrap; justify-content: inherit; margin-left: -20px; }
+.h2-price-group { position: relative; padding-left: 20px; white-space: nowrap; font-weight: 500; color: var(--rd-text); font-variant-numeric: tabular-nums; }
+.h2-price-group::before { content: "·"; position: absolute; left: 7px; color: var(--rd-text-3); font-weight: 400; }
+/* 折叠里的值靠右：分隔点放在每组后面，行尾的点落在右边界外被裁掉 */
+.rd-diff-rest[data-rich] .h2-price-groups > span { justify-content: flex-end; margin-left: 0; margin-right: -20px; }
+.rd-diff-rest[data-rich] .h2-price-group { padding-left: 0; padding-right: 20px; }
+.rd-diff-rest[data-rich] .h2-price-group::before { content: none; }
+.rd-diff-rest[data-rich] .h2-price-group::after { content: "·"; position: absolute; right: 7px; color: var(--rd-text-3); font-weight: 400; }
+.h2-price-sum { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 8px; margin: 8px 0 0 24px; padding: 6px 8px 6px 12px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); font-size: var(--rd-text-aux); line-height: 18px; }
+.h2-price-sum-k { color: var(--rd-text-3); }
+.h2-price-sum-lock { color: var(--rd-text-2); white-space: nowrap; }
+.h2-price-sum .h2-field-warn { grid-column: 2; }
+.h2-price-editor { display: flex; flex-direction: column; gap: 16px; margin: 8px 0 0 24px; padding: 12px 16px 16px; border-radius: var(--rd-radius-control); background: var(--rd-panel-inner); }
+.h2-price-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--rd-text-2); }
+.h2-price-target { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: var(--rd-text-aux); line-height: 18px; color: var(--rd-text-2); }
+.h2-price-target svg { flex: none; margin-top: 2px; }
+.h2-price-group-edit { display: flex; flex-direction: column; gap: 8px; }
+.h2-price-group-edit > .rd-form-field { gap: 8px; }
+.h2-price-default { margin: 0; font-size: var(--rd-text-aux); line-height: 18px; color: var(--rd-text-3); }
+.h2-price-fields { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.h2-price-note { display: flex; align-items: flex-start; gap: 6px; margin: 12px 0 0; font-size: var(--rd-text-aux); line-height: 18px; color: var(--rd-text-2); }
+.h2-price-note svg { flex: none; margin-top: 2px; }
+.h2-buy-seg { white-space: nowrap; }
+.h2-others-note { display: flex; flex-direction: column; gap: 4px; }
+.h2-buy-target { margin-left: 8px; }
+.h2-diff-line { display: block; }
+/* 确认框差异行：名称不折行，值过长时值换行 */
+.h2-confirm-diff .rd-diff-rows { grid-template-columns: minmax(min-content, 1fr) minmax(0, max-content) 14px minmax(0, max-content); }
+.h2-confirm-diff .rd-diff-name { white-space: nowrap; }
+.h2-confirm-diff :is(.rd-diff-before, .rd-diff-after) { word-break: keep-all; }  /* 值只在空格和标点处换行，不拆「最高」 */
+/* 读取最新后没有剩下的改动：「没有改动」只留在框顶的原因里（读屏能读到），差异区不再重复写 */
+[data-h2-nochange] .rd-diff-empty { display: none; }
+/* 被拒提示：文字长时「返回调整」换到下一行，和正文左对齐，不压正文 */
+.h2-reject .rd-notice { flex-wrap: wrap; }
+.h2-reject .rd-notice-text { flex: 1 1 auto; }
+.h2-reject .rd-notice-action { margin-left: 24px; }

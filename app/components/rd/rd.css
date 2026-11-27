@@ -888,11 +888,14 @@ a.rd-todo-row:focus-visible { outline: 2px solid var(--rd-focus); outline-offset
 .rd-diff-after { color: var(--rd-progress); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .rd-diff-note { grid-column: 1 / -1; display: flex; align-items: flex-start; gap: 4px; margin-top: 4px; color: var(--tone); }
 .rd-diff-note svg { flex: none; margin-top: 4px; }
+.rd-diff-sub { grid-column: 1 / -1; margin-top: 2px; font-size: var(--rd-text-aux); line-height: 18px; color: var(--rd-text-3); }
 .rd-diff-empty { margin: 0; color: var(--rd-text-2); }
 .rd-diff-rest { display: grid; gap: 4px; margin: 0; }
 .rd-diff-rest > div { display: flex; justify-content: space-between; gap: 16px; }
 .rd-diff-rest dt { min-width: 0; font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); color: var(--rd-text-3); }
 .rd-diff-rest dd { margin: 0; color: var(--rd-text-2); text-align: right; }
+.rd-diff-rest[data-rich] dt { flex: none; white-space: nowrap; }  /* 分段的值：名称不折行，值按段换行（display） */
+.rd-diff-rest[data-rich] dd { min-width: 0; }
 .rd-diff .rd-fold[data-inset] > summary { min-height: var(--rd-control-h); padding-top: 4px; padding-bottom: 4px; }
 .rd-diff .rd-fold-title { font-weight: 400; color: var(--rd-text-2); }
 .rd-diff .rd-fold[data-inset] > .rd-fold-body { padding-bottom: 4px; }

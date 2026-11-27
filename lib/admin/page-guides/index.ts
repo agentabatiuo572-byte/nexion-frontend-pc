@@ -1413,9 +1413,34 @@ export function getA8PageGuide(canReadRoles: boolean): PageGuideContent {
   };
 }
 
-export function getH2PageGuide(hasBuyList: boolean, canWrite: boolean, canCancel: boolean): PageGuideContent {
+/** 读取带「支持按设备优惠」标识时（B125）：可购买设备这件事带上改优惠，术语换成 App 的叫法。 */
+const H2_PRICING_GUIDE = {
+  buyList: { title: "调整可购买设备和优惠", steps: ["在「可购买设备」看每款在 App 上显不显示，「优惠」一列灰字是跟随默认", "点「调整」勾选设备；要单独设优惠，点它的「改优惠」", "点「下一步：核对并保存」，核对前后值、写理由后确认"] },
+  readOnly: { title: "查看可购买设备", steps: ["在「可购买设备」看其他可购买设备，按售价从低到高", "「优惠」一列写每款的试用期折扣和专享立减，灰字是跟随默认"] },
+  terms: [
+    { name: "三种优惠", text: "试用期折扣、试用抵扣金、专享立减可以叠加，实付最低 0。" },
+    { name: "跟随默认", text: "这一款的折扣或立减按常改参数、高级设置里的值算，默认改了一起变；用户本人的试用设备总按默认。" },
+  ],
+};
+
+export function getH2PageGuide(hasBuyList: boolean, canWrite: boolean, canCancel: boolean, pricing = false): PageGuideContent {
   const guide = PAGE_GUIDES.H2;
   const [settings, buyList, records] = guide.tasks;
+  if (pricing) {
+    const terms = [
+      ...guide.terms.filter((term) => ["试用抵扣金", "其他可购买设备", "宽限期"].includes(term.name)),
+      ...H2_PRICING_GUIDE.terms,
+    ];
+    return {
+      ...guide,
+      tasks: [
+        canWrite ? settings : { title: "查看试用规则", steps: ["在「常改参数」看现在的值，其他项在「高级设置」", "点问号看范围、显示位置和改了会怎样", "修改要有试用设置修改权限"] },
+        canWrite ? H2_PRICING_GUIDE.buyList : H2_PRICING_GUIDE.readOnly,
+        canCancel ? records : { ...records, title: "查看一条试用记录", steps: records.steps.slice(0, 1) },
+      ],
+      terms,
+    };
+  }
   // 术语最多 5 个（TX-37）：其余几个在对应那一行的说明里。
   const terms = hasBuyList ? guide.terms.filter((term) => ["试用抵扣金", "试用抵扣金上限", "三种优惠", "其他可购买设备", "宽限期"].includes(term.name)) : guide.terms
     .filter((term) => !["试用抵扣金", "试用目标商品", "其他可购买设备", "冷却期"].includes(term.name))

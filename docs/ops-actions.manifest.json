@@ -1406,12 +1406,26 @@
       "id": "OPS-H-22",
       "domain": "H",
       "object": "其他可购买设备",
-      "action": "以读取版本和操作理由整份替换试用可购买设备清单",
+      "action": "以读取版本和操作理由整份替换试用可购买设备清单及逐款优惠",
       "status": "built",
       "view": "h-tabs/h2-trial.tsx",
       "batch": "P1",
       "restAction": "updateH2TrialBuyList",
-      "note": "B90-BE-01：GET /trials 读取 currentTrialProduct、writePermissionName、purchaseOptionsVersion、otherPurchaseProducts、purchaseCandidates。PUT /trials/purchase-options 发送 productNos、version、reason、requestNo、confirmedActorId，回执为 productNos、version。直接生效，结果未知时按原操作重试。"
+      "runtimeEvidence": [
+        {
+          "type": "pc-runtime",
+          "file": "lib/admin/h-client.ts",
+          "positivePatterns": ["growthRequest<unknown>\\(H2_BUY_LIST_PATH", "isBuyListReceipt\\(receipt, input\\)"],
+          "negativePatterns": ["if \\(!isBuyListReceipt\\(receipt, input\\)\\) return \\{ kind: \"saved\""]
+        },
+        {
+          "type": "pc-runtime",
+          "file": "app/components/domain-views/h-tabs/h2-trial.tsx",
+          "positivePatterns": ["return items === undefined \\? \\{ productNos, \\.\\.\\.confirmation \\} : \\{ items, \\.\\.\\.confirmation \\}", "updateH2TrialBuyList\\(buyListWrite\\(record\\)\\)"],
+          "negativePatterns": ["updateH2TrialBuyList\\(draft\\)"]
+        }
+      ],
+      "note": "B90-BE-01、B125：GET /trials 带 purchaseOptionsPricing=true 时读取清单逐款优惠；PUT /trials/purchase-options 只发送 items、version、reason、requestNo、confirmedActorId，核对回执顺序、版本和逐款优惠。无标识和旧待确认命令使用 productNos 格式，核对顺序和版本。直接生效，结果未知时原样重试。审计含清单变更和逐款明细。"
     },
     {
       "id": "OPS-H-05",

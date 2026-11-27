@@ -24,14 +24,14 @@ import {
 } from "@/lib/admin/h-client";
 import { fetchA8PermissionDetail } from "@/lib/admin/a8-client";
 import { currentAdminSession } from "@/lib/admin/auth-client";
-import { buyProductReason, H2_BUY_LIST_ACTION, H2_BUY_LIST_OBJECT, isBuyListVersion, nonBlank, readH2SessionProducts, readH2TrialPurchase, type BuyList, type BuyListWrite, type TrialTarget } from "@/lib/admin/h2-trial-purchase";
+import { buyProductReason, H2_BUY_LIST_ACTION, H2_BUY_LIST_OBJECT, isBuyListVersion, nonBlank, readH2SessionProducts, readH2TrialPurchase, validBuyPricingItems, type BuyList, type BuyListWrite, type TrialTarget } from "@/lib/admin/h2-trial-purchase";
 import { usePropose } from "@/lib/admin/use-propose";
 import { canRetryH2Cancellation, releaseRejectedH2Cancellation, finishRetiredH2TrialChargeLookup, H2_TRIAL_ACTIONS, pendingH2TrialApprovals, submitH2TrialApproval, type H2TrialApprovalMode } from "@/lib/admin/h2-trial-approval";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { createA2CommandKey, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "@/lib/admin/a2-client";
 import { businessClock, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
-import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, TRIAL_PARAM_HELP, TRIAL_STATE_HELP, trialParamHelp } from "@/lib/admin/config-help/h2-trial";
+import { ADVANCED_TRIAL_GROUPS, COMMON_TRIAL_PARAMS, PRICING_DEFAULT_GROUP, TRIAL_PARAM_HELP, TRIAL_STATE_HELP, trialParamHelp } from "@/lib/admin/config-help/h2-trial";
 import { displayAdminError, displayAdminReadError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { explicitRejectionCode } from "@/lib/admin/explicit-rejection";
 import { ConfirmReadConflict, PendingConfirmRejected } from "@/lib/admin/h-conflict-review";
@@ -42,7 +42,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useReach } from "@/lib/nav/use-reach";
 import type { EditSpec } from "../design-kit";
 import { AlertTriangle } from "lucide-react";
-import { BUY_CONFLICT, BUY_READ_FIRST, BUY_READ_INVALID, BUY_SAVED, BuyListPendingNotice, EDIT_LOCKED, UNKNOWN_TOAST, BuySection, buyReplayEdits, type BuyListDraft, type BuyListPending, type BuyListSubmitResult, type ReviewBuyReplay } from "./h2-trial-buy";
+import { BUY_CONFLICT, BUY_READ_FIRST, BUY_READ_INVALID, BUY_SAVED, BuyListPendingNotice, EDIT_LOCKED, UNKNOWN_TOAST, BuySection, buyListRejection, buyReplayEdits, type BuyListDraft, type BuyListPending, type BuyListSubmitResult, type ReviewBuyReplay } from "./h2-trial-buy";
 import type { HCtx } from "./types";
 
 /** 整页读取失败后按「重试」读到了：焦点落在第一块的标题，不落到整页外框（BUG-710）。 */
@@ -110,9 +110,16 @@ type H2Model = {
   serverOnlyFields?: string[];
   sessionsPage?: { total: number; pageNum: number; pageSize: number };
   buyList?: BuyList | "invalid";
+  /** 读取带「支持按设备优惠」标识（B125）。 */
+  pricing?: boolean;
   trialTarget?: TrialTarget | "invalid";
   writePermissionName?: string;
 };
+
+function buyPricingDefaults(params: TrialParam[]) {
+  const valueOf = (key: string) => params.find((param) => param.key === key)?.cur;
+  return { rate: valueOf("discountRate"), cap: valueOf("discountCapUSD"), early: valueOf("earlyPurchaseDiscountUSD") };
+}
 
 const H2_WRITE_PERMISSION = "growth_h2_write";
 const H2_READ_PERMISSION = "growth_h2_read";
@@ -173,7 +180,9 @@ const pendingBuyLists = createPendingMutationStore<BuyListPending>({
     && record.requestNo === record.commandKey && record.confirmedActorId === record.commandOwnerId
     && isBuyListVersion(record.version) && nonBlank(record.reason)
     && [record.productNos, record.added, record.removed, record.nextNames]
-      .every((values) => Array.isArray(values) && values.every(nonBlank)),
+      .every((values) => Array.isArray(values) && values.every(nonBlank))
+    && (record.items === undefined || validBuyPricingItems(record.items, record.productNos)
+      && [record.priced?.changed, record.priced?.lines].every((values) => Array.isArray(values) && values.every(nonBlank))),
 });
 
 const BUY_VERSION_CONFLICT = "TRIAL_OPTIONS_VERSION_CONFLICT";
@@ -186,8 +195,9 @@ function forgetBuyConflicts() {
   }
 }
 
-function buyListWrite({ productNos, version, reason, requestNo, confirmedActorId }: BuyListPending): BuyListWrite {
-  return { productNos, version, reason, requestNo, confirmedActorId };
+function buyListWrite({ items, productNos, version, reason, requestNo, confirmedActorId }: BuyListPending): BuyListWrite {
+  const confirmation = { version, reason, requestNo, confirmedActorId };
+  return items === undefined ? { productNos, ...confirmation } : { items, ...confirmation };
 }
 
 async function checkBuyListOwner(ownerId: number) {
@@ -294,7 +304,10 @@ function paramValue(param: TrialParam, product: { name: string | null } | undefi
   return unit ? `${paramInput(param)} ${unit}` : text(param.cur);
 }
 
-function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked, seatsLeft, buyListNos, hasBuyList, readLatest, review, clearReview }: {
+/** 改默认值时其他可购买设备里有几款跟着变（按所改的那一组数），清单读不到时是 unreadable。 */
+type DefaultScope = { group: "折扣" | "立减"; follow: number; custom: number } | { group: "折扣" | "立减"; unreadable: true };
+
+function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked, seatsLeft, buyListNos, hasBuyList, pricing, scope, readLatest, review, clearReview }: {
   ctx: HCtx;
   param: TrialParam;
   trialProducts: TrialProduct[];
@@ -307,13 +320,16 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
   /** 「其他可购买设备」的商品编号；读到了才传。换试用目标商品时，旧目标不在里面要提醒一句。 */
   buyListNos?: string[];
   hasBuyList: boolean;
+  /** 读取带「支持按设备优惠」标识：三项按默认值的说法写。 */
+  pricing?: boolean;
+  scope?: DefaultScope;
   readLatest: (key: string) => Promise<TrialParam>;
   review?: ParamReview;
   clearReview: () => void;
 }) {
   const { openActionConfirm } = ctx;
-  const help = trialParamHelp(param.key, hasBuyList);
-  const name = paramName(param);
+  const help = trialParamHelp(param.key, hasBuyList, pricing);
+  const name = pricing && help?.label ? help.label : paramName(param);
   const isOffsetCap = param.key === OFFSET_CAP;
   const isProduct = param.key === "trialProductId";
   const current = paramInput(param);
@@ -413,7 +429,16 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
       ),
       amplifies: false,
       edit,
-      facts: isProduct ? <Facts>
+      facts: !isProduct && scope ? <Facts>
+        {recovery?.prior && recovery.prior.cur !== baseline.cur && <Fact k={name}><Change from={paramValue(recovery.prior, undefined)} to={displayCurrent} /></Fact>}
+        {"unreadable" in scope ? <>
+          <Fact k="一起变">用户本人的试用设备</Fact>
+          <Fact k="其他可购买设备">暂时读不到</Fact>
+        </> : <>
+          <Fact k="一起变">用户本人的试用设备{scope.follow > 0 && ` · 其他可购买设备 ${scope.follow} 款`}</Fact>
+          {scope.custom > 0 && <Fact k="不变">其他可购买设备 {scope.custom} 款（单独设了{scope.group}）</Fact>}
+        </>}
+      </Facts> : isProduct ? <Facts>
         <Fact k="现在">{currentProduct?.name ?? (current || "未设置")}{productMissing && "，不在可选列表"}<Explain label="可选条件和商品编号" content={<>
           <p>{help?.howMore}</p>
           <RecordList label="可选商品编号" records={trialProducts.map((product) => ({ id: product.productNo, value: product.name, reference: product.productNo }))} />
@@ -430,7 +455,7 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
         </Facts>
         <p className="h2-target-note"><AlertTriangle size={14} strokeWidth={1.9} aria-hidden /><span>换掉后，{currentProduct?.name ?? current} 不在其他可购买设备里，新领取的用户不能用试用抵扣金买它</span></p>
       </> } : {}),
-      ...(isProduct && hasBuyList ? { reasonPlaceholder: "写清调整原因和依据" } : {}),
+      ...((isProduct && hasBuyList) || (pricing && Object.hasOwn(PRICING_DEFAULT_GROUP, param.key)) ? { reasonPlaceholder: "写清调整原因和依据" } : {}),
       effect: <StatusTag tone="progress" filled>立即生效</StatusTag>,
       confirmLabel: "确认修改，立即生效",
       // 标题行写影响谁（OP-48）。这是什么和显示位置在标题旁的提示图标里。
@@ -474,7 +499,7 @@ function ParamRow({ ctx, param, trialProducts, trialTarget, send, reach, blocked
       what={help?.what ?? operatorCopyText(param.sub ?? "")}
       when={when}
       where={help?.where}
-      note={[currentDisplayProduct && `商品编号 ${currentDisplayProduct.productNo}`, productDeadEnd].filter(Boolean).join("。") || undefined}
+      note={[currentDisplayProduct && `商品编号 ${currentDisplayProduct.productNo}`, productDeadEnd, pricing && help?.who].filter(Boolean).join("。") || undefined}
       value={paramValue(param, currentDisplayProduct)}
       sub={productLine || productLink ? <>{productLine}{productLine && productLink && " · "}{productLink}</> : undefined}
       action={ctx.can(H2_WRITE_PERMISSION) ? (describedBy) => <Button size="sm" aria-label={`调整 ${name}`} aria-describedby={describedBy} disabledReason={blocked ?? productDeadEnd} onClick={() => open(param)}>调整</Button> : undefined}
@@ -534,7 +559,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const fullReadInProgress = useRef(true);
   const readsAllowParamWrite = useRef(false);
   const buyReadEpochRef = useRef(0);
-  const readsAllowBuyWrite = useRef(false);
+  const latestBuyList = useRef<BuyList>(undefined);
   const syncPending = useCallback(() => setPending(pendingCommands.list()), []);
   const notePending = (record: PendingCommand, note: string) => setPendingNotes((current) => ({ ...current, [record.commandKey]: note }));
 
@@ -543,7 +568,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     ++buyReadEpochRef.current;
     fullReadInProgress.current = true;
     readsAllowParamWrite.current = false;
-    readsAllowBuyWrite.current = false;
+    latestBuyList.current = undefined;
     setBuyLoading(false);
     setLoading(true);
     try {
@@ -551,7 +576,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       if (requestEpoch !== reloadEpochRef.current) return;
       const nextModel = { ...raw, ...readH2TrialPurchase(raw) } as H2Model;
       readsAllowParamWrite.current = true;
-      readsAllowBuyWrite.current = !!nextModel.buyList && nextModel.buyList !== "invalid";
+      latestBuyList.current = nextModel.buyList === "invalid" ? undefined : nextModel.buyList;
       setBuyReadError(undefined);
       setModel(nextModel);
       setReadAt(businessClock(Date.now()));
@@ -577,17 +602,27 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const reloadBuyList = useCallback(async (requireList = false) => {
     if (fullReadInProgress.current) throw new Error(READING);
     const attempt = ++buyReadEpochRef.current;
-    readsAllowBuyWrite.current = false;
+    latestBuyList.current = undefined;
     setBuyLoading(true);
     try {
       const raw = await fetchH2Trials(sessionPage, sessionPageSize);
       if (attempt !== buyReadEpochRef.current) throw new Error(READING);
-      const { buyList } = readH2TrialPurchase(raw);
+      const { buyList, pricing } = readH2TrialPurchase(raw);
+      const defaults = pricing && Array.isArray(raw.params)
+        ? (raw.params as TrialParam[]).filter((param) => Object.hasOwn(PRICING_DEFAULT_GROUP, param?.key))
+        : [];
+      const pricingDefaults = pricing ? buyPricingDefaults(defaults) : undefined;
+      if (buyList && buyList !== "invalid" && pricingDefaults && !Object.values(pricingDefaults).every(nonBlank)) {
+        throw new Error(BUY_READ_INVALID);
+      }
+      setModel((previous) => previous && {
+        ...previous, buyList, pricing,
+        params: defaults.length ? [...previous.params.filter((param) => !Object.hasOwn(PRICING_DEFAULT_GROUP, param.key)), ...defaults] : previous.params,
+      });
       if (buyList === "invalid" || (requireList && !buyList)) throw new Error(BUY_READ_INVALID);
-      setModel((previous) => previous && { ...previous, buyList });
-      readsAllowBuyWrite.current = !!buyList;
+      latestBuyList.current = buyList;
       setBuyReadError(undefined);
-      return buyList;
+      return { list: buyList, pricing: pricingDefaults };
     } catch (cause) {
       if (attempt === buyReadEpochRef.current) setBuyReadError(displayAdminReadError(cause));
       throw cause;
@@ -654,6 +689,16 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const buyRead = model?.buyList;
   const buyList = buyRead === "invalid" ? undefined : buyRead;
   const buyInvalid = buyRead === "invalid" || !!buyReadError;
+  // 读取带「支持按设备优惠」标识时：三项是默认值，可购买设备显示「优惠」列和单独设置（B125）。
+  const pricingOn = !!model?.pricing && showBuySection;
+  const pricingDefaults = pricingOn ? buyPricingDefaults(params) : undefined;
+  const scopeOf = (key: string): DefaultScope | undefined => {
+    const group = PRICING_DEFAULT_GROUP[key];
+    if (!pricingOn || !group) return;
+    if (!buyList?.pricing || buyInvalid) return { group, unreadable: true };
+    const follow = buyList.items.filter((item) => group === "折扣" ? item.pricing?.discountRate === null : item.pricing?.earlyPurchaseDiscountUSD === null).length;
+    return { group, follow, custom: buyList.items.length - follow };
+  };
   const buyBlock = loading || buyLoading ? READING : buyPending ? EDIT_LOCKED : buyReadError || buyReplayConflict ? BUY_READ_FIRST : undefined;
   const sessionsRead = model?.sessions ?? [];
   const sessionsInvalid = sessionsRead.some((session) => readH2SessionProducts(session) === "invalid");
@@ -709,13 +754,12 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     toast(`${item.name} 已更新`, "success");
   };
 
-  const handleBuySessionStop = (kind: "unauthenticated" | "forbidden" | "mismatch", ownerId: number) => {
+  const handleBuySessionStop = (kind: "unauthenticated" | "forbidden" | "mismatch", ownerId: number, message?: string) => {
     if (kind === "unauthenticated") {
       const auth = useAdminAuth.getState();
       if (auth.session?.adminId === ownerId) auth.signOut();
     } else {
-      announcePermissionDenied();
-      if (kind === "mismatch") toast("当前登录账号已变更，这次没有发送。", "warn");
+      announcePermissionDenied(kind === "mismatch" ? "当前登录账号已变更，这次没有发送。" : message);
     }
   };
 
@@ -727,7 +771,9 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       handleBuySessionStop(session, ownerId);
       return { kind: "stopped" };
     }
-    if (!readsAllowBuyWrite.current) throw new Error(READING);
+    const latest = latestBuyList.current;
+    if (!latest) throw new Error(READING);
+    if (latest.version !== draft.version || latest.pricing !== (draft.items !== undefined)) return { kind: "conflict" };
     const records = listBuyRecords();
     if (records.some(record => !isBuyReplayConflict(record))) {
       syncBuyPending();
@@ -746,8 +792,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       if (outcome.kind !== "unknown") pendingBuyLists.forget(H2_BUY_LIST_OBJECT, commandKey);
       // 首发就被账号核对拒绝：后端没有执行，不留待确认。
       if (outcome.kind === "accountMismatch") {
-        toast("确认账号与当前登录账号不符，这次没有保存。", "warn");
-        announcePermissionDenied();
+        announcePermissionDenied(outcome.message);
         return { kind: "stopped" };
       }
       if (outcome.kind === "forbidden" || outcome.kind === "unauthenticated") {
@@ -790,16 +835,16 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           break;
         case "conflict":
           pendingBuyLists.markReplayRejected(record.fingerprint, record.commandKey, BUY_VERSION_CONFLICT);
-          readsAllowBuyWrite.current = false;
+          latestBuyList.current = undefined;
           break;
         case "rejected":
-          pendingBuyLists.markReplayRejected(record.fingerprint, record.commandKey, outcome.message);
+          pendingBuyLists.markReplayRejected(record.fingerprint, record.commandKey, buyListRejection(outcome, record.review?.before ?? [], record.review?.added ?? []));
           break;
         // A refusal about who is asking says nothing about the original operation: the record stays, with no release.
         case "accountMismatch":
         case "forbidden":
           setBuyRetryDenied(record.commandKey);
-          handleBuySessionStop("forbidden", ownerId);
+          handleBuySessionStop("forbidden", ownerId, outcome.kind === "accountMismatch" ? outcome.message : undefined);
           break;
         case "unauthenticated":
           if (!useAdminAuth.getState().logoutPending) handleBuySessionStop(outcome.kind, ownerId);
@@ -983,7 +1028,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       title="免费试用设置"
       summary="设置试用商品、时长和优惠，查看试用记录。"
       guideExtra={guideExtra}
-      guideContent={getH2PageGuide(showBuySection, canWrite, canCancel)}
+      guideContent={getH2PageGuide(showBuySection, canWrite, canCancel, !!model?.pricing && showBuySection)}
       meta={model ? <span className="rd-toolbar">
         <span>{readAt ? `${readAt} 读取（${businessZone().label}），` : ""}不自动刷新</span>
         <Button variant="ghost" size="sm" loading={loading} icon={<RefreshCw size={14} aria-hidden />} data-h2-editor-leave onClick={() => { const refresh = () => void reload(); if (buyLeaveGuard.current) buyLeaveGuard.current(refresh); else refresh(); }}>刷新</Button>
@@ -1134,8 +1179,8 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <Notice key="buy-list-conflict" tone="warn" title={BUY_CONFLICT}
         action={edits && canWrite && <Button size="sm" disabled={loading || buyLoading || !!error || !showBuySection}
           onClick={() => void reloadBuyList(true).then(latest => {
-            if (!latest || !reviewBuyReplay.current) return;
-            reviewBuyReplay.current(edits, latest);
+            if (!latest.list || !reviewBuyReplay.current) return;
+            reviewBuyReplay.current(edits, latest.list, latest.pricing);
             pendingBuyLists.forget(buyReplayConflict.fingerprint, buyReplayConflict.commandKey);
             syncBuyPending();
           }).catch(() => undefined)}>读取最新</Button>}>
@@ -1232,7 +1277,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
           explain="试用中、宽限中和已延长的人数，每人只算最近一次试用，算的是全部记录。" />
         <Stat tone="role-4" icon={TrendingUp} label="试用转购买率" value={text(stats.trialBuyRate)}
           sub={`提前购买率 ${text(stats.earlyBuyRate)}`}
-          explain={<><p>转购买率：开始过试用的人里买下设备的比例，每人只算最近一次。</p><p>提前购买率：开始过试用的人里，按提前购买立减买下的比例；立减设为 0 时的购买不算。</p><p>算不出时显示「—」，不是 0。绑卡环节已停用，不再算绑卡转化。</p></>} />
+          explain={<><p>转购买率：开始过试用的人里买下设备的比例，每人只算最近一次。</p><p>{pricingOn ? "提前购买率：开始过试用的人里，按专享立减买下的比例；看每笔购买适用的立减，为 0 的不算。" : "提前购买率：开始过试用的人里，按提前购买立减买下的比例；立减设为 0 时的购买不算。"}</p><p>算不出时显示「—」，不是 0。绑卡环节已停用，不再算绑卡转化。</p></>} />
         <Stat tone="role-2" icon={Ticket} label="今日实际剩余免费名额" value={seatsKnown ? text(seats?.cur) : "—"} unit={seatsKnown ? "人" : undefined}
           sub={seats?.businessDate && seats.businessDate !== "UNKNOWN" ? `日期 ${seats.businessDate}` : undefined}
           explain="今天最多还能开始试用的人数，和 App 一致。「每日免费名额上限」是设的上限，这里是减掉今天已领后的剩余。" />
@@ -1251,13 +1296,16 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
               <Panel title={<span tabIndex={-1} data-section-focus="">常改参数</span>} explainLabel="常改参数" icon={SlidersHorizontal} tone="role-4"
                 explain={<>
                   <p>每项是什么、显示在哪、什么时候生效，看名称旁的提示；改一项存一项。</p>
-                  {showBuySection ? <>
+                  {pricingOn ? <>
+                    <p>三种优惠可以叠加：实付 = 售价 − 试用期折扣 − 试用抵扣金 − 专享立减，最低 0。售价指用户所选设备的售价。</p>
+                    <p>专享立减只在试用期内有。默认值在高级设置里改，按设备的在「可购买设备」里改。</p>
+                  </> : showBuySection ? <>
                     <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用抵扣金 − 提前购买立减，最低 0。售价指用户所选设备的售价。</p>
                     <p>提前购买立减只在试用期内有，在高级设置里改。</p>
                   </> : <p>三种优惠可以叠加：实付 = 售价 − 购买减价 − 试用收益抵扣 − 提前购买立减，最低 0。提前购买立减只在试用期内有，在高级设置里改。</p>}
                 </>}>
                 <ConfigList>
-                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} trialTarget={model.trialTarget} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} readLatest={readLatestParam} review={reviewForParam(param.key)} clearReview={clearParamReview} seatsLeft={seatsKnown ? seats?.cur : undefined} buyListNos={buyList?.items.map((item) => item.productNo)} hasBuyList={showBuySection} />)}
+                  {commonParams.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} trialTarget={model.trialTarget} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} readLatest={readLatestParam} review={reviewForParam(param.key)} clearReview={clearParamReview} seatsLeft={seatsKnown ? seats?.cur : undefined} buyListNos={buyList?.items.map((item) => item.productNo)} hasBuyList={showBuySection} pricing={pricingOn} scope={scopeOf(param.key)} />)}
                 </ConfigList>
               </Panel>
             </div>
@@ -1265,7 +1313,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             {showBuySection && (
               <div id={nav.anchor("buy")}>
                 <BuySection ctx={ctx} list={buyList} readError={buyReadError} trialTargetNo={productNo} reach={reach}
-                  blocked={buyBlock} reading={buyLoading} leaveGuard={buyLeaveGuard} replayReview={reviewBuyReplay} onReload={reloadBuyList} onSubmit={submitBuyList} />
+                  blocked={buyBlock} reading={buyLoading} leaveGuard={buyLeaveGuard} replayReview={reviewBuyReplay} pricing={pricingDefaults} onReload={reloadBuyList} onSubmit={submitBuyList} />
               </div>
             )}
 
@@ -1275,7 +1323,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                   <div className="rd-config-group" key={group.title}>
                     <h3 className="rd-config-group-title">{group.title}</h3>
                     <ConfigList>
-                      {group.params.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} readLatest={readLatestParam} review={reviewForParam(param.key)} clearReview={clearParamReview} hasBuyList={showBuySection} />)}
+                      {group.params.map((param) => <ParamRow key={param.key} ctx={ctx} param={param} trialProducts={trialProducts} send={sendCommand} reach={reach} blocked={paramBlock(param.key)} readLatest={readLatestParam} review={reviewForParam(param.key)} clearReview={clearParamReview} hasBuyList={showBuySection} pricing={pricingOn} scope={scopeOf(param.key)} />)}
                     </ConfigList>
                   </div>
                 ))}

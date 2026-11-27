@@ -12,7 +12,7 @@ import { validateH1DialValue } from "@/lib/admin/h1-dial-validation";
 import { fetchDirectCommandReceiptDetails } from "./direct-command-receipt";
 import { depositPolicyUnits } from "@/lib/admin/cregis-deposit-policy";
 import { validateH7VoucherMoneyPrecision } from "./h7-voucher-money";
-import { buyProductReason, H2_BUY_LIST_PATH, isBuyListReceipt, type BuyListWrite } from "./h2-trial-purchase";
+import { buyListProductNos, H2_BUY_LIST_PATH, isBuyListReceipt, type BuyListWrite } from "./h2-trial-purchase";
 
 interface ApiResult<T> {
   code: number;
@@ -371,8 +371,8 @@ export async function updateH2TrialBuyList(input: BuyListWrite) {
     if (error.apiMessage === "TRIAL_OPTIONS_REQUEST_CHANGED") return { kind: "unknown" } as const;
     if (error.apiMessage === "TRIAL_OPTIONS_PRODUCT_UNAVAILABLE") {
       const { productNo, reason } = error.details ?? {};
-      const refused = typeof productNo === "string" && input.productNos.includes(productNo) ? productNo : undefined;
-      return { kind: "rejected", message: `没有保存：${refused ?? "有一款设备"}${buyProductReason(reason)}，不能新增。`, productNo: refused, reason } as const;
+      const refused = typeof productNo === "string" && buyListProductNos(input).includes(productNo) ? productNo : undefined;
+      return { kind: "rejected", message: displayAdminError(error), productNo: refused, reason } as const;
     }
     return { kind: "rejected", message: displayAdminError(error), productNo: undefined, reason: undefined } as const;
   }

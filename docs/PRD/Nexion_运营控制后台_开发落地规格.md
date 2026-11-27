@@ -845,9 +845,13 @@ App 不展示试用邀请弹窗，也没有申请或接受延长的入口。PC �
 | `cooldownDays`(再次试用冷却) | 以当前值为准，**≠ D5 withdrawCooldownDays** | 之后结束的试用使用新值，已有冷却截止不重算 | H2 |
 | `phaseOpen` | true(Phase 派发只读) | 实时全量 | H1 调度 |
 | `seatsLeftToday`(每日免费名额上限；APP 接收当日剩余) | 47 | 实时全量 | H2 |
-| 其他可购买设备（独立分区、独立版本，不计入试用参数数目） | 初始为空，版本为 0 | 立即生效，进行中的试用也按新清单（OP-38 例外，不走审批） | H2；候选取 E1 目录中类型为 `DEVICE/SERVER/SHARE` 的商品，可选性以接口为准（v1 H2③(c)） |
+| 其他可购买设备及逐款优惠（独立分区、独立版本，不计入试用参数数目） | 初始为空，版本为 0 | 立即生效，之后发起的购买用新清单和优惠，包括进行中的试用（OP-38 例外，不走审批） | H2；候选取 E1 目录中类型为 `DEVICE/SERVER/SHARE` 的商品，可选性以接口为准（v1 H2③(c)） |
 
-B90 读取通过 `GET /api/admin/growth/trials` 返回 `currentTrialProduct`、`writePermissionName`、`purchaseOptionsVersion`、`otherPurchaseProducts`、`purchaseCandidates`。保存通过 `PUT /api/admin/growth/trials/purchase-options` 发送 `{productNos, version, reason, requestNo, confirmedActorId}`，成功返回 `{productNos, version}`。结果未知时以原请求体重试。版本冲突读取最新，商品不可加按回包中的 `productNo/reason` 处理。
+B90 读取通过 `GET /api/admin/growth/trials` 返回 `currentTrialProduct`、`writePermissionName`、`purchaseOptionsVersion`、`otherPurchaseProducts`、`purchaseCandidates`。B125 带 `purchaseOptionsPricing: true`（含空清单）时，读取 `otherPurchaseProducts` 每款的 `discountRate`、`discountCapUSD`、`earlyPurchaseDiscountUSD`，字段缺失或不合法按读取失败处理。比例和上限同为空或同有值，立减独立。空值 `null` 表示跟随该组默认值，`"0"` 表示该项不减。比例使用百分数字符串。买本人试用设备始终按默认；改默认值时按组统计清单跟随与单独设置的款数，清单读取失败显示暂时读不到。
+
+`PUT /api/admin/growth/trials/purchase-options` 带 `{items, version, reason, requestNo, confirmedActorId}`。`items` 为整份清单，逐款包含 `productNo` 和上述三项。保留未编辑设备和优惠组的最新值；下架保留款不得改优惠；移除设备时一并删除其单独设置。核对回执 `productNos` 的顺序、`version = 原版本 + 1`，以及 `items` 中每款每组的跟随方式和值。缺少标识时提交 `{productNos, version, reason, requestNo, confirmedActorId}`，只核对 `productNos` 和 `version`，服务端保留仍在清单的款的原优惠。清单成员与优惠均未改变时禁止保存。
+
+回执无法核对或 `TRIAL_OPTIONS_REQUEST_CHANGED` 时保留待确认，按原格式和原请求内容重试，升级前的记录仍核对旧回执。`TRIAL_OPTIONS_VERSION_CONFLICT` 时读取最新、重新核对、重填理由，并换新请求号；其他人已移除的设备不会因优惠编辑被加回。`TRIAL_OPTIONS_PRICING_INVALID` 和 `TRIAL_OPTIONS_PRODUCT_UNAVAILABLE` 留在确认处，后者用回包 `productNo/reason` 确定对象和原因。`TRIAL_OPTIONS_ACTOR_MISMATCH` 走账号核对，重试拒绝不解除原操作记录。清单和逐款前后值进入操作记录。
 
 ### 4.7 域 K — 风控与反作弊
 
