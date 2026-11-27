@@ -21,7 +21,7 @@ import { aTicketPermissionText } from "@/lib/admin/a-approval-names";
 import { F_APPROVAL_PERMISSION_NAMES, fApprovalPermissionText, H8_SETTLEMENT_APPROVAL_PERMISSION } from "@/lib/admin/f-approval-names";
 import { fConfigAuthority } from "@/lib/admin/f-config-batch";
 import { F4PayoutPreviewFacts, F4SettleFacts } from "../f-tabs/f4-payout-preview";
-import { F4_SETTLEMENT_CONSEQUENCE } from "@/lib/admin/f4-money";
+import { F4_COVERAGE_NEXT, F4_PAYOUT_COVERAGE, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_SETTLE_IMPACT, F4_SETTLEMENT_CONSEQUENCE } from "@/lib/admin/f4-money";
 import { F2BootstrapReview, f2AppLimitIssue, f2BootstrapUsesRank, parseF2BootstrapAfter } from "../f-tabs/f2-bootstrap-ticket";
 import { fetchF1VRankOverview, fetchF2RatesOverview } from "@/lib/admin/f1-client";
 import { fmtConfigPct, fmtPct } from "@/lib/format";
@@ -324,7 +324,7 @@ function isCurrentOperator(w: A2OperationRow, username: string | undefined) {
 }
 const F4_COVERAGE_COPY = "批准时如果该周期未结算，先查兑付覆盖率。读不到或低于红线就不发钱，审批单留着待审批。";
 const F4_RESULT_REASONS: Record<string, string> = {
-  F4_LEADERBOARD_ALREADY_SETTLED: "本周期已经派奖",
+  F4_LEADERBOARD_ALREADY_SETTLED: "这一期已经派过",
   F4_LEADERBOARD_NO_CANDIDATES: "没有合格的上榜名单",
   F4_LEADERBOARD_POOL_NOT_CONFIGURED: "没有可发放的奖池",
   F4_LEADERBOARD_NO_PAYABLE_AMOUNT: "没有可发金额",
@@ -337,14 +337,27 @@ const F4_RESULT_REASONS: Record<string, string> = {
   COVERAGE_BELOW_REDLINE: "兑付覆盖率低于红线",
 };
 
-function f4ApprovalResultText(result: F4ApprovalBusinessResult | F4ApprovalAttemptResult) {
-  if (result.status === "NOT_EXECUTED") return `这次未发钱：${F4_RESULT_REASONS[result.reasonCode] ?? "原因暂时无法显示"}`;
+/**
+ * F4 审批的真实结果，原因同一套词，前面的说法按场合换（OP-79、OP-90）：
+ * 结了单的写「入账 N 笔，合计…」或「没有发钱：原因」；被暂停、覆盖率挡下的是批准没有执行，单子还待审批，写「没有执行：原因」和下一步。
+ */
+function f4ResultReason(result: { reasonCode: string }) {
+  return F4_RESULT_REASONS[result.reasonCode] ?? "原因暂时无法显示";
+}
+
+function f4ApprovalResultText(result: F4ApprovalBusinessResult) {
+  if (result.status === "NOT_EXECUTED") return `没有发钱：${f4ResultReason(result)}`;
   const amounts = Object.entries(result.amountsByCurrency).map(([currency, amount]) => `${payoutAmount(amount)} ${currency}`);
   return `入账 ${count(result.creditedCount)} 笔，合计 ${amounts.join("、")}`;
 }
 
-function f4AttemptText(result: F4ApprovalAttemptResult) {
-  return `${f4ApprovalResultText(result)} · ${bizTime(result.attemptedAt, result.attemptedAt)}`;
+const F4_BLOCKED_NEXT: Record<F4ApprovalAttemptResult["reasonCode"], string> = {
+  F4_LEADERBOARD_PAUSED: "排行榜恢复后再批，或驳回",
+  COVERAGE_BELOW_REDLINE: "覆盖率恢复后再批，或驳回",
+};
+
+function f4BlockedText(result: F4ApprovalAttemptResult) {
+  return `这次批准没有执行：${f4ResultReason(result)}。审批单仍待审批，${F4_BLOCKED_NEXT[result.reasonCode]}。`;
 }
 /**
  * E1 商品提案的操作记录：拆出冻结的前后值，按审批单详情展示。日志没有商品操作码，B97 新建的前侧只冻结两项展示默认值。
@@ -650,7 +663,8 @@ function approvalTiming(w: A2OperationRow) {
   if (w.operationCode === "k1_release_param") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对规则没被改过、兑付覆盖率够，才改；点「驳回」原操作不执行。" };
   if (w.operationCode === "k1_earnings_release") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对这笔收益没变、兑付覆盖率够，才放行；点「驳回」原操作不执行。" };
   const fund = fundTicket(w);
-  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才发钱；点「驳回」原操作不执行。" };
+  // 已结算的周期批准时不查覆盖率（BE-27），标签不写「通过覆盖率检查」。
+  if (fund?.kind === "f4Payout" || fund?.kind === "f4Settle") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，还没结算的先查兑付覆盖率，算出有应发的金额才发钱；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Status" && fund.state === "unlocked") return { tag: "核对通过后执行", impact: "", drawer: "点「批准」确认后先核对，通过了才放钱；点「驳回」原操作不执行。" };
   if (coverageMode === "amplifies" && fund?.kind === "fConfig" && (fund.spec?.loosen || enablesAutoPayout(fund))) return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才改；点「驳回」原操作不执行。" };
   if (fund?.kind === "f5Reissue") return { tag: "通过覆盖率检查后执行", impact: "", drawer: "点「批准」确认后先查兑付覆盖率，够了才补发；点「驳回」原操作不执行。" };
@@ -1734,13 +1748,13 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         if (decisionRetryRefusals.current.has(record.commandKey)) clearDecisionPendingNote(record);
         // 披露发布批准只封存这一版，不说「已生效」（和 approvalTiming 同一单类判断）。
         const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
-        if (record.kind !== "export" && record.kind !== "retention") toast(businessResult ? f4ApprovalResultText(businessResult)
-          : `已确认：${record.label}${sealed ? "，这版已封存" : "已生效"}`, "success");
+        if (record.kind !== "export" && record.kind !== "retention") toast(businessResult ? `已确认：${record.label}，${f4ApprovalResultText(businessResult)}`
+          : `已确认：${record.label}${sealed ? "，这版已封存" : "已生效"}`, businessResult?.status === "NOT_EXECUTED" ? "info" : "success");
       } else notePending(record, "重试的结果仍然未知，原记录继续保留。");
     } catch (cause) {
       if (isPermissionDenied(cause)) announcePermissionDenied();
       const code = backendCode(cause);
-      const approvalReason = cause instanceof F4ApprovalBlockedError ? f4ApprovalResultText(cause.result)
+      const approvalReason = cause instanceof F4ApprovalBlockedError ? `${f4ResultReason(cause.result)}，批准没有执行`
         : record.kind === "approve" ? approvalRefusedText(record.operationCode ?? recordTicket(record)?.operationCode, code) : undefined;
       const why = (approvalReason
         ?? (record.kind === "approve" || record.kind === "reject" ? decisionDeniedText(record.kind, cause, true) : undefined) ?? displayAdminError(cause)).replace(/[。.]$/, "");
@@ -1931,24 +1945,23 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const fundSpec = (w: A2OperationRow, onSettlementChange?: (settled: boolean) => void): FundSpec | undefined => {
     const fund = fundTicket(w);
     if (!fund) return undefined;
+    // 影响句、后果句和覆盖率说明与 F4 发起框同一套（OP-69）；覆盖率说明只在问号里写一次（DT-12）。
     if (fund.kind === "f4Payout") return {
       irreversible: true,
-      impact: `名单和金额以批准那一刻的${fund.period === "总榜" ? "总榜" : "排行榜"}为准。`,
-      completion: F4_COVERAGE_COPY,
-      check: "核对这次实发、名单和发起理由，理由写清依据或工单号。",
-      detail: "派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。按旧规则提交的单须先撤回或驳回，再看新预览后重新提交。",
-      coverageCheck: `${F4_COVERAGE_COPY}可等覆盖率恢复后再批，或驳回；等于红线算够。`,
+      impact: fund.period === "总榜" ? F4_PAYOUT_IMPACT : "名单和金额以批准那一刻的排行榜为准。",
+      check: "核对预计发放、名单和发起理由，理由写清依据或工单号。",
+      detail: "奖池为 0 或没人上榜时不发钱。按旧规则提交的单须先撤回或驳回，再看新预览后重新提交。",
+      coverageCheck: `${fund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
       lead: fund.period === "总榜" ? <F4PayoutPreviewFacts approving rules onSettlementChange={onSettlementChange} /> : undefined,
     };
     if (fund.kind === "f4Settle") return {
       irreversible: true,
-      impact: "池金额以批准那一刻所在的周为准。",
-      completion: F4_COVERAGE_COPY,
+      impact: F4_SETTLE_IMPACT,
       check: "核对本周奖池和发起理由，理由写清依据或工单号。",
-      detail: "本周已经结算过的会跳过，不补发差额；没有合格票时不发钱。",
-      coverageCheck: `${F4_COVERAGE_COPY}可等覆盖率恢复后再批，或驳回；等于红线算够。`,
+      detail: "没有合格票时不发钱。",
+      coverageCheck: `${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       lead: <F4SettleFacts onSettlementChange={onSettlementChange} />,
     };
@@ -2177,12 +2190,12 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         try {
           const { outcome, businessResult } = await runDecision("approve", w, reason);
           if (outcome === "ok") {
-            if (businessResult) toast(`${w.id} ${f4ApprovalResultText(businessResult)}`, "success");
+            if (businessResult) toast(`${w.id} 已批准，${f4ApprovalResultText(businessResult)}`, businessResult.status === "NOT_EXECUTED" ? "info" : "success");
             else decisionToast("approve", w.id);
             setTicketId(null);
           }
         } catch (cause) {
-          if (cause instanceof F4ApprovalBlockedError) throw new Error(`${f4ApprovalResultText(cause.result)}。审批单仍待审批，恢复后再批准，或驳回。`);
+          if (cause instanceof F4ApprovalBlockedError) throw new Error(f4BlockedText(cause.result));
           if (w.operationCode === "f4_leaderboard_period_payout" && backendCode(cause) === "F4_LEADERBOARD_PAYOUT_REVIEW_REQUIRED") {
             openActionConfirm(approveRequest(w));
             throw new Error(F4_PAYOUT_REVIEW_REQUIRED);
@@ -2599,8 +2612,10 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                       <Td sticky="start"><Cell main={name} sub={showObject ? object : undefined} title={`${name}\n对象：${object || "—"}\n${w.id} · ${bizTime(w.rawTs, w.ts)}（${zone}）${isH7VoucherApproval(w.operationCode) ? `\n谁能批准：${approvalExecutorLabel(w)}` : ""}`} /></Td>
                       <Td><Cell main={change.main} sub={change.sub} title={change.title ?? `${change.main}${change.sub ? `\n${change.sub}` : ""}`} /></Td>
                       <Td><Cell main={w.operator} sub={`${roleText(w.operatorRole)}${isMine(w) ? " · 你发起的" : ""}`} /></Td>
-                      <Td fit={!showActions}><Cell main={markers(w)} sub={w.lastApprovalAttemptResult ? f4AttemptText(w.lastApprovalAttemptResult)
-                        : w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined} /></Td>
+                      {/* 上次被挡下的原因常显；时间在悬停提示里，完整时间在详情（ST-04、TX-25）。 */}
+                      <Td fit={!showActions}><Cell main={markers(w)} sub={w.lastApprovalAttemptResult ? `上次批准没有执行：${f4ResultReason(w.lastApprovalAttemptResult)}`
+                        : w.retiredOperation ? <StatusTag tone="done">已退役</StatusTag> : undefined}
+                        title={w.lastApprovalAttemptResult ? `上次批准没有执行：${f4ResultReason(w.lastApprovalAttemptResult)}\n${bizTime(w.lastApprovalAttemptResult.attemptedAt, "—")}（${zone}）` : undefined} /></Td>
                       {showActions && <Td sticky="end" fit><span className="rd-row-actions">{rowActions(w)}</span></Td>}
                     </Tr>
                   );
@@ -2721,7 +2736,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
                   return <Tr key={h.id} selected={h.id === historyId} onOpen={() => setHistoryId(h.id)}>
                     <Td sticky="start"><Cell mono full main={h.id} /></Td>
                     <Td grow><Cell main={actionName(h)} title={actionName(h)} /></Td>
-                    <Td>{businessResult ? <Cell main={status} sub={f4ApprovalResultText(businessResult)} /> : status}</Td>
+                    <Td>{businessResult ? <Cell main={status} sub={f4ApprovalResultText(businessResult)} title={f4ApprovalResultText(businessResult)} /> : status}</Td>
                     <Td><Cell main={historyActorText(h.chain)} /></Td>
                     <Td><Cell num main={thisYear(bizTime(h.t, h.t))} title={bizTime(h.t, h.t)} /></Td>
                   </Tr>;
@@ -2840,7 +2855,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     ...(shownA1Impact ? [{ label: "批准后", value: shownA1Impact.row, reason: shownA1Impact.note }] : []),
     // 发起人和理由合一行（OP-149 A2-A02）：理由是要读的句子，用正文；谁在什么时候发起写在第二行。
     { label: "发起理由", value: keepCodes(shown.reason), reason: `${shown.operator} · ${roleText(shown.operatorRole)}${isMine(shown) ? "（你发起的）" : ""} · ${bizTime(shown.rawTs, shown.ts)} 发起` },
-    ...(shown.lastApprovalAttemptResult ? [{ label: "最近一次批准", value: f4ApprovalResultText(shown.lastApprovalAttemptResult),
+    ...(shown.lastApprovalAttemptResult ? [{ label: "最近一次批准", value: `没有执行：${f4ResultReason(shown.lastApprovalAttemptResult)}`,
       reason: bizTimeFull(shown.lastApprovalAttemptResult.attemptedAt, "—") }] : []),
     ...(shownTiming ? [{ label: "生效时间", value: shownTiming }] : []),
   ] : [];
@@ -2885,14 +2900,16 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const shownIrreversible = !!shown && (!!fundSpec(shown)?.irreversible || k1TicketView(shown)?.kind === "release");
   const shownFundCopy = {
     lead: shown ? `${fundLead(shown)}${!shownIrreversible ? "" : shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "，发了不能撤销" : "，不能撤销"}` : "",
-    check: shownFund?.kind === "f4Payout" || shownFund?.kind === "f4Settle" ? "批准时先查兑付覆盖率：读不到或低于红线就不发钱，审批单留着待审批。"
+    check: shownFund?.kind === "f4Payout" ? shownFund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY
+      : shownFund?.kind === "f4Settle" ? F4_SETTLE_COVERAGE
       : shownFund?.kind === "f5Status" && shownFund.state === "unlocked" ? "批准时先核对暂停和兑付覆盖率，结算组的奖励还核冷却到没到期；不满足就不放钱，审批单留着待审批。"
         : shownFund?.kind === "f5Reissue" ? shownCover?.check ?? ""
           : shown?.operationCode === "k1_release_param" || shown?.operationCode === "k1_earnings_release" ? K1_APPROVAL_CHECK[shown.operationCode === "k1_release_param" ? "param" : "release"]
             : enablesAutoPayout(shownFund) && shownCover ? shownCover.check
               : shownCover?.check ?? `${PAGE_COVERAGE_COPY}可以等覆盖率恢复后再批，或驳回。`,
   };
-  const shownFundCheck = `${shownFundCopy.lead}。${shownFundCopy.check}`;
+  // 最近一次批准已经写了被覆盖率挡下，提示条只留后果，不把同一个原因再说一遍（DT-12）。
+  const shownFundCheck = shown?.lastApprovalAttemptResult?.reasonCode === "COVERAGE_BELOW_REDLINE" ? `${shownFundCopy.lead}。` : `${shownFundCopy.lead}。${shownFundCopy.check}`;
   // 和批准框同一条件、同一写法：读到覆盖率且没低于红线时是安静的一行，数字强其余弱，不带警告图标（VS-107、DP-05）。
   const shownCoverageCalm = coverage && !(coverage.redlineBreached === true || coverage.coverageRatio < coverage.redlinePct) ? coverage : undefined;
   // 驳回只是不执行，用普通次按钮，仍在左边和「批准」隔开（必须改 2、DP-40）。退役单右下放灰的「批准」写原因，按钮位置不跳（建议 9）。

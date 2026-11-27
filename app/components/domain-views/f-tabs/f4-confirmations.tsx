@@ -8,13 +8,13 @@ import type { F4ConfirmationSnapshot } from "@/lib/admin/f4-approval";
 import type { F4LeadershipPoolOverview } from "@/lib/admin/f1-client";
 import { count, describeSettleCron, minPointsText, settleCadenceNote, stamp, usdt, zoneNote, moneyText } from "./f4-shared";
 import { fApprovalPermissionText, F_APPROVAL_PERMISSION_NAMES } from "@/lib/admin/f-approval-names";
-import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_SETTLEMENT_CONSEQUENCE, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
+import { F4_POOL_RATIO_INVALID, F4_PAYOUT_POOL_UNCONFIGURED, F4_SETTLEMENT_CONSEQUENCE, F4_SETTLE_IMPACT, F4_PAYOUT_IMPACT, F4_SETTLE_COVERAGE, F4_PAYOUT_COVERAGE, F4_COVERAGE_NEXT, f4PoolRatio, f4Decimal, f4MoneyAmplifies, f4MonthlyCap, f4PeriodPrize, f4PeriodPrizes, f4PoolRatioIncreases } from "@/lib/admin/f4-money";
 import { f4CurrentWeekSettled } from "@/lib/admin/f4-vote-projection";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { unchangedFNumber } from "@/lib/admin/f-reconfirmation";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
-import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules } from "./f4-payout-preview";
+import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules, F4SettledWeekNotice } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
 
 /** 奖池金额（每月上限、周榜奖池）：页面先按后端同一规则查，格式不对提交不了。 */
@@ -126,18 +126,22 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     title: "提前结算本周团队激励池",
     effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
-      impact: "批准时按当时所在的周重新计算池金额，有应发金额时作为已解锁的 USDT 奖励入账。该周已结算就跳过，不补发差额。",
-      check: "批准时如果该周未结算，先查兑付覆盖率。读不到或低于红线就不发钱，审批单留着待审批。",
+      impact: F4_SETTLE_IMPACT,
+      check: F4_SETTLE_COVERAGE,
     },
     completionCopy: "批准前不结算。",
     coverageLead: F4_SETTLEMENT_CONSEQUENCE,
-    coverageCheck: "提交时按这里的数查一次。批准时如果该周未结算，系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。每周自动结算不做这项检查。",
-    facts: <Facts>
-      <Fact k={settled ? "本周已结算（实发）" : settled === false ? "本周池（估算）" : "本周池"} lead tone="role-1" unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
-      <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
-      <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
-      {approvalFacts(POOL_FUND)}
-    </Facts>,
+    coverageCheck: `提交时按这里的数查一次。${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}每周自动结算不做这项检查。`,
+    // 估算批准时才算出来，已发的数这次不动：都不做关键数字（VS-102）；已结算的提示和批准框同一句（OP-69）。
+    facts: <div className="rd-stack">
+      <Facts>
+        <Fact k={settled ? "本周已结算（实发）" : settled === false ? "本周池（估算）" : "本周池"} unit={pool === null ? undefined : "USDT"}>{usdt(pool)}</Fact>
+        <Fact k="有资格分的人">{count(data.participantCount)} 人（{unlockLabel}且有票）</Fact>
+        <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
+      </Facts>
+      {settled && <F4SettledWeekNotice />}
+      <Facts>{approvalFacts(POOL_FUND)}</Facts>
+    </div>,
     detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。估算是现在读到的数，批准执行时会重新计算，可能和这里不同；没有合格票时不发钱。",
     run: async (reason) => {
       await ctx.proposeF4Settlement(reason);
@@ -286,12 +290,12 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
     amplify: true,
     title: "发放总榜奖励", blockedReason: ppAllTime === "" ? F4_PAYOUT_POOL_UNCONFIGURED : undefined, effect: approvalTag(), confirmLabel: "提交审批",
     statedBrief: {
-      impact: "批准时按当时的总榜计算名单和金额，有应发金额时按名次给前 100 名入账已解锁的 USDT 奖励。",
-      check: "总榜派过一次后再批准不会重发；奖池为 0 或没人上榜时不发钱。尚未派过的总榜，批准时先查兑付覆盖率。",
+      impact: F4_PAYOUT_IMPACT,
+      check: `奖池为 0 或没人上榜时不发钱。${F4_PAYOUT_COVERAGE}`,
     },
     completionCopy: "批准前不派奖。",
     coverageLead: F4_SETTLEMENT_CONSEQUENCE,
-    coverageCheck: "提交时按这里的数查一次。批准尚未派过的总榜时，系统再查：读不到或低于红线就不发钱，审批单留着，可等覆盖率恢复后再批，或驳回；等于红线算够。",
+    coverageCheck: `提交时按这里的数查一次。${F4_PAYOUT_COVERAGE}${F4_COVERAGE_NEXT}`,
     facts: <div className="rd-stack">
       <F4PayoutPreviewFacts pool={ppAllTime === "" ? "未配置" : prizeShown(ppAllTime)} />
       <F4PayoutRules top1MaxPct={top1MaxPct} top5MaxPct={top5MaxPct} />
