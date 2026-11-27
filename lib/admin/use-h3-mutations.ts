@@ -140,6 +140,7 @@ export function useH3Mutations(
   finish: (commandKey: string) => void,
   isFresh: (record?: H3PendingCommand) => boolean,
   model: H3Model | null,
+  reloadTasks: () => Promise<H3Model | undefined>,
 ) {
   const session = useAdminAuth(s => s.session);
   const adminId = session?.adminId;
@@ -283,9 +284,15 @@ export function useH3Mutations(
     } catch (error) {
       const e = error as { status?: number; apiCode?: number };
       if (e.status !== undefined && e.status >= 200 && e.status < 300 && e.apiCode !== undefined && e.apiCode >= 400 && e.apiCode < 500) e.status = e.apiCode;
-      if (recovering ? explicitRejectionCode(error) : firstRejection(error)) {
+      const rejectionCode = explicitRejectionCode(error);
+      if (recovering ? rejectionCode : firstRejection(error)) {
         if (!recovering) forget(r);
-        if (!recovering && isHGrowthReadConflict(error)) await settled(r.commandKey);
+        if (r.store === "mission" && rejectionCode === "MISSION_ACTION_ROUTE_INVALID") {
+          // Refresh the candidate data while keeping the form open.
+          await reloadTasks();
+        } else if (!recovering && isHGrowthReadConflict(error)) {
+          await settled(r.commandKey);
+        }
         throw error;
       }
       // Keep the key in storage, not in the shared A2 error renderer's operator copy.

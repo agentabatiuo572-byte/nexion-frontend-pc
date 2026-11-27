@@ -13,7 +13,7 @@ import {
   BlockState, Button, Cell, Change, Conclusion, ConfigList, ConfigRow, Decision, Drawer, Explain, Fact, Facts, Fold, IrreversibleTag,
   JudgmentPoints, MoreMenu, Notice, PageHeader, PageTabs, Panel, Stat, StatBand, StatusTag, Table, Td, Th, Tr, useTabIds, type MoreMenuItem,
 } from "@/app/components/rd";
-import { OperationConfirmModal, PaginationExemptionList } from "../design-kit";
+import { OperationConfirmModal, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import { useRecoveryDraftDiscard } from "../recovery-draft-discard";
 import { rejectedTag, useVerifiedRelease, VerifiedReleaseButton } from "../verified-release";
 import {
@@ -54,7 +54,11 @@ import { hApprovalReconfirm } from "./h-approval-reconfirm";
 import { H3MissionFormDrawer, type H3MissionForm } from "./h3-mission-form";
 import { amountDisplay } from "@/lib/format";
 
-type H3ActionConfirmReq = ActionConfirmReq & { target?: string; confirmLabelForValue?: (value?: string) => string };
+type H3ActionConfirmReq = ActionConfirmReq & {
+  target?: string;
+  confirmLabelForValue?: (value?: string) => string;
+  missionPresentationForm?: (targets: H3Model["productActionTargets"], labels: Record<string, string>) => BusinessFormSpec;
+};
 type Tab = "dayOne" | "weekly" | "bindings" | "monthly";
 type ListKey = "dayOne" | "t1" | "t2";
 type Locale = "en" | "zh" | "vi";
@@ -332,7 +336,7 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       if (task) return decimalOf(task.reward) !== null ? "found" : "unreadable";
       return (monthly ? complete(monthlyMissionCount, list.length) : weeklyComplete) ? "task-missing" : "unreadable";
     };
-  }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model);
+  }, finishConfirmation, record => fresh.current && (record?.store !== "region" || region.isReady()), model, reload);
   const refresh = async () => {
     if (refreshInFlight.current) return;
     refreshInFlight.current = true;
@@ -652,7 +656,6 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
     if (status === "archived") return;
     const currentCategory = text(task.category, "explore").toLowerCase();
     const currentActionRoute = text(task.href, "/pages/missions/missions");
-    const actionRoutes = h3ActionRoutes(taskCode, productActionTargets);
     openActionConfirm({ target: taskCode, briefKind: "config",
       action: `配置任务类别与去完成页面 · ${label}`,
       title: "改类别和跳转",
@@ -664,31 +667,38 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
       </Facts>,
       statedBrief: { impact: "只改类别和跳转页面；不改奖励和完成条件。", check: "核对跳转页面能完成这个任务；理由写清依据。" },
       confirmLabel: "确认修改",
-      businessForm: {
-        kind: "multi-field",
-        requireAnyChange: true,
-        fields: [
-          {
-            key: "category",
-            label: "任务类别",
-            current: currentCategory,
-            inputKind: "select",
-            options: TASK_CATEGORY_OPTIONS,
-            optionLabels: TASK_CATEGORY_LABELS,
-            required: true,
-            showDiff: true,
-          },
-          {
-            key: "actionRoute",
-            label: "点「去完成」跳转到",
-            current: currentActionRoute,
-            inputKind: "select",
-            options: actionRoutes.includes(currentActionRoute) ? actionRoutes : [currentActionRoute, ...actionRoutes],
-            optionLabels: routeLabels,
-            required: true,
-            showDiff: true,
-          },
-        ],
+      missionPresentationForm: (targets, labels) => {
+        const routes = h3ActionRoutes(taskCode, targets);
+        const options = routes.includes(currentActionRoute) ? routes : [currentActionRoute, ...routes];
+        return {
+          kind: "multi-field",
+          requireAnyChange: true,
+          feedback: (value) => options.includes(value.actionRoute)
+            ? { invalid: false, message: "" }
+            : { invalid: true, message: "请选择去完成页面", field: "actionRoute" },
+          fields: [
+            {
+              key: "category",
+              label: "任务类别",
+              current: currentCategory,
+              inputKind: "select",
+              options: TASK_CATEGORY_OPTIONS,
+              optionLabels: TASK_CATEGORY_LABELS,
+              required: true,
+              showDiff: true,
+            },
+            {
+              key: "actionRoute",
+              label: "点「去完成」跳转到",
+              current: currentActionRoute,
+              inputKind: "select",
+              options,
+              optionLabels: labels,
+              required: true,
+              showDiff: true,
+            },
+          ],
+        };
       },
       run: async (reason, _value, businessValue) => {
         if (!businessValue) return;
@@ -1164,6 +1174,10 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
   </Notice>;
 
   // 固定 key：重读失败换成整页失败状态时，开着的确认框不重挂，填的值和理由留着。
+  const confirmBusinessForm = useMemo(
+    () => mc?.missionPresentationForm?.(productActionTargets, routeLabels) ?? mc?.businessForm,
+    [mc, productActionTargets, routeLabels],
+  );
   const confirmModal = mc && (<Fragment key="h3-confirm">
         <OperationConfirmModal key={mc.formKey} briefKind={mc.briefKind}
           action={mc.action}
@@ -1171,7 +1185,8 @@ export function H3QuestTasks({ ctx: shellCtx }: { ctx: HCtx }) {
           detail={mc.detail}
           amplifies={mc.amplifies}
           edit={mc.edit}
-          businessForm={mc.businessForm}
+          businessForm={confirmBusinessForm}
+          businessFormRevision={mc.missionPresentationForm ? readAt : undefined}
           facts={mc.facts}
           effect={mc.effect}
           confirmLabel={mc.confirmLabel}

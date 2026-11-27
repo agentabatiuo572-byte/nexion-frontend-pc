@@ -8,6 +8,7 @@ import { skuSeriesText } from "./device-monthly-target";
 import { isSkuTaglineTranslations, SKU_TAGLINE_LABELS, skuBadgeReviewText, type SkuTaglineTranslations } from "./e1-product-copy";
 import { AUDIT_ACTION_NAMES as A2_ACTION_NAMES, K1_APPROVAL_PARAM_NAMES, k1ApprovalSummaryText } from "./audit-action-names";
 import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "./config-help/h3-task";
+import { H3_PRODUCT_DETAIL_ROUTE_PREFIX } from "./h3-contract";
 import { a2ActionText, a2ObjectText, DIV_BASE_FORMULA, DIV_BASE_TEXT } from "./operator-copy";
 import { ambassadorBucketLabel, ambassadorMaterialStateLabel } from "./f4-ambassador-display";
 import { F5_KIND_LABELS } from "./f-overview-contract";
@@ -299,8 +300,10 @@ export function h3MissionView(w: { operationCode?: string | null; after: string;
   if (!m) return undefined;
   const route = m[6];
   const productName = w.missionTarget?.actionRoute === route ? w.missionTarget.productName : null;
+  const productNo = route.startsWith(H3_PRODUCT_DETAIL_ROUTE_PREFIX) ? route.slice(H3_PRODUCT_DETAIL_ROUTE_PREFIX.length) : "";
   return { code: m[1], name: m[2], type: H3_MISSION_TYPE[m[3]], reward: `${grouped(m[4])} UVT`,
-    category: TASK_CATEGORY_LABELS[m[5].toLowerCase()] ?? m[5], route: productName ? `${productName} 详情` : TASK_ACTION_ROUTE_LABELS[route] ?? route };
+    category: TASK_CATEGORY_LABELS[m[5].toLowerCase()] ?? m[5],
+    route: productName && productNo ? `${productName} 详情（${productNo}）` : TASK_ACTION_ROUTE_LABELS[route] ?? route };
 }
 /** 新手任务奖励的原值可能带旧名称 NEX：照 H3 页写成 UVT 并标出旧名称。 */
 function h3ConfigValue(key: string | undefined, value: string) {
