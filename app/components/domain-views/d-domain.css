@@ -127,6 +127,25 @@
 /* 数字列右对齐、下一列文字左对齐时，两列的内容贴在一起，空白却都在别处：这里补开（亲密性）。 */
 .d-num-gap :is(th, td)[data-align="right"] + :is(th, td):not([data-align="right"]) { padding-left: var(--rd-space-8); }
 
+/* 提现审核筛选条：下面那句去向说明和筛选条是一组，离筛选条 12，和筛选条里的行距一样；它不是填错，正文次文字（ST-19、VS-51）。 */
+.d2-filter { display: flex; flex-direction: column; gap: var(--rd-space-3); }
+.d2-filter-note { margin: 0; color: var(--rd-text-2); }
+.d2-segs { display: inline-flex; align-items: center; gap: var(--rd-space-1); }  /* 问号紧跟分段（VS-85） */
+/* 「清除更多筛选」放进格子底部那一行，和输入框同一条底线（00 对齐）。 */
+.d2-filter .rd-filter-more > div:not([data-cp]) { align-self: end; display: flex; align-items: center; height: var(--rd-control-h); }
+/* 列宽写在列上，筛空时各列不按表头文字重新分宽（DT-16）：状态列吃掉剩下的宽度，操作列只占按钮宽。
+   默认列用百分比（1440 时约 216、136、120、200），窄时跟着收到内容宽，不抬高表格的最小宽度；加出来的列是用户选的，放不下就横向滚动（ST-03）。 */
+.d2-col-select { width: 44px; }  /* 有行时勾选格右边有 8 的内边距，表头没有；写死才不会筛空后整表左移 8 */
+.d2-col-no { width: 18.5%; }
+.d2-col-user { width: 11.7%; }
+.d2-col-amount { width: 10.3%; }
+.d2-col-risk { width: 17.2%; }
+.d2-col-asset { width: 168px; }
+.d2-col-fee { width: 144px; }
+.d2-col-account { width: 200px; }
+.d2-col-lifecycle { width: 220px; }
+.d2-col-action { width: 1%; }
+
 /* 提现单抽屉 */
 .d2-history { display: flex; flex-direction: column; gap: var(--rd-space-4); }
 .d2-history .rd-note { margin-bottom: var(--rd-space-1); }
