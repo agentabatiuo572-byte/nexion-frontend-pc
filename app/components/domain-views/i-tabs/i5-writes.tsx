@@ -740,7 +740,9 @@ export function useI5Writes({ actions, toast, has, onSettled, onReadBack }: {
     } catch (cause) {
       const refusal = isExplicitRejection(cause) ? cause as { status: number; reasonCode?: string; backendMessage?: string } : undefined;
       // 恢复记录锁住原请求，拒绝原因不沿用新建时的改代码或编辑指引。
-      const reason = refusal?.reasonCode === "DISCLOSURE_JURISDICTION_CODE_EXISTS" ? "这个代码已有适用范围在用。" : displayAdminError(cause);
+      const reason = refusal?.reasonCode === "DISCLOSURE_JURISDICTION_CODE_EXISTS" ? "这个代码已有适用范围在用。"
+        : refusal?.reasonCode === "DISCLOSURE_VERSION_SEQUENCE_INVALID" ? "原操作的版本号和系统现在分配的顺序对不上。"
+          : displayAdminError(cause);
       note(record, refusal ? `拒绝原因：${reason}` : `重试没有成功：${reason} 原操作结果仍未知，记录继续保留。`);
       pendingWrites.remember(record.fingerprint, record.commandKey, { target: record.target, label: record.label, op: record.op,
         rejection: refusal && { status: refusal.status, reasonCode: refusal.reasonCode, backendMessage: refusal.backendMessage } });

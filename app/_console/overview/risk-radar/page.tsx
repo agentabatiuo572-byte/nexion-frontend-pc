@@ -213,7 +213,7 @@ export default function RiskRadarPage() {
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [thresholdError, setThresholdError] = useState("");
   const [otherThresholdChanges, setOtherThresholdChanges] = useState<string[]>([]);
-  const [approvalRecovery, setApprovalRecovery] = useState<"lookup" | "retry" | null>(null);
+  const [approvalRecovery, setApprovalRecovery] = useState(false);
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [subscription, setSubscription] = useState({ inApp: true, email: false, webhook: false, webhookUrl: "" });
   const [savedSubscription, setSavedSubscription] = useState(subscription);
@@ -412,12 +412,11 @@ export default function RiskRadarPage() {
     : "";
   const currentPreview = preview?.key === previewKey ? preview : null;
   const previewReady = !!currentPreview && !previewError;
-  const lookupOnly = approvalRecovery === "lookup" || approvalQueryOnly || !!approvalRecoveryState?.expired || !!thresholdReplay?.expired;
+  const lookupOnly = (approvalRecovery && !approvalNext?.canRetry) || !!thresholdReplay?.expired;
   const thresholdLocked = savingThreshold || !!thresholdOriginal || !!approvalRecovery || lookupOnly;
   const canSubmitThreshold = canThreshold && !!session && !savingThreshold && !lookupOnly && (thresholdNext
     ? thresholdNext.canRetry
-    : approvalRecovery === "retry" ? approvalNext?.canRetry
-      : !newWriteBlocked && !pendingApproval && !pendingWrites.some(record => record.fingerprint === THRESHOLD_SLOT) && thresholdChanged && reasonValid && previewReady);
+    : approvalRecovery || (!newWriteBlocked && !pendingApproval && !pendingWrites.some(record => record.fingerprint === THRESHOLD_SLOT) && thresholdChanged && reasonValid && previewReady));
 
   useEffect(() => {
     if (!session || !pendingApproval || savingThreshold) return;
@@ -429,7 +428,7 @@ export default function RiskRadarPage() {
         // 待审批条和读取失败块都在页面上，自动核对不再弹提示。
         if (alive && result?.activeReadFailed) setNeedsFreshRadar(true);
         if (alive && result && result.ticket.status !== "pending") {
-          if (approvalRecovery) { setThreshold(null); setApprovalRecovery(null); }
+          if (approvalRecovery) { setThreshold(null); setApprovalRecovery(false); }
           setNeedsFreshRadar(true); void radar.reload();
         }
       })
@@ -612,7 +611,7 @@ export default function RiskRadarPage() {
       setRedInput(String(pendingApproval.values.redPct));
       setReason(pendingApproval.reason);
       setThreshold(pendingApproval.b5Facts ?? null);
-      setApprovalRecovery("lookup");
+      setApprovalRecovery(true);
       if (!pendingApproval.b5Facts) void queryApproval();
     } else {
       const saved = pendingWrites.find(record => record.fingerprint === THRESHOLD_SLOT);
@@ -631,7 +630,7 @@ export default function RiskRadarPage() {
         ].filter((value): value is string => !!value));
       }
       setReason("");
-      setApprovalRecovery(null);
+      setApprovalRecovery(false);
       setThresholdOriginal(null);
       setThresholdUnknown(false);
       setThreshold(data.bankrun);
@@ -645,15 +644,13 @@ export default function RiskRadarPage() {
       setApprovalVerifiedKey(result?.ticket.status === "pending" ? pendingApproval.commandKey : null);
       if (result) {
         setToast(result.acknowledgement);
-        if (approvalRecovery) { setThreshold(null); setApprovalRecovery(null); }
+        if (approvalRecovery) { setThreshold(null); setApprovalRecovery(false); }
         setNeedsFreshRadar(true); await radar.reload();
-      }
-      else {
+      } else if (!threshold || !approvalRecovery) {
         const state = bThresholdRecovery.state(pendingApproval);
         const next = approvalRecoveryNext(state, approvalQueryOnly);
         const line = next.kind === "not-found" ? approvalRecoveryLine(next) : `暂未查到原审批单。${approvalRecoveryLine(next, state.replayRejection)}`;
         setToast(line, next.canRetry ? undefined : "warn");
-        if (!approvalQueryOnly) setApprovalRecovery(next.canRetry ? "retry" : "lookup");
       }
     } catch (cause) { setThresholdError(displayAdminError(cause)); setToast(displayAdminError(cause)); }
     finally { syncPending(value => value + 1); }
@@ -687,7 +684,7 @@ export default function RiskRadarPage() {
             ? () => discardThresholdRecoveryDraft("B5", session.adminId, thresholdDraftKey) : undefined);
         setToast("提现压力的黄线和红线已更新");
       }
-      setApprovalRecovery(null); setThresholdUnknown(false);
+      setApprovalRecovery(false); setThresholdUnknown(false);
       await refreshAfterWrite();
     } catch (cause) {
       let rereadAfterConflict = false;
@@ -698,7 +695,7 @@ export default function RiskRadarPage() {
           const versionConflict = cause instanceof Error && "backendMessage" in cause
             && cause.backendMessage === "B5_THRESHOLD_VERSION_CONFLICT";
           if (versionConflict) setReason("");
-          setThresholdOriginal(null); setApprovalRecovery(null); setPreview(null);
+          setThresholdOriginal(null); setApprovalRecovery(false); setPreview(null);
           setNeedsFreshRadar(true);
           const fresh = await radar.reload();
           rereadAfterConflict = !!fresh && versionConflict;
@@ -707,7 +704,7 @@ export default function RiskRadarPage() {
         const saved = pendingThresholdConfigApproval("B5", session.adminId);
         if (saved) {
           setThreshold(saved.b5Facts ?? null);
-          setApprovalRecovery("lookup");
+          setApprovalRecovery(true);
         }
       }
       setThresholdUnknown(!!original && !rejected);
@@ -761,7 +758,7 @@ export default function RiskRadarPage() {
     const input = record.body ? JSON.parse(record.body) : null;
     if (record.kind === "threshold") {
       setThresholdOriginal(record); setThreshold(record.facts); setYellowInput(String(input.yellowPct)); setRedInput(String(input.redPct));
-      setReason(input.reason); setThresholdUnknown(true); setApprovalRecovery(null); setThresholdError("");
+      setReason(input.reason); setThresholdUnknown(true); setApprovalRecovery(false); setThresholdError("");
     } else if (record.kind === "subscription") {
       setSubscriptionOriginal(record); setSubscription({ inApp: input.inApp, email: input.email, webhook: input.webhook, webhookUrl: input.webhookUrl });
       setSubscriptionUnknown(true); setSubscriptionOpen(true); setSubscriptionSaveError("");
@@ -854,7 +851,7 @@ export default function RiskRadarPage() {
   const approvalReleasable = approvalNext?.kind === "rejected" && !pendingApproval?.received && !pendingApproval?.b5Ticket;
   const releaseApproval = () => {
     if (!pendingApproval || !bThresholdRecovery.releaseRejectedReplay(pendingApproval)) return;
-    setReleasingApproval(false); setThreshold(null); setApprovalRecovery(null);
+    setReleasingApproval(false); setThreshold(null); setApprovalRecovery(false);
     syncPending(value => value + 1);
     setToast("已解除本页的原操作记录");
   };
@@ -1016,7 +1013,7 @@ export default function RiskRadarPage() {
             </span>}>
             <p>黄线 {fmtConfigPct(pendingApproval.values.yellowPct)} · 红线 {fmtConfigPct(pendingApproval.values.redPct)} · {timeText(new Date(pendingApproval.createdAt).toISOString())}提交</p>
             <p>{approvalPending ? "等另一位超级管理员在「操作记录与审批」批准，批准前红线不变。"
-              : approvalNext && approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection)}</p>
+              : !(threshold && approvalRecovery) && approvalNext && approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection)}</p>
           </Notice>
         )}
         {!data ? <>
@@ -1108,7 +1105,7 @@ export default function RiskRadarPage() {
           : !thresholdValid ? "先把黄线、红线填在范围内"
             : !recovering && !thresholdChanged ? "没有修改"
             : !recovering && !reasonValid ? reasonHint
-              : !previewReady && approvalRecovery !== "retry" ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
+              : !previewReady && !approvalRecovery ? (previewError ? "预览失败，暂不能提交" : "正在按新的线计算，请稍等")
                 : undefined;
         return (
           <Modal title="调整提现压力的黄线和红线" icon={SlidersHorizontal} busy={savingThreshold} dirty={thresholdChanged || !!thresholdReason}
@@ -1124,12 +1121,11 @@ export default function RiskRadarPage() {
             </>}>
             <div className="b5-dialog">
               {staleThreshold && <Notice tone="warn">阈值刚被别人改过，这次不能按旧值提交。关掉后重新打开再调整。</Notice>}
-              {thresholdError && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? approvalReleasable ? RETRY_REJECTED_STATUS.label : "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
-                ? approvalNext && approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection)
+              {(thresholdError || approvalRecovery) && <Notice tone={approvalRecovery || thresholdUnknown ? "warn" : "danger"} title={approvalRecovery ? approvalReleasable ? RETRY_REJECTED_STATUS.label : "审批单结果未知" : thresholdUnknown ? "结果未知，可能已经生效" : "没有调整成功"}>{approvalRecovery
+                ? approvalNext && (approvalNext.kind === "query" ? "请先查询原审批单。" : approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection))
                 : thresholdUnknown && thresholdNext ? thresholdNext.canRetry
                   ? "可能已经生效。可以按原操作重试，不会重复执行；也可以关掉后点「读取当前值」。"
                   : writeRecoveryLine(thresholdNext, thresholdReplay?.replayRejection) : thresholdError}</Notice>}
-              {approvalRecovery === "lookup" && !thresholdError && <Notice tone="warn" title={approvalReleasable ? RETRY_REJECTED_STATUS.label : "审批单结果未知"}>{approvalNext && approvalRecoveryLine(approvalNext, approvalRecoveryState?.replayRejection)}</Notice>}
               {otherThresholdChanges.length > 0 && <Notice tone="neutral" title="别人改了什么">{otherThresholdChanges.join(" · ")}</Notice>}
               <DiffField size="body" before={fmtConfigPct(threshold.yellowPct)} beforeLabel={recovering ? "提交时" : undefined} label="黄线改成" hint="5%–50%" state={yellowDirection}
                 note={yellowDirection ? "黄线只决定什么时候标「注意」，不会自动暂停提现。" : undefined}>

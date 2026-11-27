@@ -225,11 +225,13 @@ export function CustomerTransferDialog({ customerId, mode, onClose, onDone, onOp
       window.dispatchEvent(new Event("support-todo-changed"));
       if (mounted.current) onDone(`已转给 ${record.targetName ?? "新的专属客服"}，并核对了最新归属。`);
     } catch (error) {
-      if (actor !== actorStamp() || transferRecovery.state(record).replayBlock === "missing") return;
+      if (actor !== actorStamp()) return;
+      const { replayBlock, replayRejection } = transferRecovery.state(record);
+      if (replayBlock === "missing") return;
       const cause = timedOut(signal, error);
       if (replay || written || !isDefiniteSupportRefusal(cause)) {
         setPending(record);
-        updateTransferNote(record.commandKey, transferRecovery.state(record).replayRejection ? mRejectedReason(displayAdminError(cause)) : mUnknownText(displayAdminError(cause)));
+        updateTransferNote(record.commandKey, replayRejection ? mRejectedReason(displayAdminError(cause), replayRejection) : mUnknownText(displayAdminError(cause)));
       } else {
         transferCommands.forget(record.fingerprint, record.commandKey);
         updateTransferNote(record.commandKey);

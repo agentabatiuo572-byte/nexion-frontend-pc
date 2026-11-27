@@ -23,6 +23,12 @@ export const M_RECOVERY_INTRO = "提交时没收到确定结果，可能已经�
 
 export const M_RELEASED_TEXT = "已解除这条记录，可以重新提交。";
 
+const REPLAY_REJECTED_FACTS = new Map([
+  ["SUPPORT_BINDING_VERSION_CONFLICT", "客户归属在原操作之后变了。"],
+  ["SUPPORT_GROUP_SCOPE_CHANGED", "分组成员在原操作之后变了。"],
+  ["SUPPORT_RULES_VERSION_CONFLICT", "服务规则在原操作之后被别人改过。"],
+]);
+
 const ended = (text: string) => !text || /[。！？…]$/.test(text) ? text : `${text}。`;
 
 /** 查询失败：原因跟在固定的那句后面。 */
@@ -31,7 +37,7 @@ export const mQueryFailedText = (reason: string) => `${M_RECOVERY.queryFailed}${
 export const mUnknownReason = (reason: string) => /可能已经生效|结果未知/.test(reason) ? "" : ended(reason);
 export const mUnknownText = (reason: string) => mUnknownReason(reason) && `${M_RECOVERY.unknown}${mUnknownReason(reason)}`;
 /** 重试被拒绝的原因，写在下一步前面（标签已经写了「重试被拒绝」）。 */
-export const mRejectedReason = (reason: string) => `拒绝原因：${ended(reason)}`;
+export const mRejectedReason = (reason: string, code?: string) => `拒绝原因：${ended(REPLAY_REJECTED_FACTS.get(code ?? "") ?? reason)}`;
 
 export type MRecoveryView = { tone: "warn" | "progress" | "danger" | "neutral" | "done" | "ok"; label: string; line: string };
 export const M_SUBMITTING_VIEW = { tone: "progress", label: "提交中…", line: "提交中…" } satisfies MRecoveryView;
