@@ -15,6 +15,7 @@ import { useAdminAuth } from "../store/admin-auth";
 export type F4ConfirmationSnapshot = FReconfirmationLink & {
   action: string;
   overview: F4LeadershipPoolOverview;
+  readAt?: number | null;
   policy: F4AmbassadorPolicy | null;
   period?: "today" | "week" | "month" | "all";
   application?: F4AmbassadorApplication;

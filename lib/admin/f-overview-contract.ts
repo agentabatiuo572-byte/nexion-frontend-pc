@@ -503,6 +503,9 @@ export function assertF4Overview(value: unknown): asserts value is JsonRecord {
     if (typeof row[field] !== "string") invalid("F4", field);
   }
   if (!["READY", "HOLD"].includes(String(row.settlementConfigStatus))) invalid("F4", "settlementConfigStatus");
+  if (row.currentWeekSettled !== undefined && typeof row.currentWeekSettled !== "boolean") invalid("F4", "currentWeekSettled");
+  if ((row.currentWeekSettled !== undefined || row.weeklyInjectedAmount !== undefined)
+    && (typeof row.weeklyInjectedAmount !== "string" || !/^\d+(?:\.\d+)?$/.test(row.weeklyInjectedAmount))) invalid("F4", "weeklyInjectedAmount");
   if (row.currentWeekPoolUsd !== null) nonNegative(row.currentWeekPoolUsd, "F4", "currentWeekPoolUsd");
   for (const field of ["weeklyInjectedUsd", "weeklyGmvUsd", "monthlyCapUsd", "participantCount", "topN", "topSharePct", "unlockRank", "quotaMonthlyStockTotal", "quotaMonthlyStockUsed", "quotaMonthlyStockRemaining", "ambassadorPendingCount", "leaderboardFraudHitCount"]) nonNegative(row[field], "F4", field);
   for (const field of ["quotaMonthlyStockSold", "quotaMonthlyStockPending"]) {

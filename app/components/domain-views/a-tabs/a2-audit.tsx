@@ -97,6 +97,7 @@ import { D5_APPROVAL_OP, D5_DIFF_UNREADABLE, d5Trc20ApprovalBlock, TRC20_CHANGES
 import type { WithdrawalProposalChanges } from "@/lib/admin/withdrawal-proposal-changes";
 import { H7_VOUCHER_APPROVER, H7_VOUCHER_APPROVAL_PERMISSIONS, isH7VoucherApproval } from "@/lib/admin/h7-voucher-approval";
 import { fetchDirectCommandReceiptDetails } from "@/lib/admin/direct-command-receipt";
+import { recoveryNext } from "@/lib/admin/recovery-next";
 import { displayAdminError, displayAdminReadError, formatAdminApiError, UNMAPPED_ADMIN_ERROR_TEXT } from "@/lib/admin/error-messages";
 import { isExplicitRejection } from "@/lib/admin/explicit-rejection";
 import { announcePermissionDenied, isPermissionDenied } from "@/lib/admin/operation-confirm-error";
@@ -174,6 +175,7 @@ const backendChecksText = (lead = "", end = "") =>
   <KeepText text={`${lead}${BACKEND_CHECKS_NOTE}${end}`} phrases={["没有权限会被拒绝并写明原因。", "没有权限会被拒绝并写明原因"]} />;
 const WAIT_OTHERS = "等待有权限的人处理";
 const UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作，或按原操作重试。";
+const DECISION_UNKNOWN_TOAST = "结果未知，不要重复操作。到页面上方查询原操作。";
 const RETRY_EXPIRED = "已超过 24 小时，不能再重试，请在「操作记录」里按单号核对。";
 const RETRY_NO_PERMISSION = "这个账号现在没有这项操作的权限，不能重试，请在「操作记录」里按单号核对";
 
@@ -859,6 +861,7 @@ function readRoute(search: string) {
 
 type A2DecisionKind = "approve" | "reject" | "withdraw";
 type A2CommandKind = A2DecisionKind | "param" | "retention" | "export";
+const isDecisionKind = (kind: A2CommandKind): kind is A2DecisionKind => kind === "approve" || kind === "reject" || kind === "withdraw";
 type A2PendingCommand = PendingMutationRecord & {
   kind: A2CommandKind;
   /** 待确认条上写的「做了什么」。 */
@@ -908,9 +911,9 @@ function d5Trc20Reason(block: string, retry: boolean) {
   return retry && block === D5_DIFF_UNREADABLE ? "审批单的变更详情读不懂，暂不能按原操作重试" : block;
 }
 const RECOVERY_HINT: Record<A2CommandKind, string> = {
-  approve: "可以查询这次批准的结果，或按原操作重试，不会重复执行。",
-  reject: "可以查询这次驳回的结果，或按原操作重试，不会重复执行。",
-  withdraw: "可以查询这次撤回的结果，或按原操作重试，不会重复执行。",
+  approve: "先查询这次批准的结果，明确查不到才能按原操作重试。",
+  reject: "先查询这次驳回的结果，明确查不到才能按原操作重试。",
+  withdraw: "先查询这次撤回的结果，明确查不到才能按原操作重试。",
   param: "读到的是现在的值，值相同也可能是别人改的。可以按原操作重试，不会重复执行。",
   retention: "「读取最近清理」只能看到最近一次手动清理，证明不了这次清理成没成。可以按原操作重试，不会重复清理。",
   export: "查询只能看到有没有这次的导出记录。可以按原操作重试，按当时的条件重新下载。",
@@ -919,13 +922,14 @@ const RECOVERY_HINT: Record<A2CommandKind, string> = {
  * 查询原决定（A2-BE-17）后留在待确认条上的结果：只按这次决定自己的记录说，不拿这张单现在的状态推断。
  * 「已确认完成」「明确被拒」由查询自己解除记录，用轻提示，见 DECISION_DONE、DECISION_REFUSED。
  */
-type DecisionCheck = "processing" | "unconfirmed" | "readFailed";
+type DecisionCheck = "processing" | "notFound" | "unconfirmed" | "readFailed";
 /**
  * 标签已经说了查到什么，后面这句只写下一步；查询失败的正文是读取错误本身，所以只有标签。
  * retried：刚才按原操作重试被拒，前面已经写了重试被拒的原因，这句要说清「原来那次」还没有结果。
  */
 const DECISION_CHECK: Record<DecisionCheck, { tone: "progress" | "warn"; icon?: typeof SearchX; label: string; text?: (verb: string, retried: boolean) => string }> = {
   processing: { tone: "progress", label: "仍在处理", text: (verb, retried) => retried ? `原来那次${verb}还在处理，稍后再查。` : "查过，稍后再查。" },
+  notFound: { tone: "warn", icon: SearchX, label: "查不到原操作", text: (verb, retried) => retried ? `查不到原来那次${verb}的记录。` : "可以在重试期限内按原操作重试。" },
   unconfirmed: { tone: "warn", icon: SearchX, label: "没查到结果", text: (verb, retried) => `${retried ? `原来那次${verb}` : "查过，"}还不能确认有没有执行，稍后再查。` },
   readFailed: { tone: "warn", icon: CloudOff, label: "查询失败" },
 };
@@ -1511,6 +1515,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
    * 重试的是保留下来的原命令时这里不丢号，由 retryPending 按命令类型决定结案还是待人核实（CP-33）。成功并读回到目标状态才解除。
    */
   const sendCommand = async <T,>(scope: string, extra: A2PendingExtra, prefix: string, send: (key: string) => Promise<T>, confirm: (result: T) => Promise<boolean>): Promise<"ok" | "unknown"> => {
+    const unknownToast = isDecisionKind(extra.kind) ? DECISION_UNKNOWN_TOAST : UNKNOWN_TOAST;
     const retained = a2Commands.get(scope);
     const key = retained ?? createA2CommandKey(prefix);
     a2Commands.remember(scope, key, extra);
@@ -1534,11 +1539,11 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
           await refreshRetentionPreview();
         }
         await refreshAfterWrite();
-        if (unknown) { toast(UNKNOWN_TOAST, "warn"); return "unknown"; }
+        if (unknown) { toast(unknownToast, "warn"); return "unknown"; }
         throw cause;
       }
       const confirmed = await confirm(result).catch(() => false);
-      if (!confirmed) { syncPending(); toast(UNKNOWN_TOAST, "warn"); return "unknown"; }
+      if (!confirmed) { syncPending(); toast(unknownToast, "warn"); return "unknown"; }
       a2Commands.forget(scope, key);
       syncPending();
       return "ok";
@@ -1570,7 +1575,6 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       const next = await loadMain();
       void loadFiltered(appliedRef.current);
       const decided = next.operationQueue.find((item) => item.id === w.id && item.status === DECISION_STATUS[kind]);
-      if (kind === "approve" && decided?.f4ResultUnreadable) return false;
       businessResult = decided?.businessResult;
       return !!decided || next.operationHistory.some((item) => item.id === w.id && item.st === DECISION_STATUS[kind]);
     },
@@ -1631,14 +1635,14 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const notePending = (record: A2PendingCommand, text: string, check?: DecisionCheck) => {
     const refusal = decisionRetryRefusals.current.get(record.commandKey);
     const note = refusal ? `${refusal}${text}` : text;
-    setPendingNotes((current) => ({ ...current, [record.fingerprint]: { text: `${businessClock(Date.now())} ${note}`, check } }));
+    setPendingNotes((current) => ({ ...current, [record.commandKey]: { text: `${businessClock(Date.now())} ${note}`, check } }));
   };
 
   const clearDecisionPendingNote = (record: A2PendingCommand) => {
     decisionRetryRefusals.current.delete(record.commandKey);
     setPendingNotes((current) => {
       const next = { ...current };
-      delete next[record.fingerprint];
+      delete next[record.commandKey];
       return next;
     });
   };
@@ -1669,7 +1673,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         setRefusals((current) => [...current, approvalReason && why ? `${record.target}：${why}。` : DECISION_REFUSED(DECISION_VERB[kind], record.target, why)]);
       } else toast(DECISION_DONE(DECISION_VERB[kind], record.target), "success");
     } else {
-      const check = receipt.state === "PROCESSING" ? "processing" : "unconfirmed";
+      const check = receipt.state === "PROCESSING" ? "processing" : receipt.state === "NOT_FOUND" ? "notFound" : "unconfirmed";
       if (!afterRefusedRetry) decisionRetryRefusals.current.delete(record.commandKey);
       notePending(record, DECISION_CHECK[check].text!(DECISION_VERB[kind], decisionRetryRefusals.current.has(record.commandKey)), check);
     }
@@ -1710,14 +1714,20 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     return block && d5Trc20Reason(block, true);
   };
   const retryBlock = (record: A2PendingCommand) => {
-    if (isRetryExpired(record)) return RETRY_EXPIRED;
+    const notFound = pendingNotes[record.commandKey]?.check === "notFound";
+    const next = recoveryNext({
+      expired: isRetryExpired(record),
+      conclusion: notFound ? "not-found" : "unknown",
+      replayBlock: isDecisionKind(record.kind) && !notFound ? "needs-not-found" : undefined,
+    });
+    if (next.kind === "expired") return RETRY_EXPIRED;
     if (!canRetry(record)) return RETRY_NO_PERMISSION;
     const d5Block = d5RetryBlock(record);
     if (d5Block) return d5Block;
     const amount = retryAmount(record);
     if (amount?.state === "loading") return "正在加载退款金额，读完再重试";
     if (amount && amount.state !== "ok") return REFUND_AMOUNT_REQUIRED;
-    return undefined;
+    return next.block;
   };
 
   /**
@@ -1747,7 +1757,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
             : await runDecision(record.kind, ticketLike, record.reason, record.operator);
       // 导出和清理自己会提示「已下载」「清理完成」，不再多弹一条。
       if (outcome === "ok") {
-        if (decisionRetryRefusals.current.has(record.commandKey)) clearDecisionPendingNote(record);
+        if (isDecisionKind(record.kind)) clearDecisionPendingNote(record);
         // 披露发布批准只封存这一版，不说「已生效」（和 approvalTiming 同一单类判断）。
         const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
         if (record.kind !== "export" && record.kind !== "retention") toast(businessResult ? `已确认：${record.label}，${f4ApprovalResultText(businessResult)}`
@@ -1765,8 +1775,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         return;
       }
       const rejected = isExplicitRejection(cause);
-      if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true)
-        && (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw")) {
+      if ((rejected || (cause as { f5StatusRejected?: boolean })?.f5StatusRejected === true) && isDecisionKind(record.kind)) {
         const reason = decisionRefusedReason(code || undefined, why, approvalReason) ?? "系统没有给出原因";
         decisionRetryRefusals.current.set(record.commandKey, `按原操作重试被拒：${reason}。`);
         await verifyDecisionPending(record, record.kind, true);
@@ -1775,14 +1784,14 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       if (rejected) {
         notePending(record, `重试没有成功：${why}。这说明不了原操作的结果，原记录继续保留。`);
         setRetryRejected((current) => [...current, record.commandKey]);
-      } else notePending(record, `这次没查到结果：${why}。原记录继续保留，稍后再查询或重试。`);
+      } else notePending(record, `这次没查到结果：${why}。原记录继续保留，${isDecisionKind(record.kind) ? "稍后再查询原操作。" : "稍后再查询或重试。"}`);
     }
   };
 
   /** 决定按原命令读回，其余只核对现状（OP-93、OP-95）。 */
   const verifyPending = async (record: A2PendingCommand) => {
     if (!isPendingCommandOwnedBy(record)) return;
-    if (record.kind === "approve" || record.kind === "reject" || record.kind === "withdraw") {
+    if (isDecisionKind(record.kind)) {
       return verifyDecisionPending(record, record.kind);
     }
     if (record.kind === "export") {
@@ -1943,8 +1952,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
    * 句子和发起人那边（f4-confirmations、f5-audit）同一套说法；没有的事实不写；F5 单子里没有用户和金额，按记录号读现在的样子（a2-f5-current）。
    */
   type FundSpec = { irreversible: boolean; impact: string; completion?: string; check: string; detail: string;
-    coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; review?: boolean; extra?: ReactNode };
-  const fundSpec = (w: A2OperationRow, onPayoutStateChange?: (settled: boolean, paused?: boolean) => void): FundSpec | undefined => {
+    coverageCheck?: string; facts?: ReactNode; lead?: ReactNode; waitsForLatestRead?: boolean; review?: boolean; extra?: ReactNode };
+  const fundSpec = (w: A2OperationRow, onPayoutStateChange?: (settled: boolean | undefined, paused?: boolean) => void): FundSpec | undefined => {
     const fund = fundTicket(w);
     if (!fund) return undefined;
     // 影响句、后果句和覆盖率说明与 F4 发起框同一套（OP-69）；覆盖率说明只在问号里写一次（DT-12）。
@@ -1956,7 +1965,8 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverageCheck: `${fund.period === "总榜" ? F4_PAYOUT_COVERAGE : F4_COVERAGE_COPY}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       // 只有总榜的预览接口能按单子里的信息读到；别的榜要哪一期，单子里没有。
-      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts approving rules onPayoutStateChange={onPayoutStateChange} /> : undefined,
+      lead: fund.period === "总榜" ? <F4PayoutPreviewFacts rules onPayoutStateChange={onPayoutStateChange} /> : undefined,
+      waitsForLatestRead: fund.period === "总榜",
     };
     if (fund.kind === "f4Settle") return {
       irreversible: true,
@@ -1966,6 +1976,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
       coverageCheck: `${F4_SETTLE_COVERAGE}${F4_COVERAGE_NEXT}`,
       facts: undefined,
       lead: <F4SettleFacts onSettlementChange={onPayoutStateChange} />,
+      waitsForLatestRead: true,
     };
     if (fund.kind === "fConfig") {
       const item = fund.spec;
@@ -2141,10 +2152,12 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
     const blockAfterWrite = (approvalWriteBlock: string) => {
       openActionConfirm(current => current?.run === request.run ? { ...current, approvalWriteBlock } : current);
     };
+    const latestReadBlock = "正在读取最新状态，稍候即可批准。";
     const fund = fundSpec(w, (settled, paused) => {
       // The modal and its coverage gate use the same read. Ignore a result after this confirmation has closed.
       const blockedReason = paused ? F4_PAYOUT_APPROVAL_PAUSED
-        : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : settled ? undefined : coverageBlock;
+        : oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED
+        : settled === undefined ? latestReadBlock : settled ? undefined : coverageBlock;
       openActionConfirm(current => current?.run === request.run && !current.approvalWriteBlock && current.blockedReason !== blockedReason
         ? { ...current, blockedReason } : current);
     }) ?? k1Spec ?? bootSpec;
@@ -2185,7 +2198,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
         : amplifies && !coverage ? <span className="a2-coverage-unknown">{`${fundLead(w)}，兑付覆盖率暂时读不到`}</span> : fundLead(w),
       coverageCheck: v8Promotion ? undefined : fund?.coverageCheck ?? coverageFacts(w)?.check ?? PAGE_COVERAGE_COPY,
       requiresH5ApprovalCoverage,
-      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : coverageBlock,
+      blockedReason: oldPayoutTickets.current.has(w.id) ? F4_PAYOUT_REVIEW_REQUIRED : fund?.waitsForLatestRead ? latestReadBlock : coverageBlock,
       initialReason: f4Payout ? refusedPayoutReasons.current.get(draftKey) : undefined,
       reasonMin,
       reasonMax: 200,
@@ -2511,7 +2524,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const pendingItems: RecoveryItem[] = pendingCommands.map((record) => {
     const expired = isRetryExpired(record);
     const amount = retryAmount(record);
-    const note = pendingNotes[record.fingerprint];
+    const note = pendingNotes[record.commandKey];
     const check = note?.check ? DECISION_CHECK[note.check] : undefined;
     const sealed = record.kind === "approve" && (record.operationCode === "i5_disclosure_publish" || record.operationCode === "i4_disclosure_publish");
     const d5Block = d5RetryBlock(record);

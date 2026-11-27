@@ -14,7 +14,7 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { compareDecimal } from "@/lib/admin/f1-rank-benefit";
 import { unchangedFNumber } from "@/lib/admin/f-reconfirmation";
 import { f4PolicyConfirmation } from "./f4-policy-confirm";
-import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules, F4SettledWeekNotice } from "./f4-payout-preview";
+import { F4DisqualifyEvidenceFact, F4PayoutPreviewFacts, F4PayoutRules, F4PoolReadTime, F4SettledWeekNotice } from "./f4-payout-preview";
 import type { FViewCtx, McSpec } from "./types";
 
 /** 奖池金额（每月上限、周榜奖池）：页面先按后端同一规则查，格式不对提交不了。 */
@@ -95,7 +95,7 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
   const cadence = settlement.ready && !invalid.has("settleCron") ? settleCadenceNote(settleCron) : null;
   const unlockVRankEff = invalid.has("unlockVRank") ? invalidLabel : unlockVRank || "未配置";
   const settled = f4CurrentWeekSettled(ctx.f4VoteProjection.status === "ready" ? ctx.f4VoteProjection.data : undefined);
-  const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data, settled);
+  const { amount: pool, actual: poolActual, estimated: poolEstimated } = f4CurrentWeekPool(data);
   const board = leaderboardState(data);
   const current = data.leaderboardComputePointPeriods?.[period];
   const lbMinPoints = data.configValues["F.leaderboard.minComputePoints"];
@@ -140,9 +140,10 @@ export function f4Confirmation(ctx: FViewCtx, snapshot: F4ConfirmationSnapshot, 
         <Fact k="怎么分">按各等级票数分，最后一位领取尾差</Fact>
       </Facts>
       {settled && <F4SettledWeekNotice />}
+      {snapshot.readAt != null && <F4PoolReadTime at={snapshot.readAt} estimated={poolEstimated} />}
       <Facts>{approvalFacts(POOL_FUND)}</Facts>
     </div>,
-    detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。估算是现在读到的数，批准执行时会重新计算，可能和这里不同；没有合格票时不发钱。",
+    detail: "池金额 = 本周已付款成交额 × 奖池比例，不含退款和拒付，不超过本月剩余额度；按当前等级和票数分给达到参与等级的人。没有合格票时不发钱。",
     run: async (reason) => {
       await ctx.proposeF4Settlement(reason);
     },
