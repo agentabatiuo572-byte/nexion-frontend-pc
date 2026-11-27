@@ -125,7 +125,7 @@ export function F4QuotaCreate({ data, ctx, onClose, original, draft }: { data?: 
           return problem ? { invalid: true, ...problem } : { invalid: false, message: "" };
         },
         fields: [
-          { key: "productNo", label: "商品", inputKind: "select", options: free, optionLabels: skuLabels, mustChoose: true, searchable: free.length > 8, current: "" },
+          { key: "productNo", label: "商品", inputKind: "select", options: free, optionLabels: skuLabels, mustChoose: true, searchSelect: free.length > 8 ? { empty: "没有匹配的商品" } : undefined, current: "" },
           { key: "name", label: "名称", inputKind: "text", current: "", placeholder: "例如 Pro 月名额", help: "只在后台显示", maxLength: 128 },
           { key: "directRefs", label: "有效直接邀请（人）", inputKind: "number", current: "0", min: 0, step: 1, help: "填 0 表示不要求" },
           { key: "monthComputePoints", label: "本月团队算力点", inputKind: "number", current: "0", min: 0, step: 1, help: "填 0 表示不要求" },

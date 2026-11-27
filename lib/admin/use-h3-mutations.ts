@@ -1,6 +1,6 @@
 "use client";
 
-import { h3QuestConfigWriteRefusal, type H3Model } from "./h3-contract";
+import { H3_PRODUCT_TARGETS_READ_FAILURE, h3QuestConfigWriteRefusal, type H3Model } from "./h3-contract";
 import { HApprovalRequired } from "./h-approval-required";
 import { isHGrowthReadConflict } from "./h-write-conflict";
 
@@ -8,8 +8,10 @@ import { useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { roleLabel } from "@/lib/nav/console-nav";
 import { createA2CommandKey, createA2OperationProposal, fetchA2Overview, fetchA2ProposalByKey, isA2OutcomeUncertainError, type A2OperationRow } from "./a2-client";
+import { h3MissionReceiptText } from "./a2-approval-text";
 import { growthRequest, h3CommandStorage, type H3CommandStore, type H3WeeklyRegionMapping } from "./h-client";
 import { h3ConfigNeedsApproval } from "./h3-contract";
+import { h3RouteNeedsProductTargets } from "./config-help/h3-task";
 import { findHighOp } from "./high-ops-registry";
 import { explicitRejectionCode } from "./explicit-rejection";
 import { RETRY_REJECTED_TEXT } from "./retry-rejected";
@@ -132,6 +134,13 @@ function retryBlocked(record: H3PendingCommand) {
   return state.replayBlock ? "请查询原操作" : undefined;
 }
 
+function needsProductTargets(write: H3Write) {
+  const { actionRoute, expectedActionRoute } = write.body;
+  const choosingRoute = write.path === "/quest-events/missions"
+    || (write.path.endsWith("/presentation") && actionRoute !== expectedActionRoute);
+  return choosingRoute && h3RouteNeedsProductTargets(write.change.target, String(actionRoute ?? ""));
+}
+
 /** H3-only transport and recovery. The page owns all existing form markup. */
 export function useH3Mutations(
   toast: (message: string) => void,
@@ -139,7 +148,9 @@ export function useH3Mutations(
   readApproved: (records: readonly H3PendingCommand[]) => Promise<(record: H3PendingCommand) => ApprovedFact>,
   finish: (commandKey: string) => void,
   isFresh: (record?: H3PendingCommand) => boolean,
+  productTargetsReadFailed: () => boolean,
   model: H3Model | null,
+  routeLabels: Readonly<Record<string, string>>,
   reloadTasks: () => Promise<H3Model | undefined>,
 ) {
   const session = useAdminAuth(s => s.session);
@@ -202,7 +213,15 @@ export function useH3Mutations(
       update();
     }
   };
-  const query = async (r: H3PendingCommand, refresh = false) => {
+  const toastTicket = (ticket: A2OperationRow, result: string) => {
+    if (ticket.operationCode !== "h3_mission_create") {
+      toast(`${result}：${ticket.before} → ${ticket.after}`);
+      return;
+    }
+    const summary = h3MissionReceiptText(ticket, routeLabels);
+    toast(summary ? `${result}：${summary}` : result);
+  };
+  const query = async (r: H3PendingCommand, refresh = false, justSubmitted = false) => {
     requireActor(false);
     const current = currentH3Commands().find(record => record.commandKey === r.commandKey);
     if (!current) return;
@@ -236,13 +255,18 @@ export function useH3Mutations(
       retain(saved);
       confirmedTickets.current.set(r.commandKey, ticket);
       update();
-      if (ticket.status === "approved" && !refresh && await settleApproved([saved])) toast(`审批单已批准：${ticket.before} → ${ticket.after}`);
+      if (ticket.status === "approved" && !refresh && await settleApproved([saved])) toastTicket(ticket, "审批单已批准");
     }
     else if (h3Recovery.settleFromQuery(r, result.conclusion)) {
       confirmedTickets.current.delete(r.commandKey);
       await settled(r.commandKey, result.conclusion === "not-executed" ? { ...r, ticket } : undefined, !refresh);
     }
-    if (!refresh && ticket.status !== "approved") toast(`审批单${({ pending: "待审批", rejected: "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}：${ticket.before} → ${ticket.after}`);
+    if (!refresh && ticket.status !== "approved") {
+      const result = justSubmitted && ticket.operationCode === "h3_mission_create" && ticket.status === "pending"
+        ? `已提交，等待审批后执行 · 审批单 ${ticket.id}`
+        : `审批单${({ pending: "待审批", rejected: ticket.operationCode === "h3_mission_create" ? "已驳回" : "被拒", expired: "已过期", withdrawn: "已撤回" })[ticket.status]}`;
+      toastTicket(ticket, result);
+    }
     return ticket;
   };
   const pendingApprovals = () => [...new Map([...(auditRows.current ?? []), ...confirmedTickets.current.values()].map(t => [t.id, t])).values()];
@@ -310,7 +334,7 @@ export function useH3Mutations(
   };
   const readSubmitted = async (record: H3PendingCommand) => {
     const saved = currentH3Commands().find(row => row.commandKey === record.commandKey);
-    const current = saved && await query(saved);
+    const current = saved && await query(saved, false, true);
     if (!current) throw new OutcomeUnknownError("申请已建单，批没批准还没查到。请查询原操作，原操作继续保留。");
     if (current.status === "pending") await settled(record.commandKey);
   };
@@ -320,6 +344,7 @@ export function useH3Mutations(
     if (refusal) throw new Error(refusal);
     if (!isFresh()) throw new Error("请先成功刷新用户任务数据，再发起新的修改。");
     if (blocked(write.change.target)) throw new Error("这一项有未结束的原操作，请先查询原操作。");
+    if (productTargetsReadFailed() && needsProductTargets(write)) throw new Error(H3_PRODUCT_TARGETS_READ_FAILURE);
     const change = { ...write.change, reason };
     const proposal = (approval: boolean): Proposal | undefined => {
       if (!approval) return undefined;

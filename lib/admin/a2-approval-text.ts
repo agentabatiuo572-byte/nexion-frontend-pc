@@ -299,16 +299,30 @@ export function h3ConfigName(key: string): string | undefined {
 /** H3 新建任务的类型，和 H3 新建抽屉的标题同名（h3-mission-form SUBJECT_TEXT）。 */
 const H3_MISSION_TYPE: Record<string, string> = { DAY_ONE: "新手任务", WEEKLY_T1: "每周一档任务", WEEKLY_T2: "每周二档任务" };
 /** H3 新建任务单的变更后是后端建单时拼的一句（OpsGrowthService.createMission）：编号；名称；类型；奖励 N UVT；类别；去完成页面；paused。 */
-export function h3MissionView(w: { operationCode?: string | null; after: string; missionTarget?: A2OperationRow["missionTarget"] }) {
+export function h3MissionView(
+  w: { operationCode?: string | null; after: string; missionTarget?: A2OperationRow["missionTarget"] },
+  h3RouteLabels?: Readonly<Record<string, string>>,
+) {
   if (w.operationCode !== "h3_mission_create") return undefined;
-  const m = /^([A-Za-z0-9_-]{2,64})；(.+)；(DAY_ONE|WEEKLY_T1|WEEKLY_T2)；奖励 (\d+) UVT；([A-Z]+)；(\/pages\/\S+)；paused$/.exec(w.after.trim());
+  const m = /^([A-Za-z0-9_-]{2,64})；([\s\S]+)；(DAY_ONE|WEEKLY_T1|WEEKLY_T2)；奖励 (\d+) UVT；([A-Z]+)；(\/pages\/\S+)；paused$/.exec(w.after.trim());
   if (!m) return undefined;
   const route = m[6];
   const productName = w.missionTarget?.actionRoute === route ? w.missionTarget.productName : null;
   const productNo = route.startsWith(H3_PRODUCT_DETAIL_ROUTE_PREFIX) ? route.slice(H3_PRODUCT_DETAIL_ROUTE_PREFIX.length) : "";
+  const routeLabel = h3RouteLabels ? h3RouteLabels[route] ?? route
+    : productName && productNo ? `${productName} 详情（${productNo}）` : TASK_ACTION_ROUTE_LABELS[route] ?? route;
   return { code: m[1], name: m[2], type: H3_MISSION_TYPE[m[3]], reward: `${grouped(m[4])} UVT`,
-    category: TASK_CATEGORY_LABELS[m[5].toLowerCase()] ?? m[5],
-    route: productName && productNo ? `${productName} 详情（${productNo}）` : TASK_ACTION_ROUTE_LABELS[route] ?? route };
+    category: TASK_CATEGORY_LABELS[m[5].toLowerCase()] ?? m[5], route: routeLabel };
+}
+
+function h3MissionFacts(mission: NonNullable<ReturnType<typeof h3MissionView>>) {
+  return { 任务名称: mission.name, 类型: mission.type, 奖励: mission.reward, 类别: mission.category,
+    去完成页面: mission.route, 建好后: "已停用，绑定完成条件后才能启用" };
+}
+
+export function h3MissionReceiptText(ticket: A2OperationRow, routeLabels: Readonly<Record<string, string>>) {
+  const mission = h3MissionView(ticket, routeLabels);
+  if (mission) return Object.entries(h3MissionFacts(mission)).map(([label, value]) => `${label} ${value}`).join(" · ");
 }
 /** 新手任务奖励的原值可能带旧名称 NEX：照 H3 页写成 UVT 并标出旧名称。 */
 function h3ConfigValue(key: string | undefined, value: string) {
@@ -842,7 +856,7 @@ export const changeAfter = (row: { after: string; obj?: string; action?: string;
   if (fund?.kind === "f5Suspension") return fund.suspended ? "暂停中" : "已恢复";
   if (fund?.kind === "f5Reissue") return `生成 ${fund.count ?? "—"} 条新记录`;
   const mission = h3MissionView(row);
-  if (mission) return JSON.stringify({ 任务名称: mission.name, 类型: mission.type, 奖励: mission.reward, 类别: mission.category, 去完成页面: mission.route, 建好后: "已停用，绑定完成条件后才能启用" });
+  if (mission) return JSON.stringify(h3MissionFacts(mission));
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.after);
   return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : deviceApprovalValue(row.after, row.operationCode);
 };

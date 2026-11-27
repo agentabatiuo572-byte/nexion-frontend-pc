@@ -30,6 +30,7 @@ import { Check as RdCheck, CheckGroup as RdCheckGroup, Field as RdField } from "
 import { Fold as RdFold } from "@/app/components/rd/fold";
 import { Button as RdButton, type ButtonVariant } from "@/app/components/rd/button";
 import { Select as RdSelect } from "@/app/components/rd/select";
+import { SearchSelect as RdSearchSelect } from "@/app/components/rd/search-select";
 import { Segments } from "@/app/components/rd/tabs";
 import { DiffField } from "@/app/components/rd/diff-list";
 import { Explain } from "@/app/components/rd/explain";
@@ -886,7 +887,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string; /** 写在那一项下，不等失焦或点提交（App 可见文字含中文）。 */ live?: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; /** 传函数时由调用方判断是否有改动。 */ requireAnyChange?: boolean | ((value: BusinessFormValue) => boolean); reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; /** 二选一、三选一的 select：改版页面画成分段，选项常显，不收进下拉。 */ segments?: boolean; optionLabels?: Record<string, string>; /** 仅普通下拉支持，分段控件不支持。禁用的选项照常列出但置灰，原因写进 optionLabels。 */ disabledOptions?: string[]; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; uploadTarget?: H4UploadTarget; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; /** 跨字段校验。传 field 时写在那一项下面，不传写在表单最后。 */ feedback?: (value: BusinessFormValue) => { message: string; invalid: boolean; field?: string; /** 写在那一项下，不等失焦或点提交（App 可见文字含中文）。 */ live?: boolean }; amplifies?: (value: BusinessFormValue) => boolean; ascending?: boolean; /** 传函数时由调用方判断是否有改动。 */ requireAnyChange?: boolean | ((value: BusinessFormValue) => boolean); reasonMax?: number; onFieldChange?: (key: string, next: BusinessFormValue) => BusinessFormValue; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "date" | "datetime-local" | "asset-upload" | "checkbox"; options?: string[]; mustChoose?: boolean; /** 二选一、三选一的 select：改版页面画成分段，选项常显，不收进下拉。 */ segments?: boolean; optionLabels?: Record<string, string>; /** 仅普通下拉支持，分段控件不支持。禁用的选项照常列出但置灰，原因写进 optionLabels。 */ disabledOptions?: string[]; /** 单选下拉改成搜索选择（CP-58），选项超过一屏时用；只在 RdPage 里生效，占位用 placeholder，empty 是没有匹配时的话。 */ searchSelect?: { empty: string }; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; minLength?: number; maxLength?: number; pattern?: string; patternMessage?: string; help?: string; /** 这一项是什么、怎么填：收进字段名旁的提示图标（DP-06），只在 RdPage 里显示。 */ explain?: ReactNode; warning?: (value: BusinessFormValue) => string | undefined; uploadPurpose?: "vietqr-receipt"; uploadDomain?: string; uploadUsage?: string; uploadOperator?: string; uploadTarget?: H4UploadTarget; accept?: string; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; typeLocked?: boolean; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentPopupCadenceEnabled?: string; currentPopupDelayMs?: string; currentPopupCooldownHours?: string; currentPopupMaxPerSession?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1716,7 +1717,8 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (feedback?.invalid) missing.push(feedback.message);
     const isVisible = (field: (typeof spec.fields)[number]) =>
       !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
-    spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
+    // 搜索选择字段：跨字段校验已对这一项报错（比如「请选择商品」）时不再另列字段名，同一件事只说一次（VS-105）；其他字段照旧。
+    spec.fields.filter((f) => isVisible(f) && f.required !== false && !(f.searchSelect && feedback?.invalid && feedback.field === f.key)).forEach((f) => needs(f.key, f.label));
     missing.push(...Object.values(multiFieldIssues(spec, state)));
     spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
       const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
@@ -1878,6 +1880,8 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
   const [formLeft, setFormLeft] = useState(false);
   const [leftFields, setLeftFields] = useState<Record<string, boolean>>({});
   const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
+  /** 搜索选择框里正在打的字；没在打字时框里显示已选项的名称。打的字不进表单值。 */
+  const [searchTyping, setSearchTyping] = useState<Record<string, string | undefined>>({});
   const [assetUploading, setAssetUploading] = useState<Record<string, boolean>>({});
   const [assetNames, setAssetNames] = useState<Record<string, string>>({});
   const [assetErrors, setAssetErrors] = useState<Record<string, string>>({});
@@ -2024,7 +2028,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
     const legend = spec.title ?? (surface ? undefined : "填写设置");
     const feedback = spec.feedback?.(value);
     const issues = surface ? multiFieldIssues(spec, value) : {};
-    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || formLeft || feedback.live) ? feedback.message : undefined);
+    // 指向搜索选择字段的跨字段报错按这一项自己离开过才报：焦点还在框里打字时不提前报（OP-15、VS-107）；其他字段照旧。
+    const leftFor = (key: string) => spec.fields.some((f) => f.key === key && f.searchSelect) ? !!leftFields[key] : formLeft;
+    const fieldError = (key: string) => (attempted || leftFields[key] ? issues[key] : undefined) ?? (feedback?.invalid && feedback.field === key && (attempted || leftFor(key) || feedback.live) ? feedback.message : undefined);
     // 只有一项时占满一行，不留半边空。
     const alone = surface && visibleFields.length === 1;
     const fieldName = (f: (typeof spec.fields)[number]) => <>
@@ -2047,6 +2053,9 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
             const error = fieldError(f.key);
             const help = f.help && !error ? (f.inputKind === "date" && value[f.key] ? `已选 ${value[f.key]}，${f.help}` : f.help) : undefined;
             const warning = f.warning?.(value) ?? (f.warnAbove != null && Number(value[f.key]) > f.warnAbove ? f.warnText ?? `已超过 ${f.warnAbove} 的建议上限` : undefined);
+            const chosen = value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? "";
+            const typed = searchTyping[f.key];
+            const optionText = (option: string) => f.optionLabels?.[option] ?? option;
             if (f.inputKind === "multi-select") return <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>{multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}</div>;
             if (f.inputKind === "checkbox") return (
               <div key={f.key} className="rd-form-field" style={span}>
@@ -2130,6 +2139,18 @@ export function BusinessFormBlock({ spec, value, attempted = false, onChange, on
                     {f.inputKind === "select" && f.segments ? (
                       <Segments label={f.label} value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}
                         items={(f.options ?? []).map((o) => ({ value: o, label: f.optionLabels?.[o] ?? o }))} />
+                    ) : f.inputKind === "select" && f.searchSelect ? (
+                      // 和新建任务抽屉同一种控件：改文字就取消已选，选中才写进表单值（ST-29）；框里是已选名称时点进去先全选，打字就替换它。
+                      <div onFocus={(event) => { if (typed === undefined && event.target instanceof HTMLInputElement) event.target.select(); }}
+                        onClick={(event) => { if (typed === undefined && event.target instanceof HTMLInputElement) event.target.select(); }}>
+                        <RdSearchSelect {...control} aria-label={f.label} aria-required={f.required !== false} placeholder={f.placeholder ?? (f.mustChoose ? "请选择" : undefined)} empty={f.searchSelect.empty}
+                          value={typed ?? (chosen ? optionText(chosen) : "")}
+                          onChange={(next) => { setSearchTyping((state) => ({ ...state, [f.key]: next })); if (chosen) set(f.key, ""); }}
+                          options={(f.options ?? []).filter((option) => !typed?.trim() || optionText(option).toLowerCase().includes(typed.trim().toLowerCase()))
+                            .map((option) => ({ value: option, label: optionText(option), disabled: f.disabledOptions?.includes(option) }))}
+                          selected={chosen || undefined}
+                          onSelect={(next) => { setSearchTyping((state) => ({ ...state, [f.key]: undefined })); set(f.key, next); }} />
+                      </div>
                     ) : f.inputKind === "select" ? (
                       <RdSelect {...control} aria-label={f.label} required={f.required !== false} placeholder={f.mustChoose ? "请选择" : undefined}
                         value={value[f.key] ?? (f.mustChoose ? "" : f.options?.[0]) ?? ""} onChange={(next) => set(f.key, next)}

@@ -32,7 +32,7 @@ export interface SearchOption {
   disabled?: boolean;
 }
 
-export function SearchSelect({ value, onChange, options, selected, onSelect, onOpen, loading = false, optionsFor, error, onRetry, empty = "没有匹配的结果", placeholder, disabled, id, "aria-label": ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid }: {
+export function SearchSelect({ value, onChange, options, selected, onSelect, onOpen, loading = false, optionsFor, error, onRetry, empty = "没有匹配的结果", placeholder, disabled, id, "aria-label": ariaLabel, "aria-describedby": describedBy, "aria-invalid": invalid, "aria-required": ariaRequired }: {
   value: string;
   onChange: (value: string) => void;
   options: readonly SearchOption[];
@@ -54,6 +54,8 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
   "aria-label": string;
   "aria-describedby"?: string;
   "aria-invalid"?: true;
+  /** 必填时传 true，读屏读出「必填」；页面上的星号在 Field 里。 */
+  "aria-required"?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -126,6 +128,7 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
             aria-label={ariaLabel}
             aria-describedby={describedBy}
             aria-invalid={invalid}
+            aria-required={ariaRequired || undefined}
             aria-autocomplete="list"
             aria-expanded={shown}
             aria-controls={listed ? listId : undefined}
@@ -176,8 +179,10 @@ export function SearchSelect({ value, onChange, options, selected, onSelect, onO
                   onMouseEnter={() => { if (!option.disabled) setActive(index); }}
                   onClick={() => choose(option)}
                 >
-                  <span className="rd-search-option-label">{option.label}</span>
-                  {option.extra && <span className="rd-search-option-extra">{option.extra}</span>}
+                  <span className="rd-search-option-text">
+                    <span className="rd-search-option-label">{option.label}</span>
+                    {option.extra && <span className="rd-search-option-extra">{option.extra}</span>}
+                  </span>
                   {option.value === selected && <Check className="rd-search-option-check" size={14} aria-hidden />}
                 </div>
               ))}
