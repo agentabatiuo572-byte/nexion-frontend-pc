@@ -164,7 +164,7 @@ function PendingCommands({ items, auditReachable }: { items: readonly B5PendingC
       {items.map((item) => (
         <Notice key={item.commandKey} tone="warn" title={item.title} actionBelow
           action={<span className="b5-row-actions">
-            {item.onQuery && <Button size="sm" onClick={item.onQuery}>{item.queryFailed ? "重试" : "读取当前值"}</Button>}
+            {item.onQuery && <Button size="sm" onClick={item.onQuery}>{item.queryFailed ? "重新读取" : "读取当前值"}</Button>}
             {item.onRestore && <Button size="sm" onClick={item.onRestore}>重新确认</Button>}
             {item.onDiscard && <Button size="sm" onClick={item.onDiscard}>放弃这份草稿</Button>}
             {item.onRetry && <Button size="sm" onClick={item.onRetry}>按原操作重试</Button>}
