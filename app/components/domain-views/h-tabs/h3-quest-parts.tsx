@@ -9,7 +9,7 @@ import Link from "next/link";
 import { Archive, CircleAlert, CircleCheck, CircleHelp, CircleSlash, Clock3, Hourglass, Lock, Smartphone } from "lucide-react";
 import { Button, Explain, MoreMenu, Segments, StatusTag, type MoreMenuItem } from "@/app/components/rd";
 import { nexGridBrandText } from "@/lib/admin/brand-copy";
-import { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
+import { TASK_CATEGORY_LABELS, legacyAssetText } from "@/lib/admin/config-help/h3-task";
 import { businessStamp, businessZone, formatBusinessTimeCompact } from "@/lib/admin/business-time";
 import type { H3QuestEventBinding } from "@/lib/admin/h-client";
 import { h3Decimal, h3HasConfigValue, h3MissionEnableRefusal, type H3PendingApproval, type H3PendingMissionCreation, type H3TaskContract } from "@/lib/admin/h3-contract";
@@ -18,28 +18,12 @@ import { amountDisplay } from "@/lib/format";
 export type QuestTask = Record<string, any>;
 
 // 叫法表放在 lib/admin/config-help/h3-task.ts，A2 审批单也用；这里照旧导出，H3 各文件的引用不变。
-export { TASK_ACTION_ROUTE_LABELS, TASK_CATEGORY_LABELS, legacyAssetText };
+export { TASK_CATEGORY_LABELS, legacyAssetText };
 
 export type { H3Model } from "@/lib/admin/h3-contract";
 
 // ===== 选项表：照旧页面原样 =====
 export const TASK_CATEGORY_OPTIONS = ["wallet", "explore", "recommend", "identity", "social"];
-export const TASK_ACTION_ROUTES = [
-  "/pages/missions/missions",
-  "/pages/me/profile",
-  "/pages/me/wallet-cards-new",
-  "/pages/me/wallet-topup",
-  "/pages/me/wallet-exchange",
-  "/pages/me/wallet-repurchase",
-  "/pages/me/devices",
-  "/pages/earn/earn",
-  "/pages/store/store",
-  "/pages/store/detail?id=stellarbox-s1",
-  "/pages/team/team",
-  "/pages/team/commissions",
-  "/pages/learn/courses",
-  "/pages/genesis/marketplace",
-];
 
 // 只暴露 Java OpsGrowthController 已接受的规范事件，避免运营手填 JSON 或拼接事件名。
 export const H3_BINDING_EVENT_PRODUCERS: Record<string, H3QuestEventBinding["producer"]> = {
@@ -268,7 +252,12 @@ export function H3PendingLine({ approval, format, auditHref, label }: { approval
 }
 
 /** 申请新建、还没批准的任务：不是正式任务，不做成任务卡；奖励没给就是「—」。 */
-export function H3CreationList({ rows, typeLabel, auditHref }: { rows: H3PendingMissionCreation[]; typeLabel: (type: string | null) => string; auditHref: (code: string | null) => string | undefined }) {
+export function H3CreationList({ rows, typeLabel, auditHref, routeLabels }: {
+  rows: H3PendingMissionCreation[];
+  typeLabel: (type: string | null) => string;
+  auditHref: (code: string | null) => string | undefined;
+  routeLabels: Record<string, string>;
+}) {
   const [open, setOpen] = useState(false);
   if (rows.length === 0) return null;
   const shown = open ? rows : rows.slice(0, 3);
@@ -285,10 +274,11 @@ export function H3CreationList({ rows, typeLabel, auditHref }: { rows: H3Pending
       {shown.map((row, index) => {
         const reward = row.rewardPoints == null ? "—" : `${amountText(String(row.rewardPoints))} UVT`;
         const href = auditHref(row.missionCode);
+        const route = row.actionRoute ? routeLabels[row.actionRoute] ?? row.actionRoute : undefined;
         return <li key={row.ticketId ?? `${row.missionCode}-${index}`}>
           <span className="h3-creating-state">{backendPendingTag(row, <>新建「{row.missionName ?? "—"}」，奖励 {reward}</>)}</span>
           <span className="h3-creating-name"><b>{row.missionName ?? "—"}</b><span data-mono="">{row.missionCode ?? "—"}</span></span>
-          <span className="h3-creating-facts">{`${typeLabel(row.missionType)} · 奖励 ${reward}`}</span>
+          <span className="h3-creating-facts">{`${typeLabel(row.missionType)} · 奖励 ${reward}`}{route && ` · 点了跳到 ${route}`}</span>
           <span className="h3-pending-who">{submittedText(row.submittedBy, row.submittedAt, false)}</span>
           <span className="h3-creating-go">{href && <Link className="rd-link" href={href} prefetch={false}>看审批单</Link>}</span>
         </li>;
@@ -311,6 +301,7 @@ export function expiredTag() {
 export type TaskCardProps = {
   task: QuestTask;
   name: string;
+  routeLabel?: string;
   completion: string;
   bindingCount: number;
   /** 首日约定任务：有绑定但都不符合约定时的条数（B143）。 */
@@ -338,7 +329,7 @@ export function taskCompletionEventText(task: QuestTask) {
   return text(task.completionEvent, "").split(", ").map(eventTypeText).join("、");
 }
 
-export function TaskCard({ task, name, completion, bindingCount, invalidBindingCount = 0, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
+export function TaskCard({ task, name, routeLabel, completion, bindingCount, invalidBindingCount = 0, reward, rewardNote, localeGaps, pending, selected, onOpen, primary, menu }: TaskCardProps) {
   const status = taskStatusOf(task);
   const warn = activeUnbound(task);
   const route = text(task.href, "");
@@ -366,7 +357,7 @@ export function TaskCard({ task, name, completion, bindingCount, invalidBindingC
         </div>
         <div>
           <dt>点了跳到</dt>
-          <dd>{route ? TASK_ACTION_ROUTE_LABELS[route] ?? <span data-mono="">{route}</span> : "—"}</dd>
+          <dd>{route ? routeLabel ?? <span data-mono="">{route}</span> : "—"}</dd>
         </div>
         <div>
           <dt>奖励</dt>
@@ -504,7 +495,7 @@ export function PhaseStrip({ items, currentPhase, action, mark }: {
 }
 
 // ===== App 上的样子 =====
-export type PreviewTask = { key: string; names: Record<"en" | "zh" | "vi", string>; source: string; category: string; route: string; reward?: string | null };
+export type PreviewTask = { key: string; names: Record<"en" | "zh" | "vi", string>; source: string; category: string; routeLabel: string; reward?: string | null };
 export type PreviewLocale = "zh" | "en" | "vi";
 
 function previewName(task: PreviewTask, locale: PreviewLocale) {
@@ -559,7 +550,7 @@ export function AppPreview({ kind, tasks, hero, header, footer, empty }: {
                     <span className="h3-phone-cat">{TASK_CATEGORY_LABELS[task.category] ?? "其他"}</span>
                     <span className="h3-phone-name">{previewName(task, locale)}</span>
                     {task.reward !== undefined && <span className="h3-phone-reward">{task.reward == null ? "—" : `+${task.reward}`}</span>}
-                    <span className="h3-phone-go" aria-label={`点了跳到${TASK_ACTION_ROUTE_LABELS[task.route] ?? task.route}`}>›</span>
+                    <span className="h3-phone-go" aria-label={`点了跳到${task.routeLabel}`}>›</span>
                   </li>
                 ))}
               </ul>

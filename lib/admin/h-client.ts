@@ -1,4 +1,5 @@
-import { h3QuestConfigWriteRefusal } from "./h3-contract";
+import { H3_PRODUCT_DETAIL_ROUTE_PREFIX, h3QuestConfigWriteRefusal, type H3ProductActionTarget } from "./h3-contract";
+import { SKU_SERIES_CODES } from "./device-monthly-target";
 import { h5RuleWriteRefusal } from "./h5-contract";
 import { parseH4StatisticsJson, readH4Statistics } from "./h4-statistics";
 import { h4CommandRequest } from "./h4-mutations";
@@ -423,8 +424,26 @@ export function validateH4OverviewEvents(events: unknown) {
     }
 }
 
+function readH3ProductActionTargets(value: unknown): H3ProductActionTarget[] {
+  if (!Array.isArray(value)) throw new Error("H3_RESPONSE_INVALID");
+  return value.flatMap((item: unknown) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const { productNo, name, actionRoute, openable, seriesCode, roiEligible } = item as Record<string, unknown>;
+    if (typeof productNo !== "string" || !/^[A-Za-z0-9._~-]{1,96}$/.test(productNo)
+      || typeof name !== "string" || !name.trim()
+      || actionRoute !== H3_PRODUCT_DETAIL_ROUTE_PREFIX + productNo
+      || typeof openable !== "boolean" || typeof roiEligible !== "boolean"
+      || (seriesCode !== null && (typeof seriesCode !== "string" || !SKU_SERIES_CODES.some(code => code === seriesCode)))) return [];
+    return [{ productNo, name, actionRoute, openable, seriesCode, roiEligible }];
+  });
+}
+
 export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
-  if (section === "tasks") return growthRequest<Record<string, any>>("/quest-events/tasks");
+  if (section === "tasks") {
+    const result = await growthRequest<Record<string, any>>("/quest-events/tasks");
+    if (result?.productActionTargets === undefined) return result;
+    return { ...result, productActionTargets: readH3ProductActionTargets(result.productActionTargets) };
+  }
   const result = await growthRequest<Record<string, any>>("/quest-events/events-overview");
   validateH4OverviewEvents(result.events);
   Object.assign(result, readH4Statistics(result));

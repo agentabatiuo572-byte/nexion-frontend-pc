@@ -293,11 +293,14 @@ export function h3ConfigName(key: string): string | undefined {
 /** H3 新建任务的类型，和 H3 新建抽屉的标题同名（h3-mission-form SUBJECT_TEXT）。 */
 const H3_MISSION_TYPE: Record<string, string> = { DAY_ONE: "新手任务", WEEKLY_T1: "每周一档任务", WEEKLY_T2: "每周二档任务" };
 /** H3 新建任务单的变更后是后端建单时拼的一句（OpsGrowthService.createMission）：编号；名称；类型；奖励 N UVT；类别；去完成页面；paused。 */
-export function h3MissionView(w: { operationCode?: string | null; after: string }) {
+export function h3MissionView(w: { operationCode?: string | null; after: string; missionTarget?: A2OperationRow["missionTarget"] }) {
   if (w.operationCode !== "h3_mission_create") return undefined;
   const m = /^([A-Za-z0-9_-]{2,64})；(.+)；(DAY_ONE|WEEKLY_T1|WEEKLY_T2)；奖励 (\d+) UVT；([A-Z]+)；(\/pages\/\S+)；paused$/.exec(w.after.trim());
-  return m ? { code: m[1], name: m[2], type: H3_MISSION_TYPE[m[3]], reward: `${grouped(m[4])} UVT`,
-    category: TASK_CATEGORY_LABELS[m[5].toLowerCase()] ?? m[5], route: TASK_ACTION_ROUTE_LABELS[m[6]] ?? m[6] } : undefined;
+  if (!m) return undefined;
+  const route = m[6];
+  const productName = w.missionTarget?.actionRoute === route ? w.missionTarget.productName : null;
+  return { code: m[1], name: m[2], type: H3_MISSION_TYPE[m[3]], reward: `${grouped(m[4])} UVT`,
+    category: TASK_CATEGORY_LABELS[m[5].toLowerCase()] ?? m[5], route: productName ? `${productName} 详情` : TASK_ACTION_ROUTE_LABELS[route] ?? route };
 }
 /** 新手任务奖励的原值可能带旧名称 NEX：照 H3 页写成 UVT 并标出旧名称。 */
 function h3ConfigValue(key: string | undefined, value: string) {
@@ -789,7 +792,7 @@ export const f1VoucherReverse = (row: { after: string; action?: string; operatio
     impact: row.status === "pending" ? (chosen?.[1] ? F1_VOUCHER_REVERSE_KEEP : F1_VOUCHER_REVERSE_CLAWBACK) : submittedImpact,
   };
 };
-export const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; status?: A2OperationRow["status"]; disclosureReview?: A2OperationRow["disclosureReview"] }) => {
+export const changeAfter = (row: { after: string; obj?: string; action?: string; operationCode?: string; status?: A2OperationRow["status"]; disclosureReview?: A2OperationRow["disclosureReview"]; missionTarget?: A2OperationRow["missionTarget"] }) => {
   if (row.disclosureReview?.kind === "MATRIX") return i5MatrixVersionText(row.disclosureReview.version, row.disclosureReview.targetCountryCodes);
   if (row.disclosureReview?.kind === "PUBLISH") return row.disclosureReview.version;
   const voucher = f1VoucherReverse(row);
@@ -803,7 +806,7 @@ export const changeAfter = (row: { after: string; obj?: string; action?: string;
   if (fund?.kind === "fConfig") return fConfigValue(fund.spec, row.after);
   if (fund?.kind === "f5Suspension") return fund.suspended ? "暂停中" : "已恢复";
   if (fund?.kind === "f5Reissue") return `生成 ${fund.count ?? "—"} 条新记录`;
-  const mission = h3MissionView({ operationCode: row.operationCode, after: row.after });
+  const mission = h3MissionView(row);
   if (mission) return JSON.stringify({ 任务名称: mission.name, 类型: mission.type, 奖励: mission.reward, 类别: mission.category, 去完成页面: mission.route, 建好后: "已停用，绑定完成条件后才能启用" });
   if (row.operationCode === "h3_quest_config") return h3ConfigValue(row.obj, row.after);
   return row.operationCode === "f5_commission_reverse" && row.after === "REVERSED" ? F5_STATE_NAME.reversed : deviceApprovalValue(row.after, row.operationCode);
