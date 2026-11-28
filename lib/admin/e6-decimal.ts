@@ -4,11 +4,22 @@ import { amountDisplay } from "../format";
 export function parseE6DecimalJson(text: string): unknown {
   return JSON.parse(text.replace(/("(?:baseRateUsdt|baseRateNex|dailyUsdt|dailyNex)"\s*:\s*)(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)(?=\s*[,}])/g, '$1"$2"'));
 }
+const microsPerUnit = BigInt(1_000_000);
+function toMicros(value: string) {
+  const [whole, fraction = ""] = value.split(".");
+  return BigInt(whole) * microsPerUnit + BigInt(fraction.padEnd(6, "0"));
+}
+
 /** Decimal18x6 values fit safely in BigInt after scaling, including the largest supported amount. */
 export function compareE6Decimal(left: string, right: string) {
-  const scaled = (value: string) => { const [whole, fraction = ""] = value.split("."); return BigInt(whole) * BigInt(1000000) + BigInt(fraction.padEnd(6, "0")); };
-  const a = scaled(left), b = scaled(right);
+  const a = toMicros(left), b = toMicros(right);
   return a === b ? 0 : a > b ? 1 : -1;
+}
+
+/** Round the positive per-task reward half up to six decimal places, as dispatch does. */
+export function prorateE6DailyReward(daily: string, seconds: number) {
+  const rounded = (toMicros(daily) * BigInt(seconds) + BigInt(43_200)) / BigInt(86_400);
+  return `${rounded / microsPerUnit}.${String(rounded % microsPerUnit).padStart(6, "0")}`;
 }
 
 /** A display group's real precision (at least two). Old column alignment; amounts are no longer padded to it (PRD §5A). */

@@ -752,7 +752,8 @@ function optionalIdentifier(value: unknown) {
 function fromTicket(ticket: BackendTicket, tolerateUnreadableResult = false): A2OperationRow {
   if (typeof ticket.canApprove !== "boolean" || typeof ticket.canReject !== "boolean") throw new Error("A2_TICKET_DECISION_CAPABILITY_INVALID");
   if (ticket.objDisplayName != null && typeof ticket.objDisplayName !== "string") throw new Error("A2_TICKET_OBJECT_DISPLAY_NAME_INVALID");
-  const ambassadorTicket = !!ticket.ambassadorMaterialProposal || /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
+  const ambassadorTicket = !!ticket.ambassadorMaterialProposal
+    || !ticket.ruleTaskAction && /F\.ambassador\.\d+\.status|(?:批准|驳回)大使申请/.test(`${ticket.obj} ${ticket.action}`);
   let ambassadorMaterialProposal: F4AmbassadorMaterialProposal | undefined;
   let ambassadorMaterialError: string | undefined;
   if (ambassadorTicket) {
@@ -775,7 +776,7 @@ function fromTicket(ticket: BackendTicket, tolerateUnreadableResult = false): A2
   }
   let phoneCalibrationProposal: PhoneProposalView | undefined;
   let phoneCalibrationError: string | undefined;
-  if (ticket.obj === "phone-calibration") {
+  if (!ticket.ruleTaskAction && ticket.obj === "phone-calibration") {
     try {
       phoneCalibrationProposal = parsePhoneProposalView(JSON.parse(ticket.phoneCalibrationProposal ?? "null"));
     } catch { phoneCalibrationError = "手机规则申请的详情加载失败，不能执行；可取消后重新提交。"; }

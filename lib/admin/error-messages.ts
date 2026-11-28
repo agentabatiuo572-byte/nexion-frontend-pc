@@ -668,6 +668,8 @@ export const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   AMBASSADOR_MATERIAL_FILE_NOT_FOUND: "材料文件不存在，请刷新申请核对。",
   AMBASSADOR_MATERIAL_STATE_INVALID: "材料记录暂时无法读取，请刷新后核对原申请。",
   SIMULATED_DURATION_MINUTES_INVALID: "固定时长须为 1–1440 的整数分钟。",
+  SIMULATED_DURATION_SECONDS_INVALID: "固定时长须为 60–86400 的整数秒，请重新打开手机任务表单。",
+  PHONE_TASK_REWARD_FIELDS_FORBIDDEN: "手机任务按档位自动发放双币。请先核对原审批单，再用最新版手机任务表单重新提交。",
   SIMULATED_FIXED_REWARD_INVALID: "固定奖励须为非负数，最多 12 位整数、6 位小数。",
   SIMULATED_ASSET_INVALID: "请选择 USDT 或 UVT 奖励资产。",
   SIMULATED_POLICY_VERSION_REQUIRED: "配置版本缺失，请刷新后重新提交。",

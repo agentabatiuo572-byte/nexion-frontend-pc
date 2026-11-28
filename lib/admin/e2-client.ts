@@ -308,12 +308,13 @@ export async function fetchE2Tasks(): Promise<OpsTask[]> {
   while (true) {
     const page = await fetchPoolTasks("PHONE", { pageNum, pageSize: 100 });
     records.push(...page.records);
-    if (records.length >= page.total || !page.records.length) break;
+    if (records.length >= page.total) break;
+    if (!page.records.length) throw new Error("手机任务目录未读全，请刷新重试。");
     pageNum += 1;
   }
   return records.map(row => ({ id: row.taskTypeId, n: row.name, taskClass: row.taskClass, price: Number(row.baseReward),
     unit: "/job", req: "手机", sat: null, status: row.enabled ? "active" : "inactive",
-    simulation: { durationMinutes: row.durationMinutes, baseReward: row.baseReward, asset: row.asset, enabled: row.enabled, version: row.version, effectiveAt: row.effectiveAt } }));
+    simulation: { durationMinutes: row.durationMinutes, durationSeconds: row.durationSeconds, baseReward: row.baseReward, asset: row.asset, enabled: row.enabled, version: row.version, effectiveAt: row.effectiveAt } }));
 }
 
 export async function createE2Task(task: OpsTask, reason: string, operator: string) {

@@ -3,6 +3,7 @@ import type { SkuTaglineTranslations } from "./e1-product-copy";
 
 export interface TaskSimulation {
   durationMinutes: number;
+  durationSeconds?: number;
   baseReward: number | string;
   asset: "USDT" | "UVT";
   enabled: boolean;

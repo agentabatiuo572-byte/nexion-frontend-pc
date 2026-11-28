@@ -22,6 +22,7 @@ import { e1GateText, e1Value } from "./e1-product-review";
 import { ORDER_STATES, stateLabel } from "./e4-order-display";
 import { containsHan } from "./content-language-rules";
 import { findHighOp } from "./high-ops-registry";
+import { formatPhoneTaskDuration, validPhoneTaskDuration } from "./phone-task-duration";
 import { h3WeeklyZoneLabel } from "./h3-weekly-zone-labels";
 import { normalizeSessionRole } from "./session-role";
 import { TASK_CLASS_LABELS } from "./task-classes";
@@ -884,7 +885,7 @@ const K1_CLUSTER_STATUS: Record<string, string> = { detected: "待判定", flagg
 const TASK_STATUS: Record<string, string> = { ...ROLE_STATUS, active: "已启用", inactive: "已停用" };
 const TASK_CHANGE_LABELS: Record<string, string> = {
   name: "任务名称", taskClass: "任务类型", selectionWeight: "权重", status: "状态",
-  durationMinutes: "固定时长", baseReward: "每任务奖励", asset: "奖励资产", enabled: "状态",
+  durationMinutes: "固定时长", durationSeconds: "固定时长", baseReward: "每任务奖励", asset: "奖励资产", enabled: "状态",
 };
 const QUOTA_CHANGE_LABELS: Record<string, string> = {
   productNo: "商品", displayName: "名称", directRefs: "有效直接邀请（人）", monthComputePoints: "本月团队算力点",
@@ -899,6 +900,12 @@ const knownValue = (names: Record<string, string> | undefined, value: string) =>
 
 function approvalChangeValue(ticket: A2OperationRow, text: string) {
   const operation = ticket.operationCode;
+  if (ticket.ruleTaskAction) {
+    return text.replace(/( · )(\d+) 秒$/, (original, separator: string, digits: string) => {
+      const seconds = Number(digits);
+      return validPhoneTaskDuration(seconds) ? separator + formatPhoneTaskDuration(seconds) : original;
+    });
+  }
   if (operation === "a1_account_change_role" || operation === "a1_account_create") {
     const role = (code: string) => roleLabel(code === "super" ? "superadmin" : normalizeSessionRole(code));
     if (operation === "a1_account_change_role") return role(text);
@@ -929,6 +936,7 @@ function structuredQueueValue(text: string, flattenSimulation: boolean, valueNam
   else if (simulation !== undefined) fields.simulation = simulation;
   return JSON.stringify(Object.fromEntries(Object.entries(fields).map(([key, value]) => {
     if (key === "enabled" && typeof value === "boolean") return [key, value ? "已启用" : "已停用"];
+    if (flattenSimulation && key === "durationSeconds" && validPhoneTaskDuration(value)) return [key, formatPhoneTaskDuration(value)];
     const shown = knownValue(valueNames[key], String(value));
     return [key, shown === String(value) ? value : shown];
   })));

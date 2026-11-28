@@ -41,6 +41,24 @@ type ProposalDraft = Omit<E6Proposal, "operator" | "operatorRole" | "sos" | "rol
 const Context = createContext<ReturnType<typeof useMutations> | null>(null);
 const isYieldSkuProposal = (payload: Payload) => payload.kind === "proposal" && payload.input.command.op === "e6_onboarding_yield_sku";
 
+function matchesProposalObject(ticket: A2OperationRow, input: E6Proposal) {
+  if (ticket.obj === input.obj) return true;
+  const { op, params } = input.command;
+  if (ticket.operationCode !== op) return false;
+  // Old E6 envelopes used the task ID or numeric tier. The server's receipt uses a display name.
+  if (op === "e2_phone_tier" && Number.isInteger(params.tier) && !params.configKey) {
+    return input.obj === String(params.tier) && ticket.obj === "T" + params.tier;
+  }
+  if (params.poolCode !== "PHONE" || input.obj !== params.taskId) return false;
+  if (op === "e2_task_update" && ticket.ruleTaskAction === "UPDATE") return ticket.obj === params.name;
+  if (op === "e2_task_status" && (params.status === "active" || params.status === "inactive")) {
+    const enabled = params.status === "active";
+    const prefix = enabled ? "启用手机任务 · " : "停用手机任务 · ";
+    return ticket.ruleTaskAction === (enabled ? "ENABLE" : "DISABLE") && input.action === prefix + ticket.obj;
+  }
+  return false;
+}
+
 function canWriteOriginal(record: E6Pending) {
   const session = currentRecoveryActor(record.owner);
   const rights = session?.authorities ?? [];
@@ -53,8 +71,9 @@ function canWriteOriginal(record: E6Pending) {
   const { op, params } = record.payload.input.command;
   if (isYieldSkuProposal(record.payload)) return rights.includes("device_e6_write") && rights.includes("device_e1_read")
     && (rights.includes("platform_a2_read") || rights.includes("platform_a2_proposal_create"));
-  if (op.startsWith("e2_task_")) return rights.includes("device_e2_write");
+  if (op.startsWith("e2_task_")) return rights.includes("platform_a2_write") && rights.includes("device_e2_write");
   if (op === "e2_phone_tier") return rights.includes("device_e2_write")
+    && rights.includes("platform_a2_write")
     && (params.dailyUsdt === undefined || rights.includes("device_e2_phone_tier_usdt"))
     && (params.dailyNex === undefined || rights.includes("device_e2_phone_tier_nex"));
   if (op === "e5_device_force_activate" || op === "e5_device_unbind") return rights.includes(op === "e5_device_unbind" ? "device_e5_device_unbind" : "device_e5_device_force_activate")
@@ -195,7 +214,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     try {
       if (record.payload.kind === "proposal") {
         const ticket = await createA2OperationProposal(record.payload.input, record.commandKey, true);
-        if (!ticket.mine || ticket.obj !== record.payload.input.obj) throw new Error("原提案归属无法核实，请到操作记录核对。");
+        if (!ticket.mine || !matchesProposalObject(ticket, record.payload.input)) throw new Error("原提案归属无法核实，请到操作记录核对。");
         commands.remember(record.fingerprint, record.commandKey, { ...record, absent: false, retryRejection: undefined, ticketId: ticket.id, proposalReceipt: { type: ticket.type, amplifies: ticket.amplifies } });
         if (active.current) {
           sync();
@@ -266,7 +285,9 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
     const saved = commands.list().find(r => r.commandKey === commandKey)!;
     const draft = records.find(record => record.commandKey === restoredDraft.current?.commandKey
       && record.scope === scope && isE6VerifiedDraft(record) && draftAction(record.payload) === draftAction(payload)
-      && (payload.kind !== "proposal" || record.payload.kind === "proposal" && record.payload.input.obj === payload.input.obj));
+      && (payload.kind !== "proposal" || record.payload.kind === "proposal" && (record.payload.input.obj === payload.input.obj
+        || section === "tiers" && payload.input.command.op === "e2_phone_tier"
+        || section === "tasks" && scope !== "task:create")));
     sync();
     return sendRecoveredDraft(() => send(saved, false), () => commands.isDurablyStored(fingerprint, commandKey), draft && (() => {
       commands.forget(draft.fingerprint, draft.commandKey);
@@ -295,7 +316,7 @@ function useMutations(refreshYieldBinding: RefreshYieldBinding, refreshSection: 
         if (original.payload.kind !== "proposal") throw new Error("INVESTIGATION_SCOPE_UNSUPPORTED");
         const ticket = await fetchA2ProposalByKey(key, true, "f");
         if ((!ticket && original.ticketId)
-          || ticket && (!ticket.mine || ticket.obj !== original.payload.input.obj || original.ticketId && ticket.id !== original.ticketId
+          || ticket && (!ticket.mine || !matchesProposalObject(ticket, original.payload.input) || original.ticketId && ticket.id !== original.ticketId
             || (ticket.operationCode ? ticket.operationCode !== original.payload.input.command.op : ticket.action !== original.payload.input.action))
           || original.terminal && ticket?.status !== original.terminal) {
           throw new A2OutcomeUncertainError("原提案归属无法核实，请到操作记录核对。", key);

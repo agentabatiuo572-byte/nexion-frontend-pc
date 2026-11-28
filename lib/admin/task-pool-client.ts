@@ -1,6 +1,7 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { TASK_CLASSES } from "@/lib/admin/task-classes";
 import { appVisibleTextError } from "@/lib/admin/content-language-rules";
+import { validPhoneTaskDuration } from "@/lib/admin/phone-task-duration";
 
 export type TaskClass = typeof TASK_CLASSES[number];
 export interface PoolProduct { productKey: string; productName: string; state: "PUBLISHED" | "DRAFT" | "DELISTED_WITH_DEVICES" }
@@ -18,7 +19,7 @@ export interface PoolTask {
 }
 export interface DevicePoolTask extends PoolTask { baseReward: string; asset: "USDT" }
 type DevicePoolListTask = DevicePoolTask | (PoolTask & { baseReward: null; asset?: undefined });
-export interface PhonePoolTask extends PoolTask { baseReward: string; asset: "USDT" | "UVT" }
+export interface PhonePoolTask extends PoolTask { durationSeconds: number; baseReward: string; asset: "USDT" | "UVT" }
 export interface PoolTaskPage<T = PoolTask> { records: T[]; total: number }
 export interface DisableImpact { productsLosingAllTasks: Pick<PoolProduct, "productKey" | "productName">[]; devicesAffected: number }
 export interface RandomTaskInput { count: number; taskClasses?: TaskClass[]; idempotencyKey: string; reason: string }
@@ -228,8 +229,9 @@ export async function fetchPoolTasks(code: string, query: PoolTaskQuery = {}): P
     if (code !== "PHONE") return deviceListTask(value);
     const parsed = task(value);
     const row = record(value);
+    if (!validPhoneTaskDuration(row.durationSeconds)) throw new Error("手机任务时长无效，请刷新重试。");
     if (row.asset !== "USDT" && row.asset !== "UVT") throw new Error("手机任务奖励资产无效，请刷新重试。");
-    return { ...parsed, baseReward: decimal(row.baseReward), asset: row.asset };
+    return { ...parsed, durationSeconds: row.durationSeconds, baseReward: decimal(row.baseReward), asset: row.asset };
   });
   return { total: integer(raw.total), records };
 }

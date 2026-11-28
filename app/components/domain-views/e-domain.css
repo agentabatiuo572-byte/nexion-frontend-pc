@@ -821,13 +821,9 @@
 }
 
 /* E6 review: stable columns, compact actions and readable recovery details. */
-.e6-page .e6-tasks-table { table-layout: fixed; }
-.e6-page .e6-tasks-table th:first-child { width: clamp(180px, calc(56% - max(220px, 20%)), 460px); }
-.e6-page .e6-tasks-table th:nth-child(2) { width: 16%; }
-.e6-page .e6-tasks-table th:nth-child(3) { width: 11%; }
-.e6-page .e6-tasks-table th:nth-child(4) { width: max(220px, 20%); }
-.e6-page .e6-tasks-table th:nth-child(5) { width: 11%; }
-.e6-page .e6-tasks-table th:nth-child(6) { width: 6%; }
+.e6-page .e6-tasks-table th:first-child { width: 38%; }
+.e6-page .e6-tasks-table th:nth-child(6) { min-width: 130px; }
+.e6-page .e6-tasks-table :is(th, td):not(:first-child) { white-space: nowrap; }
 .e6-page .e6-tasks-table td[data-grow] { width: auto; max-width: none; }
 .e6-page .e6-tasks-table .rd-cell { max-width: none; }
 .e6-page .e6-tasks-table .rd-cell-main { overflow: hidden; }
@@ -842,8 +838,7 @@
 .e6-serial { font-size: var(--rd-text-aux); overflow-wrap: anywhere; word-break: break-all; }  /* 长实例号均匀折行，不在「PHONE-」后断开 */
 .e6-no-action, .e6-help { color: var(--rd-text-3); font-size: var(--rd-text-aux); line-height: var(--rd-lh-body); }
 .e6-no-action { display: block; width: 72px; min-width: 72px; max-width: 72px; line-height: var(--rd-lh-aux); }
-.e6-task-reward { display: inline-grid; grid-template-columns: auto 4ch; align-items: baseline; gap: 4px; }
-.e6-task-reward > :last-child { text-align: left; }
+.e6-task-reward { display: inline-grid; justify-items: end; gap: 2px; font-variant-numeric: tabular-nums; }
 .e6-pending-list { display: grid; gap: 12px; }
 .e6-pending-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; }
 /* 右对齐的数字列后面紧跟左对齐的文字列时多留一档，「每任务奖励」和「状态」、「UVT/天」和「来源」不连读。 */

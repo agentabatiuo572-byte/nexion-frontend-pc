@@ -2392,7 +2392,7 @@ export function A2Audit({ ctx, coverage, h5CoverageBlock, refreshCoverage }: {
   const rejectRequest = (w: A2OperationRow): ActionConfirmReq => ({
     briefKind: "record",
     title: "驳回审批单",
-    action: <>取消执行 · {w.id} · {w.operationCode === "j1_gate_resume" ? actionName(w) : a2ActionText(w.action)}</>,
+    action: <>取消执行 · {w.id} · {w.ruleTaskAction || w.operationCode === "j1_gate_resume" ? actionName(w) : a2ActionText(w.action)}</>,
     effect: <>{subject(actionName(w))}{immediate}</>,
     detail: <>{w.retiredOperation ? "此操作已退役。驳回后保留历史记录，不能重新发起。" : "驳回后这张单结束，要做需重新发起。"}</>,
     facts: ticketFacts(w, "reject", (() => {
